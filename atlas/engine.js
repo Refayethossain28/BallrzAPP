@@ -914,7 +914,7 @@
     var out = [];
     cams.forEach(function (c) {
       var s = snapToRoute(route, c);
-      if (s.crossTrack <= max) out.push({ alongM: s.alongM, lat: c.lat, lon: c.lon, kmh: c.kmh == null ? null : c.kmh });
+      if (s.crossTrack <= max) out.push({ alongM: s.alongM, lat: c.lat, lon: c.lon, kmh: c.kmh == null ? null : c.kmh, avg: !!c.avg });
     });
     out.sort(function (a, b) { return a.alongM - b.alongM; });
     return out.filter(function (c, i) { return i === 0 || c.alongM - out[i - 1].alongM > 30; });
@@ -926,6 +926,95 @@
       if (cameras[i].alongM > alongM - 15) return { cam: cameras[i], distM: Math.max(0, cameras[i].alongM - alongM) };
     }
     return null;
+  }
+
+  /* -------- average speed camera zones (SPECS-style enforcement) -------- */
+  // In these zones the law measures your AVERAGE between camera pairs, not
+  // your instantaneous speed — so Atlas does too. Zones come from OSM two
+  // ways: enforcement relations with from/to endpoints, and chains of
+  // cameras tagged average (consecutive pairs become zones, like the
+  // commercial satnavs infer them).
+
+  var AVG_PAIR_MIN_M = 120, AVG_PAIR_MAX_M = 8000;
+
+  function mergeZones(zones) {
+    zones.sort(function (a, b) { return a.startM - b.startM; });
+    var out = [];
+    zones.forEach(function (z) {
+      var last = out[out.length - 1];
+      if (last && z.startM <= last.endM + 30) {
+        last.endM = Math.max(last.endM, z.endM);
+        if (z.kmh != null && (last.kmh == null || z.kmh < last.kmh)) last.kmh = z.kmh;
+      } else out.push({ startM: z.startM, endM: z.endM, kmh: z.kmh == null ? null : z.kmh });
+    });
+    return out;
+  }
+
+  /** Chain consecutive average-tagged cameras on the route into zones.
+   *  cams = mapped cameras [{alongM, kmh, avg}]; limits fill a missing kmh. */
+  function pairAvgCameras(cams, limits) {
+    var avg = (cams || []).filter(function (c) { return c.avg; })
+      .sort(function (a, b) { return a.alongM - b.alongM; });
+    var zones = [];
+    for (var i = 0; i + 1 < avg.length; i++) {
+      var a = avg[i], b = avg[i + 1], gap = b.alongM - a.alongM;
+      if (gap < AVG_PAIR_MIN_M || gap > AVG_PAIR_MAX_M) continue;
+      var kmh = a.kmh != null ? a.kmh : b.kmh != null ? b.kmh
+              : limits ? limitAtAlong(limits, (a.alongM + b.alongM) / 2) : null;
+      zones.push({ startM: a.alongM, endM: b.alongM, kmh: kmh });
+    }
+    return mergeZones(zones);
+  }
+
+  /** An enforcement relation's from/to endpoints snapped onto the route.
+   *  → {startM, endM, kmh} or null when it doesn't lie on this route. */
+  function zoneFromEndpoints(route, from, to, kmh, tolM) {
+    var tol = tolM || 60;
+    var s1 = snapToRoute(route, from), s2 = snapToRoute(route, to);
+    if (s1.crossTrack > tol || s2.crossTrack > tol) return null;
+    var a = Math.min(s1.alongM, s2.alongM), b = Math.max(s1.alongM, s2.alongM);
+    if (b - a < AVG_PAIR_MIN_M) return null;
+    return { startM: a, endM: b, kmh: kmh == null ? null : kmh };
+  }
+
+  /**
+   * The zone state machine, driven per fix. Your zone average is distance
+   * covered inside the zone over time inside it — exactly what the cameras
+   * compute. Events: 'enter' | 'over' (once, re-armed when you drop back
+   * under the limit) | 'exit' (carries your final average).
+   * → {state, event, zone, avgKmh}
+   */
+  function avgZoneUpdate(state, zones, alongM, nowMs) {
+    state = state || { idx: -1, startM: 0, startT: 0, warned: false };
+    var idx = -1;
+    for (var i = 0; i < (zones || []).length; i++) {
+      if (alongM >= zones[i].startM - 5 && alongM <= zones[i].endM + 5) { idx = i; break; }
+    }
+    if (idx !== state.idx) {
+      if (state.idx >= 0) { // leaving a zone (possibly straight into another)
+        var z0 = zones[state.idx];
+        var elapsed = (nowMs - state.startT) / 1000;
+        var finalAvg = elapsed > 1 ? ((Math.min(alongM, z0.endM) - state.startM) / elapsed) * 3.6 : null;
+        return { state: { idx: -1, startM: 0, startT: 0, warned: false },
+                 event: 'exit', zone: z0, avgKmh: finalAvg != null && finalAvg >= 0 ? finalAvg : null };
+      }
+      return { state: { idx: idx, startM: alongM, startT: nowMs, warned: false },
+               event: 'enter', zone: zones[idx], avgKmh: null };
+    }
+    if (idx < 0) return { state: state, event: null, zone: null, avgKmh: null };
+    var z = zones[idx];
+    var dist = alongM - state.startM, secs = (nowMs - state.startT) / 1000;
+    var avg = secs > 3 && dist > 30 ? (dist / secs) * 3.6 : null;
+    var next = state, event = null;
+    if (avg != null && z.kmh != null) {
+      if (avg > z.kmh * 1.03 + 1 && !state.warned) {
+        next = { idx: state.idx, startM: state.startM, startT: state.startT, warned: true };
+        event = 'over';
+      } else if (avg <= z.kmh && state.warned) {
+        next = { idx: state.idx, startM: state.startM, startT: state.startT, warned: false };
+      }
+    }
+    return { state: next, event: event, zone: z, avgKmh: avg };
   }
 
   /**
@@ -1512,6 +1601,7 @@
     fmtBytes: fmtBytes, pruneClips: pruneClips,
     parseMaxspeed: parseMaxspeed, mapLimitsToRoute: mapLimitsToRoute, limitAtAlong: limitAtAlong,
     mapCamerasToRoute: mapCamerasToRoute, cameraNext: cameraNext, overspeedUpdate: overspeedUpdate,
+    pairAvgCameras: pairAvgCameras, zoneFromEndpoints: zoneFromEndpoints, avgZoneUpdate: avgZoneUpdate,
     parseID3: parseID3, makeShuffleOrder: makeShuffleOrder,
     nextTrack: nextTrack, fmtTrackTime: fmtTrackTime,
     corridorTiles: corridorTiles, packEstimateMB: packEstimateMB,

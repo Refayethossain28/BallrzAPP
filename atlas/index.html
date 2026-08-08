@@ -298,6 +298,20 @@
   #junctionTitle { font-size: 12.5px; color: #a7f3d0; text-align: center; margin-bottom: 6px; font-weight: 650; }
   #junctionCanvas { display: block; width: 100%; height: 172px; border-radius: 12px; }
 
+  /* ⌀ average-speed-zone pill (your live zone average) */
+  #avgPill {
+    position: fixed; z-index: 44; left: 152px; bottom: calc(96px + var(--sab));
+    height: 56px; min-width: 74px; border-radius: 28px; padding: 0 14px;
+    background: #fff; border: 5px solid #f59e0b; box-shadow: var(--shadow);
+    display: none; flex-direction: column; align-items: center; justify-content: center;
+    color: #111827;
+  }
+  #avgPill.show { display: flex; }
+  #avgPill.over { border-color: #ef4444; animation: overpulse 0.9s ease-in-out infinite; }
+  #avgPill.over #avgVal { color: #ef4444; }
+  #avgVal { font-size: 17px; font-weight: 900; line-height: 1; }
+  #avgLbl { font-size: 7.5px; font-weight: 800; color: #92400e; text-transform: uppercase; letter-spacing: 0.5px; }
+
   /* 🚦 traffic incident alert */
   #trafChip {
     position: fixed; z-index: 44; left: 50%; transform: translateX(-50%);
@@ -725,6 +739,7 @@
 </div>
 <div id="speedBubble"><div id="speedVal">0</div><div id="speedUnit">km/h</div></div>
 <div id="limitSign" aria-label="Speed limit"><div id="limitVal">30</div><div id="limitUnit">km/h</div></div>
+<div id="avgPill" aria-label="Average speed in enforcement zone"><div id="avgVal">⌀ —</div><div id="avgLbl">zone avg</div></div>
 <div id="camChip">📷 Speed camera</div>
 <div id="trafChip">⚠ Traffic ahead</div>
 <div id="laneBar" aria-label="Lane guidance"></div>
@@ -1106,10 +1121,20 @@ function drawTraffic() {
   }
 }
 
-/* 📷 fixed speed cameras on the route (while navigating). */
+/* 📷 fixed speed cameras + ⌀ average-zone striping (while navigating). */
 function drawCameras() {
-  if (!nav.active || !nav.route || !nav.cameras || !nav.cameras.length) return;
+  if (!nav.active || !nav.route) return;
   if (settings.cameras !== 'on') return;
+  // average zones: red-and-white dashed stripe over the route extent
+  if (nav.avgZones && nav.avgZones.length) {
+    for (var zi = 0; zi < nav.avgZones.length; zi++) {
+      var z = nav.avgZones[zi];
+      var pts = sliceGeometry(nav.route, z.startM, z.endM);
+      drawPolyline(pts, 'rgba(255,255,255,0.9)', 4.5);
+      drawPolyline(pts, '#ef4444', 4.5, [12, 12]);
+    }
+  }
+  if (!nav.cameras || !nav.cameras.length) return;
   for (var i = 0; i < nav.cameras.length; i++) {
     var p = A.pointAtAlong(nav.route, nav.cameras[i].alongM);
     var s = toScreen(p);
@@ -1447,7 +1472,8 @@ function fetchSafetyData(route) {
   }
   var chain = pts.join(',');
   var q = '[out:json][timeout:15];(way["maxspeed"](around:25,' + chain + ');' +
-          'node["highway"="speed_camera"](around:60,' + chain + '););out geom 800;';
+          'node["highway"="speed_camera"](around:60,' + chain + ');' +
+          'relation["type"="enforcement"]["enforcement"="average_speed"](around:80,' + chain + '););out geom 800;';
   var attempt = function (i) {
     if (i >= OVERPASS.length) return Promise.reject(new Error('overpass unavailable'));
     return fetch(OVERPASS[i], {
@@ -1458,16 +1484,34 @@ function fetchSafetyData(route) {
       .catch(function (err) { return i + 1 < OVERPASS.length ? attempt(i + 1) : Promise.reject(err); });
   };
   return attempt(0).then(function (json) {
-    var ways = [], cams = [];
+    var ways = [], cams = [], relZones = [];
     (json.elements || []).forEach(function (el) {
       if (el.type === 'way' && el.tags && el.geometry) {
         var kmh = A.parseMaxspeed(el.tags.maxspeed);
         if (kmh != null) ways.push({ kmh: kmh, geometry: el.geometry.map(function (g) { return { lat: g.lat, lon: g.lon }; }) });
       } else if (el.type === 'node' && el.tags && el.tags.highway === 'speed_camera') {
-        cams.push({ lat: el.lat, lon: el.lon, kmh: A.parseMaxspeed(el.tags.maxspeed) });
+        cams.push({ lat: el.lat, lon: el.lon, kmh: A.parseMaxspeed(el.tags.maxspeed),
+          avg: /average/i.test(String(el.tags.speed_camera || '') + ' ' + String(el.tags['camera:type'] || '')) });
+      } else if (el.type === 'relation' && el.tags) {
+        // average-speed enforcement relation: from/to members are the endpoints
+        var from = null, to = null;
+        (el.members || []).forEach(function (m) {
+          if (typeof m.lat !== 'number') return;
+          if (m.role === 'from' && !from) from = { lat: m.lat, lon: m.lon };
+          if (m.role === 'to' && !to) to = { lat: m.lat, lon: m.lon };
+        });
+        if (from && to) relZones.push({ from: from, to: to, kmh: A.parseMaxspeed(el.tags.maxspeed) });
       }
     });
-    return { limits: A.mapLimitsToRoute(route, ways), cameras: A.mapCamerasToRoute(route, cams) };
+    var limits = A.mapLimitsToRoute(route, ways);
+    var cameras = A.mapCamerasToRoute(route, cams);
+    var avgZones = A.pairAvgCameras(cameras, limits);
+    relZones.forEach(function (rz) {
+      var z = A.zoneFromEndpoints(route, rz.from, rz.to, rz.kmh);
+      if (z) avgZones.push(z);
+    });
+    avgZones.sort(function (a, b) { return a.startM - b.startM; });
+    return { limits: limits, cameras: cameras, avgZones: avgZones };
   });
 }
 
@@ -1562,16 +1606,23 @@ function applyTraffic(routes, onUpdate) {
 }
 
 /* Bundled safety data for the demo drive (central London really is 20 mph —
-   and the sim drives at ~47 km/h, so the overspeed warning demos itself). */
+   and the sim drives at ~47 km/h, so the overspeed warning demos itself,
+   and the two average cameras on The Mall become a SPECS-style zone). */
 function demoSafety(route) {
   var g = route.geometry;
   var ways = [
     { kmh: A.parseMaxspeed('30 mph'), geometry: g.slice(0, 8) },   // Constitution Hill
     { kmh: A.parseMaxspeed('20 mph'), geometry: g.slice(10, 18) }, // The Mall
   ];
-  var camSpot = A.destinationPoint(g[14], 90, 8);
-  var cams = [{ lat: camSpot.lat, lon: camSpot.lon, kmh: A.parseMaxspeed('20 mph') }];
-  return { limits: A.mapLimitsToRoute(route, ways), cameras: A.mapCamerasToRoute(route, cams) };
+  var camA = A.destinationPoint(g[14], 90, 8);
+  var camB = A.destinationPoint(g[19], 90, 6);
+  var cams = [
+    { lat: camA.lat, lon: camA.lon, kmh: A.parseMaxspeed('20 mph'), avg: true },
+    { lat: camB.lat, lon: camB.lon, kmh: A.parseMaxspeed('20 mph'), avg: true },
+  ];
+  var limits = A.mapLimitsToRoute(route, ways);
+  var cameras = A.mapCamerasToRoute(route, cams);
+  return { limits: limits, cameras: cameras, avgZones: A.pairAvgCameras(cameras, limits) };
 }
 
 function reverseGeocode(p) {
@@ -2051,12 +2102,16 @@ function startNav(demo) {
   nav.trafSpoken = {};
   // 📷 speed limits + cameras (bundled for the demo, OpenStreetMap live)
   nav.limits = []; nav.cameras = []; nav.camSpoken = {}; nav.osState = null; nav.lastSafetyTs = Date.now();
+  nav.avgZones = []; nav.avgState = null;
   if (demo) {
     var ds = demoSafety(route);
-    nav.limits = ds.limits; nav.cameras = ds.cameras;
+    nav.limits = ds.limits; nav.cameras = ds.cameras; nav.avgZones = ds.avgZones;
   } else {
     fetchSafetyData(route).then(function (s) {
-      if (nav.active && nav.route === route) { nav.limits = s.limits; nav.cameras = s.cameras; needsDraw = true; }
+      if (nav.active && nav.route === route) {
+        nav.limits = s.limits; nav.cameras = s.cameras; nav.avgZones = s.avgZones || [];
+        needsDraw = true;
+      }
     }).catch(function () {});
   }
   closeSheets();
@@ -2187,8 +2242,30 @@ function onNavFix(fix) {
     $('junctionCard').classList.remove('show');
   }
 
+  // ⌀ average speed camera zone: track YOUR zone average, warn on the average
+  var azLine = null;
+  if (settings.cameras === 'on' && nav.avgZones && nav.avgZones.length && !r.arrived) {
+    var az = A.avgZoneUpdate(nav.avgState, nav.avgZones, r.alongM, Date.now());
+    nav.avgState = az.state;
+    if (az.zone && az.state.idx >= 0) {
+      var shownAvg = az.avgKmh != null
+        ? Math.round(settings.units === 'imperial' ? az.avgKmh / 1.609344 : az.avgKmh) : null;
+      $('avgVal').textContent = '⌀ ' + (shownAvg == null ? '—' : shownAvg);
+      $('avgPill').classList.add('show');
+      $('avgPill').classList.toggle('over', !!(az.avgKmh != null && az.zone.kmh != null && az.avgKmh > az.zone.kmh * 1.03 + 1));
+    } else $('avgPill').classList.remove('show', 'over');
+    if (az.event === 'enter') {
+      azLine = 'Average speed check zone' + (az.zone.kmh != null ? ' — the limit is ' + limitLabel(az.zone.kmh) : '');
+    } else if (az.event === 'over') {
+      azLine = 'Your average speed is over the limit';
+    } else if (az.event === 'exit') {
+      azLine = 'End of average speed check' + (az.avgKmh != null ? ' — your average was ' + limitLabel(az.avgKmh) : '');
+    }
+  } else $('avgPill').classList.remove('show', 'over');
+
   if (r.announce) speak(r.announce.text);
   else if (os.warn) speak('Watch your speed — the limit is ' + limitLabel(limitKmh));
+  else if (azLine) speak(azLine);
   else if (trafWarn) speak('Traffic ahead — ' + trafWarn.kind.toLowerCase() + ' in ' + A.speakDist(trafHit.distM, settings.units));
   else speakPaceNote(r);
 
@@ -2370,8 +2447,12 @@ function maybeReroute(fix) {
     // refresh limits + cameras for the new road
     nav.limits = []; nav.cameras = []; nav.camSpoken = {}; nav.osState = null;
     var rerouted = nav.route;
+    nav.avgZones = []; nav.avgState = null;
     fetchSafetyData(rerouted).then(function (s) {
-      if (nav.active && nav.route === rerouted) { nav.limits = s.limits; nav.cameras = s.cameras; needsDraw = true; }
+      if (nav.active && nav.route === rerouted) {
+        nav.limits = s.limits; nav.cameras = s.cameras; nav.avgZones = s.avgZones || [];
+        needsDraw = true;
+      }
     }).catch(function () {});
     if (settings.codriver === 'on') { nav.notes = A.paceNotes(nav.route); nav.noteIdx = 0; nav.noteSpoken = {}; }
     // refresh traffic for the new road
@@ -2480,6 +2561,7 @@ function stopNavUI() {
   $('navBottom').classList.remove('show');
   $('speedBubble').classList.remove('show', 'over');
   $('limitSign').classList.remove('show');
+  $('avgPill').classList.remove('show', 'over');
   $('camChip').classList.remove('show');
   $('trafChip').classList.remove('show');
   $('laneBar').classList.remove('show');
