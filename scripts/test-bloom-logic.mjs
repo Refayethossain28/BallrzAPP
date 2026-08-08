@@ -58,6 +58,30 @@ test('extractTags ignores mid-word # and &#39; entities', () => {
 test('extractMentions returns unique lowercased handles', () => {
   deepEq(E.extractMentions('hey @Maya and @maya and @jo_1'), ['maya', 'jo_1']);
 });
+test('validateAccount: good input passes, handle normalised', () => {
+  const v = E.validateAccount({ name: '  Refayet ', handle: '@Refayet_28', email: 'rafa@example.com', password: 'longenough' });
+  assert.equal(v.ok, true);
+  assert.equal(v.name, 'Refayet');
+  assert.equal(v.handle, 'refayet_28', 'handle lowercased, @ stripped');
+});
+test('validateAccount: rejects bad email, short password, bad handle, empty name', () => {
+  const v = E.validateAccount({ name: '', handle: 'a b!', email: 'not-an-email', password: 'short' });
+  assert.equal(v.ok, false);
+  assert.equal(v.errors.length, 4);
+  assert.ok(v.errors.some((e) => e.includes('name')));
+  assert.ok(v.errors.some((e) => e.includes('Handle')));
+  assert.ok(v.errors.some((e) => e.includes('email')));
+  assert.ok(v.errors.some((e) => e.includes('Password')));
+});
+test('validateAccount: handle length limits (2–20)', () => {
+  assert.equal(E.validateAccount({ name: 'A', handle: 'x', email: 'a@b.co', password: 'longenough' }).ok, false);
+  assert.equal(E.validateAccount({ name: 'A', handle: 'x'.repeat(21), email: 'a@b.co', password: 'longenough' }).ok, false);
+  assert.equal(E.validateAccount({ name: 'A', handle: 'xy', email: 'a@b.co', password: 'longenough' }).ok, true);
+});
+test('normalizeHandle strips @, trims, lowercases', () => {
+  assert.equal(E.normalizeHandle(' @Maya_Runs '), 'maya_runs');
+  assert.equal(E.normalizeHandle(null), '');
+});
 test('validatePost rejects empty and over-length, trims', () => {
   assert.equal(E.validatePost('   ').ok, false);
   assert.equal(E.validatePost('x'.repeat(E.MAX_POST + 1)).ok, false);

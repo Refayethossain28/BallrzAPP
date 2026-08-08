@@ -43,12 +43,14 @@ Open it and the **Meadow** — eight warm, distinct personas — is already
 posting, commenting back, following you back. No account, no server, nothing
 leaves the device.
 
-Flip **🌐 Go live** in Settings and Bloom joins a real shared community over
-Firebase: anonymous sign-in (no phone, no email), live posts/reactions/comments
-across every device, member-scoped security rules in
-[`../firestore.rules`](../firestore.rules) (`bloom_*` collections — reactions
-are the only field strangers may touch on your post). Setup is two console
-clicks: [`SETUP.md`](./SETUP.md).
+**Create an account** in Settings and Bloom joins a real shared community over
+Firebase: **registered users only** — email + password, one unique handle
+claimed forever, sign in from any device as the same person, built-in password
+reset. The rules enforce it server-side: anonymous sessions can't write a
+thing, every post traces to an account, and reactions are the only field
+strangers may touch on your post
+([`../firestore.rules`](../firestore.rules), `bloom_*` collections). Setup is
+one console click + a rules deploy: [`SETUP.md`](./SETUP.md).
 
 ## Run it
 

@@ -2,8 +2,9 @@
  * ==============================================
  * Bloom runs fully offline with zero setup: the Meadow (demo) community lives
  * on-device and the app is complete without a server. This file points it at a
- * Firebase project so it can also go LIVE — anonymous sign-in, real posts,
- * reactions, comments and follows synced across devices over Firestore.
+ * Firebase project so it can also go LIVE — registered accounts (email +
+ * password, unique handles), real posts, reactions, comments and follows
+ * synced across devices over Firestore.
  *
  * It reuses the project that already ships in ../firebase.js (apexvip-1b4a9).
  * Bloom keeps its data in separate `bloom_*` collections, so it never touches
@@ -11,8 +12,8 @@
  * (Firebase web API keys are not secrets — they identify the project, not
  * authorise access; access is governed by the security rules.)
  *
- * One-time console setup for the project (same as Ripple's):
- *   1) Authentication → Sign-in method → enable **Anonymous**.
+ * One-time console setup for the project:
+ *   1) Authentication → Sign-in method → enable **Email/Password**.
  *   2) Deploy the rules:  firebase deploy --only firestore:rules
  *
  * To use a DIFFERENT project, replace the object below with that project's web
