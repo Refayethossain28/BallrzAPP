@@ -1047,6 +1047,62 @@
     return Math.round(Math.max(0.6, Math.min(1.6, next)) * 1000) / 1000;
   }
 
+  /* ========================== Pro + drive history ========================= */
+  // The business layer, engine-grade like everything else: offline-verifiable
+  // unlock codes (sellable through any payment link — no server needed to
+  // redeem), the free/Pro entitlement table, and drive-history stats.
+
+  var PRO_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+
+  function proChecksum(body) {
+    var h = 7;
+    for (var i = 0; i < body.length; i++) h = (h * 33 + body.charCodeAt(i) * (i + 3)) % 923521;
+    return PRO_ALPHABET[h % 31] + PRO_ALPHABET[Math.floor(h / 31) % 31];
+  }
+
+  /** "ATLS-XXXX-XXXX-CC" — deterministic with an injected rand. */
+  function makeProCode(rand) {
+    rand = rand || Math.random;
+    var body = '';
+    for (var i = 0; i < 8; i++) body += PRO_ALPHABET[Math.floor(rand() * 31) % 31];
+    return 'ATLS-' + body.slice(0, 4) + '-' + body.slice(4) + '-' + proChecksum(body);
+  }
+
+  /** Normalise + verify an unlock code offline. → true/false. */
+  function validProCode(code) {
+    if (typeof code !== 'string') return false;
+    var s = code.toUpperCase().replace(/[\s-]/g, '');
+    if (s.length !== 14 || s.slice(0, 4) !== 'ATLS') return false;
+    var body = s.slice(4, 12), check = s.slice(12);
+    for (var i = 0; i < body.length; i++) if (PRO_ALPHABET.indexOf(body[i]) < 0) return false;
+    return proChecksum(body) === check;
+  }
+
+  /** What each tier gets. One table, no scattered magic numbers. */
+  function entitlements(pro) {
+    return pro
+      ? { clips: 30, offlinePacks: 6, proBadge: true }
+      : { clips: 12, offlinePacks: 1, proBadge: false };
+  }
+
+  /**
+   * Lifetime driving stats from the drive log (records saved on arrival:
+   * {t, distM, movingS}). `now` injected for the this-week window.
+   */
+  function driveStatsSummary(drives, now) {
+    var s = { count: 0, distM: 0, movingS: 0, avgKmh: 0, longestM: 0, weekCount: 0, weekDistM: 0 };
+    (drives || []).forEach(function (d) {
+      if (!d || typeof d.distM !== 'number') return;
+      s.count++;
+      s.distM += d.distM;
+      s.movingS += d.movingS || 0;
+      if (d.distM > s.longestM) s.longestM = d.distM;
+      if (now - d.t < 7 * 86400000) { s.weekCount++; s.weekDistM += d.distM; }
+    });
+    s.avgKmh = s.movingS > 0 ? (s.distM / s.movingS) * 3.6 : 0;
+    return s;
+  }
+
   /* ============================== music player ============================ */
   // Drive-time music from the user's own files. The pure parts live here:
   // a from-scratch ID3v2 tag reader (title/artist/album from an MP3's first
@@ -1602,6 +1658,8 @@
     parseMaxspeed: parseMaxspeed, mapLimitsToRoute: mapLimitsToRoute, limitAtAlong: limitAtAlong,
     mapCamerasToRoute: mapCamerasToRoute, cameraNext: cameraNext, overspeedUpdate: overspeedUpdate,
     pairAvgCameras: pairAvgCameras, zoneFromEndpoints: zoneFromEndpoints, avgZoneUpdate: avgZoneUpdate,
+    makeProCode: makeProCode, validProCode: validProCode,
+    entitlements: entitlements, driveStatsSummary: driveStatsSummary,
     parseID3: parseID3, makeShuffleOrder: makeShuffleOrder,
     nextTrack: nextTrack, fmtTrackTime: fmtTrackTime,
     corridorTiles: corridorTiles, packEstimateMB: packEstimateMB,

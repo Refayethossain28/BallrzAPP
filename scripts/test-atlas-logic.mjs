@@ -645,6 +645,49 @@ test('overspeedUpdate: tolerance, 3 s hysteresis, single warning, resets under l
   assert.equal(A.overspeedUpdate(null, 200, null, 1).over, false, 'no limit, no judgement');
 });
 
+test('pro: unlock codes generate, verify offline, and reject tampering', () => {
+  let seed = 99;
+  const lcg = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 2 ** 32; };
+  const code = A.makeProCode(lcg);
+  assert.ok(/^ATLS-[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{2}$/.test(code), code);
+  assert.equal(A.validProCode(code), true);
+  assert.equal(A.validProCode(code.toLowerCase().replace(/-/g, ' ')), true, 'normalises case/spacing');
+  // flip one body character → checksum fails
+  const bad = code.slice(0, 5) + (code[5] === 'A' ? 'B' : 'A') + code.slice(6);
+  assert.equal(A.validProCode(bad), false, 'tampered code rejected');
+  assert.equal(A.validProCode('ATLS-AAAA-AAAA-ZZ'), false);
+  assert.equal(A.validProCode('hello'), false);
+  assert.equal(A.validProCode(null), false);
+  // codes are distinct across draws
+  const codes = new Set();
+  for (let i = 0; i < 50; i++) codes.add(A.makeProCode(lcg));
+  assert.equal(codes.size, 50);
+  // entitlement table
+  assert.equal(A.entitlements(false).clips, 12);
+  assert.equal(A.entitlements(true).clips, 30);
+  assert.ok(A.entitlements(true).offlinePacks > A.entitlements(false).offlinePacks);
+});
+
+test('drive history: lifetime + this-week stats from the log', () => {
+  const NOW = Date.UTC(2026, 7, 8);
+  const day = 86400000;
+  const drives = [
+    { t: NOW - 2 * day, distM: 10000, movingS: 1000 },  // this week
+    { t: NOW - 5 * day, distM: 5000, movingS: 600 },    // this week
+    { t: NOW - 30 * day, distM: 42000, movingS: 3600 }, // long ago, longest
+    { t: NOW - 40 * day, distM: 0, movingS: 0 },
+    null,
+  ];
+  const s = A.driveStatsSummary(drives, NOW);
+  assert.equal(s.count, 4);
+  assert.equal(s.distM, 57000);
+  assert.equal(s.weekCount, 2);
+  assert.equal(s.weekDistM, 15000);
+  assert.equal(s.longestM, 42000);
+  near(s.avgKmh, 57000 / 5200 * 3.6, 0.1);
+  assert.equal(A.driveStatsSummary([], NOW).count, 0);
+});
+
 test('music: parseID3 reads v2.3 tags in latin1, UTF-8 and UTF-16', () => {
   // hand-build an ID3v2.3 tag: header + TIT2 (utf8) + TPE1 (latin1) + TALB (utf16le BOM)
   const frames = [];
