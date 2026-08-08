@@ -360,6 +360,33 @@
   <div id="person-body"></div>
 </div>
 
+<!-- ACCOUNT (register / sign in) -->
+<div class="sheet" id="sheet-account">
+  <div class="grab"></div>
+  <h3 id="ac-title">Create your Bloom account</h3>
+  <div class="sub">One account, one handle — the live community is real, registered people. No phone number needed.</div>
+  <div class="seg" id="ac-mode">
+    <button data-mode="signup" class="on">🌱 Create account</button>
+    <button data-mode="signin">🔑 Sign in</button>
+  </div>
+  <div id="ac-signup-fields">
+    <label style="display:block;font-size:13px;font-weight:700;color:var(--ink2);margin:10px 0 6px">Your name</label>
+    <input id="ac-name" placeholder="e.g. Refayet" maxlength="30" autocomplete="name">
+    <label style="display:block;font-size:13px;font-weight:700;color:var(--ink2);margin:10px 0 6px">Handle (unique, public)</label>
+    <input id="ac-handle" placeholder="e.g. refayet" maxlength="20" autocomplete="username">
+  </div>
+  <label style="display:block;font-size:13px;font-weight:700;color:var(--ink2);margin:10px 0 6px">Email</label>
+  <input id="ac-email" type="email" placeholder="you@example.com" autocomplete="email">
+  <label style="display:block;font-size:13px;font-weight:700;color:var(--ink2);margin:10px 0 6px">Password</label>
+  <input id="ac-password" type="password" placeholder="At least 8 characters" autocomplete="current-password">
+  <div id="ac-error" style="color:var(--rose);font-size:13px;margin-top:10px"></div>
+  <div style="display:flex;gap:10px;align-items:center;margin-top:14px">
+    <button class="btn" id="ac-submit" data-action="ac-submit">Create account 🌸</button>
+    <button class="btn ghost" id="ac-forgot" data-action="ac-forgot" style="display:none">Forgot password?</button>
+  </div>
+  <div style="font-size:12px;color:var(--ink3);margin-top:12px">Your Meadow (demo) world stays on this device either way. Registering is what lets you post to the live community and keep your identity across devices.</div>
+</div>
+
 <!-- HEAT NUDGE -->
 <div class="nudge" id="nudge">
   <div class="box">
@@ -396,7 +423,7 @@
       <button class="btn" style="width:100%; justify-content:center; font-size:16px; padding:14px" data-action="ob-done">Step into the Meadow 🌼</button>
     </div>
     <div style="font-size:12px; color:var(--ink3); margin-top:10px; text-align:center">
-      Everything stays on this device until you choose “Go live” in Settings.
+      Everything stays on this device. Joining the live community needs a free registered account — create one any time in Settings.
     </div>
   </div>
 </div>
@@ -824,15 +851,19 @@ function renderMe() {
   html += '<div class="setrow"><div class="t"><div class="k">Inner circle</div><div class="d">' + (S.inner.length ? S.inner.length + ' people' : 'Empty') + ' — posts marked 🫂 reach only them. Tap follows in Discover, then add here.</div></div>' + innerPicker() + '</div>';
   html += '</div>';
 
-  // cloud
-  html += '<div class="h2">Go live</div><div class="card">';
+  // account / live community
+  html += '<div class="h2">Your Bloom account</div><div class="card">';
   if (S.cloud.status === 'on') {
-    html += '<div style="font-size:14px">🟢 <b>Live.</b> Your posts marked 🌍 publish to the shared Bloom cloud and appear on every device. <span class="cloud-pill">live</span>-tagged posts in your feed are from real devices.</div>';
-    html += '<div style="margin-top:10px"><button class="btn danger" data-action="cloud-off">Go back to device-only</button></div>';
+    html += '<div style="font-size:14px">🟢 <b>Registered & live</b> as <b>' + esc(S.me.name) + '</b> <span style="color:var(--ink3)">@' + esc(S.me.handle) + '</span>' +
+      (S.cloud.email ? ' <span style="color:var(--ink3)">· ' + esc(S.cloud.email) + '</span>' : '') +
+      '. Your 🌍 posts publish to the live community; <span class="cloud-pill">live</span>-tagged posts are from other registered people. Your handle is yours on every device.</div>';
+    html += '<div style="margin-top:10px"><button class="btn danger" data-action="sign-out">Sign out</button></div>';
   } else {
-    html += '<div style="font-size:14px">Bloom is fully on-device right now. <b>Go live</b> to join the shared cloud community — anonymous sign-in, no phone number, no email. (Needs the Firebase config in <code>config.js</code>; see SETUP.md.)</div>';
-    html += '<div style="margin-top:10px"><button class="btn" data-action="cloud-on">🌐 Go live</button>' +
-      (S.cloud.status === 'error' ? '<span style="color:var(--rose);font-size:12.5px;margin-left:10px">Couldn’t connect — check SETUP.md</span>' : '') + '</div>';
+    html += '<div style="font-size:14px">The Meadow is yours without an account — but the <b>live community is registered people only</b>. Create a free account (email + password, unique handle, no phone number) to post for real and keep your identity across devices.</div>';
+    html += '<div style="margin-top:10px;display:flex;gap:10px">' +
+      '<button class="btn" data-action="open-account" data-mode="signup">🌸 Create account</button>' +
+      '<button class="btn ghost" data-action="open-account" data-mode="signin">Sign in</button></div>' +
+      (S.cloud.status === 'error' ? '<div style="color:var(--rose);font-size:12.5px;margin-top:8px">Couldn’t connect — check SETUP.md</div>' : '');
   }
   html += '</div>';
 
@@ -1199,8 +1230,12 @@ function showSession() {
   toast('🕰 ' + Math.floor(SESSION_MS / E.MINUTE) + ' minutes this session.' + (adv.level ? ' ' + adv.msg : ' All good.'));
 }
 
-/* ============================ cloud (optional, lazy) ============================ */
-var FB = { app: null, db: null, auth: null, unsub: null };
+/* ============================ cloud (registered accounts) ============================ */
+/* The live community is registered people only: email + password via Firebase
+ * Auth, one unique handle per account (claimed in bloom_handles, enforced by
+ * the security rules). The Meadow demo needs no account and never leaves the
+ * device. */
+var FB = { app: null, db: null, auth: null, unsub: null, ready: null };
 var FB_SDK = 'https://www.gstatic.com/firebasejs/9.23.0/';
 function loadScript(src) {
   return new Promise(function (resolve, reject) {
@@ -1209,43 +1244,152 @@ function loadScript(src) {
     document.head.appendChild(s);
   });
 }
-function cloudOn() {
+function ensureFirebase() {
+  if (FB.ready) return FB.ready;
   var cfg = (typeof BLOOM_FIREBASE_CONFIG !== 'undefined') ? BLOOM_FIREBASE_CONFIG : null;
-  if (!cfg) { toast('No Firebase config — see bloom/SETUP.md'); return; }
-  toast('Connecting…');
-  loadScript(FB_SDK + 'firebase-app-compat.js')
+  if (!cfg) return Promise.reject(new Error('no-config'));
+  FB.ready = loadScript(FB_SDK + 'firebase-app-compat.js')
     .then(function () { return loadScript(FB_SDK + 'firebase-auth-compat.js'); })
     .then(function () { return loadScript(FB_SDK + 'firebase-firestore-compat.js'); })
     .then(function () {
       FB.app = firebase.apps && firebase.apps.length ? firebase.app() : firebase.initializeApp(cfg);
       FB.auth = firebase.auth(); FB.db = firebase.firestore();
-      return FB.auth.signInAnonymously();
-    })
-    .then(function (cred) {
-      var user = cred && cred.user ? cred.user : FB.auth.currentUser;
-      S.cloud = { enabled: true, uid: user.uid, status: 'on' };
-      save();
-      return FB.db.collection('bloom_users').doc(user.uid).set({
-        name: S.me.name || 'Someone', handle: S.me.handle || 'someone',
-        avatar: S.me.avatar || '😀', ts: Date.now()
-      }, { merge: true });
-    })
-    .then(function () {
-      subscribeCloud();
-      toast('🟢 Live — you’re on the shared Bloom cloud');
-      render();
-    })
-    .catch(function (err) {
-      S.cloud.status = 'error'; save(); render();
-      toast('Couldn’t go live: ' + (err && err.code ? err.code : 'connection failed'));
     });
+  return FB.ready;
 }
-function cloudOff() {
+
+var ACCOUNT = { mode: 'signup', busy: false };
+function openAccount(mode) {
+  ACCOUNT.mode = mode || 'signup';
+  $('ac-error').textContent = '';
+  $('ac-password').value = '';
+  // prefill from the Meadow identity so registering takes seconds
+  $('ac-name').value = S.me.name || '';
+  $('ac-handle').value = S.me.handle || '';
+  renderAccountMode();
+  openSheet('sheet-account');
+}
+function renderAccountMode() {
+  var up = ACCOUNT.mode === 'signup';
+  $('ac-title').textContent = up ? 'Create your Bloom account' : 'Welcome back';
+  $('ac-signup-fields').style.display = up ? 'block' : 'none';
+  $('ac-submit').textContent = up ? 'Create account 🌸' : 'Sign in';
+  $('ac-forgot').style.display = up ? 'none' : 'inline-flex';
+  var segs = document.querySelectorAll('#ac-mode button');
+  for (var i = 0; i < segs.length; i++) {
+    segs[i].className = segs[i].getAttribute('data-mode') === ACCOUNT.mode ? 'on' : '';
+  }
+}
+function authErrorMsg(err) {
+  var code = err && err.code ? String(err.code) : '';
+  if (code.indexOf('email-already-in-use') !== -1) return 'That email already has an account — try Sign in.';
+  if (code.indexOf('invalid-email') !== -1) return 'That email doesn’t look right.';
+  if (code.indexOf('weak-password') !== -1) return 'Password too weak — use at least 8 characters.';
+  if (code.indexOf('user-not-found') !== -1 || code.indexOf('wrong-password') !== -1 ||
+      code.indexOf('invalid-credential') !== -1 || code.indexOf('invalid-login') !== -1)
+    return 'Email or password doesn’t match an account.';
+  if (code.indexOf('too-many-requests') !== -1) return 'Too many tries — wait a minute and try again.';
+  if (code.indexOf('network') !== -1) return 'Network problem — are you online?';
+  if (code.indexOf('operation-not-allowed') !== -1) return 'Email sign-in isn’t enabled yet — see SETUP.md.';
+  return 'Couldn’t connect (' + (code || 'unknown') + ') — see SETUP.md.';
+}
+function submitAccount() {
+  if (ACCOUNT.busy) return;
+  var email = String($('ac-email').value || '').trim();
+  var password = String($('ac-password').value || '');
+  var errEl = $('ac-error');
+  errEl.textContent = '';
+
+  if (ACCOUNT.mode === 'signup') {
+    var v = E.validateAccount({ name: $('ac-name').value, handle: $('ac-handle').value, email: email, password: password });
+    if (!v.ok) { errEl.textContent = v.errors.join(' '); return; }
+    ACCOUNT.busy = true; $('ac-submit').textContent = 'Planting…';
+    ensureFirebase()
+      .then(function () { return FB.db.collection('bloom_handles').doc(v.handle).get(); })
+      .then(function (doc) {
+        if (doc.exists) throw { code: 'bloom/handle-taken' };
+        return FB.auth.createUserWithEmailAndPassword(v.email, password);
+      })
+      .then(function (cred) {
+        var u = cred.user;
+        // claim the handle, then publish the profile
+        return FB.db.collection('bloom_handles').doc(v.handle).set({ uid: u.uid })
+          .then(function () {
+            return FB.db.collection('bloom_users').doc(u.uid).set({
+              name: v.name, handle: v.handle, avatar: S.me.avatar || '😀', ts: Date.now()
+            }, { merge: true });
+          })
+          .then(function () {
+            S.me.name = v.name; S.me.handle = v.handle;
+            accountReady(u, v.email);
+            toast('Welcome to Bloom, ' + v.name + ' — you’re live 🌸');
+          });
+      })
+      .catch(function (err) {
+        if (err && err.code === 'bloom/handle-taken') errEl.textContent = 'That handle is taken — try another.';
+        else errEl.textContent = authErrorMsg(err);
+      })
+      .then(function () { ACCOUNT.busy = false; renderAccountMode(); });
+  } else {
+    if (!email || !password) { errEl.textContent = 'Enter your email and password.'; return; }
+    ACCOUNT.busy = true; $('ac-submit').textContent = 'Signing in…';
+    ensureFirebase()
+      .then(function () { return FB.auth.signInWithEmailAndPassword(email, password); })
+      .then(function (cred) {
+        var u = cred.user;
+        return FB.db.collection('bloom_users').doc(u.uid).get().then(function (doc) {
+          var d = doc.exists ? (doc.data() || {}) : {};
+          if (d.name) S.me.name = d.name;
+          if (d.handle) S.me.handle = d.handle;
+          if (d.avatar) S.me.avatar = d.avatar;
+          accountReady(u, email);
+          toast('Welcome back, ' + (S.me.name || 'friend') + ' 🌼');
+        });
+      })
+      .catch(function (err) { errEl.textContent = authErrorMsg(err); })
+      .then(function () { ACCOUNT.busy = false; renderAccountMode(); });
+  }
+}
+function accountReady(user, email) {
+  S.cloud = { enabled: true, uid: user.uid, status: 'on', email: email || (user.email || '') };
+  save();
+  subscribeCloud();
+  closeSheets();
+  render();
+}
+function forgotPassword() {
+  var email = String($('ac-email').value || '').trim();
+  if (!email) { $('ac-error').textContent = 'Type your email above first, then tap forgot.'; return; }
+  ensureFirebase()
+    .then(function () { return FB.auth.sendPasswordResetEmail(email); })
+    .then(function () { toast('Reset link sent to ' + email + ' 📬'); })
+    .catch(function (err) { $('ac-error').textContent = authErrorMsg(err); });
+}
+function signOutCloud() {
   if (FB.unsub) { try { FB.unsub(); } catch (e) {} FB.unsub = null; }
+  if (FB.auth) { try { FB.auth.signOut(); } catch (e) {} }
   S.cloud = { enabled: false, uid: '', status: 'off' };
   S.posts = S.posts.filter(function (p) { return !p.cloud; });
   save(); render();
-  toast('Back to device-only 🔒');
+  toast('Signed out — the Meadow is still yours 🔒');
+}
+function resumeCloud() {
+  // Firebase persists email sessions on-device; pick the account back up quietly.
+  ensureFirebase().then(function () {
+    FB.auth.onAuthStateChanged(function (user) {
+      if (user && !user.isAnonymous) {
+        S.cloud = { enabled: true, uid: user.uid, status: 'on', email: user.email || S.cloud.email || '' };
+        save();
+        subscribeCloud();
+        render();
+      } else {
+        // session expired or account removed — ask them to sign in again
+        S.cloud = { enabled: false, uid: '', status: 'off' };
+        S.posts = S.posts.filter(function (p) { return !p.cloud; });
+        save(); render();
+      }
+    });
+  }).catch(function () { /* offline or no config — stay local */ });
 }
 function subscribeCloud() {
   if (!FB.db) return;
@@ -1387,8 +1531,10 @@ document.addEventListener('click', function (ev) {
       else if (PENDING.kind === 'comment') submitComment();
     }
   }
-  else if (a === 'cloud-on') cloudOn();
-  else if (a === 'cloud-off') cloudOff();
+  else if (a === 'open-account') openAccount(el.getAttribute('data-mode') || 'signup');
+  else if (a === 'ac-submit') submitAccount();
+  else if (a === 'ac-forgot') forgotPassword();
+  else if (a === 'sign-out') signOutCloud();
   else if (a === 'export') exportData();
   else if (a === 'reset') {
     if (confirm('Reset Bloom on this device? Your posts, garden and settings will be cleared.')) {
@@ -1445,13 +1591,22 @@ document.addEventListener('change', function (ev) {
 });
 
 document.addEventListener('click', function (ev) {
-  // audience segment buttons (separate tiny handler: they carry data-aud, not data-action)
+  // segment buttons that carry their own data (not data-action):
+  // composer audience picker and the account-sheet mode toggle
   var t = ev.target;
   var seg = t && t.closest ? t.closest('#c-aud button') : null;
-  if (!seg) return;
-  COMPOSE.audience = seg.getAttribute('data-aud') || 'everyone';
-  var segs = document.querySelectorAll('#c-aud button');
-  for (var i = 0; i < segs.length; i++) segs[i].className = segs[i] === seg ? 'on' : '';
+  if (seg) {
+    COMPOSE.audience = seg.getAttribute('data-aud') || 'everyone';
+    var segs = document.querySelectorAll('#c-aud button');
+    for (var i = 0; i < segs.length; i++) segs[i].className = segs[i] === seg ? 'on' : '';
+    return;
+  }
+  var mode = t && t.closest ? t.closest('#ac-mode button') : null;
+  if (mode) {
+    ACCOUNT.mode = mode.getAttribute('data-mode') || 'signup';
+    $('ac-error').textContent = '';
+    renderAccountMode();
+  }
 });
 
 function exportData() {
@@ -1484,8 +1639,8 @@ setInterval(ambientTick, 50000);
 setInterval(sessionTick, 20000);
 
 if (S.cloud && S.cloud.enabled) {
-  // was live last time — quietly reconnect
-  setTimeout(function () { try { cloudOn(); } catch (e) {} }, 800);
+  // was signed in last time — Firebase keeps the session; reconnect quietly
+  setTimeout(function () { try { resumeCloud(); } catch (e) {} }, 800);
 }
 
 if (navigator && 'serviceWorker' in navigator) {
