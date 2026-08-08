@@ -846,6 +846,59 @@ test('mapIncidentsToRoute: snaps points and lines, ignores far, dedupes', () => 
   assert.equal(mapped[1].kind, 'Congestion');
 });
 
+test('average zones: camera chaining, relation endpoints, overlap merge', () => {
+  const cams = [
+    { alongM: 100, kmh: 80.5, avg: true },
+    { alongM: 2100, kmh: null, avg: true },
+    { alongM: 4100, kmh: null, avg: true },
+    { alongM: 4200, kmh: null, avg: false },   // ordinary camera — not chained
+    { alongM: 20000, kmh: null, avg: true },   // 16 km gap — too far to pair
+  ];
+  const zones = A.pairAvgCameras(cams, null);
+  assert.equal(zones.length, 1, 'chained pairs merge into one continuous zone: ' + JSON.stringify(zones));
+  assert.equal(zones[0].startM, 100);
+  assert.equal(zones[0].endM, 4100);
+  assert.equal(zones[0].kmh, 80.5, 'limit from the tagged camera');
+  // limits fallback when no camera carries a limit
+  const z2 = A.pairAvgCameras([{ alongM: 0, avg: true, kmh: null }, { alongM: 1000, avg: true, kmh: null }],
+    [{ startM: 0, endM: 1200, kmh: 48.3 }]);
+  assert.equal(z2[0].kmh, 48.3);
+  // relation endpoints snap onto the route
+  const { route, base } = makeRoute();
+  const at = (m, off) => A.destinationPoint(A.destinationPoint(base, 0, m), 90, off || 0);
+  const rel = A.zoneFromEndpoints(route, at(200, 5), at(800, 8), 32.2);
+  near(rel.startM, 200, 5); near(rel.endM, 800, 5); assert.equal(rel.kmh, 32.2);
+  assert.equal(A.zoneFromEndpoints(route, at(200, 500), at(800, 5), 32.2), null, 'off-route endpoint rejected');
+});
+
+test('average zones: enter → live average → over-warn once → exit with final avg', () => {
+  const zones = [{ startM: 1000, endM: 3000, kmh: 50 }];
+  const T0 = 1000000;
+  let st = null, r;
+  r = A.avgZoneUpdate(st, zones, 500, T0);
+  assert.equal(r.event, null); st = r.state;
+  r = A.avgZoneUpdate(st, zones, 1005, T0); st = r.state;
+  assert.equal(r.event, 'enter'); assert.equal(r.zone.kmh, 50);
+  // 1005→1505 in 30 s = 60 km/h — over a 50 limit
+  r = A.avgZoneUpdate(st, zones, 1505, T0 + 30000); st = r.state;
+  near(r.avgKmh, 60, 0.5);
+  assert.equal(r.event, 'over', 'average over the limit warns');
+  r = A.avgZoneUpdate(st, zones, 1705, T0 + 42000); st = r.state;
+  assert.equal(r.event, null, 'warns once');
+  // slow right down: by 90 s total we are at 2255 m → avg exactly 50 → re-armed
+  r = A.avgZoneUpdate(st, zones, 2255, T0 + 90000); st = r.state;
+  near(r.avgKmh, 50, 0.1);
+  assert.equal(r.event, null);
+  // speed up again → warns a second time (re-armed)
+  r = A.avgZoneUpdate(st, zones, 2955, T0 + 120000); st = r.state;
+  assert.equal(r.event, 'over', 're-armed after dropping under');
+  // exit past the end
+  r = A.avgZoneUpdate(st, zones, 3100, T0 + 130000); st = r.state;
+  assert.equal(r.event, 'exit');
+  near(r.avgKmh, (3000 - 1005) / 130 * 3.6, 1, 'final average uses the zone end');
+  assert.equal(st.idx, -1);
+});
+
 test('trafficAdjust + remainingWithTraffic + nextIncident: the arithmetic', () => {
   const { route } = makeRoute(); // totalS 160
   const mapped = [{ alongM: 400, sev: 3, kind: 'Roadworks', text: '', delayS: 240 },
