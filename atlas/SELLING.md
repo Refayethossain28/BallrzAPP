@@ -24,8 +24,10 @@ retry can never mint a second code or send a second email.
    `product` = `atlas-pro` — this is how the webhook knows the sale is Atlas
    Pro and not something else. Turn on "Collect customers' email addresses"
    (it's the default).
-4. Put the link behind the app: share it anywhere, or link it from the Pro
-   sheet later.
+4. Put the link in the app: paste the Payment Link URL into
+   `atlas/config.js` as `ATLAS_PAY_URL` — a "Buy Atlas Pro — £14.99"
+   button then appears in the ⭐ Atlas Pro sheet. (Until then the sheet
+   shows only the code box.)
 
 ### 2. Deploy the function
 ```sh

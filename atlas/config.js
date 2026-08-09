@@ -42,3 +42,13 @@ if (typeof window !== 'undefined') window.ATLAS_FIREBASE_CONFIG = ATLAS_FIREBASE
  * thousands of requests/day). Leave as null to stay keyless. */
 var ATLAS_TOMTOM_KEY = null;
 if (typeof window !== 'undefined') window.ATLAS_TOMTOM_KEY = ATLAS_TOMTOM_KEY;
+
+/* ⭐ Atlas Pro payment link (optional)
+ * -----------------------------------
+ * Paste your Stripe Payment Link (or Gumroad/Ko-fi product URL) here and a
+ * "Buy Atlas Pro — £14.99" button appears in the ⭐ Atlas Pro sheet. Buyers
+ * pay there, the atlasProWebhook Cloud Function emails them an unlock code
+ * automatically (setup guide: SELLING.md). Leave as null until your payment
+ * link exists — the sheet then shows only the code box. */
+var ATLAS_PAY_URL = null;
+if (typeof window !== 'undefined') window.ATLAS_PAY_URL = ATLAS_PAY_URL;
