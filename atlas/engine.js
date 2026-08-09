@@ -1592,6 +1592,77 @@
     return out;
   }
 
+
+  /* ============================ convoy chat ============================== */
+
+  /** Normalize outgoing chat text: trimmed, collapsed whitespace, ≤400 chars.
+   *  Returns null when nothing sayable remains. */
+  function chatText(s) {
+    if (typeof s !== 'string') return null;
+    var t = s.replace(/\s+/g, ' ').trim();
+    if (!t) return null;
+    return t.length > 400 ? t.slice(0, 399) + '…' : t;
+  }
+
+  /** Build a convoy chat message — text ({text}) or voice ({audio, durS}).
+   *  Validates and clamps; returns null when the payload is unsendable.
+   *  Voice caps: 1–30s, data-URL ≤ 900k chars (~650KB of opus). */
+  function chatMsg(now, selfId, name, payload) {
+    if (!selfId || !payload) return null;
+    var m = { kind: 'chat', id: selfId + '-' + now + '-' + ((now % 997)),
+              from: selfId, name: String(name || 'Driver').slice(0, 24), t: now };
+    if (payload.text != null) {
+      var t = chatText(payload.text);
+      if (!t) return null;
+      m.text = t;
+      return m;
+    }
+    if (typeof payload.audio === 'string' && payload.audio.indexOf('data:audio') === 0) {
+      var dur = Math.round(Number(payload.durS) || 0);
+      if (dur < 1 || dur > 30 || payload.audio.length > 900000) return null;
+      m.audio = payload.audio; m.durS = dur;
+      return m;
+    }
+    return null;
+  }
+
+  /** Is a received message shaped like a chat message, fresh (±6h), and not
+   *  from one of our own ids? */
+  function validChatMsg(m, selfIds, now) {
+    if (!m || m.kind !== 'chat' || !m.id || !m.from || typeof m.t !== 'number') return false;
+    if (Math.abs(now - m.t) > 6 * 3600e3) return false;
+    if (!m.text && !(m.audio && m.durS)) return false;
+    for (var i = 0; i < (selfIds || []).length; i++) if (m.from === selfIds[i]) return false;
+    return true;
+  }
+
+  /** Merge a message into the list: dedupes by id (BroadcastChannel and the
+   *  cloud both deliver), drops stale, sorts by time, keeps the newest 60.
+   *  Returns the same array when nothing changed. */
+  function pruneChat(list, msg, now) {
+    list = list || [];
+    if (msg) {
+      for (var i = 0; i < list.length; i++) if (list[i].id === msg.id) { msg = null; break; }
+    }
+    var next = msg ? list.concat([msg]) : list.slice();
+    var fresh = [];
+    for (var j = 0; j < next.length; j++) {
+      if (now - next[j].t <= 6 * 3600e3) fresh.push(next[j]);
+    }
+    if (!msg && fresh.length === list.length) return list;
+    fresh.sort(function (a, b) { return a.t - b.t; });
+    return fresh.slice(-60);
+  }
+
+  /** Compact relative age for chat rows: 'now', '45s', '5 min', '2 h'. */
+  function agoShort(t, now) {
+    var s = Math.max(0, Math.round((now - t) / 1000));
+    if (s < 10) return 'now';
+    if (s < 60) return s + 's';
+    if (s < 3600) return Math.round(s / 60) + ' min';
+    return Math.round(s / 3600) + ' h';
+  }
+
   /* ================================ places ================================ */
 
   /**
@@ -1671,5 +1742,6 @@
     remainingWithTraffic: remainingWithTraffic, nextIncident: nextIncident,
     makeConvoyCode: makeConvoyCode, validConvoyCode: validConvoyCode, parseConvoyLink: parseConvoyLink,
     convoyAvatar: convoyAvatar, applyBeacon: applyBeacon, pruneMembers: pruneMembers, convoyStats: convoyStats,
+    chatText: chatText, chatMsg: chatMsg, validChatMsg: validChatMsg, pruneChat: pruneChat, agoShort: agoShort,
   };
 });
