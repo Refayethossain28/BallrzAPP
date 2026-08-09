@@ -39,9 +39,10 @@ commercial equivalent (TomTom/HERE/Mapbox keys) already scaffolded in
 `config.js`. Per-user marginal cost today: ~£0.
 
 **4. Revenue lever already installed.**
-⭐ Atlas Pro: entitlement engine + offline-verifiable unlock codes
-(`scripts/gen-atlas-pro-codes.mjs`) — sellable via any payment link with no
-account system. Swap for Stripe/IAP post-acquisition without rearchitecting.
+⭐ Atlas Pro at **£14.99 one-off**: entitlement engine + offline-verifiable
+unlock codes (`scripts/gen-atlas-pro-codes.mjs`) — sellable via any payment
+link with no account system, ~100% margin. Swap for Stripe/IAP
+post-acquisition without rearchitecting.
 
 **5. Privacy-native.**
 No account, no telemetry, all data (drives, clips, music, packs) on-device.
