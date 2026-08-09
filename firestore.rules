@@ -591,37 +591,53 @@ service cloud.firestore {
     }
 
     // ── Bloom — the social network that's on your side (bloom/) ───────────
-    // Anonymous-auth users. Live posts are public to signed-in users; every
-    // write is scoped to its author. Reactions are the one shared surface:
-    // any signed-in user may update a post, but ONLY the reactions map and
-    // the commentCount counter — never the text, author or timestamp.
+    // The live community is REGISTERED people only: email+password Firebase
+    // Auth accounts, never anonymous ones (Ripple's anonymous users share
+    // this project — they cannot write Bloom data). Every write is scoped to
+    // its author. Reactions are the one shared surface: any registered user
+    // may update a post, but ONLY the reactions map and the commentCount
+    // counter — never the text, author or timestamp.
+    function bloomRegistered() {
+      return signedIn()
+        && request.auth.token.firebase.sign_in_provider != 'anonymous';
+    }
     match /bloom_users/{uid} {
       allow read:  if signedIn();
-      allow write: if isUser(uid);
+      allow write: if bloomRegistered() && isUser(uid);
+    }
+    // Unique public handles: handle -> {uid}. Readable so signup can check
+    // availability; you may only claim a handle that points at YOU, and you
+    // can't steal one someone else owns.
+    match /bloom_handles/{handle} {
+      allow read:   if signedIn();
+      allow create: if bloomRegistered() && request.resource.data.uid == request.auth.uid;
+      allow update: if bloomRegistered() && resource.data.uid == request.auth.uid
+                    && request.resource.data.uid == request.auth.uid;
+      allow delete: if bloomRegistered() && resource.data.uid == request.auth.uid;
     }
     // Who each user follows — private to its owner.
     match /bloom_follows/{uid} {
-      allow read, write: if isUser(uid);
+      allow read, write: if bloomRegistered() && isUser(uid);
     }
     match /bloom_posts/{postId} {
       allow read:   if signedIn();
-      allow create: if signedIn()
+      allow create: if bloomRegistered()
         && request.resource.data.authorUid == request.auth.uid
         && request.resource.data.text is string
         && request.resource.data.text.size() <= 600;
-      allow update: if signedIn()
+      allow update: if bloomRegistered()
         && ( resource.data.authorUid == request.auth.uid
              || request.resource.data.diff(resource.data).affectedKeys()
                   .hasOnly(['reactions', 'commentCount']) );
-      allow delete: if signedIn() && resource.data.authorUid == request.auth.uid;
+      allow delete: if bloomRegistered() && resource.data.authorUid == request.auth.uid;
 
       match /comments/{commentId} {
         allow read:   if signedIn();
-        allow create: if signedIn()
+        allow create: if bloomRegistered()
           && request.resource.data.authorUid == request.auth.uid
           && request.resource.data.text is string
           && request.resource.data.text.size() <= 600;
-        allow delete: if signedIn() && resource.data.authorUid == request.auth.uid;
+        allow delete: if bloomRegistered() && resource.data.authorUid == request.auth.uid;
       }
     }
   }

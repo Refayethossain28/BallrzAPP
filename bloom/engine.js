@@ -93,6 +93,32 @@
     return s;
   }
 
+  /* ---------------- account registration ---------------- */
+  // Bloom's live community is real, registered people — one account, one
+  // handle. Pure validation here; Firebase Auth does the credential work.
+  var HANDLE_RE = /^[a-z0-9_]{2,20}$/;
+  var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+  function normalizeHandle(h) {
+    return String(h == null ? '' : h).trim().toLowerCase().replace(/^@/, '');
+  }
+
+  function validateAccount(a) {
+    a = a || {};
+    var errors = [];
+    var name = String(a.name == null ? '' : a.name).trim();
+    var handle = normalizeHandle(a.handle);
+    var email = String(a.email == null ? '' : a.email).trim();
+    var password = String(a.password == null ? '' : a.password);
+    if (!name) errors.push('Add your name.');
+    else if (name.length > 30) errors.push('Name: 30 characters max.');
+    if (!HANDLE_RE.test(handle)) errors.push('Handle: 2–20 lowercase letters, numbers or _ only.');
+    if (!EMAIL_RE.test(email)) errors.push('That email doesn’t look right.');
+    if (password.length < 8) errors.push('Password: at least 8 characters.');
+    if (errors.length) return { ok: false, errors: errors };
+    return { ok: true, name: name, handle: handle, email: email };
+  }
+
   var MAX_POST = 500;
   function validatePost(text) {
     var t = String(text == null ? '' : text).trim();
@@ -450,6 +476,7 @@
     hashStr: hashStr, rand01: rand01,
     escapeHTML: escapeHTML, renderText: renderText,
     extractTags: extractTags, extractMentions: extractMentions, validatePost: validatePost,
+    normalizeHandle: normalizeHandle, validateAccount: validateAccount,
     postScore: postScore, rankFeed: rankFeed, audienceCan: audienceCan,
     caughtUpSplit: caughtUpSplit, heatCheck: heatCheck, trendingTopics: trendingTopics,
     givingScore: givingScore, gardenStage: gardenStage, sparkPrompt: sparkPrompt,

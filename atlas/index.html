@@ -424,6 +424,36 @@
   #aboutBox { font-size: 12px; color: var(--dim); padding: 14px 4px; line-height: 1.6; }
   #aboutBox a { color: var(--accent); }
 
+  /* first-run welcome */
+  #welcome {
+    position: fixed; inset: 0; z-index: 100; background: rgba(5,8,16,0.9);
+    display: none; align-items: center; justify-content: center; padding: 24px;
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  }
+  #welcome.show { display: flex; }
+  #welcomeCard { background: var(--panel-solid); border: 1px solid var(--line);
+    border-radius: 24px; box-shadow: var(--shadow); padding: 28px 24px; max-width: 340px; }
+  #welcomeCard h2 { font-size: 22px; margin-bottom: 4px; }
+  #welcomeCard .wsub { color: var(--dim); font-size: 13px; margin-bottom: 16px; }
+  .wRow { display: flex; gap: 12px; align-items: flex-start; padding: 8px 0; }
+  .wRow .we { font-size: 20px; flex: none; }
+  .wRow .wt { font-size: 13.5px; } .wRow .wt b { color: var(--accent); }
+  #welcomeGo { margin-top: 18px; width: 100%; height: 50px; border-radius: 15px;
+    background: linear-gradient(135deg, #2f7ff6, #38bdf8); color: #fff; font-weight: 750; font-size: 16px; }
+  #welcomeDemo { margin-top: 8px; width: 100%; height: 44px; border-radius: 13px;
+    background: rgba(255,255,255,0.06); border: 1px solid var(--line); }
+
+  /* ⭐ pro + 📊 stats */
+  .statGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+  .statCard { background: rgba(255,255,255,0.04); border: 1px solid var(--line);
+    border-radius: 14px; padding: 12px; }
+  .statCard .sv { font-size: 21px; font-weight: 800; color: var(--accent); }
+  .statCard .sl { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.6px; margin-top: 2px; }
+  #proCode { width: 100%; height: 48px; border-radius: 14px; border: 1px solid var(--line);
+    background: rgba(255,255,255,0.05); padding: 0 16px; outline: none; color: var(--text);
+    text-transform: uppercase; letter-spacing: 2px; font-weight: 650; text-align: center; }
+  #proCode:focus { border-color: var(--accent); }
+
   #toast {
     position: fixed; z-index: 80; left: 50%; transform: translateX(-50%);
     bottom: calc(100px + var(--sab)); background: var(--panel-solid); border: 1px solid var(--line);
@@ -569,6 +599,14 @@
     </div>
   </div>
   <div class="setRow">
+    <div class="lbl">📊 My driving<div class="sub">Lifetime stats from your drives — on this device</div></div>
+    <button class="navCtl" id="btnOpenStats" aria-label="Open driving stats" style="width:auto;padding:0 16px;border-radius:12px">Open</button>
+  </div>
+  <div class="setRow">
+    <div class="lbl">⭐ Atlas Pro<div class="sub" id="proSub">More offline packs, bigger clip vault</div></div>
+    <button class="navCtl" id="btnOpenPro" aria-label="Open Atlas Pro" style="width:auto;padding:0 16px;border-radius:12px">Open</button>
+  </div>
+  <div class="setRow">
     <div class="lbl">🗺 Offline maps<div class="sub" id="offlineSub">Save a route's maps from its preview screen</div></div>
     <button class="navCtl" id="btnClearOffline" aria-label="Clear offline maps" style="width:auto;padding:0 16px;border-radius:12px">Clear</button>
   </div>
@@ -616,6 +654,52 @@
     contributors; routing by the community OSRM/FOSSGIS servers; search by Nominatim.
     Your location never leaves your device except to fetch the route you asked for.
   </div>
+</div>
+
+<!-- first-run welcome -->
+<div id="welcome" role="dialog" aria-label="Welcome to Atlas">
+  <div id="welcomeCard">
+    <h2>◮ Welcome to Atlas</h2>
+    <div class="wsub">Your own satnav — no account, no tracking, works offline.</div>
+    <div class="wRow"><div class="we">🧭</div><div class="wt"><b>Navigate anywhere</b> — voice turn-by-turn, live traffic, lane guidance, 3D buildings.</div></div>
+    <div class="wRow"><div class="we">📍</div><div class="wt">Atlas will ask for <b>location</b> (to navigate) and, only if you use the dashcam, the <b>camera</b>. Everything stays on your phone.</div></div>
+    <div class="wRow"><div class="we">🛡️</div><div class="wt"><b>Speed limits, cameras &amp; average-speed zones</b> warn you honestly — always obey the signs.</div></div>
+    <button id="welcomeGo">Get started</button>
+    <button id="welcomeDemo">▶ Watch the demo drive first</button>
+  </div>
+</div>
+
+<!-- 📊 my driving sheet -->
+<div class="sheet" id="statsSheet" role="dialog" aria-label="My driving">
+  <div class="grab"></div>
+  <div style="display:flex;align-items:center">
+    <h3 style="flex:1">📊 My driving</h3>
+    <button class="navCtl" id="btnCloseStats" aria-label="Close">✕</button>
+  </div>
+  <div class="statGrid" id="statGrid"></div>
+  <p style="color:var(--dim);font-size:11.5px;margin-top:12px">
+    Counted on this device only, from drives you navigate with Atlas. Nothing is uploaded — your driving history is yours.
+  </p>
+</div>
+
+<!-- ⭐ Atlas Pro sheet -->
+<div class="sheet" id="proSheet" role="dialog" aria-label="Atlas Pro">
+  <div class="grab"></div>
+  <div style="display:flex;align-items:center">
+    <h3 style="flex:1">⭐ Atlas Pro</h3>
+    <button class="navCtl" id="btnClosePro" aria-label="Close">✕</button>
+  </div>
+  <div id="proStatus" style="text-align:center;color:var(--dim);font-size:13px;margin:8px 0 4px"></div>
+  <div class="wRow"><div class="we">🗺</div><div class="wt"><b>Multiple offline route packs</b> — keep up to 6 saved corridors (free keeps your latest one).</div></div>
+  <div class="wRow"><div class="we">📹</div><div class="wt"><b>Bigger dashcam vault</b> — 30 clips kept on-device instead of 12.</div></div>
+  <div class="wRow"><div class="we">⭐</div><div class="wt"><b>Pro badge in convoys</b> — and first access to what ships next.</div></div>
+  <div style="margin-top:14px">
+    <input id="proCode" placeholder="ATLS-XXXX-XXXX-XX" maxlength="20" autocomplete="off">
+    <button id="btnProActivate" style="margin-top:10px;width:100%;height:48px;border-radius:14px;background:linear-gradient(135deg,#f59e0b,#f97316);color:#fff;font-weight:750">Activate</button>
+  </div>
+  <p style="color:var(--dim);font-size:11.5px;margin-top:12px">
+    Codes verify on-device — no account, no server. Get one from the developer; it's yours forever.
+  </p>
 </div>
 
 <!-- 🎵 music sheet -->
@@ -1681,7 +1765,7 @@ var tapPoint = null;
 /* ------------------------------ sheets ---------------------------------- */
 
 function openSheet(id) {
-  ['searchSheet', 'routeSheet', 'settingsSheet', 'clipsSheet', 'convoySheet', 'musicSheet'].forEach(function (s) {
+  ['searchSheet', 'routeSheet', 'settingsSheet', 'clipsSheet', 'convoySheet', 'musicSheet', 'statsSheet', 'proSheet'].forEach(function (s) {
     $(s).classList.toggle('open', s === id);
   });
 }
@@ -1925,6 +2009,68 @@ function renderAlternatives(rawRoutes) {
   offlineBtnDefault();
 }
 
+/* ------------------- ⭐ Pro, 📊 drive history, 👋 welcome ----------------- */
+
+function isPro() { return !!load('atlas.pro', false); }
+function ents() { return A.entitlements(isPro()); }
+
+function refreshProUI() {
+  $('proStatus').textContent = isPro()
+    ? '⭐ Pro is active on this device — thank you for supporting Atlas'
+    : 'Free has everything you need to navigate. Pro adds capacity:';
+  $('proSub').textContent = isPro() ? '⭐ Active on this device' : 'More offline packs, bigger clip vault';
+}
+$('btnOpenPro').addEventListener('click', function () { refreshProUI(); openSheet('proSheet'); });
+$('btnClosePro').addEventListener('click', function () { openSheet('settingsSheet'); });
+$('btnProActivate').addEventListener('click', function () {
+  var code = $('proCode').value || '';
+  if (!A.validProCode(code)) { toast('That code doesn\'t verify — check it and try again'); return; }
+  save('atlas.pro', true);
+  $('proCode').value = '';
+  refreshProUI();
+  toast('⭐ Atlas Pro activated — enjoy!');
+});
+
+function logDrive(stats) {
+  var drives = load('atlas.drives', []);
+  drives.push({ t: Date.now(), distM: Math.round(stats.distM), movingS: Math.round(stats.movingS) });
+  save('atlas.drives', drives.slice(-300));
+}
+function renderStats() {
+  var s = A.driveStatsSummary(load('atlas.drives', []), Date.now());
+  var spd = settings.units === 'imperial' ? Math.round(s.avgKmh / 1.609344) + ' mph' : Math.round(s.avgKmh) + ' km/h';
+  var cells = [
+    [s.count, 'drives'],
+    [A.fmtDist(s.distM, settings.units), 'total distance'],
+    [A.fmtDur(s.movingS), 'time driving'],
+    [s.count ? spd : '—', 'average speed'],
+    [s.longestM ? A.fmtDist(s.longestM, settings.units) : '—', 'longest drive'],
+    [s.weekCount + ' · ' + A.fmtDist(s.weekDistM, settings.units), 'this week'],
+  ];
+  $('statGrid').innerHTML = cells.map(function (c) {
+    return '<div class="statCard"><div class="sv"></div><div class="sl"></div></div>';
+  }).join('');
+  var cards = document.querySelectorAll('#statGrid .statCard');
+  for (var i = 0; i < cards.length; i++) {
+    cards[i].querySelector('.sv').textContent = String(cells[i][0]);
+    cards[i].querySelector('.sl').textContent = cells[i][1];
+  }
+}
+$('btnOpenStats').addEventListener('click', function () { renderStats(); openSheet('statsSheet'); });
+$('btnCloseStats').addEventListener('click', function () { openSheet('settingsSheet'); });
+
+/* first-run welcome (one time) */
+$('welcomeGo').addEventListener('click', function () {
+  save('atlas.welcomed', true);
+  $('welcome').classList.remove('show');
+  startGps();
+});
+$('welcomeDemo').addEventListener('click', function () {
+  save('atlas.welcomed', true);
+  $('welcome').classList.remove('show');
+  startDemoTrip(true);
+});
+
 /* ------------------------- 🗺 offline map packs -------------------------- */
 /* Download the route's map corridor (z12–17, day + night styles) into a
    durable cache the tile trimmer never touches — guidance, snapping and
@@ -1947,6 +2093,16 @@ $('btnOffline').addEventListener('click', function () {
   if (!route || offlineBusy) return;
   if (!window.caches || !caches.open) { toast('Offline storage is not available in this browser'); return; }
   offlineBusy = true;
+  // pack allowance: free keeps your latest corridor; ⭐ Pro keeps up to 6
+  var packs = load('atlas.packs', []);
+  var packPrep = Promise.resolve();
+  if (packs.length >= ents().offlinePacks) {
+    packPrep = caches.delete(OFFLINE_CACHE_NAME).then(function () {
+      packs = [];
+      save('atlas.packs', packs);
+      if (!isPro()) toast('Free keeps one offline pack — replacing your previous one (⭐ Pro keeps 6)');
+    }).catch(function () {});
+  }
   var dayLayer = settings.baseLayer === 'positron' ? 'pos' : 'voy';
   var plan = A.corridorTiles(route, { minZ: 12, maxZ: 17, bufferM: 260, cap: 1200 });
   var urls = [];
@@ -1955,7 +2111,7 @@ $('btnOffline').addEventListener('click', function () {
   });
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
   var btn = $('btnOffline'), done = 0, failed = 0, i = 0;
-  caches.open(OFFLINE_CACHE_NAME).then(function (cache) {
+  packPrep.then(function () { return caches.open(OFFLINE_CACHE_NAME); }).then(function (cache) {
     function worker() {
       if (i >= urls.length) return Promise.resolve();
       var url = urls[i++];
@@ -1981,6 +2137,8 @@ $('btnOffline').addEventListener('click', function () {
       toast('Offline download failed — check your connection and try again');
       return;
     }
+    packs.push({ t: Date.now(), name: trip.dest ? trip.dest.name : 'Route' });
+    save('atlas.packs', packs);
     btn.textContent = '✓ Saved for offline · ' + ok + ' tiles' + (plan.truncated ? ' (long route — trimmed)' : '');
     toast('🗺 Route saved offline — map, guidance and voice now work with no signal. Search and re-routing still need a connection.' + (failed ? ' (' + failed + ' tiles skipped)' : ''));
   }).catch(function () {
@@ -2001,6 +2159,7 @@ function refreshOfflineSub() {
 $('btnClearOffline').addEventListener('click', function () {
   if (!window.caches || !caches.delete) return;
   caches.delete(OFFLINE_CACHE_NAME).then(function () {
+    save('atlas.packs', []);
     toast('Offline maps cleared');
     refreshOfflineSub();
   }).catch(function () {});
@@ -2482,7 +2641,7 @@ function finishNav() {
       ' moving · avg ' + Math.round(settings.units === 'imperial' ? st.avgKmh / 1.609344 : st.avgKmh) +
       (settings.units === 'imperial' ? ' mph' : ' km/h');
     lastTrack = track;
-    if (!wasDemo) save('atlas.lastTrack', track);
+    if (!wasDemo) { save('atlas.lastTrack', track); logDrive(st); }
   }
   // ⏱ personal pace: learn how you actually drive vs the prediction
   if (!wasDemo && nav.startTs && nav.predictedS > 60) {
@@ -2893,7 +3052,8 @@ convoy.selfId = (function () {
 
 function convoyName() {
   var n = ($('convoyName').value || '').trim() || load('atlas.convoy.name', '') || '';
-  return n || 'Driver ' + convoy.selfId.slice(1, 5).toUpperCase();
+  n = n || 'Driver ' + convoy.selfId.slice(1, 5).toUpperCase();
+  return (isPro() ? '⭐ ' : '') + n.replace(/^⭐ /, '');
 }
 
 function startConvoy(code, demo) {
@@ -3287,7 +3447,7 @@ $('btnDashSave').addEventListener('click', function () {
    refreshes and restarts. The engine's pruneClips() keeps the vault honest:
    newest 12 clips / ~800 MB, oldest evicted first. */
 
-var CLIP_LIMITS = { maxCount: 12, maxBytes: 800e6 };
+function clipLimits() { return { maxCount: ents().clips, maxBytes: 800e6 }; }
 var clipDBP = null;
 function clipDB() {
   if (clipDBP) return clipDBP;
@@ -3314,7 +3474,7 @@ function clipTx(mode, fn) {
 function saveClip(clip) {
   return clipTx('readwrite', function (s) { return s.add(clip); }).then(function (id) {
     return getClips().then(function (all) {
-      var drop = A.pruneClips(all.map(function (c) { return { id: c.id, t: c.t, size: c.size }; }), CLIP_LIMITS);
+      var drop = A.pruneClips(all.map(function (c) { return { id: c.id, t: c.t, size: c.size }; }), clipLimits());
       return Promise.all(drop.map(deleteClip)).then(function () { return id; });
     }).catch(function () { return id; });
   });
@@ -3331,7 +3491,7 @@ function renderClips() {
     clips.sort(function (a, b) { return b.t - a.t; });
     var total = clips.reduce(function (a, c) { return a + (c.size || 0); }, 0);
     $('clipsTotal').textContent = clips.length
-      ? clips.length + ' clip' + (clips.length === 1 ? '' : 's') + ' · ' + A.fmtBytes(total) + ' on this device · newest ' + CLIP_LIMITS.maxCount + ' kept'
+      ? clips.length + ' clip' + (clips.length === 1 ? '' : 's') + ' · ' + A.fmtBytes(total) + ' on this device · newest ' + clipLimits().maxCount + ' kept'
       : '';
     var box = $('clipList');
     box.innerHTML = '';
@@ -3511,6 +3671,9 @@ function toast(msg) {
 
 startGps();
 updateLocateBtn();
+
+// first run: a 10-second welcome, then never again
+if (!load('atlas.welcomed', false)) $('welcome').classList.add('show');
 
 // convoy deep link: atlas/#convoy=CODE opens the join sheet prefilled
 (function () {
