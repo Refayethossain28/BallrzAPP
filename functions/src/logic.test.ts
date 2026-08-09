@@ -5,12 +5,15 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync, existsSync } from 'node:fs';
+import * as vm from 'node:vm';
 import {
   round5, isoPlusDays, computeFareBounds, driverEarning, dispatchPay,
   bookingEvent, bookingMessage, daysUntil, shouldRemind, flightHHMM,
   normalizeCommissionPct, clientCoinsEarned, driverCoinsEarned,
   clampCoinRedemption, round2, coinEarnRates, apexTierForBalance,
   bonusMonthKey, monthlyBonusForBalance, qualifiesForRatingBonus, milestoneBonusAt,
+  makeProCode, validProCode, atlasProEmail,
 } from './logic.ts';
 
 test('ApexCoin earn rates: tiered % for clients, flat % at 2dp for drivers', () => {
@@ -161,4 +164,44 @@ test('bonus policy: month key, tier bonuses, rating gate, milestones', () => {
   assert.equal(milestoneBonusAt(100), 25);
   assert.equal(milestoneBonusAt(49), 0);
   assert.equal(milestoneBonusAt(0), 0);
+});
+
+test('Atlas Pro codes: mint, verify, reject tampering — and mirror the app engine', () => {
+  // deterministic mint
+  let n = 0;
+  const seq = [0.1, 0.5, 0.9, 0.2, 0.7, 0.3, 0.8, 0.05];
+  const rand = () => seq[n++ % seq.length];
+  const code = makeProCode(rand);
+  assert.match(code, /^ATLS-[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{2}$/);
+  assert.equal(validProCode(code), true);
+  assert.equal(validProCode(code.toLowerCase()), true); // case-insensitive
+  assert.equal(validProCode(code.replace(/-/g, ' ')), true); // punctuation-insensitive
+  // tampering: flip one body character → checksum fails
+  const flipped = code[5] === 'A' ? code.slice(0, 5) + 'B' + code.slice(6)
+                                  : code.slice(0, 5) + 'A' + code.slice(6);
+  assert.equal(validProCode(flipped), false);
+  assert.equal(validProCode('ATLS-AAAA-AAAA-AA'), false);
+  assert.equal(validProCode(''), false);
+  assert.equal(validProCode(null), false);
+
+  // parity with the app: the engine must accept every server-minted code,
+  // and the server must accept every engine-minted code
+  type Engine = { makeProCode: (r: () => number) => string; validProCode: (c: unknown) => boolean };
+  const sandbox = { module: { exports: {} as Engine } };
+  vm.createContext(sandbox);
+  const enginePath = existsSync('../atlas/engine.js') ? '../atlas/engine.js' : 'atlas/engine.js';
+  vm.runInContext(readFileSync(enginePath, 'utf8'), sandbox);
+  const engine = sandbox.module.exports;
+  for (let i = 0; i < 50; i++) {
+    assert.equal(engine.validProCode(makeProCode()), true, 'engine must accept server codes');
+    assert.equal(validProCode(engine.makeProCode(Math.random)), true, 'server must accept engine codes');
+  }
+});
+
+test('Atlas Pro fulfilment email carries the code and the activation path', () => {
+  const msg = atlasProEmail('ATLS-R6RH-K72D-7M');
+  assert.match(msg.subject, /Atlas Pro/);
+  assert.ok(msg.text.includes('ATLS-R6RH-K72D-7M'));
+  assert.match(msg.text, /Settings/);
+  assert.match(msg.text, /apexvip\.uk\/atlas/);
 });

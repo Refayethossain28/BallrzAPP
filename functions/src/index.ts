@@ -35,6 +35,10 @@ export { linkChainWallet, withdrawCoinsOnchain, depositCoinsOnchain } from './ch
 // Vault Online — the digital bank (vault/): server-authoritative ledgers in
 // vaultBanks/{uid}, atomic P2P transfers, confirmation of payee.
 export { vaultOpen, vaultExec, vaultLookup, vaultSend, vaultPayIn } from './vault.js';
+// Atlas Pro fulfilment (atlas/): Stripe checkout webhook that mints an
+// offline-verifiable unlock code and emails it to the buyer. See ./atlas.ts.
+export { atlasProWebhook } from './atlas.js';
+import { SENDGRID_API_KEY } from './email.js';
 
 import {
   round5, isoPlusDays, computeFareBounds, driverEarning, dispatchPay,
@@ -436,7 +440,6 @@ export const refundSquarePayment = onCall(
 // All credentials are secrets; if a provider isn't configured it's skipped, so a
 // partial setup never errors. Set the non-secret from-address/number via env.
 
-const SENDGRID_API_KEY   = defineSecret('SENDGRID_API_KEY');
 const TWILIO_ACCOUNT_SID = defineSecret('TWILIO_ACCOUNT_SID');
 const TWILIO_AUTH_TOKEN  = defineSecret('TWILIO_AUTH_TOKEN');
 
