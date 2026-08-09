@@ -141,6 +141,11 @@
     background: rgba(56,189,248,0.18); border-color: var(--accent); }
   #musicControls .musicBtn.mode.on { background: rgba(56,189,248,0.22);
     box-shadow: inset 0 0 0 1.5px var(--accent); }
+  #btnDjShare.on { background: rgba(52,211,153,0.18); border-color: var(--accent2);
+    box-shadow: inset 0 0 0 1.5px var(--accent2); }
+  .memberRow .joinBtn { flex: none; font-size: 12px; font-weight: 700; padding: 8px 12px;
+    border-radius: 11px; background: rgba(52,211,153,0.16); border: 1px solid var(--accent2); }
+  .memberRow .joinBtn.on { background: rgba(52,211,153,0.35); }
   #musicSeekRow { display: flex; align-items: center; gap: 10px; margin-top: 10px;
     font-size: 11.5px; color: var(--dim); font-variant-numeric: tabular-nums; }
   #musicSeek { flex: 1; accent-color: var(--accent); }
@@ -818,6 +823,7 @@
     <button class="musicBtn" id="btnMusicNext" aria-label="Next">⏭</button>
     <button class="musicBtn mode" id="btnMusicRepeat" aria-label="Repeat">🔁</button>
   </div>
+  <button id="btnDjShare" style="display:none;margin-top:12px;width:100%;height:44px;border-radius:13px;background:rgba(255,255,255,0.06);border:1px solid var(--line);font-weight:650">🎶 Share with the convoy</button>
   <div style="display:flex;align-items:center;gap:10px;margin-top:14px">
     <button id="btnMusicImport" style="flex:1;height:44px;border-radius:13px;background:rgba(255,255,255,0.06);border:1px solid var(--line);font-weight:650">＋ Add songs</button>
     <span id="musicMeta" style="font-size:11.5px;color:var(--dim)"></span>
@@ -2960,7 +2966,8 @@ function releaseWakeLock() {
    voice speaks, exactly like a built-in car system. */
 
 var music = { tracks: [], idx: -1, playing: false, shuffle: null, repeat: 'off',
-              audio: null, url: null, dbp: null, loaded: false, duckTimer: 0 };
+              audio: null, url: null, dbp: null, loaded: false, duckTimer: 0,
+              dj: false, follow: null };
 
 function musicDB() {
   if (music.dbp) return music.dbp;
@@ -3029,12 +3036,14 @@ function playIdx(i) {
 }
 
 function musicSkip(dir) {
+  if (music.follow) stopFollow('Left the listen-along — your music is yours again');
   var ni = A.nextTrack({ idx: music.idx, count: music.tracks.length, repeat: music.repeat,
                          shuffle: music.shuffle, dir: dir, ended: false });
   if (ni != null) playIdx(ni);
 }
 
 function musicToggle() {
+  if (music.follow) stopFollow('Left the listen-along — your music is yours again');
   if (!music.tracks.length) { toast('Add some songs first — 🎵 → ＋ Add songs'); return; }
   if (music.idx < 0) { playIdx(music.shuffle ? music.shuffle[0] : 0); return; }
   var a = ensureAudio();
@@ -3139,6 +3148,7 @@ function renderTracks() {
 $('btnMusic').addEventListener('click', function () {
   if ($('musicSheet').classList.contains('open')) { closeSheets(); return; }
   openSheet('musicSheet');
+  $('btnDjShare').style.display = convoy.code ? '' : 'none';
   if (!music.loaded) loadMusic();
 });
 $('btnCloseMusic').addEventListener('click', closeSheets);
@@ -3254,6 +3264,9 @@ function leaveConvoy(silent) {
   if (convoy.fbMsgUnsub) { try { convoy.fbMsgUnsub(); } catch (e) {} convoy.fbMsgUnsub = null; }
   stopVoiceRec(true);
   convoy.chat = []; convoy.unread = 0; updateChatBadge();
+  stopFollow(null); music.dj = false; djSeen = {};
+  $('btnDjShare').classList.remove('on');
+  $('btnDjShare').textContent = '🎶 Share with the convoy';
   if (convoy.fbCol && convoy.fbUid) { try { convoy.fbCol.doc(convoy.fbUid).delete(); } catch (e) {} }
   convoy.fbCol = null;
   convoy.code = null; convoy.members = {};
@@ -3279,6 +3292,8 @@ function convoyTick() {
       speed: (nav.active && nav.guide && nav.guide.speed) || pos.speed || null,
       etaS: nav.active && nav.lastR && !nav.lastR.arrived ? Math.round(nav.lastR.remainingS * paceOf()) : null,
       arrived: !!(nav.lastR && nav.lastR.arrived), ts: now };
+    var dj = djPayload();
+    if (dj) b.music = dj;
     if (convoy.bc) { try { convoy.bc.postMessage(b); } catch (e) {} }
     if (convoy.fbCol && convoy.fbUid) {
       try { convoy.fbCol.doc(convoy.fbUid).set(Object.assign({}, b, { id: convoy.fbUid })); } catch (e) {}
@@ -3417,6 +3432,77 @@ $('chatInput').addEventListener('keydown', function (e) {
   if (e.key === 'Enter') { e.preventDefault(); $('btnChatSend').click(); }
 });
 
+/* --- 🎶 convoy DJ: everyone with the song hears it together ---
+   The DJ's beacon carries what they're playing; listeners with a matching
+   track in their own library play their local copy, drift-corrected to the
+   DJ's playhead. No audio ever crosses the network — only 'now playing'. */
+var djSeen = {};
+function stopFollow(msg) {
+  if (!music.follow) return;
+  music.follow = null;
+  if (msg) toast(msg);
+}
+function startFollow(id) {
+  var m = convoy.members[id];
+  var mu = m && m.music;
+  if (!mu) { toast('They stopped sharing'); return; }
+  var idx = A.findLocalTrack(music.tracks, mu);
+  if (idx < 0) {
+    toast('🎶 Add "' + mu.title + '" to your library (🎵 → ＋) to listen along');
+    return;
+  }
+  music.follow = id;
+  playIdx(idx);
+  var a = ensureAudio();
+  a.currentTime = A.djTarget(mu, Date.now());
+  if (!mu.playing) a.pause();
+  toast('🎶 Listening along with ' + m.name);
+  if ($('convoySheet').classList.contains('open')) renderConvoyMembers();
+}
+function djUpdate(id) {
+  var m = convoy.members[id];
+  var mu = m && m.music;
+  // announce a new song from any sharing member (once per song)
+  if (mu && djSeen[id] !== mu.title) {
+    djSeen[id] = mu.title;
+    if (music.follow !== id) {
+      var have = A.findLocalTrack(music.tracks, mu) >= 0;
+      toast('🎶 ' + m.name + ' is playing "' + mu.title + '"' +
+            (have ? ' — open 🚙 to listen along' : ''));
+    }
+  }
+  if (!mu && djSeen[id]) delete djSeen[id];
+  if (music.follow !== id) return;
+  if (!mu) { stopFollow('🎶 ' + ((m && m.name) || 'The DJ') + ' stopped sharing'); return; }
+  var current = music.tracks[music.idx];
+  if (!current || A.trackKey(current.title || current.name, current.artist) !== A.trackKey(mu.title, mu.artist)) {
+    var idx = A.findLocalTrack(music.tracks, mu);
+    if (idx < 0) { stopFollow('🎶 You don\'t have "' + mu.title + '" — left the listen-along'); return; }
+    playIdx(idx);
+  }
+  var a = ensureAudio();
+  var act = A.syncAdjust(a.currentTime, A.djTarget(mu, Date.now()), mu.playing, a.paused);
+  if (act === 'seek') { a.currentTime = A.djTarget(mu, Date.now()); if (a.paused) { var p = a.play(); if (p && p.catch) p.catch(function () {}); } }
+  else if (act === 'play') { var p2 = a.play(); if (p2 && p2.catch) p2.catch(function () {}); }
+  else if (act === 'pause') a.pause();
+}
+function djPayload() {
+  if (!music.dj || music.idx < 0 || !music.audio) return null;
+  var t = music.tracks[music.idx];
+  if (!t) return null;
+  return { title: t.title || t.name, artist: t.artist || '',
+           durS: isFinite(music.audio.duration) ? music.audio.duration : null,
+           posS: music.audio.currentTime || 0, playing: music.playing };
+}
+$('btnDjShare').addEventListener('click', function () {
+  music.dj = !music.dj;
+  $('btnDjShare').classList.toggle('on', music.dj);
+  $('btnDjShare').textContent = music.dj ? '🎶 Sharing with the convoy — tap to stop' : '🎶 Share with the convoy';
+  if (music.dj && music.idx < 0) toast('Press play — the convoy hears whatever you play');
+  else toast(music.dj ? '🎶 You\'re the convoy DJ' : 'Stopped sharing');
+  convoyTick();
+});
+
 function receiveBeacon(b) {
   if (b && (b.id === convoy.selfId || (convoy.fbUid && b.id === convoy.fbUid))) return;
   var next = A.applyBeacon(convoy.members, b, convoy.selfId, Date.now());
@@ -3425,6 +3511,7 @@ function receiveBeacon(b) {
     needsDraw = true;
     if ($('convoySheet').classList.contains('open')) renderConvoyMembers();
   }
+  if (b && b.id) djUpdate(b.id);
 }
 
 function renderConvoyMembers() {
@@ -3459,7 +3546,21 @@ function renderConvoyMembers() {
     row.querySelector('.av').style.borderColor = av.color;
     row.querySelector('.av').textContent = m.arrived ? '🏁' : av.emoji;
     row.querySelector('.mn').textContent = m.name;
+    if (m.music) meta.push('🎶 ' + m.music.title + (m.music.artist ? ' — ' + m.music.artist : ''));
     row.querySelector('.mm').textContent = meta.join(' · ') || 'in the convoy';
+    if (m.music && A.findLocalTrack(music.tracks, m.music) >= 0) {
+      var join = document.createElement('button');
+      join.className = 'joinBtn' + (music.follow === m.id ? ' on' : '');
+      join.textContent = music.follow === m.id ? '🎶 with them' : '▶ join';
+      (function (id) {
+        join.addEventListener('click', function () {
+          if (music.follow === id) stopFollow('Left the listen-along');
+          else startFollow(id);
+          renderConvoyMembers();
+        });
+      })(m.id);
+      row.appendChild(join);
+    }
     box.appendChild(row);
   });
 }
@@ -3540,14 +3641,21 @@ function startDemoConvoy() {
     { id: 'demo-aisha', name: 'Aisha', along: 150, v: 13.6 },
     { id: 'demo-marco', name: 'Marco', along: -230, v: 12.3 },
   ];
+  var demoDjFrom = Date.now() + 15000;
   convoy.demoTimer = setInterval(function () {
     if (!nav.route) return;
     convoy.demoMembers.forEach(function (dm) {
       dm.along = Math.min(nav.route.totalM, dm.along + dm.v);
       var p = A.pointAtAlong(nav.route, Math.max(0, dm.along));
-      receiveBeacon({ id: dm.id, name: dm.name, lat: p.lat, lon: p.lon, heading: p.heading,
+      var beacon = { id: dm.id, name: dm.name, lat: p.lat, lon: p.lon, heading: p.heading,
         speed: dm.v, etaS: Math.round((nav.route.totalM - dm.along) / dm.v),
-        arrived: dm.along >= nav.route.totalM - 25, ts: Date.now() });
+        arrived: dm.along >= nav.route.totalM - 25, ts: Date.now() };
+      // Aisha turns DJ a little into the drive — 🎶 demos offline too
+      if (dm.id === 'demo-aisha' && Date.now() > demoDjFrom) {
+        beacon.music = { title: 'Midnight Drive', artist: 'Neon Coast', durS: 222,
+                         posS: ((Date.now() - demoDjFrom) / 1000) % 222, playing: true };
+      }
+      receiveBeacon(beacon);
     });
   }, 1000);
   toast('🚙 Demo convoy — Aisha is ahead, Marco is behind');

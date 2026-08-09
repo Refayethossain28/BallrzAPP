@@ -1037,6 +1037,46 @@ test('updatePace: learns your speed honestly and stays clamped', () => {
 
 /* --------------------------------- run ---------------------------------- */
 
+test('convoy DJ: track matching survives messy metadata', () => {
+  assert.equal(A.trackKey('Midnight Drive (Remastered 2019)', 'Neon Coast'), 'midnight drive|neon coast');
+  assert.equal(A.trackKey('Midnight Drive feat. KLLO', 'NEON COAST'), 'midnight drive|neon coast');
+  const lib = [
+    { name: 'track01', title: 'Getaway', artist: 'The Marlows' },
+    { name: 'Midnight Drive - Neon Coast', title: 'Midnight Drive', artist: 'Neon Coast' },
+    { name: 'midnight-drive-live', title: 'Midnight Drive [Live]', artist: '' },
+  ];
+  assert.equal(A.findLocalTrack(lib, { title: 'Midnight Drive', artist: 'Neon Coast' }), 1);
+  assert.equal(A.findLocalTrack(lib, { title: 'Midnight  DRIVE!', artist: 'someone else' }), 1); // title fallback
+  assert.equal(A.findLocalTrack(lib, { title: 'Unknown Song', artist: 'Nobody' }), -1);
+  assert.equal(A.findLocalTrack([], { title: 'x' }), -1);
+});
+
+test('convoy DJ: playhead projection and drift correction', () => {
+  const mu = { title: 'x', posS: 60, playing: true, at: 100000, durS: 200 };
+  near(A.djTarget(mu, 100000), 60, 0.01);
+  near(A.djTarget(mu, 110000), 70, 0.01);          // 10s later
+  near(A.djTarget({ ...mu, playing: false }, 110000), 60, 0.01); // paused holds
+  near(A.djTarget({ ...mu, posS: 195 }, 110000), 200, 0.01);     // clamped to length
+  assert.equal(A.syncAdjust(70.4, 70, true, false), 'ok');       // jitter tolerated
+  assert.equal(A.syncAdjust(65, 70, true, false), 'seek');       // real drift
+  assert.equal(A.syncAdjust(70, 70, true, true), 'play');
+  assert.equal(A.syncAdjust(70, 70, false, false), 'pause');
+  assert.equal(A.syncAdjust(70, 70, false, true), 'ok');
+});
+
+test('convoy DJ: beacons carry validated music, plain beacons stay clean', () => {
+  const b = { id: 'p1', name: 'Aisha', lat: 51.5, lon: -0.1, ts: 1000,
+              music: { title: '  Midnight Drive  ', artist: 'Neon Coast', durS: 222, posS: 34.5, playing: true } };
+  const m = A.applyBeacon({}, b, 'me', 1000);
+  assert.equal(m.p1.music.title, 'Midnight Drive');
+  assert.equal(m.p1.music.playing, true);
+  near(m.p1.music.posS, 34.5, 0.01);
+  const junk = A.applyBeacon({}, { ...b, music: { title: '', posS: 'x' } }, 'me', 1000);
+  assert.equal(junk.p1.music, undefined); // junk payload dropped, beacon kept
+  const plain = A.applyBeacon({}, { id: 'p2', name: 'M', lat: 1, lon: 1, ts: 1000 }, 'me', 1000);
+  assert.equal('music' in plain.p2, false);
+});
+
 test('convoy chat: build, validate, clamp — text and voice', () => {
   assert.equal(A.chatText('  slow   down,  camera ahead  '), 'slow down, camera ahead');
   assert.equal(A.chatText(''), null);

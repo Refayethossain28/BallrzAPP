@@ -1557,6 +1557,18 @@
       arrived: !!b.arrived,
       ts: ts,
     };
+    // 🎶 optional DJ payload: what this member is playing right now
+    var mu = b.music;
+    if (mu && typeof mu === 'object' && typeof mu.title === 'string' && mu.title.trim()) {
+      next[b.id].music = {
+        title: mu.title.trim().slice(0, 80),
+        artist: (typeof mu.artist === 'string' ? mu.artist.trim() : '').slice(0, 80),
+        durS: typeof mu.durS === 'number' && isFinite(mu.durS) && mu.durS > 0 ? mu.durS : null,
+        posS: typeof mu.posS === 'number' && isFinite(mu.posS) && mu.posS >= 0 ? mu.posS : 0,
+        playing: !!mu.playing,
+        at: ts,
+      };
+    }
     return next;
   }
 
@@ -1663,6 +1675,54 @@
     return Math.round(s / 3600) + ' h';
   }
 
+
+  /* ========================= convoy music (DJ mode) ====================== */
+
+  /** Normalized identity of a song for matching across libraries:
+   *  lowercase, punctuation-free 'title|artist'. */
+  function trackKey(title, artist) {
+    var norm = function (s) {
+      return String(s || '').toLowerCase()
+        .replace(/\(.*?\)|\[.*?\]/g, ' ')      // (remaster), [live] etc.
+        .replace(/feat\..*$|ft\..*$/g, ' ')
+        .replace(/[^a-z0-9]+/g, ' ').trim();
+    };
+    return norm(title) + '|' + norm(artist);
+  }
+
+  /** Find the DJ's song in a local library ([{title, name, artist}]).
+   *  Exact title+artist key first, then title alone. → index or -1. */
+  function findLocalTrack(tracks, beaconMusic) {
+    if (!beaconMusic || !beaconMusic.title || !tracks) return -1;
+    var want = trackKey(beaconMusic.title, beaconMusic.artist);
+    var wantTitle = want.split('|')[0];
+    var titleOnly = -1;
+    for (var i = 0; i < tracks.length; i++) {
+      var t = tracks[i];
+      var key = trackKey(t.title || t.name, t.artist);
+      if (key === want) return i;
+      if (titleOnly < 0 && wantTitle && key.split('|')[0] === wantTitle) titleOnly = i;
+    }
+    return titleOnly;
+  }
+
+  /** Where the DJ's playhead is NOW, given their last music beacon. */
+  function djTarget(mu, now) {
+    if (!mu) return 0;
+    var pos = mu.posS + (mu.playing ? Math.max(0, (now - mu.at) / 1000) : 0);
+    if (mu.durS != null) pos = Math.min(pos, mu.durS);
+    return pos;
+  }
+
+  /** What a listener's player should do to stay with the DJ.
+   *  → 'pause' | 'play' | 'seek' | 'ok'. Seeks only beyond 2.5s drift, so
+   *  ordinary network jitter never causes stutter. */
+  function syncAdjust(currentS, targetS, djPlaying, listenerPaused) {
+    if (!djPlaying) return listenerPaused ? 'ok' : 'pause';
+    if (listenerPaused) return 'play';
+    return Math.abs(currentS - targetS) > 2.5 ? 'seek' : 'ok';
+  }
+
   /* ================================ places ================================ */
 
   /**
@@ -1743,5 +1803,6 @@
     makeConvoyCode: makeConvoyCode, validConvoyCode: validConvoyCode, parseConvoyLink: parseConvoyLink,
     convoyAvatar: convoyAvatar, applyBeacon: applyBeacon, pruneMembers: pruneMembers, convoyStats: convoyStats,
     chatText: chatText, chatMsg: chatMsg, validChatMsg: validChatMsg, pruneChat: pruneChat, agoShort: agoShort,
+    trackKey: trackKey, findLocalTrack: findLocalTrack, djTarget: djTarget, syncAdjust: syncAdjust,
   };
 });
