@@ -1037,6 +1037,51 @@ test('updatePace: learns your speed honestly and stays clamped', () => {
 
 /* --------------------------------- run ---------------------------------- */
 
+test('convoy chat: build, validate, clamp — text and voice', () => {
+  assert.equal(A.chatText('  slow   down,  camera ahead  '), 'slow down, camera ahead');
+  assert.equal(A.chatText(''), null);
+  assert.equal(A.chatText('x'.repeat(500)).length, 400);
+  const m = A.chatMsg(1000, 't1', 'Rafa', { text: 'fuel stop next services?' });
+  assert.equal(m.kind, 'chat');
+  assert.equal(m.from, 't1');
+  assert.equal(m.text, 'fuel stop next services?');
+  assert.equal(A.chatMsg(1000, 't1', 'Rafa', { text: '   ' }), null);
+  const name = A.chatMsg(1000, 't1', 'x'.repeat(60), { text: 'hi' }).name;
+  assert.equal(name.length, 24);
+  const v = A.chatMsg(2000, 't1', 'Rafa', { audio: 'data:audio/webm;base64,AAAA', durS: 4.4 });
+  assert.equal(v.durS, 4);
+  assert.ok(v.audio.startsWith('data:audio'));
+  assert.equal(A.chatMsg(2000, 't1', 'R', { audio: 'data:audio/webm;base64,AAAA', durS: 45 }), null);
+  assert.equal(A.chatMsg(2000, 't1', 'R', { audio: 'data:text/html;base64,AAAA', durS: 5 }), null);
+  assert.equal(A.chatMsg(2000, 't1', 'R', { audio: 'data:audio/webm;base64,' + 'A'.repeat(950000), durS: 5 }), null);
+});
+
+test('convoy chat: receive-side validation, dedupe, ordering, ageing', () => {
+  const now = 100000;
+  const mk = (id, t, from) => ({ kind: 'chat', id, from: from || 'peer', name: 'P', text: 'hi', t });
+  assert.equal(A.validChatMsg(mk('a', now), ['me', 'fb-me'], now), true);
+  assert.equal(A.validChatMsg(mk('a', now, 'me'), ['me'], now), false); // own echo
+  assert.equal(A.validChatMsg(mk('a', now - 7 * 3600e3), ['me'], now), false); // stale
+  assert.equal(A.validChatMsg({ kind: 'chat', id: 'x', from: 'p', t: now }, ['me'], now), false); // no body
+  assert.equal(A.validChatMsg({ id: 'x', from: 'p', text: 'hi', t: now }, [], now), false); // wrong kind
+
+  let list = A.pruneChat([], mk('m1', now - 50), now);
+  list = A.pruneChat(list, mk('m2', now - 10), now);
+  const deduped = A.pruneChat(list, mk('m1', now - 50), now); // duplicate id — no change in content
+  assert.equal(deduped.length, 2);
+  list = A.pruneChat(list, mk('m0', now - 90), now);
+  same(list.map((m) => m.id), ['m0', 'm1', 'm2']); // time-sorted
+  // capacity: 60 newest survive
+  let big = [];
+  for (let i = 0; i < 70; i++) big = A.pruneChat(big, mk('b' + i, now - 70 + i), now);
+  assert.equal(big.length, 60);
+  assert.equal(big[0].id, 'b10');
+  assert.equal(A.agoShort(now - 3000, now), 'now');
+  assert.equal(A.agoShort(now - 45000, now), '45s');
+  assert.equal(A.agoShort(now - 5 * 60000, now), '5 min');
+  assert.equal(A.agoShort(now - 2 * 3600e3, now), '2 h');
+});
+
 for (const [name, fn] of tests) {
   try { fn(); passed++; console.log(`  ✓ ${name}`); }
   catch (err) {

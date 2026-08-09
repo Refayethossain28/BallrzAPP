@@ -383,6 +383,33 @@
   .memberRow .mn { font-weight: 650; }
   .memberRow .mm { font-size: 12px; color: var(--dim); }
 
+  /* 💬 convoy chat */
+  #chatList { overflow-y: auto; max-height: 26vh; display: flex; flex-direction: column;
+    gap: 6px; padding: 4px 0; }
+  .chatMsg { max-width: 82%; align-self: flex-start; background: rgba(255,255,255,0.06);
+    border: 1px solid var(--line); border-radius: 14px 14px 14px 5px; padding: 7px 11px; }
+  .chatMsg.mine { align-self: flex-end; background: rgba(47,127,246,0.2);
+    border-color: rgba(56,189,248,0.35); border-radius: 14px 14px 5px 14px; }
+  .chatMsg .ch { font-size: 10.5px; color: var(--dim); margin-bottom: 1px; }
+  .chatMsg .cb { font-size: 13.5px; overflow-wrap: anywhere; }
+  .chatMsg .cv { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 650; }
+  .chatMsg .cv .vp { width: 30px; height: 30px; border-radius: 50%; flex: none;
+    background: rgba(56,189,248,0.22); border: 1px solid var(--accent);
+    display: flex; align-items: center; justify-content: center; font-size: 12px; }
+  #chatEmpty { color: var(--dim); font-size: 12px; text-align: center; padding: 8px 0; }
+  #chatRow { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
+  #btnChatVoice, #btnChatSend { width: 44px; height: 44px; border-radius: 50%; flex: none;
+    background: rgba(255,255,255,0.06); border: 1px solid var(--line); font-size: 17px;
+    display: flex; align-items: center; justify-content: center; }
+  #btnChatSend { background: rgba(47,127,246,0.25); border-color: rgba(56,189,248,0.4); }
+  #btnChatVoice.rec { background: rgba(248,113,113,0.25); border-color: #ef4444;
+    animation: overpulse 0.9s ease-in-out infinite; }
+  #btnConvoy { position: relative; }
+  #chatBadge { position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px;
+    border-radius: 9px; background: #ef4444; color: #fff; font-size: 11px; font-weight: 800;
+    display: none; align-items: center; justify-content: center; padding: 0 5px; }
+  #chatBadge.show { display: flex; }
+
   /* 📹 dashcam preview */
   #dashcamBox {
     position: fixed; z-index: 46; right: 14px; bottom: calc(96px + var(--sab));
@@ -562,7 +589,7 @@
     <span class="q" id="searchPillText">Where to?</span>
     <span>🔍</span>
   </button>
-  <button class="fab" id="btnConvoy" style="position:static;flex:none" aria-label="Convoy">🚙</button>
+  <button class="fab" id="btnConvoy" style="flex:none" aria-label="Convoy">🚙<span id="chatBadge"></span></button>
   <button class="fab" id="btnSettings" style="position:static;flex:none" aria-label="Settings">⚙️</button>
 </div>
 
@@ -838,6 +865,13 @@
       <button class="convoyBtn" id="btnConvoyLeave" style="background:rgba(248,113,113,0.14);border:1px solid rgba(248,113,113,0.4)">Leave</button>
     </div>
     <div id="convoyMembers"></div>
+    <div class="sectionTitle" style="margin-top:8px">Convoy chat</div>
+    <div id="chatList"></div>
+    <div id="chatRow">
+      <button id="btnChatVoice" aria-label="Record a voice message">🎤</button>
+      <input id="chatInput" class="convoyInput" style="flex:1;height:44px" placeholder="Message the convoy" maxlength="400" autocomplete="off">
+      <button id="btnChatSend" aria-label="Send">➤</button>
+    </div>
   </div>
 </div>
 
@@ -3192,9 +3226,13 @@ function startConvoy(code, demo) {
   leaveConvoy(true);
   save('atlas.convoy.name', ($('convoyName').value || '').trim());
   convoy.code = code; convoy.members = {};
+  convoy.chat = []; convoy.unread = 0; updateChatBadge();
   if (window.BroadcastChannel) {
     convoy.bc = new BroadcastChannel('atlas-convoy-' + code);
-    convoy.bc.onmessage = function (e) { receiveBeacon(e.data); };
+    convoy.bc.onmessage = function (e) {
+      if (e.data && e.data.kind === 'chat') receiveChat(e.data);
+      else receiveBeacon(e.data);
+    };
   }
   if (!demo) fbStart(code);
   convoy.timer = setInterval(convoyTick, 3000);
@@ -3213,6 +3251,9 @@ function leaveConvoy(silent) {
   convoy.demoMembers = null;
   if (convoy.bc) { try { convoy.bc.close(); } catch (e) {} convoy.bc = null; }
   if (convoy.fbUnsub) { try { convoy.fbUnsub(); } catch (e) {} convoy.fbUnsub = null; }
+  if (convoy.fbMsgUnsub) { try { convoy.fbMsgUnsub(); } catch (e) {} convoy.fbMsgUnsub = null; }
+  stopVoiceRec(true);
+  convoy.chat = []; convoy.unread = 0; updateChatBadge();
   if (convoy.fbCol && convoy.fbUid) { try { convoy.fbCol.doc(convoy.fbUid).delete(); } catch (e) {} }
   convoy.fbCol = null;
   convoy.code = null; convoy.members = {};
@@ -3246,6 +3287,135 @@ function convoyTick() {
   if ($('convoySheet').classList.contains('open')) renderConvoyMembers();
   needsDraw = true;
 }
+
+/* --- 💬 convoy chat: text + voice notes to everyone on the code --- */
+function chatSelfIds() {
+  var ids = [convoy.selfId];
+  if (convoy.fbUid) ids.push(convoy.fbUid);
+  return ids;
+}
+function updateChatBadge() {
+  var b = $('chatBadge');
+  b.textContent = convoy.unread > 9 ? '9+' : String(convoy.unread || '');
+  b.className = convoy.unread > 0 ? 'show' : '';
+}
+function sendChat(payload) {
+  if (!convoy.code) return;
+  var msg = A.chatMsg(Date.now(), convoy.fbUid || convoy.selfId, convoyName(), payload);
+  if (!msg) { toast('Nothing to send'); return; }
+  convoy.chat = A.pruneChat(convoy.chat, msg, Date.now());
+  renderChat();
+  if (convoy.bc) { try { convoy.bc.postMessage(msg); } catch (e) {} }
+  if (convoy.fb && convoy.fbUid) {
+    try {
+      convoy.fb.collection('atlas_convoys').doc(convoy.code)
+        .collection('messages').doc(msg.id).set(msg);
+    } catch (e) {}
+  }
+}
+function playVoiceMsg(m) {
+  try {
+    var a = new Audio(m.audio);
+    duckMusic();
+    a.onended = unduckMusic; a.onerror = unduckMusic;
+    var p = a.play();
+    if (p && p.catch) p.catch(unduckMusic);
+  } catch (e) { unduckMusic(); }
+}
+function receiveChat(m) {
+  if (!A.validChatMsg(m, chatSelfIds(), Date.now())) return;
+  var next = A.pruneChat(convoy.chat, m, Date.now());
+  if (next === convoy.chat || next.length === convoy.chat.length) return; // duplicate
+  convoy.chat = next;
+  if ($('convoySheet').classList.contains('open')) renderChat();
+  else { convoy.unread++; updateChatBadge(); toast('💬 ' + m.name + ': ' + (m.text || '🎤 voice message')); }
+  // hands-free while driving: texts are read out, voice notes just play
+  if (m.text && nav.active && settings.voice === 'on') speak(m.name + ' says: ' + m.text);
+  if (m.audio) playVoiceMsg(m);
+}
+function renderChat() {
+  var box = $('chatList');
+  box.innerHTML = '';
+  if (!convoy.chat.length) {
+    var e = document.createElement('div');
+    e.id = 'chatEmpty'; e.textContent = 'Say hi — everyone on the code hears you';
+    box.appendChild(e);
+    return;
+  }
+  var now = Date.now(), self = chatSelfIds();
+  convoy.chat.forEach(function (m) {
+    var row = document.createElement('div');
+    row.className = 'chatMsg' + (self.indexOf(m.from) >= 0 ? ' mine' : '');
+    var head = document.createElement('div');
+    head.className = 'ch'; head.textContent = m.name + ' · ' + A.agoShort(m.t, now);
+    row.appendChild(head);
+    if (m.text) {
+      var body = document.createElement('div');
+      body.className = 'cb'; body.textContent = m.text;
+      row.appendChild(body);
+    } else {
+      var v = document.createElement('div');
+      v.className = 'cv';
+      var play = document.createElement('button');
+      play.className = 'vp'; play.textContent = '▶';
+      play.addEventListener('click', function () { playVoiceMsg(m); });
+      v.appendChild(play);
+      var lbl = document.createElement('span');
+      lbl.textContent = '🎤 ' + m.durS + 's';
+      v.appendChild(lbl);
+      row.appendChild(v);
+    }
+    box.appendChild(row);
+  });
+  box.scrollTop = box.scrollHeight;
+}
+/* voice notes: tap 🎤 to record (30s cap), tap again to send */
+var voiceRec = null, voiceRecDiscard = false;
+function stopVoiceRec(discard) {
+  if (!voiceRec) return;
+  var r = voiceRec; voiceRec = null;
+  voiceRecDiscard = !!discard;
+  $('btnChatVoice').classList.remove('rec');
+  $('btnChatVoice').textContent = '🎤';
+  if (r.timer) clearTimeout(r.timer);
+  try { r.rec.stop(); } catch (e) {}
+  if (r.stream) r.stream.getTracks().forEach(function (t) { t.stop(); });
+}
+function startVoiceRec() {
+  if (!convoy.code) { toast('Join a convoy first'); return; }
+  if (!navigator.mediaDevices || !window.MediaRecorder) { toast('Voice notes need microphone support'); return; }
+  navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+    var rec = new MediaRecorder(stream);
+    var chunks = [], startedAt = Date.now();
+    voiceRec = { rec: rec, stream: stream, timer: setTimeout(function () { stopVoiceRec(); }, 30000) };
+    rec.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
+    rec.onstop = function () {
+      var durS = Math.round((Date.now() - startedAt) / 1000);
+      if (voiceRecDiscard || !chunks.length) { voiceRecDiscard = false; return; }
+      if (durS < 1) { toast('Hold the thought a second longer 🎤'); return; }
+      var blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
+      var fr = new FileReader();
+      fr.onload = function () {
+        if (typeof fr.result === 'string') sendChat({ audio: fr.result, durS: durS });
+      };
+      fr.readAsDataURL(blob);
+    };
+    rec.start();
+    $('btnChatVoice').classList.add('rec');
+    $('btnChatVoice').textContent = '⏹';
+    toast('🎤 Recording — tap ⏹ to send (30s max)');
+  }).catch(function () { toast('Microphone permission needed for voice notes'); });
+}
+$('btnChatVoice').addEventListener('click', function () {
+  if (voiceRec) stopVoiceRec(); else startVoiceRec();
+});
+$('btnChatSend').addEventListener('click', function () {
+  var t = $('chatInput').value;
+  if (A.chatText(t)) { sendChat({ text: t }); $('chatInput').value = ''; }
+});
+$('chatInput').addEventListener('keydown', function (e) {
+  if (e.key === 'Enter') { e.preventDefault(); $('btnChatSend').click(); }
+});
 
 function receiveBeacon(b) {
   if (b && (b.id === convoy.selfId || (convoy.fbUid && b.id === convoy.fbUid))) return;
@@ -3347,6 +3517,15 @@ function fbStart(code) {
       convoy.fbUnsub = convoy.fbCol.onSnapshot(function (snap) {
         snap.forEach(function (d) { receiveBeacon(d.data()); });
       }, function () {});
+      // 💬 chat: only messages sent after joining (small grace window)
+      var joinedT = Date.now() - 60000;
+      convoy.fbMsgUnsub = convoy.fb.collection('atlas_convoys').doc(code)
+        .collection('messages').where('t', '>', joinedT)
+        .onSnapshot(function (snap) {
+          snap.docChanges().forEach(function (ch) {
+            if (ch.type === 'added') receiveChat(ch.doc.data());
+          });
+        }, function () {});
     });
   }).catch(function () { /* BroadcastChannel still carries the convoy */ });
 }
@@ -3372,12 +3551,24 @@ function startDemoConvoy() {
     });
   }, 1000);
   toast('🚙 Demo convoy — Aisha is ahead, Marco is behind');
+  // the companions say hello, so chat demos offline too
+  setTimeout(function () {
+    if (convoy.demoMembers) receiveChat({ kind: 'chat', id: 'demo-chat-1', from: 'demo-aisha',
+      name: 'Aisha', text: 'Right behind you — shout if you want a fuel stop ⛽', t: Date.now() });
+  }, 5000);
+  setTimeout(function () {
+    if (convoy.demoMembers) receiveChat({ kind: 'chat', id: 'demo-chat-2', from: 'demo-marco',
+      name: 'Marco', text: 'Traffic looks clear all the way in 👍', t: Date.now() });
+  }, 14000);
 }
 
 $('btnConvoy').addEventListener('click', function () {
   $('convoyName').value = load('atlas.convoy.name', '') || '';
   if ($('convoySheet').classList.contains('open')) closeSheets();
-  else { openSheet('convoySheet'); renderConvoyMembers(); }
+  else {
+    openSheet('convoySheet'); renderConvoyMembers(); renderChat();
+    convoy.unread = 0; updateChatBadge();
+  }
 });
 $('btnCloseConvoy').addEventListener('click', closeSheets);
 $('btnConvoyCreate').addEventListener('click', function () { startConvoy(A.makeConvoyCode()); });
