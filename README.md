@@ -1,7 +1,22 @@
 # BallrzAPP
 
-Product concepts and runnable prototypes for two consumer apps, plus an earlier
-trading-app build. Full write-ups live in [`concepts/`](./concepts/).
+[![CI](https://github.com/refayethossain28/BallrzAPP/actions/workflows/ci.yml/badge.svg)](https://github.com/refayethossain28/BallrzAPP/actions/workflows/ci.yml)
+
+A portfolio of ~40 products — one production-track transport & concierge
+platform (ApexVIP) plus a suite of offline-first consumer apps — built on one
+architecture: a pure, deterministic, unit-tested engine per app, a zero-build
+installable PWA shell, and optional Firebase/Stripe cloud. Product concept
+write-ups live in [`concepts/`](./concepts/).
+
+## 🏷️ Licensing & acquisition
+
+This portfolio is proprietary (all rights reserved — see [`LICENSE`](./LICENSE))
+and is available for **acquisition or commercial licensing**, whole or per-app.
+For reviewers:
+
+- **[Portfolio catalog](./docs/portfolio.md)** — every app in one scannable table: what it is, where it lives, what tests pin it, what cloud it needs.
+- **[Due-diligence pack](./docs/due-diligence.md)** — ownership & IP provenance, dependency license audit (all MIT/Apache-2.0, no copyleft), architecture, test/CI inventory, third-party services, security posture, data & privacy, honest disclosures, and what transfers.
+- **[Security policy](./SECURITY.md)** — vulnerability reporting and the security posture summary.
 
 > **© Refayet Hossain — all rights reserved.** This repository is published
 > for viewing only; no license is granted to copy, reuse, or redistribute the
