@@ -51,6 +51,7 @@ payments, deploy workflows, iOS wrappers.
 | AIOS | A browser-booted operating system (desktop + phone shells, VFS, shell/scripting language, app SDK, AI agent) | `aios/` | Optional Firebase sync, optional Anthropic | `test:aios` (81) |
 | Voyager | A real web browser: tabs, omnibox, proxy full-browser mode, Web Memory, reader, from-scratch QR | `voyager/` | Optional companion server | `test:voyager` (76) + proxy (16) + QR |
 | Seeker | A from-scratch search engine: Porter stemmer, BM25, crawler with robots.txt | `seeker/` | Optional crawler server | `test:seeker` (29) |
+| Magpie | A from-scratch web scraper: HTML parser, CSS selector engine, auto-detected recipes, CSV/JSON export, robots-respecting pagination crawl, watch diffs | `magpie/` | Optional fetch server | `test:magpie` (38) |
 | Atlas | A satnav: canvas map engine, turn-by-turn voice guidance, offline maps, dashcam, traffic | `atlas/` | OSM/OSRM/Nominatim (keyless) | `test:atlas` (34) |
 | Orbit | Super-app: rides, eats, parcels, pay — plus REAL mode with human captains | `orbit/`, `orbit/real/` | Optional Firebase | `test:orbit` (60) |
 | Omni | Do-everything utility app (tasks, notes, converters, QR, timers) | `omni/` | None | `test:logic` |
