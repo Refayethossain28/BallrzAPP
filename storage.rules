@@ -16,5 +16,17 @@ service firebase.storage {
                    && request.resource.size < 12 * 1024 * 1024
                    && request.resource.contentType.matches('image/.*|audio/.*');
     }
+
+    // Atlas dashcam submissions: a signed-in user may stage their own clip
+    // (owner-only path, video only, 200MB cap) for the atlasClipPublish
+    // Cloud Function, which pushes it to YouTube unlisted and deletes it.
+    // No client reads — the staging area is write-only.
+    match /atlas_clips/{uid}/{fileName} {
+      allow read: if false;
+      allow write: if request.auth != null && request.auth.uid == uid
+                   && request.resource != null
+                   && request.resource.size < 200 * 1024 * 1024
+                   && request.resource.contentType.matches('video/.*');
+    }
   }
 }

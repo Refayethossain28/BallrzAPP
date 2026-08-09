@@ -37,7 +37,7 @@ export { linkChainWallet, withdrawCoinsOnchain, depositCoinsOnchain } from './ch
 export { vaultOpen, vaultExec, vaultLookup, vaultSend, vaultPayIn } from './vault.js';
 // Atlas Pro fulfilment (atlas/): Stripe checkout webhook that mints an
 // offline-verifiable unlock code and emails it to the buyer. See ./atlas.ts.
-export { atlasProWebhook } from './atlas.js';
+export { atlasProWebhook, atlasClipPublish } from './atlas.js';
 import { SENDGRID_API_KEY } from './email.js';
 
 import {
