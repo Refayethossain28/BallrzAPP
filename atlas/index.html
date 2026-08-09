@@ -743,7 +743,7 @@
   <div id="proEntry" style="margin-top:14px">
     <input id="proCode" placeholder="ATLS-XXXX-XXXX-XX" maxlength="20" autocomplete="off">
     <button id="btnProActivate" style="margin-top:10px;width:100%;height:48px;border-radius:14px;background:linear-gradient(135deg,#f59e0b,#f97316);color:#fff;font-weight:750">Activate</button>
-    <p style="color:var(--dim);font-size:11.5px;margin-top:12px">
+    <p id="proPayNote" style="color:var(--dim);font-size:11.5px;margin-top:12px">
       Pay once, get a code from the developer, done. Codes verify on-device — no account, no server, nothing to cancel.
     </p>
   </div>
@@ -2099,11 +2099,22 @@ function refreshProUI() {
   $('proStatus').textContent = isPro()
     ? '⭐ Pro is active on this device — thank you for supporting Atlas'
     : 'Free has everything you need to navigate. Pro adds capacity:';
-  $('proSub').textContent = isPro() ? '⭐ Active on this device' : '£14.99 one-off — more packs, bigger vault';
+  $('proSub').textContent = isPro() ? '⭐ Active on this device'
+    : (typeof window !== 'undefined' && window.ATLAS_NATIVE)
+      ? 'More offline packs, bigger clip vault'
+      : '£14.99 one-off — more packs, bigger vault';
   $('proPrice').style.display = isPro() ? 'none' : '';
-  // the buy button appears once a payment link is configured (config.js)
+  // the buy button appears once a payment link is configured (config.js).
+  // In the native App Store build (window.ATLAS_NATIVE) web payment UI and
+  // external pricing stay hidden — App Review rule 3.1.1; codes bought
+  // elsewhere still activate (multiplatform rule 3.1.3(b)).
+  var native = typeof window !== 'undefined' && window.ATLAS_NATIVE;
   var payUrl = (typeof window !== 'undefined' && window.ATLAS_PAY_URL) || null;
-  $('btnProBuy').style.display = (payUrl && !isPro()) ? '' : 'none';
+  $('btnProBuy').style.display = (payUrl && !isPro() && !native) ? '' : 'none';
+  if (native) {
+    $('proPrice').style.display = 'none';
+    $('proPayNote').textContent = 'Have an Atlas Pro code? Enter it to activate on this device.';
+  }
   // owners don't need the code box — just the benefits and a keep-safe note
   $('proEntry').style.display = isPro() ? 'none' : '';
   $('proOwned').style.display = isPro() ? '' : 'none';
@@ -3766,6 +3777,8 @@ updateLocateBtn();
 
 // first run: a 10-second welcome, then never again
 if (!load('atlas.welcomed', false)) $('welcome').classList.add('show');
+// native App Store build: scrub external pricing from the settings row at boot
+if (typeof window !== 'undefined' && window.ATLAS_NATIVE) refreshProUI();
 
 // convoy deep link: atlas/#convoy=CODE opens the join sheet prefilled
 (function () {
