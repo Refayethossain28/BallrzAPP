@@ -228,3 +228,57 @@ export const shouldRemind = (dl: number | null): boolean =>
 /** "HH:MM" out of an ISO datetime string, or ''. */
 export const flightHHMM = (iso: unknown): string =>
   (typeof iso === 'string' && iso.length >= 16 ? iso.slice(11, 16) : '');
+
+/* ------------------------- Atlas Pro unlock codes ------------------------ */
+/* Server-side mirror of atlas/engine.js (makeProCode/validProCode) so the
+ * Stripe webhook can mint codes the app verifies offline. The parity test in
+ * logic.test.ts runs both implementations against each other — change one,
+ * change both. */
+
+const PRO_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+
+function proChecksum(body: string): string {
+  let h = 7;
+  for (let i = 0; i < body.length; i++) h = (h * 33 + body.charCodeAt(i) * (i + 3)) % 923521;
+  return PRO_ALPHABET[h % 31] + PRO_ALPHABET[Math.floor(h / 31) % 31];
+}
+
+/** Mint an 'ATLS-XXXX-XXXX-CC' code; `rand` is injected for determinism in tests. */
+export function makeProCode(rand: () => number = Math.random): string {
+  let body = '';
+  for (let i = 0; i < 8; i++) body += PRO_ALPHABET[Math.floor(rand() * 31) % 31];
+  const c = proChecksum(body);
+  return `ATLS-${body.slice(0, 4)}-${body.slice(4)}-${c}`;
+}
+
+/** True iff the code normalises to ATLS + 8 body chars whose checksum matches. */
+export function validProCode(code: unknown): boolean {
+  if (typeof code !== 'string') return false;
+  const s = code.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (s.length !== 14 || s.slice(0, 4) !== 'ATLS') return false;
+  const body = s.slice(4, 12);
+  for (const ch of body) if (PRO_ALPHABET.indexOf(ch) < 0) return false;
+  return proChecksum(body) === s.slice(12);
+}
+
+/** The fulfilment email for a paid Atlas Pro code. */
+export function atlasProEmail(code: string): { subject: string; text: string } {
+  return {
+    subject: 'Your ⭐ Atlas Pro code',
+    text: [
+      'Thank you for buying Atlas Pro!',
+      '',
+      `Your unlock code:  ${code}`,
+      '',
+      'To activate: open Atlas (https://apexvip.uk/atlas/), tap ⚙️ Settings →',
+      '⭐ Atlas Pro, enter the code and tap Activate. It verifies on your',
+      'phone — no account needed — and it\'s yours forever.',
+      '',
+      'Pro gives you 6 offline route packs, a 30-clip dashcam vault and the',
+      '⭐ badge in convoys.',
+      '',
+      'Keep this email: the code re-activates Pro if you ever reset the app.',
+      '— Atlas',
+    ].join('\n'),
+  };
+}
