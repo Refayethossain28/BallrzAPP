@@ -52,3 +52,13 @@ if (typeof window !== 'undefined') window.ATLAS_TOMTOM_KEY = ATLAS_TOMTOM_KEY;
  * link exists — the sheet then shows only the code box. */
 var ATLAS_PAY_URL = null;
 if (typeof window !== 'undefined') window.ATLAS_PAY_URL = ATLAS_PAY_URL;
+
+/* 📺 Atlas community YouTube channel (optional)
+ * ---------------------------------------------
+ * Paste the deployed atlasClipPublish Cloud Function URL here and Atlas
+ * offers drivers a one-tap "share on the Atlas channel" after each saved
+ * dashcam clip (plus a 📺 button in the clip player). Clips upload to the
+ * channel UNLISTED for your review — nothing goes public unseen. Full setup:
+ * YOUTUBE.md. Leave as null to keep the feature hidden. */
+var ATLAS_CLIPS_PUBLISH = null;
+if (typeof window !== 'undefined') window.ATLAS_CLIPS_PUBLISH = ATLAS_CLIPS_PUBLISH;

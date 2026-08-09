@@ -282,3 +282,43 @@ export function atlasProEmail(code: string): { subject: string; text: string } {
     ].join('\n'),
   };
 }
+
+/* --------------------- Atlas community clip channel ---------------------- */
+
+/** Caps for community dashcam submissions — enforced server-side. */
+export function validateClipSubmission(f: { size?: number; contentType?: string; durS?: number }): { ok: boolean; reason: string } {
+  const size = Number(f.size) || 0;
+  if (size <= 0) return { ok: false, reason: 'empty file' };
+  if (size > 200 * 1024 * 1024) return { ok: false, reason: 'clip too large (200MB max)' };
+  if (!/^video\/(webm|mp4)$/.test(String(f.contentType || ''))) return { ok: false, reason: 'not a video' };
+  const dur = Number(f.durS) || 0;
+  if (dur > 600) return { ok: false, reason: 'clip too long (10 min max)' };
+  return { ok: true, reason: '' };
+}
+
+/** YouTube metadata for a submitted clip. Uploaded UNLISTED — the channel
+ * owner reviews and publishes the good ones; nothing goes public unseen. */
+export function ytClipMeta(clip: { t?: number; durS?: number }, now: Date = new Date()): {
+  snippet: { title: string; description: string; tags: string[]; categoryId: string };
+  status: { privacyStatus: string; selfDeclaredMadeForKids: boolean };
+} {
+  const when = new Date(Number(clip.t) || now.getTime());
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const stamp = `${when.getUTCFullYear()}-${pad(when.getUTCMonth() + 1)}-${pad(when.getUTCDate())} ${pad(when.getUTCHours())}:${pad(when.getUTCMinutes())} UTC`;
+  const dur = Math.max(0, Math.round(Number(clip.durS) || 0));
+  return {
+    snippet: {
+      title: `Atlas dashcam — ${stamp}`,
+      description: [
+        `Dashcam clip recorded with Atlas (https://apexvip.uk/atlas/)` ,
+        `Length: ${Math.floor(dur / 60)}:${pad(dur % 60)}`,
+        '',
+        'Submitted by an Atlas driver and published after review.',
+        'Atlas — your own satnav. No account, no tracking, works offline.',
+      ].join('\n'),
+      tags: ['Atlas', 'dashcam', 'satnav', 'driving'],
+      categoryId: '2', // Autos & Vehicles
+    },
+    status: { privacyStatus: 'unlisted', selfDeclaredMadeForKids: false },
+  };
+}

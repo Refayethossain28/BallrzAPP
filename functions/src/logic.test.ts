@@ -13,7 +13,7 @@ import {
   normalizeCommissionPct, clientCoinsEarned, driverCoinsEarned,
   clampCoinRedemption, round2, coinEarnRates, apexTierForBalance,
   bonusMonthKey, monthlyBonusForBalance, qualifiesForRatingBonus, milestoneBonusAt,
-  makeProCode, validProCode, atlasProEmail,
+  makeProCode, validProCode, atlasProEmail, validateClipSubmission, ytClipMeta,
 } from './logic.ts';
 
 test('ApexCoin earn rates: tiered % for clients, flat % at 2dp for drivers', () => {
@@ -204,4 +204,19 @@ test('Atlas Pro fulfilment email carries the code and the activation path', () =
   assert.ok(msg.text.includes('ATLS-R6RH-K72D-7M'));
   assert.match(msg.text, /Settings/);
   assert.match(msg.text, /apexvip\.uk\/atlas/);
+});
+
+test('community clips: submission caps and unlisted YouTube metadata', () => {
+  assert.equal(validateClipSubmission({ size: 5e6, contentType: 'video/webm', durS: 90 }).ok, true);
+  assert.equal(validateClipSubmission({ size: 5e6, contentType: 'video/mp4', durS: 90 }).ok, true);
+  assert.equal(validateClipSubmission({ size: 0, contentType: 'video/webm' }).ok, false);
+  assert.equal(validateClipSubmission({ size: 300 * 1024 * 1024, contentType: 'video/webm' }).ok, false);
+  assert.equal(validateClipSubmission({ size: 5e6, contentType: 'image/png' }).ok, false);
+  assert.equal(validateClipSubmission({ size: 5e6, contentType: 'video/webm', durS: 3600 }).ok, false);
+
+  const meta = ytClipMeta({ t: Date.UTC(2026, 7, 9, 14, 30), durS: 125 });
+  assert.match(meta.snippet.title, /^Atlas dashcam — 2026-08-09 14:30 UTC$/);
+  assert.ok(meta.snippet.description.includes('2:05'));
+  assert.equal(meta.status.privacyStatus, 'unlisted'); // never public unseen
+  assert.equal(meta.snippet.categoryId, '2');
 });

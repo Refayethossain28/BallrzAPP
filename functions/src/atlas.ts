@@ -14,13 +14,14 @@
  * SENDGRID_API_KEY, optional ATLAS_FROM_EMAIL env).
  */
 import { onRequest } from 'firebase-functions/v2/https';
+import { defineSecret } from 'firebase-functions/params';
 import * as logger from 'firebase-functions/logger';
 import * as admin from 'firebase-admin';
 import { randomBytes } from 'node:crypto';
 import type Stripe from 'stripe';
 import { STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, stripeClient } from './stripe.js';
 import { SENDGRID_API_KEY } from './email.js';
-import { makeProCode, validProCode, atlasProEmail } from './logic.js';
+import { makeProCode, validProCode, atlasProEmail, ytClipMeta, validateClipSubmission as logicValidateClip } from './logic.js';
 
 const REGION = 'us-central1';
 const ATLAS_FROM_EMAIL = process.env.ATLAS_FROM_EMAIL || 'atlas@apexvip.uk';
@@ -100,6 +101,120 @@ export const atlasProWebhook = onRequest(
     } catch (err) {
       logger.error('atlas webhook', (err as Error).message);
       res.status(500).send('Webhook handler failed');
+    }
+  }
+);
+
+/* --------------------- Atlas community clip channel ----------------------
+ * A driver's dashcam clip → the Atlas YouTube channel, with review between.
+ *
+ * Flow: the app uploads the clip to Storage (atlas_clips/{uid}/…, rules
+ * enforce owner + size + video type), then calls this endpoint with the
+ * user's Firebase ID token. We validate, push the video to YouTube with the
+ * CHANNEL's stored OAuth refresh token as UNLISTED, log the submission in
+ * Firestore (atlas_clip_subs), delete the Storage copy, and return the
+ * YouTube URL. The channel owner reviews unlisted uploads and publishes the
+ * good ones — nothing goes public unseen.
+ *
+ * Setup: atlas/YOUTUBE.md (channel, Google Cloud OAuth client, refresh
+ * token via scripts/mint-youtube-token.mjs, secrets, quota honesty).
+ */
+export const YT_CLIENT_ID = defineSecret('ATLAS_YT_CLIENT_ID');
+export const YT_CLIENT_SECRET = defineSecret('ATLAS_YT_CLIENT_SECRET');
+export const YT_REFRESH_TOKEN = defineSecret('ATLAS_YT_REFRESH_TOKEN');
+
+async function ytAccessToken(): Promise<string> {
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: YT_CLIENT_ID.value(),
+      client_secret: YT_CLIENT_SECRET.value(),
+      refresh_token: YT_REFRESH_TOKEN.value(),
+      grant_type: 'refresh_token',
+    }),
+  });
+  if (!res.ok) throw new Error('token refresh failed: ' + res.status);
+  const json = await res.json() as { access_token?: string };
+  if (!json.access_token) throw new Error('no access token');
+  return json.access_token;
+}
+
+const CLIP_CORS = ['https://apexvip.uk', 'http://localhost:8899', 'capacitor://localhost'];
+
+export const atlasClipPublish = onRequest(
+  { secrets: [YT_CLIENT_ID, YT_CLIENT_SECRET, YT_REFRESH_TOKEN],
+    region: REGION, memory: '1GiB', timeoutSeconds: 540 },
+  async (req, res) => {
+    const origin = String(req.headers.origin || '');
+    if (CLIP_CORS.includes(origin)) {
+      res.set('Access-Control-Allow-Origin', origin);
+      res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+      res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    }
+    if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+    if (req.method !== 'POST') { res.status(405).send('POST only'); return; }
+    if (!YT_CLIENT_ID.value() || !YT_CLIENT_SECRET.value() || !YT_REFRESH_TOKEN.value()) {
+      res.status(503).json({ error: 'channel uploads not configured' }); return;
+    }
+    try {
+      // the caller must be the signed-in owner of the uploaded file
+      const idToken = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+      const decoded = await admin.auth().verifyIdToken(idToken).catch(() => null);
+      if (!decoded) { res.status(401).json({ error: 'sign-in required' }); return; }
+      const { path, durS } = (req.body || {}) as { path?: string; durS?: number };
+      if (!path || !new RegExp('^atlas_clips/' + decoded.uid + '/[\\w.-]+$').test(path)) {
+        res.status(400).json({ error: 'bad path' }); return;
+      }
+      const file = admin.storage().bucket().file(path);
+      const [meta] = await file.getMetadata();
+      const check = logicValidateClip({ size: Number(meta.size), contentType: String(meta.contentType || ''), durS: Number(durS) || 0 });
+      if (!check.ok) { res.status(400).json({ error: check.reason }); return; }
+
+      const token = await ytAccessToken();
+      const body = ytClipMeta({ t: Date.now(), durS: Number(durS) || 0 });
+      const init = await fetch(
+        'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + token,
+            'Content-Type': 'application/json',
+            'X-Upload-Content-Type': String(meta.contentType || 'video/webm'),
+            'X-Upload-Content-Length': String(meta.size),
+          },
+          body: JSON.stringify(body),
+        });
+      if (!init.ok) {
+        const detail = await init.text().catch(() => '');
+        logger.error('yt init failed', init.status, detail.slice(0, 500));
+        res.status(502).json({ error: init.status === 403 ? 'YouTube quota reached — try tomorrow' : 'YouTube rejected the upload' });
+        return;
+      }
+      const session = init.headers.get('location');
+      if (!session) { res.status(502).json({ error: 'no upload session' }); return; }
+      const [data] = await file.download(); // ≤200MB by rules+check; memory is 1GiB
+      const up = await fetch(session, {
+        method: 'PUT',
+        headers: { 'Content-Type': String(meta.contentType || 'video/webm') },
+        body: data,
+      });
+      if (!up.ok) {
+        logger.error('yt upload failed', up.status);
+        res.status(502).json({ error: 'upload to YouTube failed' }); return;
+      }
+      const video = await up.json() as { id?: string };
+      const url = 'https://youtu.be/' + video.id;
+      await admin.firestore().collection('atlas_clip_subs').doc(String(video.id)).set({
+        uid: decoded.uid, size: Number(meta.size), durS: Number(durS) || 0,
+        url, status: 'unlisted-pending-review',
+        at: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      await file.delete().catch(() => {});
+      logger.info('atlas clip published (unlisted)', { video: video.id, uid: decoded.uid });
+      res.json({ url, review: true });
+    } catch (err) {
+      logger.error('atlas clip publish', (err as Error).message);
+      res.status(500).json({ error: 'something went wrong — the clip is still on your phone' });
     }
   }
 );
