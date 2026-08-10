@@ -97,7 +97,19 @@ python train.py --data data/shakespeare.txt --tokenizer bpe \
 # Or combine a whole folder of .txt files into one corpus
 python fetch_data.py concat /path/to/texts data/corpus.txt
 python train.py --data data/corpus.txt --tokenizer bpe --steps 8000
+
+# Or scrape the LIVE INTERNET into a corpus — Magpie (the repo's from-scratch
+# scraper) crawls from your seed URLs politely (MagpieBot UA, robots.txt
+# respected, SSRF-guarded), extracts each page's readable prose (nav/footer
+# chrome and boilerplate dropped) and writes one training file:
+node ../scripts/build-web-corpus.mjs https://en.wikipedia.org/wiki/Magpie --pages 40
+python train.py --data data/web.txt --tokenizer bpe --steps 8000
 ```
+
+The "Train browser LLM" workflow accepts a committed corpus path too: build
+`data/web.txt` with the scraper, commit it, and dispatch the workflow with
+`corpus_url = data/web.txt` — the trained model lands in `web/model.json` and
+GitHub Pages serves your internet-fed AI.
 
 ### Char vs. BPE tokenizer
 

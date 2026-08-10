@@ -212,6 +212,37 @@ test('extractMeta: title, description, og, canonical, JSON-LD, lang', () => {
   assert.equal(m.lang, 'en');
 });
 
+/* ---- article extraction (corpus building) ---- */
+
+test('extractArticle keeps prose, skips chrome and short crumbs', () => {
+  const d = E.parseHTML(`<html><head><title>Field Notes</title></head><body>
+    <nav><p>This navigation paragraph is long enough to pass the length filter.</p></nav>
+    <h1>On Magpies</h1>
+    <p>Magpies are among the few animals that recognise themselves in a mirror, a marker of self-awareness.</p>
+    <p>Read more</p>
+    <li>short</li>
+    <blockquote>One for sorrow, two for joy — the old counting rhyme about magpies.</blockquote>
+    <footer><p>Copyright paragraph that is definitely long enough to pass the filter too.</p></footer>
+  </body></html>`);
+  const a = E.extractArticle(d);
+  assert.equal(a.title, 'Field Notes');
+  assert.ok(a.text.includes('On Magpies'), 'heading kept');
+  assert.ok(a.text.includes('recognise themselves'), 'paragraph kept');
+  assert.ok(a.text.includes('One for sorrow'), 'blockquote kept');
+  assert.ok(!a.text.includes('navigation paragraph'), 'nav skipped');
+  assert.ok(!a.text.includes('Copyright'), 'footer skipped');
+  assert.ok(!a.text.includes('Read more'), 'short crumb dropped');
+  assert.ok(a.words > 10);
+});
+
+test('extractArticle dedupes repeats and handles empty pages', () => {
+  const d = E.parseHTML('<p>The same sentence appears twice on this page, word for word.</p>' +
+    '<p>The same sentence appears twice on this page, word for word.</p>');
+  const a = E.extractArticle(d);
+  assert.equal(a.text.split('\n').length, 1, 'exact duplicate dropped');
+  deq(E.extractArticle(E.parseHTML('<div></div>')), { title: '', text: '', words: 0 });
+});
+
 /* ---- detection ---- */
 
 test('detectRepeats finds the catalog as the top repeat', () => {
