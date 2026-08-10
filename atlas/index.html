@@ -3705,9 +3705,15 @@ $('btnConvoyShare').addEventListener('click', function () {
    speed and the next maneuver — like a real dashcam. Footage never leaves
    the device: it records into memory and saves as a local .webm file. */
 
-var DASHCAM_MAX_S = 1800; // 30 min cap ≈ 560 MB — protects memory honestly
-var dashcam = { active: false, stream: null, recorder: null, chunks: [], blob: null,
-                startedAt: 0, raf: 0, canvas: null, cctx: null, onSaved: null };
+/* Recording length is unlimited: like a real dashcam, footage is written as
+ * 30-minute segments. At each segment boundary the current clip is saved to
+ * the vault and a fresh recorder starts on the same canvas stream — the
+ * camera and compositor never stop, so the cut is seamless. Memory stays
+ * bounded (only the current segment's chunks are ever in RAM); the vault's
+ * own limits prune the oldest clips first, exactly like loop recording. */
+var DASHCAM_SEG_S = 1800; // segment length ≈ 560 MB each
+var dashcam = { active: false, stream: null, recorder: null,
+                startedAt: 0, part: 1, raf: 0, canvas: null, cctx: null };
 
 function dashcamSupported() {
   return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia &&
@@ -3732,26 +3738,16 @@ function startDashcam() {
     audio: false,
   }).then(function (stream) {
     dashcam.stream = stream;
-    dashcam.chunks = []; dashcam.blob = null;
     dashcam.startedAt = Date.now();
+    dashcam.firstStartedAt = dashcam.startedAt;
+    dashcam.part = 1;
     var v = $('dashcamVideo');
     v.srcObject = stream;
     var play = v.play && v.play(); if (play && play.catch) play.catch(function () {});
     dashcam.canvas = document.createElement('canvas');
     dashcam.canvas.width = 1280; dashcam.canvas.height = 720;
     dashcam.cctx = dashcam.canvas.getContext('2d');
-    var mime = pickMime();
-    var rec = new MediaRecorder(dashcam.canvas.captureStream(30),
-                                mime ? { mimeType: mime, videoBitsPerSecond: 2500000 }
-                                     : { videoBitsPerSecond: 2500000 });
-    rec.ondataavailable = function (e) { if (e.data && e.data.size) dashcam.chunks.push(e.data); };
-    rec.onstop = function () {
-      dashcam.blob = new Blob(dashcam.chunks, { type: rec.mimeType || 'video/webm' });
-      dashcam.chunks = [];
-      if (dashcam.onSaved) { var f = dashcam.onSaved; dashcam.onSaved = null; f(); }
-    };
-    dashcam.recorder = rec;
-    rec.start(1000);
+    beginDashcamRecorder();
     dashcam.active = true;
     $('dashcamBox').classList.add('show');
     $('btnDashcam').classList.add('rec');
@@ -3760,6 +3756,49 @@ function startDashcam() {
   }).catch(function () {
     toast('Camera unavailable — check the camera permission for this site');
   });
+}
+
+/** A fresh MediaRecorder on the compositing canvas. Each recorder owns its
+ *  chunks; whoever stops it decides what happens to the finished blob via
+ *  rec._onBlob. Used at start and at every segment boundary. */
+function beginDashcamRecorder() {
+  var chunks = [];
+  var mime = pickMime();
+  var rec = new MediaRecorder(dashcam.canvas.captureStream(30),
+                              mime ? { mimeType: mime, videoBitsPerSecond: 2500000 }
+                                   : { videoBitsPerSecond: 2500000 });
+  rec.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
+  rec.onstop = function () {
+    var blob = new Blob(chunks, { type: rec.mimeType || 'video/webm' });
+    chunks = [];
+    if (rec._onBlob) { var f = rec._onBlob; rec._onBlob = null; f(blob); }
+  };
+  dashcam.recorder = rec;
+  rec.start(1000);
+  return rec;
+}
+
+function dashcamClipName() {
+  var base = trip.dest ? trip.dest.name : 'Drive';
+  return dashcam.part > 1 ? base + ' · part ' + dashcam.part : base;
+}
+
+/** Segment boundary: save what we have, keep rolling on the same canvas —
+ *  the camera never stops, the next segment starts on the very next frame. */
+function rollDashcamSegment() {
+  var old = dashcam.recorder;
+  var meta = { t: dashcam.startedAt, name: dashcamClipName(),
+               durS: Math.round((Date.now() - dashcam.startedAt) / 1000) };
+  old._onBlob = function (blob) {
+    var clip = Object.assign({}, meta, { size: blob.size, type: blob.type, blob: blob });
+    saveClip(clip).then(function (id) { clip.id = id; }).catch(function () {})
+      .then(function () { dashcam.lastClip = clip; });
+  };
+  try { old.stop(); } catch (e) {}
+  dashcam.part++;
+  dashcam.startedAt = Date.now();
+  beginDashcamRecorder();
+  toast('📹 30 min segment saved — still recording (part ' + dashcam.part + ')');
 }
 
 /** Draw camera + telemetry into the recorded canvas, ~30 fps while active. */
@@ -3797,13 +3836,13 @@ function composeDashcamFrame() {
     c.fillText('◮ ATLAS', cw - 24, ch - barH + 18);
     c.textAlign = 'left';
   } catch (e) {}
-  // live badge + honest cap
+  // live badge shows total time across segments; the roll check uses the
+  // current segment's own clock
+  var total = Math.floor((Date.now() - dashcam.firstStartedAt) / 1000);
+  $('dashcamTime').textContent = Math.floor(total / 60) + ':' + (total % 60 < 10 ? '0' : '') + (total % 60) +
+    (dashcam.part > 1 ? ' · p' + dashcam.part : '');
   var elapsed = Math.floor((Date.now() - dashcam.startedAt) / 1000);
-  $('dashcamTime').textContent = Math.floor(elapsed / 60) + ':' + (elapsed % 60 < 10 ? '0' : '') + (elapsed % 60);
-  if (elapsed >= DASHCAM_MAX_S) {
-    stopDashcam(function () { toast('📹 30 min cap reached — clip saved to Dashcam clips'); });
-    return;
-  }
+  if (elapsed >= DASHCAM_SEG_S) rollDashcamSegment();
   dashcam.raf = requestAnimationFrame(composeDashcamFrame);
 }
 
@@ -3815,11 +3854,11 @@ function stopDashcam(onReady) {
   cancelAnimationFrame(dashcam.raf);
   var meta = {
     t: dashcam.startedAt,
-    name: trip.dest ? trip.dest.name : 'Drive',
+    name: dashcamClipName(),
     durS: Math.round((Date.now() - dashcam.startedAt) / 1000),
   };
-  dashcam.onSaved = function () {
-    var clip = Object.assign({}, meta, { size: dashcam.blob.size, type: dashcam.blob.type, blob: dashcam.blob });
+  dashcam.recorder._onBlob = function (blob) {
+    var clip = Object.assign({}, meta, { size: blob.size, type: blob.type, blob: blob });
     saveClip(clip).then(function (id) { clip.id = id; }).catch(function () {})
       .then(function () {
         dashcam.lastClip = clip;
@@ -3828,7 +3867,7 @@ function stopDashcam(onReady) {
         if (onReady) onReady(clip);
       });
   };
-  try { dashcam.recorder.stop(); } catch (e) { dashcam.onSaved = null; }
+  try { dashcam.recorder.stop(); } catch (e) { dashcam.recorder._onBlob = null; }
   if (dashcam.stream) {
     dashcam.stream.getTracks().forEach(function (t) { t.stop(); });
     dashcam.stream = null;
