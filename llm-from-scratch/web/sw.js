@@ -1,11 +1,15 @@
 /* Offline service worker for "My Own AI Model".
- * The page, the JS inference engine, and the model weights are all static, so:
- *  - navigations are network-first (you get the latest build when online, the
- *    cached shell when offline),
- *  - everything else (gpt.js, model.json, icons) is cache-first for speed and
- *    full offline use — once loaded, the whole model runs with no network.
+ * The page and the JS inference engine are static; the model is RETRAINABLE —
+ * the train-llm workflow commits a new model.json whenever the model is
+ * retrained (now one dispatch away, on any Magpie-scraped corpus). So:
+ *  - navigations and model.json are network-first (you get the latest build
+ *    and the latest WEIGHTS when online, the cached copies when offline —
+ *    cache-first weights would pin every prior visitor to a stale model
+ *    forever),
+ *  - everything else (gpt.js, icons) is cache-first for speed and full
+ *    offline use — once loaded, the whole model runs with no network.
  * Bump CACHE to force a clean reinstall. */
-const CACHE = 'my-ai-model-v1';
+const CACHE = 'my-ai-model-v2';
 const ASSETS = ['./', './index.html', './gpt.js', './model.json', './manifest.json',
                 './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png'];
 
@@ -30,14 +34,16 @@ self.addEventListener('fetch', (e) => {
   const req = e.request;
   const isPage = req.mode === 'navigate' ||
                  (req.destination === '' && /\/(index\.html)?(\?.*)?$/.test(new URL(req.url).pathname));
+  const isModel = /\/model\.json$/.test(new URL(req.url).pathname);
 
-  if (isPage) {
+  if (isPage || isModel) {
+    const cacheKey = isModel ? './model.json' : './index.html';
     e.respondWith(
       fetch(req).then((resp) => {
         const copy = resp.clone();
-        caches.open(CACHE).then((c) => c.put('./index.html', copy)).catch(() => {});
+        caches.open(CACHE).then((c) => c.put(cacheKey, copy)).catch(() => {});
         return resp;
-      }).catch(() => caches.match(req).then((hit) => hit || caches.match('./index.html')))
+      }).catch(() => caches.match(req).then((hit) => hit || caches.match(cacheKey)))
     );
     return;
   }
