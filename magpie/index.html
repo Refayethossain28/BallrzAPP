@@ -157,12 +157,16 @@
   </div>
 
   <footer>
-    <b>How it reaches the internet:</b> a static page can only fetch its own origin plus CORS-open sites —
-    that's the browser's same-origin policy doing its job. Run the zero-dependency companion server
-    (<code>node magpie/server.mjs</code>) and open Magpie from it to scrape any public page: it identifies
-    itself as <b>MagpieBot</b>, respects <b>robots.txt</b>, refuses private/internal addresses, and fetches
-    one page at a time with a polite delay. Scrape responsibly: public pages, sensible volumes, and honour
-    each site's terms. Everything you extract stays on your device.
+    <b>How it reaches the internet:</b> a static page can't read cross-origin pages by itself — that's the
+    browser's same-origin policy doing its job. So without a server, Magpie tries the page directly and then
+    falls back to a <b>public CORS relay</b> (allorigins → corsproxy → codetabs, first one that answers) —
+    zero setup, whole internet, but be aware the relay is a third party that sees which URLs you scrape and
+    can be slow or down. <b>robots.txt is respected either way</b> — the rules are fetched per-origin and
+    evaluated by the same unit-tested parser. For private, reliable fetching run the zero-dependency
+    companion server (<code>node magpie/server.mjs</code>): it identifies itself as <b>MagpieBot</b>,
+    refuses private/internal addresses, and fetches one page at a time with a polite delay. Scrape
+    responsibly: public pages, sensible volumes, and honour each site's terms. Everything you extract stays
+    on your device.
   </footer>
 </div>
 
@@ -239,9 +243,63 @@
     state.server = on;
     var pill = $('srvpill');
     pill.className = 'pill ' + (on ? 'on' : 'off');
-    pill.textContent = on ? '🟢 server mode — whole internet' : '🟡 browser-only — demo + CORS-open pages';
+    pill.textContent = on ? '🟢 server mode — whole internet' : '🟡 relay mode — whole internet via public relay';
     pill.title = on ? 'Companion server found: robots-respecting fetches of any public page.'
-      : 'No companion server. Run: node magpie/server.mjs — then open Magpie from it.';
+      : 'No companion server: cross-origin pages go through a public CORS relay (a third party that sees the URLs you scrape). robots.txt is still checked in-page. For private fetching run: node magpie/server.mjs';
+  }
+
+  /* Public CORS relays, tried in order — so the static page can scrape any
+   * public site with zero setup. Honest tradeoff (stated in the footer): the
+   * relay is a third party that sees which URLs you fetch. The companion
+   * server remains the private option. robots.txt is still respected: rules
+   * are fetched per-origin, cached, and evaluated in-page by the engine. */
+  var RELAYS = [
+    { name: 'allorigins', wrap: function (u) { return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u); } },
+    { name: 'corsproxy', wrap: function (u) { return 'https://corsproxy.io/?url=' + encodeURIComponent(u); } },
+    { name: 'codetabs', wrap: function (u) { return 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u); } }
+  ];
+
+  function timedFetch(url, ms) {
+    if (typeof AbortController === 'undefined') return fetch(url, { mode: 'cors' });
+    var ctl = new AbortController();
+    var t = setTimeout(function () { ctl.abort(); }, ms || 12000);
+    return fetch(url, { mode: 'cors', signal: ctl.signal })
+      .finally(function () { clearTimeout(t); });
+  }
+
+  // Fetch a URL through the first relay that answers. Resolves {text, type}.
+  function relayGet(url) {
+    var i = 0;
+    function tryNext(lastErr) {
+      if (i >= RELAYS.length) return Promise.reject(lastErr || new Error('no relay reachable'));
+      var relay = RELAYS[i++];
+      return timedFetch(relay.wrap(url)).then(function (r) {
+        if (!r.ok) throw new Error(relay.name + ' HTTP ' + r.status);
+        return r.text().then(function (t) {
+          if (!t) throw new Error(relay.name + ' returned nothing');
+          return { text: t, type: String(r.headers.get('content-type') || '') };
+        });
+      }).catch(function (e) { return tryNext(e); });
+    }
+    return tryNext(null);
+  }
+
+  // Client-side Robots Exclusion Protocol gate for the relay path — the same
+  // engine parser the companion server enforces, cached per-origin.
+  var robotsCache = {};
+  function robotsAllowsClient(url) {
+    var u;
+    try { u = new URL(url); } catch (e) { return Promise.resolve(true); }
+    var origin = u.origin;
+    var rules = robotsCache[origin]
+      ? Promise.resolve(robotsCache[origin])
+      : relayGet(origin + '/robots.txt')
+          .then(function (r) { return E.parseRobots(r.text); })
+          .catch(function () { return []; })          // unreachable robots.txt = allowed
+          .then(function (parsed) { robotsCache[origin] = parsed; return parsed; });
+    return rules.then(function (parsed) {
+      return E.robotsAllowed(parsed, 'MagpieBot', u.pathname + u.search);
+    });
   }
 
   function fetchPage(url) {
@@ -260,10 +318,27 @@
           return { url: j.url || norm, html: j.html || '' };
         });
     }
-    return fetch(norm, { mode: 'cors' })
-      .then(function (r) { return r.text().then(function (t) { return { url: norm, html: t }; }); })
+    // no server: direct CORS first (some sites allow it), then relay failover
+    return timedFetch(norm, 8000)
+      .then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.text().then(function (t) { return { url: norm, html: t }; });
+      })
       .catch(function () {
-        throw new Error('This page blocks cross-origin reads. Run the companion server (node magpie/server.mjs) and open Magpie from http://localhost:8796 to scrape any public page — or try the demo.');
+        return robotsAllowsClient(norm).then(function (allowed) {
+          if (!allowed) throw new Error('disallowed by robots.txt');
+          return relayGet(norm).then(function (got) {
+            if (got.type && !/html|xml/i.test(got.type) && !/^\s*</.test(got.text)) {
+              throw new Error('not an HTML page');
+            }
+            return { url: norm, html: got.text };
+          });
+        });
+      })
+      .catch(function (e) {
+        var msg = String(e && e.message || e);
+        if (/robots|HTML page/.test(msg)) throw e;
+        throw new Error('Couldn’t reach this page directly or via a public relay (' + msg + '). Run the companion server (node magpie/server.mjs) and open Magpie from http://localhost:8796 — or try the demo.');
       });
   }
 
