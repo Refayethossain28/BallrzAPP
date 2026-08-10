@@ -18,8 +18,11 @@
 
 import http from "node:http";
 import { readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, extname, normalize } from "node:path";
+import { lookup } from "node:dns/promises";
+import vm from "node:vm";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 8791;
@@ -62,6 +65,10 @@ against the user's virtual disk, window manager, home screen and settings. Avail
   notices [clear] — the notification centre history (every toast is recorded; ● = unread)
   web <query> — LIVE INTERNET research (Wikipedia search): titles, snippets and links.
     In Agent mode you SEE the results and can use them — research real-world facts before answering.
+  scrape <url> [dest] — LIVE INTERNET harvesting (the Magpie engine): fetches a public web page
+    (robots.txt respected), auto-detects its main list or table, extracts the rows and saves them as
+    CSV on the disk (default /home/user/scrapes/<site>.csv). The output shows a preview; cat the CSV
+    to read all rows. Use it for prices, listings, tables, links — then answer from the actual data.
 Scripts are a real language: let/if/elif/else/while/func/end, $((maths)), $1-$9 args. Author one with
 write, then run it. Automations (every 10m …) keep working while the OS is open.
 Apps you can open: files, terminal, notes, assistant, calc, automations, monitor, settings, about.
@@ -161,6 +168,78 @@ async function callAgentTurn(messages, context) {
   };
 }
 
+/* ---- the scrape fetcher: Magpie's engine for robots.txt, SSRF-guarded ----
+ * Powers the `scrape` shell command (and so the Live AI) with server-side
+ * fetches — same posture as magpie/server.mjs: MagpieBot UA, robots.txt
+ * respected via the unit-tested parser, private/internal addresses refused. */
+const MAGPIE_UA = "MagpieBot/1.0 (+https://refayethossain28.github.io/BallrzAPP/magpie/; a from-scratch prototype scraper)";
+const magpieSandbox = { module: { exports: {} }, URL };
+magpieSandbox.self = magpieSandbox;
+vm.createContext(magpieSandbox);
+vm.runInContext(readFileSync(join(__dirname, "..", "magpie", "engine.js"), "utf8"), magpieSandbox, { filename: "magpie/engine.js" });
+const Magpie = magpieSandbox.module.exports;
+
+function isBlockedHost(host) {
+  const h = String(host ?? "").toLowerCase().replace(/^\[|\]$/g, "");
+  if (!h) return true;
+  if (h === "localhost" || /(^|\.)localhost$/.test(h) || /\.local$/.test(h)) return true;
+  if (h === "0.0.0.0" || h === "::" || h === "::1") return true;
+  if (/^127\./.test(h) || /^10\./.test(h) || /^192\.168\./.test(h)) return true;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return true;
+  if (/^169\.254\./.test(h)) return true;
+  if (/^(fc|fd)[0-9a-f]{2}:/.test(h) || /^fe80:/.test(h)) return true;
+  return false;
+}
+async function assertPublic(target) {
+  const u = new URL(target);
+  if (u.protocol !== "http:" && u.protocol !== "https:") throw new Error("only http(s) URLs");
+  if (isBlockedHost(u.hostname)) throw new Error("private/internal host refused");
+  try {
+    const { address } = await lookup(u.hostname);
+    if (isBlockedHost(address)) throw new Error("host resolves to a private address");
+  } catch (e) {
+    if (/private/.test(String(e.message))) throw e;
+    throw new Error("DNS lookup failed");
+  }
+}
+function scrapeTimedFetch(target) {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), 10000);
+  return fetch(target, {
+    signal: ctl.signal, redirect: "follow",
+    headers: { "user-agent": MAGPIE_UA, accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.5" }
+  }).finally(() => clearTimeout(t));
+}
+const robotsCache = new Map();
+async function robotsAllows(target) {
+  const origin = new URL(target).origin;
+  if (!robotsCache.has(origin)) {
+    let rules = [];
+    try {
+      const r = await scrapeTimedFetch(origin + "/robots.txt");
+      if (r.ok) rules = Magpie.parseRobots(await r.text());
+    } catch { /* unreachable robots.txt = allowed */ }
+    robotsCache.set(origin, rules);
+  }
+  const u = new URL(target);
+  return Magpie.robotsAllowed(robotsCache.get(origin), MAGPIE_UA, u.pathname + u.search);
+}
+async function apiFetch(rawUrl) {
+  const target = Magpie.normalizeUrl(rawUrl);
+  if (!target) return { status: 400, body: { error: "not a scrapeable URL" } };
+  await assertPublic(target);
+  if (!(await robotsAllows(target))) return { status: 200, body: { url: target, error: "disallowed by robots.txt" } };
+  const r = await scrapeTimedFetch(target);
+  const finalUrl = Magpie.normalizeUrl(r.url) || target;
+  await assertPublic(finalUrl);
+  const ct = String(r.headers.get("content-type") || "");
+  if (!/text\/html|application\/xhtml\+xml/i.test(ct)) {
+    return { status: 200, body: { url: finalUrl, status: r.status, error: "not an HTML page" } };
+  }
+  const buf = Buffer.from(await r.arrayBuffer());
+  return { status: 200, body: { url: finalUrl, status: r.status, html: buf.subarray(0, 1.5 * 1024 * 1024).toString("utf8") } };
+}
+
 /* ---- tiny same-origin server: static files + the two API routes ---- */
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -204,10 +283,25 @@ const server = http.createServer(async (req, res) => {
       return send(200, "application/json", JSON.stringify(out));
     }
 
-    // static: serve the AIOS app itself (path-traversal-safe)
+    if (url.pathname === "/api/fetch") {
+      const target = url.searchParams.get("url") || "";
+      try {
+        const out = await apiFetch(target);
+        return send(out.status, "application/json", JSON.stringify(out.body));
+      } catch (e) {
+        return send(200, "application/json", JSON.stringify({ url: target, error: String(e && e.message || e) }));
+      }
+    }
+
+    // static: serve the AIOS app itself (path-traversal-safe); the page loads
+    // the Magpie engine as ../magpie/engine.js, which resolves here to
+    // /magpie/engine.js — serve the real file from the sibling directory.
     let p = normalize(url.pathname).replace(/^([/\\])+/, "");
     if (p === "" || p === ".") p = "index.html";
     if (p.includes("..")) return send(403, "text/plain", "forbidden");
+    if (p === "magpie/engine.js") {
+      return send(200, MIME[".js"], await readFile(join(__dirname, "..", "magpie", "engine.js")));
+    }
     const file = join(__dirname, p);
     const data = await readFile(file);
     return send(200, MIME[extname(file)] || "application/octet-stream", data);

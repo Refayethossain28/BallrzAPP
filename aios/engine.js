@@ -626,6 +626,7 @@
     { id: 'fxsignal',   name: 'FX Signal Pro',  emoji: '📈', url: '../trading-app/fx-signal-pro.html', desc: 'Currency-pair trading signals.' },
     { id: 'voyager',    name: 'Voyager',        emoji: '🧭', url: '../voyager/',            desc: 'The internet browser — tabs, omnibox, memory.' },
     { id: 'seeker',     name: 'Seeker',         emoji: '🔎', url: '../seeker/',             desc: 'The search engine — BM25 ranking, instant answers.' },
+    { id: 'magpie',     name: 'Magpie',         emoji: '🐦‍⬛', url: '../magpie/',             desc: 'The web scraper — point it at a page, it finds the lists.' },
     { id: 'cortex',     name: 'Cortex',         emoji: '🧩', url: '../cortex/',             desc: 'The daily brain gym — five adaptive drills.' },
     { id: 'cusp',       name: 'Cusp',           emoji: '🎯', url: '../cusp/',               desc: 'What to do right now — the salience engine.' },
     { id: 'atlas',      name: 'Atlas',          emoji: '🗺️', url: '../atlas/',              desc: 'Your own satnav — voice turn-by-turn.' },
@@ -1024,6 +1025,7 @@
     '  timer <t> [label]   set a timer         theme <accent>   set the look',
     '  name [you]          who you are         widget <list|add|remove> home cards',
     '  notices [clear]     notification centre history (● = unread)',
+    '  web <query>         internet research      scrape <url> [file]  page → CSV rows',
     'Scripts: text files with a real language — let/if/elif/else/while/func/end,',
     '  $((maths)), $1-$9/$@ args, # comments.  run backup.sh   (see /apps for examples)',
     'Also: date · whoami · uname · clear · help  ·  Builtins: $USER $HOME $CWD $WS'
