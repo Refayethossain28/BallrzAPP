@@ -610,6 +610,7 @@
 <div id="bellpanel"></div>
 
 <script src="engine.js"></script>
+<script src="../magpie/engine.js"></script>
 <script src="config.js"></script>
 <script>
 'use strict';
@@ -678,8 +679,127 @@ function renderNoticeRows(box, limit) {
 
 /* ── client commands: the kernel stays pure, so anything needing the network
  *    runs here in the shell layer. `web <query>` is the AI's (and your)
- *    research tool — live Wikipedia search, results as plain lines. ── */
+ *    research tool — live Wikipedia search, results as plain lines — and
+ *    `scrape <url>` is the harvester: Magpie's engine turns any public page
+ *    into CSV rows on the virtual disk. ── */
+
+/* Fetch a page for `scrape`: the AIOS server's robots-respecting /api/fetch
+ * when it's running, else direct CORS, else public relays raced in parallel
+ * with an in-page robots.txt check — the same posture as the Magpie app. */
+var SCRAPE_RELAYS = [
+  function (u) { return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u); },
+  function (u) { return 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u); },
+  function (u) { return 'https://test.cors.workers.dev/?' + u; },
+  function (u) { return 'https://corsproxy.io/?url=' + encodeURIComponent(u); }
+];
+function scrapeTimedFetch(url, ms) {
+  if (typeof AbortController === 'undefined') return fetch(url, { mode: 'cors' });
+  var ctl = new AbortController();
+  var t = setTimeout(function () { ctl.abort(); }, ms || 16000);
+  return fetch(url, { mode: 'cors', signal: ctl.signal }).finally(function () { clearTimeout(t); });
+}
+function scrapeRelayGet(url) {
+  return new Promise(function (resolve, reject) {
+    var pending = SCRAPE_RELAYS.length, settled = false, errs = [];
+    SCRAPE_RELAYS.forEach(function (wrap) {
+      scrapeTimedFetch(wrap(url)).then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.text();
+      }).then(function (body) {
+        if (!body) throw new Error('empty');
+        if (settled) return;
+        settled = true;
+        resolve(body);
+      }).catch(function (e) {
+        errs.push(String(e && e.message || e));
+        if (!settled && --pending === 0) reject(new Error('no relay reachable — ' + errs.join(' · ')));
+      });
+    });
+  });
+}
+var scrapeRobotsCache = {};
+function scrapeRobotsAllows(M, url) {
+  var origin, path;
+  try { var u = new URL(url); origin = u.origin; path = u.pathname + u.search; }
+  catch (e) { return Promise.resolve(true); }
+  var rules = scrapeRobotsCache[origin]
+    ? Promise.resolve(scrapeRobotsCache[origin])
+    : scrapeRelayGet(origin + '/robots.txt')
+        .then(function (t) { return M.parseRobots(t); })
+        .catch(function () { return []; })
+        .then(function (p) { scrapeRobotsCache[origin] = p; return p; });
+  return rules.then(function (p) { return M.robotsAllowed(p, 'MagpieBot', path); });
+}
+function scrapeFetchPage(url) {
+  return fetch('api/fetch?url=' + encodeURIComponent(url))
+    .then(function (r) { if (!r.ok) throw new Error('no server'); return r.json(); })
+    .then(function (j) {
+      if (j.error) throw new Error(j.error);
+      if (!j.html) throw new Error('no server');
+      return { url: j.url || url, html: j.html };
+    })
+    .catch(function (e) {
+      if (!/no server|Failed to fetch|load failed|HTTP 404/i.test(String(e && e.message || e))) throw e;
+      return scrapeTimedFetch(url, 8000)
+        .then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.text().then(function (t) { return { url: url, html: t }; });
+        })
+        .catch(function () {
+          var M = window.Magpie;
+          return scrapeRobotsAllows(M, url).then(function (allowed) {
+            if (!allowed) throw new Error('disallowed by robots.txt');
+            return scrapeRelayGet(url).then(function (body) { return { url: url, html: body }; });
+          });
+        });
+    });
+}
+function clientScrape(rawUrl, dest) {
+  var M = window.Magpie;
+  if (!M) return Promise.resolve({ out: ['scrape: the Magpie engine failed to load'], error: true, effects: [] });
+  var url = M.normalizeUrl(rawUrl);
+  if (!url) return Promise.resolve({ out: ['scrape: not a scrapeable URL — try scrape books.toscrape.com'], error: true, effects: [] });
+  var host = (/^https?:\/\/([^/]+)/.exec(url) || [])[1] || 'page';
+  dest = dest || '/home/user/scrapes/' + host.replace(/^www\./, '').replace(/[^\w.-]+/g, '-') + '.csv';
+  return scrapeFetchPage(url).then(function (page) {
+    var doc = M.parseHTML(page.html);
+    var meta = M.extractMeta(doc, page.url);
+    var rows = [], via = '';
+    var rec = M.suggestRecipe(doc);
+    if (rec) {
+      var run = M.runRecipe(doc, rec, page.url);
+      rows = run.rows;
+      via = 'auto-detected list (' + rec.itemSelector + ')';
+    }
+    if (!rows.length) {
+      var tables = M.extractTables(doc);
+      if (tables.length && tables[0].objects.length) { rows = tables[0].objects; via = 'first <table>'; }
+    }
+    if (!rows.length) { rows = M.extractLinks(doc, page.url); via = 'links (no list or table found)'; }
+    var out = ['scraped ' + page.url, (meta.title || '(untitled)') + ' — ' + rows.length + ' rows via ' + via];
+    if (rows.length) {
+      var now = Date.now();
+      K.fsMkdir(state.fs, '/home/user/scrapes', now, { parents: true });
+      K.fsWrite(state.fs, dest, M.toCSV(rows), now);
+      save();
+      out.push('saved → ' + dest + '  (open it with: cat ' + dest + ')');
+      var cols = M.columnsOf(rows);
+      rows.slice(0, 3).forEach(function (r2) {
+        out.push('  ' + cols.map(function (c) { return String(r2[c] == null ? '' : r2[c]).slice(0, 40); }).join(' | '));
+      });
+      notify('🐦‍⬛ Scrape', host + ': ' + rows.length + ' rows → ' + dest);
+    } else {
+      out.push('nothing tabular found — the page may build its content in JavaScript');
+    }
+    return { out: out, error: false, effects: [] };
+  }).catch(function (e) {
+    return { out: ['scrape: ' + String(e && e.message || e)], error: true, effects: [] };
+  });
+}
+
 function execClientCommand(cmd) {
+  var sm = /^\s*scrape\s+(\S+)(?:\s+(\S+))?\s*$/.exec(String(cmd || ''));
+  if (sm) return clientScrape(sm[1], sm[2]);
   var m = /^\s*web\s+(.+)/.exec(String(cmd || ''));
   if (!m) return null;
   var q = m[1].trim().replace(/^"|"$/g, '');

@@ -946,8 +946,9 @@ test('BALLRZ_APPS: every hub app present with a unique id and a relative url; AI
     assert.ok(a.url.startsWith('../'), a.id + ' url is relative to /aios/');
   });
   assert.ok(!apps.some((a) => a.url === '../aios/'), 'AIOS does not open itself');
-  ['cortex', 'voyager', 'vault', 'timecoin', 'ripple', 'imposter', 'atlas', 'graft'].forEach((id) =>
+  ['cortex', 'voyager', 'vault', 'timecoin', 'ripple', 'imposter', 'atlas', 'graft', 'magpie'].forEach((id) =>
     assert.ok(ids.includes(id), id + ' in catalog'));
+  assert.equal(K.ballrzAppById('magpie').name, 'Magpie', 'the web scraper is openable from AIOS');
   assert.equal(K.ballrzAppById('cortex').name, 'Cortex');
   assert.equal(K.ballrzAppById('nope'), null);
 });
