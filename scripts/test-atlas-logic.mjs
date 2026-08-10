@@ -1037,6 +1037,35 @@ test('updatePace: learns your speed honestly and stays clamped', () => {
 
 /* --------------------------------- run ---------------------------------- */
 
+test('speechSafe: Arabic street names drop from speech, Latin ones stay', () => {
+  assert.equal(A.speechSafe('Turn left onto \u0634\u0627\u0631\u0639 \u0627\u0644\u0634\u064a\u062e \u0632\u0627\u064a\u062f'), 'Turn left');
+  assert.equal(A.speechSafe('In 200 metres, at the roundabout, take the 2nd exit onto \u0634\u0627\u0631\u0639 2'),
+               'In 200 metres, at the roundabout, take the 2nd exit');
+  assert.equal(A.speechSafe('Head north on \u0634\u0627\u0631\u0639 \u062e\u0644\u064a\u0641\u0629'), 'Head north');
+  assert.equal(A.speechSafe('Make a U-turn and continue on \u041d\u0435\u0432\u0441\u043a\u0438\u0439'), 'Make a U-turn');
+  assert.equal(A.speechSafe('Turn left onto Sheikh Zayed Road'), 'Turn left onto Sheikh Zayed Road');
+  assert.equal(A.speechSafe('You have arrived at your destination'), 'You have arrived at your destination');
+  assert.equal(A.speechSafe('Continue straight on Baker Street'), 'Continue straight on Baker Street');
+});
+
+test('overspeed buffer: warnings arm later where enforcement allows a margin', () => {
+  // limit 100: default tolerance is 106; with a +20 buffer it becomes 126
+  let r = A.overspeedUpdate(null, 115, 100, 1, 20);
+  assert.equal(r.warn, false); // inside the buffer — no nag
+  assert.equal(r.over, true);  // bubble still shows you are over the limit
+  let st = null, warned = false;
+  for (let i = 0; i < 4; i++) { const x = A.overspeedUpdate(st, 130, 100, 1, 20); st = x.state; warned = warned || x.warn; }
+  assert.equal(warned, true);  // beyond limit+buffer for 3s — warn once
+  // no buffer behaves exactly as before
+  st = null; warned = false;
+  for (let i = 0; i < 4; i++) { const x = A.overspeedUpdate(st, 115, 100, 1, 0); st = x.state; warned = warned || x.warn; }
+  assert.equal(warned, true);
+  // and inside the buffer it never warns, however long
+  st = null; warned = false;
+  for (let i = 0; i < 10; i++) { const x = A.overspeedUpdate(st, 115, 100, 1, 20); st = x.state; warned = warned || x.warn; }
+  assert.equal(warned, false);
+});
+
 test('convoy DJ: track matching survives messy metadata', () => {
   assert.equal(A.trackKey('Midnight Drive (Remastered 2019)', 'Neon Coast'), 'midnight drive|neon coast');
   assert.equal(A.trackKey('Midnight Drive feat. KLLO', 'NEON COAST'), 'midnight drive|neon coast');

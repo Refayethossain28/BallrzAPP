@@ -1023,10 +1023,10 @@
    * blips never nag. `over` is the immediate visual state.
    * → {state, over, warn}
    */
-  function overspeedUpdate(state, speedKmh, limitKmh, dtS) {
+  function overspeedUpdate(state, speedKmh, limitKmh, dtS, bufferKmh) {
     state = state || { overS: 0, warned: false };
     if (limitKmh == null) return { state: { overS: 0, warned: false }, over: false, warn: false };
-    var tol = limitKmh * 1.05 + 1;
+    var tol = limitKmh * 1.05 + 1 + (typeof bufferKmh === 'number' && bufferKmh > 0 ? bufferKmh : 0);
     if (speedKmh <= tol) {
       return { state: { overS: 0, warned: false }, over: speedKmh > limitKmh + 0.5, warn: false };
     }
@@ -1723,6 +1723,19 @@
     return Math.abs(currentS - targetS) > 2.5 ? 'seek' : 'ok';
   }
 
+
+  /** Spoken-text guard for places where street names aren't in Latin script
+   *  (Dubai, Moscow, Tokyo…): the on-screen banner shows the real name, but
+   *  an English TTS voice garbles it — so the SPOKEN line drops the name and
+   *  keeps the manoeuvre. Latin-named streets pass through untouched. */
+  function speechSafe(text) {
+    if (typeof text !== 'string') return text;
+    var m = text.match(/^(.*?)\s(onto|on|and continue on)\s(.+)$/);
+    if (!m) return text;
+    var nonLatin = /[\u0400-\u04FF\u0530-\u058F\u0590-\u08FF\u0900-\u109F\u0E00-\u0E7F\u4E00-\u9FFF\u3040-\u30FF\uAC00-\uD7AF]/;
+    return nonLatin.test(m[3]) ? m[1] : text;
+  }
+
   /* ================================ places ================================ */
 
   /**
@@ -1804,5 +1817,6 @@
     convoyAvatar: convoyAvatar, applyBeacon: applyBeacon, pruneMembers: pruneMembers, convoyStats: convoyStats,
     chatText: chatText, chatMsg: chatMsg, validChatMsg: validChatMsg, pruneChat: pruneChat, agoShort: agoShort,
     trackKey: trackKey, findLocalTrack: findLocalTrack, djTarget: djTarget, syncAdjust: syncAdjust,
+    speechSafe: speechSafe,
   };
 });

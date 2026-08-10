@@ -680,6 +680,12 @@
     </div>
   </div>
   <div class="setRow">
+    <div class="lbl">Speed alert buffer<div class="sub">Warn only past limit + buffer — some cities (famously Dubai) enforce above the posted limit</div></div>
+    <div class="seg" id="segOverBuf">
+      <button data-v="0">0</button><button data-v="10">+10</button><button data-v="20">+20</button>
+    </div>
+  </div>
+  <div class="setRow">
     <div class="lbl">🏁 Co-driver<div class="sub">Rally pace notes — "left 4 into right 3"</div></div>
     <div class="seg" id="segCodriver">
       <button data-v="on">On</button><button data-v="off">Off</button>
@@ -1002,7 +1008,7 @@ function load(key, fallback) {
 }
 function save(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch (e) {} }
 
-var settings = Object.assign({ units: 'metric', voice: 'on', theme: 'auto', codriver: 'off', cameras: 'on', traffic: 'on', baseLayer: 'map', view3d: 'on', buildings: 'on' }, load('atlas.settings', {}));
+var settings = Object.assign({ units: 'metric', voice: 'on', theme: 'auto', codriver: 'off', cameras: 'on', traffic: 'on', baseLayer: 'map', view3d: 'on', buildings: 'on', overBuf: '0' }, load('atlas.settings', {}));
 var places = load('atlas.places', []);     // {name, addr, lat, lon, kind?, uses, lastUsed}
 var recents = load('atlas.recents', []);   // same shape, capped
 var pace = load('atlas.pace', {});         // per-profile personal pace factor (learned)
@@ -1680,7 +1686,8 @@ function fetchRoute(from, to, profile) {
 }
 
 function geocode(q) {
-  var url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=0&limit=8&q=' + encodeURIComponent(q);
+  var lang = (typeof navigator !== 'undefined' && navigator.language) || 'en';
+  var url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=0&limit=8&accept-language=' + encodeURIComponent(lang) + '&q=' + encodeURIComponent(q);
   return fetchJson(url).then(function (rows) {
     return rows.map(function (r) {
       var parts = (r.display_name || '').split(',');
@@ -1858,7 +1865,8 @@ function demoSafety(route) {
 }
 
 function reverseGeocode(p) {
-  var url = 'https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=17&lat=' + p.lat + '&lon=' + p.lon;
+  var lang2 = (typeof navigator !== 'undefined' && navigator.language) || 'en';
+  var url = 'https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=17&accept-language=' + encodeURIComponent(lang2) + '&lat=' + p.lat + '&lon=' + p.lon;
   return fetchJson(url).then(function (r) {
     var parts = (r.display_name || '').split(',');
     return { name: parts[0] ? parts[0].trim() : 'Dropped pin', addr: parts.slice(1, 4).join(',').trim() };
@@ -2456,7 +2464,7 @@ function startNav(demo) {
   requestWakeLock();
   var first = route.steps[0];
   setBanner(first.icon, A.fmtDist(0, settings.units), first.instruction, null);
-  speak(first.instruction);
+  speak(A.speechSafe(first.instruction));
   if (demo) {
     nav.simState = { alongM: 0 };
     nav.simPos = null;
@@ -2507,7 +2515,7 @@ function onNavFix(fix) {
   var nowTs = Date.now();
   var dtS = Math.min(3, Math.max(0.2, (nowTs - (nav.lastSafetyTs || nowTs)) / 1000));
   nav.lastSafetyTs = nowTs;
-  var os = A.overspeedUpdate(nav.osState, v * 3.6, limitKmh, dtS);
+  var os = A.overspeedUpdate(nav.osState, v * 3.6, limitKmh, dtS, parseInt(settings.overBuf, 10) || 0);
   nav.osState = os.state;
   $('speedBubble').classList.toggle('over', os.over);
 
@@ -2592,7 +2600,7 @@ function onNavFix(fix) {
     }
   } else $('avgPill').classList.remove('show', 'over');
 
-  if (r.announce) speak(r.announce.text);
+  if (r.announce) speak(A.speechSafe(r.announce.text));
   else if (os.warn) speak('Watch your speed — the limit is ' + limitLabel(limitKmh));
   else if (azLine) speak(azLine);
   else if (trafWarn) speak('Traffic ahead — ' + trafWarn.kind.toLowerCase() + ' in ' + A.speakDist(trafHit.distM, settings.units));
@@ -4142,7 +4150,7 @@ function segWire(id, key, after) {
   });
 }
 function syncSettingsUI() {
-  [['segUnits', 'units'], ['segVoice', 'voice'], ['segTheme', 'theme'], ['segCodriver', 'codriver'], ['segCameras', 'cameras'], ['segTraffic', 'traffic'], ['segLayer', 'baseLayer'], ['segView', 'view3d'], ['segTheme2', 'theme'], ['segBuildings', 'buildings']].forEach(function (pair) {
+  [['segUnits', 'units'], ['segVoice', 'voice'], ['segTheme', 'theme'], ['segCodriver', 'codriver'], ['segCameras', 'cameras'], ['segOverBuf', 'overBuf'], ['segTraffic', 'traffic'], ['segLayer', 'baseLayer'], ['segView', 'view3d'], ['segTheme2', 'theme'], ['segBuildings', 'buildings']].forEach(function (pair) {
     Array.prototype.forEach.call($(pair[0]).querySelectorAll('button'), function (b) {
       b.classList.toggle('on', b.getAttribute('data-v') === settings[pair[1]]);
     });
@@ -4154,6 +4162,7 @@ segWire('segVoice', 'voice');
 segWire('segTheme', 'theme', function () { needsDraw = true; });
 segWire('segCodriver', 'codriver');
 segWire('segCameras', 'cameras', function () { needsDraw = true; });
+segWire('segOverBuf', 'overBuf');
 segWire('segTraffic', 'traffic', function () { needsDraw = true; if (trip.routes.length && !trip.demoOnly) requestRoutes(); });
 segWire('segLayer', 'baseLayer', function () { updateAttribution(); needsDraw = true; });
 segWire('segView', 'view3d', function () { apply3d(); });
