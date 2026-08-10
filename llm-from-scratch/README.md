@@ -170,7 +170,13 @@ the output stays varied and keeps its line/speaker structure. The same decoding
 and app icons ship alongside the page, so once loaded the model runs with no
 network at all — the weights are cached on-device. A trained `web/model.json` is
 committed to the repo so the deployed page works with **zero setup**, and it is
-published to GitHub Pages next to the other prototypes:
+published to GitHub Pages next to the other prototypes.
+
+The committed model was **trained on the live internet**: Magpie (the repo's
+from-scratch scraper) crawled 58 Wikipedia pages about London and its
+transport — 300k words, robots.txt respected — and the "Train browser LLM"
+workflow trained 1,500 steps (6 layers / 256-dim / BPE-1024, 5.3M parameters)
+on a GitHub runner, entirely with this repo's own autograd.
 
 - **Live:** https://refayethossain28.github.io/BallrzAPP/llm/
 

@@ -222,6 +222,20 @@ class Tensor:
         for node in reversed(topo):
             node._backward()
 
+        # Free the graph. Every op's `_backward` closure captures its own output
+        # tensor, so each node sits in a reference cycle (out -> closure -> out)
+        # that plain refcounting can't reclaim — and one training step's graph
+        # holds gigabytes of intermediate arrays. Python's cyclic GC triggers on
+        # object *counts*, not bytes, so at ~1 step/minute the garbage outruns
+        # collection and training OOMs (observed: >14 GB RSS in 5 minutes).
+        # Snapping the cycles here lets refcounting free each step's arrays the
+        # moment the loss tensor goes out of scope. Parameters keep their
+        # `.grad` (the optimizer reads it after backward); intermediates and
+        # their grads die with the graph.
+        for node in topo:
+            node._prev = set()
+            node._backward = lambda: None
+
 
 # --- functions that build their own graph nodes ------------------------------
 

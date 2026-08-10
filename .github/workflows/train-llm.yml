@@ -12,8 +12,14 @@ on:
   workflow_dispatch:
     inputs:
       corpus_url:
-        description: "Plain-text corpus: a URL, or a repo path like data/web.txt (build one from the live internet with scripts/build-web-corpus.mjs)"
+        description: "Plain-text corpus: a URL, or a repo path like data/web.txt (ignored when seed_urls is set)"
         default: "https://raw.githubusercontent.com/dscape/spell/master/test/resources/big.txt"
+      seed_urls:
+        description: "SCRAPE the corpus from the live internet instead: space-separated seed URLs (Magpie crawls same-host links, robots.txt respected)"
+        default: ""
+      scrape_pages:
+        description: "Page budget for the scrape (when seed_urls is set)"
+        default: "60"
       tokenizer:
         description: "char | bpe"
         default: "bpe"
@@ -66,8 +72,14 @@ jobs:
         working-directory: llm-from-scratch
         run: |
           mkdir -p data
-          # a committed corpus file (e.g. data/web.txt from build-web-corpus.mjs) wins over a URL
-          if [ -f "${{ inputs.corpus_url }}" ]; then
+          if [ -n "${{ inputs.seed_urls }}" ]; then
+            # scrape the corpus from the live internet with Magpie (robots.txt
+            # respected, MagpieBot UA, one page a second)
+            node ../scripts/build-web-corpus.mjs ${{ inputs.seed_urls }} \
+              --pages "${{ inputs.scrape_pages }}" \
+              --out llm-from-scratch/data/corpus.txt
+          elif [ -f "${{ inputs.corpus_url }}" ]; then
+            # a committed corpus file (e.g. data/web.txt from build-web-corpus.mjs)
             cp "${{ inputs.corpus_url }}" data/corpus.txt
           else
             curl -fsSL "${{ inputs.corpus_url }}" -o data/corpus.txt
