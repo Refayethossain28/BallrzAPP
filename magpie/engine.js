@@ -579,6 +579,50 @@
     return meta;
   }
 
+  /**
+   * The page's readable prose — for reading, and for building LLM training
+   * corpora from the live web. Collects paragraphs, headings, list items,
+   * blockquotes and preformatted text, skipping chrome (nav/header/footer/
+   * aside/forms), dropping short boilerplate crumbs and exact duplicates.
+   * Returns {title, text, words}.
+   */
+  var SKIP_ARTICLE = { nav: 1, header: 1, footer: 1, aside: 1, form: 1, button: 1,
+    select: 1, script: 1, style: 1, noscript: 1, template: 1 };
+
+  function insideSkipped(el) {
+    var c = el.parent;
+    while (c && c.type === 'el') {
+      if (SKIP_ARTICLE[c.tag] === 1) return true;
+      c = c.parent;
+    }
+    return false;
+  }
+
+  function extractArticle(doc) {
+    var title = '';
+    var t = selectOne(doc, 'title');
+    if (t) title = text(t);
+    var out = [], seen = {};
+    walk(doc, function (el) {
+      var tag = el.tag;
+      var isHead = /^h[1-6]$/.test(tag);
+      if (tag !== 'p' && tag !== 'li' && tag !== 'blockquote' && tag !== 'pre' && !isHead) return;
+      if (insideSkipped(el)) return;
+      var tx = text(el);
+      if (!tx) return;
+      // headings can be short; body lines below these lengths are almost
+      // always chrome ("Read more", cookie banners, menu crumbs)
+      var min = isHead ? 4 : tag === 'li' ? 30 : 40;
+      if (tx.length < min) return;
+      if (seen[tx] === 1) return;
+      seen[tx] = 1;
+      out.push(tx);
+    });
+    var body = out.join('\n');
+    return { title: title, text: body,
+      words: body ? body.split(/\s+/).filter(Boolean).length : 0 };
+  }
+
   /* ================================================================== *
    *  5. The detector — find the page's repeating structures             *
    * ================================================================== */
@@ -981,6 +1025,7 @@
     // harvesters
     extractTables: extractTables, extractLinks: extractLinks,
     extractImages: extractImages, extractEmails: extractEmails, extractMeta: extractMeta,
+    extractArticle: extractArticle,
     // detection
     detectRepeats: detectRepeats, suggestRecipe: suggestRecipe, buildSelector: buildSelector,
     // recipes

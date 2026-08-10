@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       corpus_url:
-        description: "Plain-text corpus URL (UTF-8)"
+        description: "Plain-text corpus: a URL, or a repo path like data/web.txt (build one from the live internet with scripts/build-web-corpus.mjs)"
         default: "https://raw.githubusercontent.com/dscape/spell/master/test/resources/big.txt"
       tokenizer:
         description: "char | bpe"
@@ -66,7 +66,12 @@ jobs:
         working-directory: llm-from-scratch
         run: |
           mkdir -p data
-          curl -fsSL "${{ inputs.corpus_url }}" -o data/corpus.txt
+          # a committed corpus file (e.g. data/web.txt from build-web-corpus.mjs) wins over a URL
+          if [ -f "${{ inputs.corpus_url }}" ]; then
+            cp "${{ inputs.corpus_url }}" data/corpus.txt
+          else
+            curl -fsSL "${{ inputs.corpus_url }}" -o data/corpus.txt
+          fi
           if [ "${{ inputs.clean_wikitext }}" = "true" ]; then
             echo "cleaning WikiText markup…"
             sed -i \
