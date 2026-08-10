@@ -1,0 +1,683 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Magpie — the web scraper</title>
+<meta name="description" content="A real web scraper built from scratch — auto-detects the lists on any page, extraction recipes, CSV/JSON export, pagination crawling that respects robots.txt, and page-watch diffs.">
+<meta name="theme-color" content="#0a0d16">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Magpie">
+<style>
+  :root {
+    --bg: #0a0d16; --bg2: #0d1220; --card: #101627; --card2: #141c33;
+    --line: #1e2947; --text: #e9edf9; --dim: #92a1c4; --faint: #5e6d8f;
+    --brand: #4dd8ff; --brand2: #8f7cf7; --gold: #e8b34c; --green: #3ecf8e;
+    --red: #ff6b6b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    background: radial-gradient(1200px 700px at 50% -10%, #121b36 0%, var(--bg) 55%) fixed, var(--bg);
+    color: var(--text);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    min-height: 100dvh;
+  }
+  a { color: var(--brand); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 0 16px calc(44px + env(safe-area-inset-bottom)); }
+
+  header { display: flex; align-items: center; gap: 12px; padding: 22px 0 8px; flex-wrap: wrap; }
+  .logo { font-size: 30px; font-weight: 800; letter-spacing: -1px; user-select: none; }
+  .logo .g { background: linear-gradient(92deg, var(--brand) 5%, var(--brand2) 55%, var(--gold) 95%);
+             -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .tagline { color: var(--dim); font-size: 13px; flex: 1 1 100%; margin-top: -6px; }
+  .pill { margin-left: auto; font-size: 12px; color: var(--dim); border: 1px solid var(--line);
+          border-radius: 999px; padding: 4px 12px; background: var(--card); white-space: nowrap; }
+  .pill.on { color: var(--green); border-color: rgba(62,207,142,.4); }
+  .pill.off { color: var(--gold); border-color: rgba(232,179,76,.35); }
+
+  .bar { display: flex; gap: 8px; margin: 14px 0 8px; }
+  .bar input { flex: 1; background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+               padding: 12px 15px; color: var(--text); font-size: 15px; outline: none; min-width: 0; }
+  .bar input:focus { border-color: var(--brand); }
+  .bar input::placeholder { color: var(--faint); }
+  button { background: var(--card); color: var(--text); border: 1px solid var(--line);
+           border-radius: 10px; padding: 9px 15px; font-size: 13.5px; cursor: pointer; font-family: inherit; }
+  button:hover { border-color: var(--brand); }
+  button.primary { background: linear-gradient(92deg, #14405c, #33306b); border-color: #2b5f87; font-weight: 600; }
+  button.small { padding: 4px 10px; font-size: 12px; border-radius: 8px; }
+  button:disabled { opacity: .5; cursor: default; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 10px; }
+  .chip { background: rgba(77,216,255,.07); border: 1px solid var(--line); color: var(--dim);
+          border-radius: 999px; padding: 4px 12px; font-size: 12.5px; cursor: pointer; }
+  .chip:hover { color: var(--text); border-color: var(--brand); }
+
+  .note { color: var(--faint); font-size: 12.5px; margin: 6px 0 14px; }
+  .note b { color: var(--dim); }
+  .status { font-size: 13px; color: var(--dim); min-height: 20px; margin: 4px 0 10px; }
+  .status.err { color: var(--red); }
+  .status.ok { color: var(--green); }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+          padding: 14px 16px; margin: 12px 0; }
+  .card h2 { font-size: 15px; margin-bottom: 8px; }
+  .card h2 .n { color: var(--faint); font-weight: 400; font-size: 12.5px; }
+  .pmeta .t { font-weight: 700; font-size: 16px; }
+  .pmeta .d { color: var(--dim); font-size: 13px; margin-top: 3px; }
+  .pmeta .kv { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 9px; }
+  .kv span { font-size: 11.5px; color: var(--faint); border: 1px solid var(--line);
+             border-radius: 999px; padding: 2px 9px; }
+  .kv span b { color: var(--dim); font-weight: 600; }
+
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 16px 0 4px; }
+  .tabs button { border-radius: 999px; padding: 6px 14px; font-size: 13px; color: var(--dim); }
+  .tabs button.on { color: var(--text); border-color: var(--brand); background: rgba(77,216,255,.12); }
+
+  .rep { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+  .rep:last-child { border-bottom: 0; }
+  .rep .sel { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+              font-size: 12.5px; color: var(--brand); word-break: break-all; }
+  .rep .meta { color: var(--faint); font-size: 12px; }
+  .rep .sample { color: var(--dim); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis;
+                 display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; }
+  .rep > div { flex: 1; min-width: 0; }
+
+  .frow { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
+  .frow input, .frow select { background: var(--bg2); border: 1px solid var(--line); border-radius: 8px;
+      padding: 7px 9px; color: var(--text); font-size: 13px; outline: none; min-width: 0; font-family: inherit; }
+  .frow input:focus { border-color: var(--brand); }
+  .frow .fname { flex: 2; }
+  .frow .fsel  { flex: 4; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .frow .fattr { flex: 1.6; }
+  .frow .x { color: var(--faint); background: none; border: 0; font-size: 15px; padding: 2px 6px; }
+  .frow .x:hover { color: var(--red); }
+  .isel { width: 100%; margin-bottom: 8px; }
+  .lab { color: var(--faint); font-size: 11.5px; text-transform: uppercase; letter-spacing: .6px; margin: 8px 0 4px; }
+  .runrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+  .runrow label { color: var(--dim); font-size: 13px; display: flex; align-items: center; gap: 6px; }
+  .runrow input[type=number] { width: 56px; background: var(--bg2); border: 1px solid var(--line);
+      border-radius: 8px; padding: 5px 7px; color: var(--text); font-size: 13px; outline: none; }
+
+  .tscroll { overflow-x: auto; margin-top: 8px; -webkit-overflow-scrolling: touch; }
+  table.data { border-collapse: collapse; width: 100%; font-size: 13px; }
+  table.data th { text-align: left; color: var(--dim); font-weight: 600; padding: 6px 10px;
+                  border-bottom: 1px solid var(--line); white-space: nowrap; }
+  table.data td { padding: 6px 10px; border-bottom: 1px solid rgba(30,41,71,.55); vertical-align: top;
+                  max-width: 320px; overflow-wrap: break-word; }
+  table.data tr:last-child td { border-bottom: 0; }
+  table.data td a { word-break: break-all; }
+  .exports { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+
+  .watch { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .watch:last-child { border-bottom: 0; }
+  .watch .wname { font-weight: 600; font-size: 14px; }
+  .watch .wurl { color: var(--faint); font-size: 12px; word-break: break-all; }
+  .watch .wlast { color: var(--dim); font-size: 12px; }
+  .watch > div:first-child { flex: 1; min-width: 200px; }
+  .diff { font-size: 13px; margin-top: 6px; width: 100%; }
+  .diff .add { color: var(--green); }
+  .diff .del { color: var(--red); }
+  .empty { color: var(--faint); font-size: 13.5px; padding: 8px 0; }
+  footer { color: var(--faint); font-size: 12px; margin-top: 30px; line-height: 1.7; }
+  footer b { color: var(--dim); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">🐦‍⬛ <span class="g">Magpie</span></div>
+    <span class="pill" id="srvpill">checking server…</span>
+    <div class="tagline">The web scraper that collects the shiny things — point it at a page, it finds the lists.</div>
+  </header>
+
+  <div class="bar">
+    <input id="url" type="url" placeholder="https:// any page on the internet" autocomplete="off" spellcheck="false" enterkeyhint="go">
+    <button class="primary" id="go">Scrape</button>
+  </div>
+  <div class="chips">
+    <span class="chip" id="demochip">🕊 Try the demo market (works offline)</span>
+    <span class="chip" id="clearchip">✕ Clear</span>
+  </div>
+  <div class="status" id="status"></div>
+
+  <div id="results" style="display:none">
+    <div class="card pmeta" id="pagecard"></div>
+    <div class="tabs" id="tabs"></div>
+    <div id="panel"></div>
+  </div>
+
+  <div class="card" id="watchcard">
+    <h2>👁 Watches <span class="n">— saved scrapes that diff on every check</span></h2>
+    <div id="watchlist"><div class="empty">Run a recipe, then “⊕ Watch this” to monitor a page for new or vanished rows.</div></div>
+  </div>
+
+  <footer>
+    <b>How it reaches the internet:</b> a static page can only fetch its own origin plus CORS-open sites —
+    that's the browser's same-origin policy doing its job. Run the zero-dependency companion server
+    (<code>node magpie/server.mjs</code>) and open Magpie from it to scrape any public page: it identifies
+    itself as <b>MagpieBot</b>, respects <b>robots.txt</b>, refuses private/internal addresses, and fetches
+    one page at a time with a polite delay. Scrape responsibly: public pages, sensible volumes, and honour
+    each site's terms. Everything you extract stays on your device.
+  </footer>
+</div>
+
+<script src="engine.js"></script>
+<script>
+(function () {
+  'use strict';
+  var E = window.Magpie;
+  var $ = function (id) { return document.getElementById(id); };
+
+  /* ================= state ================= */
+  var state = {
+    server: null,          // true = companion server, false = browser-only
+    url: '',               // final URL of the scraped page
+    doc: null,             // parsed tree
+    meta: null, tables: null, links: null, images: null, emails: null,
+    repeats: [],
+    recipe: { itemSelector: '', fields: [{ name: 'title', selector: '', attr: 'text' }] },
+    rows: [],              // last recipe run (possibly multi-page)
+    pagesScraped: 0,
+    tab: 'auto',
+    busy: false
+  };
+
+  var LS_WATCH = 'magpie.watches.v1';
+  function loadWatches() {
+    try { return JSON.parse(localStorage.getItem(LS_WATCH)) || []; } catch (e) { return []; }
+  }
+  function saveWatches(w) { try { localStorage.setItem(LS_WATCH, JSON.stringify(w)); } catch (e) {} }
+  var watches = loadWatches();
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  /* ================= the demo market (works offline, no server) ================= */
+  var DEMO_BASE = 'https://demo.magpie/market';
+  function demoPage(n) {
+    var BIRDS = [
+      ['Ruby Ring', '£12.40', 'jewellery'], ['Tin Whistle', '£3.99', 'music'],
+      ['Silver Thimble', '£6.25', 'sewing'], ['Brass Key', '£4.10', 'curios'],
+      ['Glass Marble', '£1.50', 'toys'], ['Copper Coin', '£2.75', 'curios'],
+      ['Pearl Button', '£5.05', 'sewing'], ['Gold Feather', '£19.99', 'jewellery'],
+      ['Mirror Shard', '£0.80', 'curios']
+    ];
+    var per = 3, start = (n - 1) * per;
+    var items = BIRDS.slice(start, start + per).map(function (b, i) {
+      var id = start + i + 1;
+      return '<li class="listing"><h3>' + b[0] + '</h3>' +
+        '<a href="/market/item/' + id + '">view</a>' +
+        '<img src="/img/' + id + '.jpg" alt="' + b[0] + '">' +
+        '<span class="price">' + b[1] + '</span>' +
+        '<span class="cat">' + b[2] + '</span></li>';
+    }).join('');
+    var next = start + per < BIRDS.length ? '<a rel="next" href="/market?page=' + (n + 1) + '">Next »</a>' : '';
+    return '<!doctype html><html lang="en"><head><title>The Magpie Market — page ' + n + '</title>' +
+      '<meta name="description" content="Shiny things, traded by birds."></head><body>' +
+      '<h1>The Magpie Market</h1><ul class="stall">' + items + '</ul>' +
+      '<table><tr><th>Stall</th><th>Keeper</th></tr><tr><td>North Branch</td><td>Pica</td></tr>' +
+      '<tr><td>South Branch</td><td>Corvus</td></tr></table>' +
+      '<p>Trade enquiries: <a href="mailto:trade@demo.magpie">trade@demo.magpie</a></p>' + next +
+      '</body></html>';
+  }
+
+  /* ================= fetching ================= */
+  function probeServer() {
+    fetch('api/health').then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) { setServer(!!(j && j.ok)); })
+      .catch(function () { setServer(false); });
+  }
+  function setServer(on) {
+    state.server = on;
+    var pill = $('srvpill');
+    pill.className = 'pill ' + (on ? 'on' : 'off');
+    pill.textContent = on ? '🟢 server mode — whole internet' : '🟡 browser-only — demo + CORS-open pages';
+    pill.title = on ? 'Companion server found: robots-respecting fetches of any public page.'
+      : 'No companion server. Run: node magpie/server.mjs — then open Magpie from it.';
+  }
+
+  function fetchPage(url) {
+    var norm = E.normalizeUrl(url);
+    if (!norm) return Promise.reject(new Error('That doesn’t look like a scrapeable URL.'));
+    if (norm.indexOf(DEMO_BASE) === 0) {
+      var m = /page=(\d+)/.exec(norm);
+      var n = m ? parseInt(m[1], 10) : 1;
+      return Promise.resolve({ url: norm, html: demoPage(n), demo: true });
+    }
+    if (state.server) {
+      return fetch('api/fetch?url=' + encodeURIComponent(norm))
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (j.error) throw new Error(j.error);
+          return { url: j.url || norm, html: j.html || '' };
+        });
+    }
+    return fetch(norm, { mode: 'cors' })
+      .then(function (r) { return r.text().then(function (t) { return { url: norm, html: t }; }); })
+      .catch(function () {
+        throw new Error('This page blocks cross-origin reads. Run the companion server (node magpie/server.mjs) and open Magpie from http://localhost:8796 to scrape any public page — or try the demo.');
+      });
+  }
+
+  /* ================= scraping ================= */
+  function setStatus(msg, cls) {
+    var s = $('status');
+    s.className = 'status' + (cls ? ' ' + cls : '');
+    s.textContent = msg || '';
+  }
+
+  function scrape(url) {
+    if (state.busy) return;
+    state.busy = true;
+    setStatus('Fetching ' + url + ' …');
+    fetchPage(url).then(function (page) {
+      state.url = page.url;
+      $('url').value = page.url;
+      state.doc = E.parseHTML(page.html);
+      state.meta = E.extractMeta(state.doc, page.url);
+      state.tables = E.extractTables(state.doc);
+      state.links = E.extractLinks(state.doc, page.url);
+      state.images = E.extractImages(state.doc, page.url);
+      state.emails = E.extractEmails(state.doc);
+      state.repeats = E.detectRepeats(state.doc);
+      state.rows = [];
+      state.pagesScraped = 1;
+      var sugg = E.suggestRecipe(state.doc);
+      if (sugg) {
+        state.recipe = { itemSelector: sugg.itemSelector, fields: sugg.fields };
+        var run = E.runRecipe(state.doc, state.recipe, state.url);
+        state.rows = run.rows;
+      }
+      state.tab = 'auto';
+      setStatus('Scraped 1 page — ' + (state.repeats.length ? state.repeats.length + ' repeating structure' + (state.repeats.length === 1 ? '' : 's') + ' found.' : 'no repeating lists found; try the tables/links tabs or write a recipe.'), 'ok');
+      state.busy = false;
+      renderResults();
+    }).catch(function (e) {
+      state.busy = false;
+      setStatus(String(e && e.message || e), 'err');
+    });
+  }
+
+  // Follow rel=next politely up to maxPages, resolving with whatever was got.
+  function crawlRows(url, recipe, maxPages, onProgress) {
+    return new Promise(function (resolve) {
+      var job = E.createJob(url, recipe, { maxPages: maxPages });
+      var isDemo = url.indexOf(DEMO_BASE) === 0;
+      function step() {
+        var next = job.next();
+        if (!next) return resolve({ rows: job.rows(), stats: job.stats(), error: null });
+        if (onProgress) onProgress(job.stats().pages + 1, next);
+        fetchPage(next).then(function (page) {
+          job.feed(page.html, page.url);
+          // polite: one page a second against real sites
+          setTimeout(step, isDemo ? 0 : 1000);
+        }).catch(function (e) {
+          resolve({ rows: job.rows(), stats: job.stats(), error: String(e && e.message || e) });
+        });
+      }
+      step();
+    });
+  }
+
+  function runCrawl(maxPages) {
+    if (state.busy || !state.url) return;
+    var recipe = readRecipeForm();
+    if (!recipe.itemSelector) { setStatus('The recipe needs an item selector first.', 'err'); return; }
+    state.busy = true;
+    crawlRows(state.url, recipe, maxPages, function (n, next) {
+      setStatus('Page ' + n + '/' + maxPages + ' — fetching ' + next + ' …');
+    }).then(function (out) {
+      state.rows = out.rows;
+      state.pagesScraped = out.stats.pages;
+      state.busy = false;
+      if (out.error) setStatus('Stopped at page ' + (out.stats.pages + 1) + ': ' + out.error +
+        (out.rows.length ? ' — kept ' + out.rows.length + ' rows.' : ''), out.rows.length ? 'ok' : 'err');
+      else setStatus('Crawled ' + out.stats.pages + ' page(s) → ' + out.rows.length + ' rows.', 'ok');
+      renderPanel();
+    });
+  }
+
+  /* ================= rendering ================= */
+  function renderResults() {
+    $('results').style.display = 'block';
+    var m = state.meta || {};
+    var kv = [];
+    if (m.lang) kv.push('<span>lang <b>' + esc(m.lang) + '</b></span>');
+    if (m.canonical) kv.push('<span>canonical <b>' + esc(m.canonical.replace(/^https?:\/\//, '').slice(0, 40)) + '</b></span>');
+    (m.jsonLd || []).slice(0, 4).forEach(function (t) { kv.push('<span>ld+json <b>' + esc(t) + '</b></span>'); });
+    kv.push('<span><b>' + (state.tables || []).length + '</b> tables</span>');
+    kv.push('<span><b>' + (state.links || []).length + '</b> links</span>');
+    kv.push('<span><b>' + (state.images || []).length + '</b> images</span>');
+    kv.push('<span><b>' + (state.emails || []).length + '</b> emails</span>');
+    $('pagecard').innerHTML =
+      '<div class="t">' + (esc(m.title) || '<span style="color:var(--faint)">untitled page</span>') + '</div>' +
+      (m.description ? '<div class="d">' + esc(m.description) + '</div>' : '') +
+      '<div class="kv">' + kv.join('') + '</div>';
+    renderTabs();
+    renderPanel();
+  }
+
+  var TABS = [
+    ['auto', '✨ Detected'], ['recipe', '🧪 Recipe'], ['tables', '📋 Tables'],
+    ['links', '🔗 Links'], ['images', '🖼 Images'], ['emails', '✉️ Emails']
+  ];
+  function renderTabs() {
+    $('tabs').innerHTML = TABS.map(function (t) {
+      return '<button data-tab="' + t[0] + '" class="' + (state.tab === t[0] ? 'on' : '') + '">' + t[1] + '</button>';
+    }).join('');
+  }
+
+  function rowsTable(rows, limit) {
+    if (!rows.length) return '<div class="empty">No rows.</div>';
+    var cols = E.columnsOf(rows);
+    var body = rows.slice(0, limit || 200).map(function (r) {
+      return '<tr>' + cols.map(function (c) {
+        var v = String(r[c] == null ? '' : r[c]);
+        var cell = /^https?:\/\//.test(v) ? '<a href="' + esc(v) + '" target="_blank" rel="noopener noreferrer">' + esc(v.length > 70 ? v.slice(0, 67) + '…' : v) + '</a>' : esc(v);
+        return '<td>' + cell + '</td>';
+      }).join('') + '</tr>';
+    }).join('');
+    var more = rows.length > (limit || 200) ? '<div class="empty">…showing first ' + (limit || 200) + ' of ' + rows.length + ' rows (exports include all).</div>' : '';
+    return '<div class="tscroll"><table class="data"><thead><tr>' +
+      cols.map(function (c) { return '<th>' + esc(c) + '</th>'; }).join('') +
+      '</tr></thead><tbody>' + body + '</tbody></table></div>' + more;
+  }
+
+  function exportBar(kind) {
+    return '<div class="exports">' +
+      '<button class="small" data-x="csv" data-k="' + kind + '">⬇ CSV</button>' +
+      '<button class="small" data-x="json" data-k="' + kind + '">⬇ JSON</button>' +
+      '<button class="small" data-x="md" data-k="' + kind + '">⧉ Copy Markdown</button>' +
+      (kind === 'rows' ? '<button class="small" data-x="watch">⊕ Watch this</button>' : '') +
+      '</div>';
+  }
+
+  function renderPanel() {
+    var p = $('panel'), html = '';
+    if (state.tab === 'auto') {
+      html += '<div class="card"><h2>✨ Repeating structures <span class="n">— the lists Magpie sees on this page</span></h2>';
+      if (!state.repeats.length) html += '<div class="empty">No repeated structures — this page may be an article, not a list. The 📋 Tables and 🔗 Links tabs may still have treasure.</div>';
+      else html += state.repeats.map(function (r, i) {
+        return '<div class="rep"><div>' +
+          '<div class="sel">' + esc(r.selector) + '</div>' +
+          '<div class="meta">' + r.count + ' items · score ' + r.score + '</div>' +
+          (r.sample ? '<div class="sample">' + esc(r.sample) + '</div>' : '') +
+          '</div><button class="small" data-userep="' + i + '">Use as recipe</button></div>';
+      }).join('');
+      html += '</div>';
+      if (state.rows.length) {
+        html += '<div class="card"><h2>🪄 Suggested recipe ran automatically <span class="n">— ' + state.rows.length + ' rows from ' + state.pagesScraped + ' page(s)</span></h2>' +
+          rowsTable(state.rows) + exportBar('rows') + '</div>';
+      }
+    } else if (state.tab === 'recipe') {
+      html += '<div class="card"><h2>🧪 Recipe <span class="n">— item selector + one field per column</span></h2>' +
+        '<div class="lab">Item selector (one match per row)</div>' +
+        '<input class="isel frow-input fsel" id="isel" spellcheck="false" value="' + esc(state.recipe.itemSelector) + '" placeholder="e.g. ul.results > li.result">' +
+        '<div class="lab">Fields</div><div id="fields">' +
+        state.recipe.fields.map(function (f, i) {
+          return '<div class="frow">' +
+            '<input class="fname" data-f="name" data-i="' + i + '" value="' + esc(f.name) + '" placeholder="column">' +
+            '<input class="fsel" data-f="selector" data-i="' + i + '" spellcheck="false" value="' + esc(f.selector) + '" placeholder="selector inside item (empty = item itself)">' +
+            '<select class="fattr" data-f="attr" data-i="' + i + '">' +
+            ['text', 'href', 'src', 'title', 'alt', 'value', 'data-id'].map(function (a) {
+              return '<option' + ((f.attr || 'text') === a ? ' selected' : '') + '>' + a + '</option>';
+            }).join('') + '</select>' +
+            '<button class="x" data-del="' + i + '" title="remove field">✕</button></div>';
+        }).join('') + '</div>' +
+        '<button class="small" id="addfield">＋ field</button>' +
+        '<div class="runrow">' +
+        '<button class="primary" id="runrecipe">▶ Run recipe</button>' +
+        '<label><input type="checkbox" id="paginate"> follow “next” links</label>' +
+        '<label>max pages <input type="number" id="maxpages" min="1" max="50" value="5"></label>' +
+        '</div></div>';
+      html += '<div class="card"><h2>📦 Rows <span class="n">— ' + state.rows.length + ' from ' + state.pagesScraped + ' page(s)</span></h2>' +
+        rowsTable(state.rows) + exportBar('rows') + '</div>';
+    } else if (state.tab === 'tables') {
+      var ts = state.tables || [];
+      if (!ts.length) html += '<div class="card"><div class="empty">No &lt;table&gt; elements on this page.</div></div>';
+      ts.forEach(function (t, i) {
+        var rows = t.objects.length ? t.objects : t.rows.map(function (r) {
+          var o = {}; r.forEach(function (v, j) { o['col' + (j + 1)] = v; }); return o;
+        });
+        html += '<div class="card"><h2>📋 Table ' + (i + 1) + ' <span class="n">— ' + rows.length + ' rows</span></h2>' +
+          rowsTable(rows) + exportBar('table:' + i) + '</div>';
+      });
+    } else if (state.tab === 'links') {
+      html += '<div class="card"><h2>🔗 Links <span class="n">— ' + (state.links || []).length + '</span></h2>' +
+        rowsTable(state.links || []) + exportBar('links') + '</div>';
+    } else if (state.tab === 'images') {
+      html += '<div class="card"><h2>🖼 Images <span class="n">— ' + (state.images || []).length + '</span></h2>' +
+        rowsTable(state.images || []) + exportBar('images') + '</div>';
+    } else if (state.tab === 'emails') {
+      var em = (state.emails || []).map(function (e) { return { email: e }; });
+      html += '<div class="card"><h2>✉️ Emails <span class="n">— ' + em.length + '</span></h2>' +
+        rowsTable(em) + exportBar('emails') + '</div>';
+    }
+    p.innerHTML = html;
+  }
+
+  function renderWatches() {
+    var el = $('watchlist');
+    if (!watches.length) {
+      el.innerHTML = '<div class="empty">Run a recipe, then “⊕ Watch this” to monitor a page for new or vanished rows.</div>';
+      return;
+    }
+    el.innerHTML = watches.map(function (w, i) {
+      return '<div class="watch"><div>' +
+        '<div class="wname">' + esc(w.name) + '</div>' +
+        '<div class="wurl">' + esc(w.url) + '</div>' +
+        '<div class="wlast">' + w.rows.length + ' rows · checked ' + (w.checked ? new Date(w.checked).toLocaleString() : 'never') + '</div>' +
+        '</div>' +
+        '<button class="small" data-check="' + i + '">🔄 Check</button>' +
+        '<button class="small" data-load="' + i + '">Open</button>' +
+        '<button class="small" data-rm="' + i + '">✕</button>' +
+        '<div class="diff" id="diff' + i + '"></div></div>';
+    }).join('');
+  }
+
+  /* ================= recipe form <-> state ================= */
+  function readRecipeForm() {
+    var isel = $('isel');
+    if (isel && isel.value != null) state.recipe.itemSelector = String(isel.value).trim();
+    var inputs = document.querySelectorAll('#fields [data-f]');
+    for (var i = 0; i < inputs.length; i++) {
+      var n = inputs[i];
+      var idx = parseInt(n.getAttribute('data-i'), 10);
+      var f = state.recipe.fields[idx];
+      if (f) f[n.getAttribute('data-f')] = String(n.value).trim();
+    }
+    return state.recipe;
+  }
+
+  /* ================= exports ================= */
+  function currentRows(kind) {
+    if (kind === 'rows') return state.rows;
+    if (kind === 'links') return state.links || [];
+    if (kind === 'images') return state.images || [];
+    if (kind === 'emails') return (state.emails || []).map(function (e) { return { email: e }; });
+    var tm = /^table:(\d+)$/.exec(kind);
+    if (tm) {
+      var t = (state.tables || [])[parseInt(tm[1], 10)];
+      if (!t) return [];
+      return t.objects.length ? t.objects : t.rows.map(function (r) {
+        var o = {}; r.forEach(function (v, j) { o['col' + (j + 1)] = v; }); return o;
+      });
+    }
+    return [];
+  }
+  function download(name, mime, content) {
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([content], { type: mime }));
+    a.download = name;
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 800);
+  }
+  function slugOfPage() {
+    try { return new URL(state.url).hostname.replace(/^www\./, '').replace(/\W+/g, '-'); }
+    catch (e) { return 'magpie'; }
+  }
+  function doExport(x, kind) {
+    var rows = currentRows(kind);
+    if (!rows.length) { setStatus('Nothing to export yet.', 'err'); return; }
+    if (x === 'csv') download(slugOfPage() + '.csv', 'text/csv', E.toCSV(rows));
+    else if (x === 'json') download(slugOfPage() + '.json', 'application/json', E.toJSON(rows));
+    else if (x === 'md') {
+      var md = E.toMarkdown(rows);
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(md).then(function () { setStatus('Markdown table copied.', 'ok'); });
+      } else setStatus('Clipboard unavailable in this browser.', 'err');
+    }
+  }
+
+  /* ================= watches ================= */
+  function addWatch() {
+    if (!state.url || !state.rows.length) { setStatus('Run a recipe first — a watch stores its rows as the baseline.', 'err'); return; }
+    var recipe = readRecipeForm();
+    watches.push({
+      name: (state.meta && state.meta.title ? state.meta.title.slice(0, 60) : slugOfPage()),
+      url: state.url,
+      recipe: { itemSelector: recipe.itemSelector, fields: recipe.fields },
+      pages: Math.max(1, state.pagesScraped),
+      rows: state.rows,
+      hash: E.contentHash(state.rows),
+      checked: Date.now()
+    });
+    saveWatches(watches);
+    renderWatches();
+    setStatus('Watch saved — “🔄 Check” any time to see what changed.', 'ok');
+  }
+  function checkWatch(i) {
+    var w = watches[i];
+    if (!w || state.busy) return;
+    var out = $('diff' + i);
+    out.innerHTML = '<span style="color:var(--dim)">checking…</span>';
+    crawlRows(w.url, w.recipe, w.pages || 1).then(function (got) {
+      if (got.error && !got.rows.length) throw new Error(got.error);
+      var run = { rows: got.rows };
+      var d = E.diffRows(w.rows, run.rows);
+      var bits = [];
+      if (!d.changed) bits.push('No change — ' + d.unchanged + ' rows, hash ' + E.contentHash(run.rows) + '.');
+      else {
+        d.added.slice(0, 8).forEach(function (r) { bits.push('<div class="add">＋ ' + esc(JSON.stringify(r).slice(0, 120)) + '</div>'); });
+        d.removed.slice(0, 8).forEach(function (r) { bits.push('<div class="del">－ ' + esc(JSON.stringify(r).slice(0, 120)) + '</div>'); });
+        bits.push('<div>' + d.added.length + ' new · ' + d.removed.length + ' gone · ' + d.unchanged + ' unchanged</div>');
+      }
+      out.innerHTML = bits.join('');
+      w.rows = run.rows; w.hash = E.contentHash(run.rows); w.checked = Date.now();
+      saveWatches(watches);
+      renderWatches();
+      var out2 = $('diff' + i); if (out2) out2.innerHTML = bits.join('');
+    }).catch(function (e) {
+      out.innerHTML = '<span class="del">' + esc(String(e && e.message || e)) + '</span>';
+    });
+  }
+
+  /* ================= events ================= */
+  $('go').addEventListener('click', function () { if ($('url').value) scrape($('url').value); });
+  $('url').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && $('url').value) scrape($('url').value);
+  });
+  $('demochip').addEventListener('click', function () {
+    $('url').value = DEMO_BASE + '?page=1';
+    scrape($('url').value);
+  });
+  $('clearchip').addEventListener('click', function () {
+    $('url').value = '';
+    $('results').style.display = 'none';
+    setStatus('');
+  });
+  $('tabs').addEventListener('click', function (e) {
+    var t = e.target && e.target.getAttribute && e.target.getAttribute('data-tab');
+    if (!t) return;
+    if (state.tab === 'recipe') readRecipeForm();  // keep edits when leaving the tab
+    state.tab = t;
+    renderTabs(); renderPanel();
+  });
+  $('panel').addEventListener('click', function (e) {
+    var t = e.target;
+    if (!t || !t.getAttribute) return;
+    var userep = t.getAttribute('data-userep');
+    if (userep != null) {
+      var rep = state.repeats[parseInt(userep, 10)];
+      if (rep) {
+        state.recipe.itemSelector = rep.selector;
+        var items = E.select(state.doc, rep.selector);
+        var sugg = items.length ? E.suggestRecipe(state.doc) : null;
+        if (sugg && sugg.itemSelector === rep.selector) state.recipe.fields = sugg.fields;
+        state.tab = 'recipe';
+        renderTabs(); renderPanel();
+      }
+      return;
+    }
+    if (t.id === 'addfield') {
+      readRecipeForm();
+      state.recipe.fields.push({ name: 'field' + (state.recipe.fields.length + 1), selector: '', attr: 'text' });
+      renderPanel();
+      return;
+    }
+    var del = t.getAttribute('data-del');
+    if (del != null) {
+      readRecipeForm();
+      state.recipe.fields.splice(parseInt(del, 10), 1);
+      if (!state.recipe.fields.length) state.recipe.fields.push({ name: 'title', selector: '', attr: 'text' });
+      renderPanel();
+      return;
+    }
+    if (t.id === 'runrecipe') {
+      var recipe = readRecipeForm();
+      var paginate = $('paginate') && $('paginate').checked;
+      var maxPages = paginate ? Math.max(1, Math.min(50, parseInt($('maxpages').value, 10) || 5)) : 1;
+      if (maxPages > 1) runCrawl(maxPages);
+      else {
+        var run = E.runRecipe(state.doc, recipe, state.url);
+        if (run.error) { setStatus(run.error, 'err'); return; }
+        state.rows = run.rows;
+        state.pagesScraped = 1;
+        setStatus(run.count + ' rows extracted.', run.count ? 'ok' : '');
+        renderPanel();
+      }
+      return;
+    }
+    var x = t.getAttribute('data-x');
+    if (x === 'watch') { readRecipeForm(); addWatch(); return; }
+    if (x) { if (state.tab === 'recipe') readRecipeForm(); doExport(x, t.getAttribute('data-k')); }
+  });
+  $('watchlist').addEventListener('click', function (e) {
+    var t = e.target;
+    if (!t || !t.getAttribute) return;
+    var c = t.getAttribute('data-check'), l = t.getAttribute('data-load'), r = t.getAttribute('data-rm');
+    if (c != null) checkWatch(parseInt(c, 10));
+    else if (l != null) {
+      var w = watches[parseInt(l, 10)];
+      if (w) {
+        state.recipe = { itemSelector: w.recipe.itemSelector, fields: w.recipe.fields.map(function (f) { return { name: f.name, selector: f.selector, attr: f.attr }; }) };
+        $('url').value = w.url;
+        scrape(w.url);
+      }
+    } else if (r != null) {
+      watches.splice(parseInt(r, 10), 1);
+      saveWatches(watches);
+      renderWatches();
+    }
+  });
+
+  /* ================= init ================= */
+  renderWatches();
+  setTimeout(probeServer, 0);
+})();
+
+if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator &&
+    typeof location !== 'undefined' && location.protocol !== 'file:') {
+  try { navigator.serviceWorker.register('sw.js'); } catch (e) {}
+}
+</script>
+</body>
+</html>
