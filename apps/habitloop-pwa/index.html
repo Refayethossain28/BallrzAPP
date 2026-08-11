@@ -543,5 +543,58 @@
   render();
 })();
 </script>
+
+<script>
+/* Tap-to-update — shows a prompt when a newer version of the app is ready, then
+ * swaps it in on tap. Shared across BallrzAPP PWAs; observes the existing service
+ * worker registration, so it doesn't re-register or change caching. */
+(function () {
+  try {
+  if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
+  var ready = navigator.serviceWorker.ready;
+  if (!ready || typeof ready.then !== 'function') return;
+  var tapped = false;
+  navigator.serviceWorker.addEventListener('controllerchange', function () {
+    if (tapped) { tapped = false; location.reload(); }
+  });
+  function banner(reg) {
+    if (document.getElementById('pwa-update-bar')) return;
+    var b = document.createElement('button');
+    b.id = 'pwa-update-bar'; b.type = 'button';
+    b.textContent = '\uD83D\uDD04 New version \u2014 tap to update';
+    b.setAttribute('aria-label', 'A new version is available. Tap to update.');
+    b.style.cssText = 'position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom));'
+      + 'transform:translateX(-50%);z-index:2147483000;font:600 14px/1.2 -apple-system,'
+      + 'BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#0a0d16;'
+      + 'background:linear-gradient(92deg,#4dd8ff,#8f7cf7);border:0;border-radius:999px;'
+      + 'padding:11px 18px;box-shadow:0 8px 30px rgba(0,0,0,.35);cursor:pointer;'
+      + 'max-width:calc(100vw - 32px);animation:pwaUp .25s ease-out;';
+    b.addEventListener('click', function () {
+      tapped = true; b.textContent = 'Updating\u2026';
+      if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+      else location.reload();
+    });
+    var s = document.createElement('style');
+    s.textContent = '@keyframes pwaUp{from{opacity:0;transform:translate(-50%,10px)}to{opacity:1;transform:translateX(-50%)}}'
+      + '@media (prefers-reduced-motion:reduce){#pwa-update-bar{animation:none}}';
+    document.head.appendChild(s);
+    (document.body || document.documentElement).appendChild(b);
+  }
+  ready.then(function (reg) {
+    try {
+      if (reg.waiting && navigator.serviceWorker.controller) banner(reg);
+      reg.addEventListener('updatefound', function () {
+        var w = reg.installing;
+        if (!w) return;
+        w.addEventListener('statechange', function () {
+          if (w.state === 'installed' && navigator.serviceWorker.controller) banner(reg);
+        });
+      });
+      setInterval(function () { reg.update().catch(function () {}); }, 3600000);
+    } catch (e) {}
+  }).catch(function () {});
+  } catch (e) {}
+})();
+</script>
 </body>
 </html>
