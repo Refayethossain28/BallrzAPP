@@ -111,6 +111,27 @@ The "Train browser LLM" workflow accepts a committed corpus path too: build
 `corpus_url = data/web.txt` — the trained model lands in `web/model.json` and
 GitHub Pages serves your internet-fed AI.
 
+### Niche generators — where a tiny model is actually useful
+
+A 5M-parameter model can't be a general assistant, but it *is* good at a narrow,
+repetitive job where a plausible candidate (not a correct answer) is the value.
+The page has three task modes for exactly that, each usable **now via ⚡ Live AI
+(real Fable 5)** and as an **on-device demo** once you train a dedicated model:
+
+- **🏷️ Names** — luxury / automotive brand-name ideation. Corpus:
+  `npm run corpus:names` → `data/names.txt`. Train with `out_model =
+  model-names.json`, `tokenizer = char`, `block_size = 48`.
+- **✉️ Microcopy** — on-brand chauffeur/booking messages. Corpus:
+  `npm run corpus:microcopy` → `data/microcopy.txt`. Train with `out_model =
+  model-microcopy.json`, `tokenizer = bpe`.
+- **⌨️ Autocomplete** — finishes a line in the model's voice (uses the default
+  model, or any you train).
+
+The workflow's `out_model` input writes each niche model to its own file under
+`web/`, and the page loads whichever the task needs — so one page serves several
+purpose-built models. The corpus builders ship deterministic seed data you can
+expand with your own names/messages, or swap for a Magpie-scraped corpus.
+
 ### Char vs. BPE tokenizer
 
 `--tokenizer char` (default) uses one token per character: tiny vocab, but the

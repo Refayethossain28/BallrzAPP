@@ -42,6 +42,9 @@ on:
       eval_every:
         description: "Steps between val-loss evaluations (each costs ~30 s; raise for long runs)"
         default: "200"
+      out_model:
+        description: "Model filename to write under llm-from-scratch/web/ (use model-names.json etc. for niche models; the page can load any of them)"
+        default: "model.json"
       clean_wikitext:
         description: "Strip WikiText markup (<unk>, @,@, spaced punctuation)"
         default: "false"
@@ -115,9 +118,9 @@ jobs:
             --eval_every "${{ inputs.eval_every }}" \
             --out ckpt.npz
 
-      - name: Export to web/model.json
+      - name: Export to web/${{ inputs.out_model }}
         working-directory: llm-from-scratch
-        run: python export_web.py --ckpt ckpt.npz --out web/model.json
+        run: python export_web.py --ckpt ckpt.npz --out "web/${{ inputs.out_model }}"
 
       # Safety net: the trained weights survive even if the commit/push can't
       # land (branch protection, a race, a non-fast-forward). Download from the
@@ -126,25 +129,25 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: model-json
-          path: llm-from-scratch/web/model.json
+          path: llm-from-scratch/web/${{ inputs.out_model }}
           retention-days: 14
 
       - name: Commit the trained model to the branch
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          SIZE=$(wc -c < llm-from-scratch/web/model.json)
+          SIZE=$(wc -c < "llm-from-scratch/web/${{ inputs.out_model }}")
           MSG1="Train browser LLM on runner (${{ inputs.n_layer }}L/${{ inputs.n_embd }}d, ${{ inputs.steps }} steps) [skip ci]"
-          MSG2="Corpus: ${{ inputs.corpus_url }}${{ inputs.seed_urls }}; tokenizer ${{ inputs.tokenizer }} vocab ${{ inputs.vocab_size }}; model.json ${SIZE} bytes."
-          cp llm-from-scratch/web/model.json /tmp/model.json
+          MSG2="Corpus: ${{ inputs.corpus_url }}${{ inputs.seed_urls }}; tokenizer ${{ inputs.tokenizer }} vocab ${{ inputs.vocab_size }}; ${{ inputs.out_model }} ${SIZE} bytes."
+          cp "llm-from-scratch/web/${{ inputs.out_model }}" /tmp/model.json
           # Training took ~hours; the branch may have moved on. Rebase our single
           # weights change onto the current tip and retry, so a non-fast-forward
           # never throws away the run. (model.json is a generated blob — "ours".)
           for i in 1 2 3 4 5; do
             git fetch origin "${{ github.ref_name }}"
             git reset --hard "origin/${{ github.ref_name }}"
-            cp /tmp/model.json llm-from-scratch/web/model.json
-            git add llm-from-scratch/web/model.json
+            cp /tmp/model.json "llm-from-scratch/web/${{ inputs.out_model }}"
+            git add "llm-from-scratch/web/${{ inputs.out_model }}"
             if git diff --cached --quiet; then echo "model.json unchanged — nothing to commit"; break; fi
             git commit -m "$MSG1" -m "$MSG2"
             if git push origin HEAD:"${{ github.ref_name }}"; then echo "pushed"; break; fi
