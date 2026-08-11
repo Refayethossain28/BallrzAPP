@@ -39,6 +39,9 @@ on:
         default: "3000"
       lr:
         default: "3e-4"
+      eval_every:
+        description: "Steps between val-loss evaluations (each costs ~30 s; raise for long runs)"
+        default: "200"
       clean_wikitext:
         description: "Strip WikiText markup (<unk>, @,@, spaced punctuation)"
         default: "false"
@@ -109,7 +112,7 @@ jobs:
             --steps "${{ inputs.steps }}" \
             --lr "${{ inputs.lr }}" \
             --min_lr_ratio 0.05 \
-            --eval_every 200 \
+            --eval_every "${{ inputs.eval_every }}" \
             --out ckpt.npz
 
       - name: Export to web/model.json

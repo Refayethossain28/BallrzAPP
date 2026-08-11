@@ -86,7 +86,20 @@ def main():
     else:
         if args.tokenizer == "bpe":
             print(f"training bpe tokenizer (target vocab {args.vocab_size})...")
-            tok = BPETokenizer.train(text, vocab_size=args.vocab_size)
+            # BPE merge-learning is O(unique chunks x merges) in pure Python; on
+            # a multi-MB corpus that dominates the whole training budget. A few
+            # MB is plenty of evidence for learning ~1k merges, so learn them on
+            # evenly spread slices of a big corpus and ENCODE the whole thing.
+            BPE_TRAIN_CAP = 3_000_000
+            if len(text) > BPE_TRAIN_CAP:
+                k = 10
+                span = BPE_TRAIN_CAP // k
+                stride = len(text) // k
+                sample = "".join(text[i * stride : i * stride + span] for i in range(k))
+                print(f"  (corpus is {len(text):,} chars; learning merges on a {len(sample):,}-char sample)")
+                tok = BPETokenizer.train(sample, vocab_size=args.vocab_size)
+            else:
+                tok = BPETokenizer.train(text, vocab_size=args.vocab_size)
         else:
             tok = CharTokenizer.from_text(text)
         config = GPTConfig(
