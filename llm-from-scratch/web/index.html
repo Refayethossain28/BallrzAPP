@@ -77,6 +77,20 @@
     body.chatmode #out { display: none; }
     body.chatmode #chips { display: none; }
     #chatlog .empty { color: var(--muted); font-size: 13px; padding: 8px 2px; }
+    /* Task modes (the niche generators) */
+    .tasks { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 12px; }
+    body.chatmode .tasks { display: none; }
+    .taskchip { background: #0b0e14; border: 1px solid #2a3043; color: #c7cdda; border-radius: 999px;
+      padding: 5px 13px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+    .taskchip:hover { border-color: var(--amber); color: #fff; }
+    .taskchip.on { background: rgba(230,177,76,.14); border-color: var(--amber); color: #fff; }
+    body.live .taskchip.on { background: rgba(138,123,255,.16); }
+    .cands { display: flex; flex-wrap: wrap; gap: 8px; }
+    .cand { background: #10131c; border: 1px solid #2a3043; color: #eaf0ff; border-radius: 9px;
+      padding: 7px 12px; font-size: 14px; cursor: copy; }
+    .cand:hover { border-color: var(--amber); }
+    .msgout { color: #eaf0ff; font-size: 15px; line-height: 1.5; white-space: pre-wrap; }
+    .muted { color: var(--muted); }
     pre {
       white-space: pre-wrap; word-break: break-word; background: var(--bg);
       border: 1px solid var(--line); border-radius: 8px; padding: 14px; min-height: 130px;
@@ -115,6 +129,7 @@
     <div class="badges" id="badges"></div>
 
     <div class="card">
+      <div class="tasks" id="tasks"></div>
       <label for="prompt" id="promptLabel">Prompt — give it a few words to continue</label>
       <textarea id="prompt">It was a</textarea>
       <div class="chips" id="chips"></div>
@@ -194,40 +209,44 @@
       s.addEventListener("input", () => { l.textContent = s.value; });
     }
 
-    // Quick-start prompt chips (the model is trained on classic English prose).
-    ["It was a", "Sherlock Holmes", "In the morning", "She said", "The old house"]
-      .forEach((p) => {
-        const b = document.createElement("button");
-        b.className = "chip"; b.textContent = p;
-        b.addEventListener("click", () => { $("prompt").value = p; });
-        $("chips").appendChild(b);
-      });
+    // Quick-start example chips are rendered per task by renderExamples(); the
+    // Freeform defaults are populated once the script has defined TASKS below.
 
-    async function loadSpec() {
-      // Prefer an inlined model (standalone llm.html); otherwise fetch model.json.
+    async function loadSpec(file) {
+      // Prefer an inlined model (standalone llm.html); otherwise fetch the file.
       const inline = document.getElementById("inline-model");
-      if (inline) return JSON.parse(inline.textContent);
-      const res = await fetch("model.json");
-      if (!res.ok) throw new Error("could not fetch model.json (run a local server or use llm.html)");
+      if (inline && (!file || file === "model.json")) return JSON.parse(inline.textContent);
+      const res = await fetch(file || "model.json");
+      if (!res.ok) throw new Error("could not fetch " + (file || "model.json"));
       return res.json();
+    }
+
+    let loadedModelFile = "model.json";
+    // Load a model file into `model` and refresh the badges. Niche models
+    // (model-names.json …) load the same way; missing files throw so callers
+    // can fall back to whatever is already loaded.
+    async function loadModel(file) {
+      const spec = await loadSpec(file);
+      model = new GPTLib.Model(spec);
+      loadedModelFile = file || "model.json";
+      const c = spec.config;
+      const nParams = Object.values(spec.weights)
+        .reduce((s, w) => s + w.shape.reduce((a, b) => a * b, 1), 0);
+      $("badges").innerHTML =
+        badge(`${(nParams / 1000).toFixed(0)}K <b>parameters</b>`) +
+        badge(`${c.n_layer} <b>layers</b>`) +
+        badge(`${c.n_embd}-dim`) +
+        badge(`${c.n_head} heads`) +
+        badge(`vocab ${c.vocab_size}`) +
+        badge(`ctx ${c.block_size}`) +
+        badge(`${spec.tokenizer.type} tokenizer`) +
+        badge(`100% <b>on-device</b>`);
+      return spec;
     }
 
     (async function init() {
       try {
-        const spec = await loadSpec();
-        model = new GPTLib.Model(spec);
-        const c = spec.config;
-        const nParams = Object.values(spec.weights)
-          .reduce((s, w) => s + w.shape.reduce((a, b) => a * b, 1), 0);
-        $("badges").innerHTML =
-          badge(`${(nParams / 1000).toFixed(0)}K <b>parameters</b>`) +
-          badge(`${c.n_layer} <b>layers</b>`) +
-          badge(`${c.n_embd}-dim`) +
-          badge(`${c.n_head} heads`) +
-          badge(`vocab ${c.vocab_size}`) +
-          badge(`ctx ${c.block_size}`) +
-          badge(`${spec.tokenizer.type} tokenizer`) +
-          badge(`100% <b>on-device</b>`);
+        await loadModel("model.json");
         statusEl.innerHTML = "Ready — the model is loaded and runs entirely in this tab.";
         goBtn.disabled = false;
       } catch (e) {
@@ -329,6 +348,7 @@
     goBtn.addEventListener("click", () => {
       if (running) return;
       if (chatBox.checked) return runChat();
+      if (currentTask === "names" || currentTask === "microcopy") return runTask(currentTask);
       const prompt = $("prompt").value;
       if (liveBox.checked && !liveBox.disabled) return runLive(prompt);
       if (!model) return;
@@ -356,6 +376,11 @@
 
     chatBox.addEventListener("change", () => {
       document.body.classList.toggle("chatmode", chatBox.checked);
+      if (chatBox.checked) {
+        // Chat and the task modes are mutually exclusive.
+        currentTask = "freeform";
+        [...taskBar.children].forEach((c) => c.classList.toggle("on", c.dataset.task === "freeform"));
+      }
       $("promptLabel").textContent = chatBox.checked
         ? "Message — press Enter to send" : "Prompt — give it a few words to continue";
       $("prompt").placeholder = chatBox.checked ? "Ask me anything…" : "";
@@ -365,9 +390,12 @@
     });
 
     function updateGoLabel() {
-      goBtn.textContent = chatBox.checked
-        ? (liveBox.checked && !liveBox.disabled ? "Send to Fable 5" : "Send")
-        : (liveBox.checked && !liveBox.disabled ? "Ask Fable 5" : "Generate");
+      const live = liveBox.checked && !liveBox.disabled;
+      if (chatBox.checked) { goBtn.textContent = live ? "Send to Fable 5" : "Send"; return; }
+      if (currentTask === "names") goBtn.textContent = live ? "Names from Fable 5" : "Generate names";
+      else if (currentTask === "microcopy") goBtn.textContent = live ? "Write with Fable 5" : "Write message";
+      else if (currentTask === "autocomplete") goBtn.textContent = live ? "Complete with Fable 5" : "Complete";
+      else goBtn.textContent = live ? "Ask Fable 5" : "Generate";
     }
 
     function addBubble(role, text) {
@@ -563,6 +591,171 @@
       } finally {
         liveAbort = null;
       }
+    }
+
+    /* ── Task modes: the three niche generators ──────────────────────────────
+     * The same two engines, pointed at narrow, useful jobs. Each task frames
+     * the input for the model and renders the output its own way; where a
+     * dedicated small model exists (model-names.json, model-microcopy.json) it
+     * loads that, otherwise it uses whatever model is loaded — and with ⚡ Live
+     * AI on, every task is immediately useful via real Fable 5. Names and
+     * Microcopy get bespoke rendering; Autocomplete and Freeform reuse the
+     * plain continuation path above. */
+    const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+    function guessScenario(t) {
+      t = (t || "").toLowerCase();
+      if (/reschedul|move|change|later|earlier/.test(t)) return "reschedule";
+      if (/confirm|book|reserv/.test(t)) return "booked";
+      if (/min|away|on the way|en ?route|coming/.test(t)) return "enroute";
+      if (/arriv|outside|here|waiting/.test(t)) return "arrived";
+      if (/receipt|fare|paid|total|thank/.test(t)) return "receipt";
+      if (/member|join|founding|invite/.test(t)) return "membership";
+      return "marketing";
+    }
+
+    const TASKS = [
+      { id: "freeform", label: "✍️ Freeform", model: "model.json",
+        promptLabel: "Prompt — give it a few words to continue",
+        examples: ["It was a", "Sherlock Holmes", "In the morning", "She said", "The old house"] },
+      { id: "names", label: "🏷️ Names", model: "model-names.json",
+        promptLabel: "Theme (optional)", placeholder: "e.g. executive, noir, electric",
+        examples: ["executive", "noir", "electric", "heritage"],
+        live: (t) => `Give me 12 distinctive luxury car or chauffeur brand names${t ? ` themed “${t}”` : ""}. Return just the names, one per line, no numbering.`,
+        seed: (t) => (t ? cap(t) + " " : ""), maxTokens: 200, render: renderNames },
+      { id: "microcopy", label: "✉️ Microcopy", model: "model-microcopy.json",
+        promptLabel: "Situation", placeholder: "e.g. driver 5 minutes away",
+        examples: ["driver 5 minutes away", "booking confirmed for 7pm", "thank the client after a trip", "invite to Founding membership"],
+        live: (t) => `Write a short, warm, on-brand chauffeur-service message for this situation: ${t || "greet a new client"}. One or two sentences, no placeholders.`,
+        seed: (t) => guessScenario(t) + ": ", maxTokens: 96, render: renderMessage },
+      { id: "autocomplete", label: "⌨️ Autocomplete", model: "model.json",
+        promptLabel: "Your text — it finishes the line", placeholder: "start typing…",
+        examples: ["The city, on your terms", "For the journeys that matter"] },
+    ];
+    let currentTask = "freeform";
+
+    const taskBar = $("tasks");
+    TASKS.forEach((t) => {
+      const b = document.createElement("button");
+      b.className = "taskchip" + (t.id === "freeform" ? " on" : "");
+      b.textContent = t.label; b.dataset.task = t.id;
+      b.addEventListener("click", () => selectTask(t.id));
+      taskBar.appendChild(b);
+    });
+    renderExamples(TASKS[0].examples);   // Freeform quick-starts on load
+
+    function renderExamples(list, fill) {
+      const box = $("chips"); box.innerHTML = "";
+      (list || []).forEach((p) => {
+        const b = document.createElement("button");
+        b.className = "chip"; b.textContent = p;
+        b.addEventListener("click", () => { $("prompt").value = fill ? fill(p) : p; });
+        box.appendChild(b);
+      });
+    }
+
+    async function selectTask(id) {
+      if (running) return;
+      currentTask = id;
+      [...taskBar.children].forEach((c) => c.classList.toggle("on", c.dataset.task === id));
+      const def = TASKS.find((t) => t.id === id);
+      if (chatBox.checked) { chatBox.checked = false; document.body.classList.remove("chatmode"); }
+      $("promptLabel").textContent = def.promptLabel;
+      $("prompt").placeholder = def.placeholder || "";
+      $("prompt").value = id === "freeform" ? "It was a" : "";
+      renderExamples(def.examples);
+      updateGoLabel();
+      outEl.innerHTML = "";
+      const want = def.model || "model.json";
+      if (want !== loadedModelFile) {
+        statusEl.textContent = "Loading " + def.label + " model…";
+        try {
+          await loadModel(want);
+          statusEl.textContent = "Ready — " + def.label + " model loaded, on-device.";
+        } catch {
+          statusEl.innerHTML = 'No dedicated ' + def.label + ' model yet — using the current one (train one with <code>npm run corpus:' + id + '</code>). ⚡ Live AI gives real results now.';
+        }
+      }
+    }
+
+    // Collect a full generation (not streamed to #out) — returns the text.
+    function collect(promptText, live, maxTokens, onTick) {
+      if (live) return collectLive(promptText, maxTokens, onTick);
+      return new Promise((resolve) => {
+        const opts = { temperature: +$("temp").value, topK: +$("topk").value, topP: +$("topp").value, repetitionPenalty: +$("rep").value };
+        let ids = model.tokenizer.encode(promptText);
+        if (ids.length === 0) ids = [model.tokenizer.stoi["\n"] || 0];
+        let out = "", n = 0;
+        (function step() {
+          if (cancel || n >= maxTokens) return resolve(out);
+          const next = sampleFrom(model.logitsForLast(ids), opts, ids.slice(-64));
+          ids.push(next);
+          out += model.tokenizer.decode([next]);
+          n++;
+          if (onTick) onTick(out);
+          setTimeout(step, 0);
+        })();
+      });
+    }
+    async function collectLive(promptText, maxTokens, onTick) {
+      liveAbort = new AbortController();
+      const res = await fetch(apiUrl("ai"), {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt: promptText, temperature: +$("temp").value, maxTokens: Math.min(400, maxTokens) }),
+        signal: liveAbort.signal,
+      });
+      if (!res.ok || !res.body) {
+        let m = "request failed (" + res.status + ")";
+        try { const j = await res.json(); if (j && j.error) m = j.error; } catch {}
+        throw new Error(m);
+      }
+      const reader = res.body.getReader(), dec = new TextDecoder();
+      let out = "";
+      for (;;) { const { value, done } = await reader.read(); if (done) break; out += dec.decode(value, { stream: true }); if (onTick) onTick(out); }
+      liveAbort = null;
+      return out;
+    }
+
+    function renderNames(text, host) {
+      const seen = new Set(), cands = [];
+      text.split(/\n+/).forEach((line) => {
+        line.replace(/^[\s\-•*\d.)]+/, "").split(/\s{2,}|,\s*/).forEach((raw) => {
+          const name = raw.trim().replace(/[."']+$/, "");
+          const key = name.toLowerCase();
+          if (name.length >= 3 && name.length <= 34 && /[A-Za-z]/.test(name) && !seen.has(key)) {
+            seen.add(key); cands.push(name);
+          }
+        });
+      });
+      host.innerHTML = cands.length
+        ? '<div class="cands">' + cands.slice(0, 18).map((c) => `<span class="cand" title="click to copy">${c.replace(/[&<>]/g, (x) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[x]))}</span>`).join("") + "</div>"
+        : '<span class="muted">No names yet — try again, or turn on ⚡ Live AI.</span>';
+      host.querySelectorAll(".cand").forEach((el) => el.addEventListener("click", () => {
+        if (navigator.clipboard) navigator.clipboard.writeText(el.textContent).then(() => { statusEl.textContent = "Copied “" + el.textContent + "”."; });
+      }));
+    }
+    function renderMessage(text, host) {
+      let msg = text.replace(/^\s*[a-z]+:\s*/i, "").split(/\n/).map((s) => s.trim()).filter(Boolean).slice(0, 2).join(" ");
+      msg = msg.replace(/\s+/g, " ").trim();
+      host.innerHTML = msg
+        ? '<div class="msgout">' + msg.replace(/[&<>]/g, (x) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[x])) + "</div>"
+        : '<span class="muted">Nothing yet — try again, or turn on ⚡ Live AI.</span>';
+    }
+
+    function runTask(id) {
+      const def = TASKS.find((t) => t.id === id);
+      const input = $("prompt").value.trim();
+      const live = liveBox.checked && !liveBox.disabled;
+      if (!live && !model) return;
+      cancel = false; setRunning(true);
+      statusEl.textContent = live ? `Asking ${liveModel}…` : "Generating on-device…";
+      outEl.innerHTML = '<span class="muted">…</span>';
+      const promptText = live ? def.live(input) : def.seed(input);
+      // Respect the Length slider as an upper bound so short settings stay snappy.
+      const maxTok = Math.min(def.maxTokens, Math.max(20, +$("tokens").value));
+      collect(promptText, live, maxTok, live ? (partial) => def.render(partial, outEl) : null)
+        .then((text) => { def.render(text, outEl); statusEl.textContent = "Done."; })
+        .catch((e) => { outEl.innerHTML = '<span class="muted">error: ' + (e && e.message || e) + "</span>"; statusEl.textContent = "Error."; })
+        .finally(() => { setRunning(false); });
     }
 
     // Nucleus (top-p) + top-k sampling with a repetition penalty, mirrored from
