@@ -1037,6 +1037,80 @@ test('updatePace: learns your speed honestly and stays clamped', () => {
 
 /* --------------------------------- run ---------------------------------- */
 
+test('EV: range maths and a charge stop before the reserve runs dry', () => {
+  // 60 kWh at 80% and 160 Wh/km → 270 km usable (after the 10% haircut)
+  near(A.evUsableRangeM({ batteryKWh: 60, socPct: 80, whPerKm: 160 }), 270000, 1000);
+  assert.equal(A.evUsableRangeM({ batteryKWh: 0, socPct: 80 }), null);
+  // a straight 100 km route; range 60 km → needs a stop
+  const pts = [];
+  for (let i = 0; i <= 100; i++) pts.push({ lat: 51 + i * 0.009, lon: 0 }); // ~1 km apart
+  const route = { geometry: pts, cum: pts.map((_, i) => i * 1000.4), totalM: 100040, totalS: 4000, steps: [] };
+  route.cum = [0]; for (let i = 1; i < pts.length; i++) route.cum.push(route.cum[i-1] + A.haversine(pts[i-1], pts[i]));
+  route.totalM = route.cum[route.cum.length - 1];
+  const chargers = [
+    { lat: 51 + 30 * 0.009, lon: 0.001, tags: { name: 'GridServe 30' } },  // ~30 km in
+    { lat: 51 + 45 * 0.009, lon: 0.001, tags: { name: 'GridServe 45' } },  // ~45 km in
+    { lat: 51 + 80 * 0.009, lon: 0.001, tags: { name: 'Too Far 80' } },    // beyond reach
+  ];
+  const plan = A.evChargePlan(route, 60000, chargers);
+  assert.equal(plan.needed, true);
+  assert.equal(plan.stop.charger.tags.name, 'GridServe 45'); // furthest reachable
+  assert.ok(plan.remainingAfterM > 50000);
+  // short hop: no stop
+  assert.equal(A.evChargePlan({ totalM: 20000, geometry: pts.slice(0, 3), cum: [0, 1000, 2000] }, 60000, chargers).needed, false);
+  // no reachable charger → honest null stop
+  assert.equal(A.evChargePlan(route, 60000, [chargers[2]]).stop, null);
+});
+
+test('clearance: low bridge on-route flags a van, car passes, formats parse', () => {
+  assert.equal(A.parseMetres('3.5'), 3.5);
+  assert.equal(A.parseMetres('3.5 m'), 3.5);
+  near(A.parseMetres(`11'6"`), 3.51, 0.02);
+  assert.equal(A.parseMetres('default'), null);
+  const pts = []; for (let i = 0; i <= 20; i++) pts.push({ lat: 51 + i * 0.001, lon: 0 });
+  const route = { geometry: pts, cum: [0], steps: [] };
+  for (let i = 1; i < pts.length; i++) route.cum.push(route.cum[i-1] + A.haversine(pts[i-1], pts[i]));
+  route.totalM = route.cum[route.cum.length - 1];
+  const bridge = { tags: { maxheight: '3.4', name: 'Old Rail Bridge' },
+                   geometry: [{ lat: 51.01, lon: 0 }, { lat: 51.011, lon: 0 }] };
+  const farBridge = { tags: { maxheight: '3.0' }, geometry: [{ lat: 51.01, lon: 0.05 }] }; // off-route
+  const tall = A.vehicleHazards(route, [bridge, farBridge], { heightM: 3.6 });
+  assert.equal(tall.length, 1);
+  assert.equal(tall[0].kind, 'height');
+  assert.equal(tall[0].limit, 3.4);
+  assert.equal(tall[0].name, 'Old Rail Bridge');
+  assert.equal(A.vehicleHazards(route, [bridge], { heightM: 2.0 }).length, 0); // car fits
+  const heavy = A.vehicleHazards(route, [{ tags: { maxweight: '7.5' }, geometry: bridge.geometry }], { weightT: 12 });
+  assert.equal(heavy[0].kind, 'weight');
+  assert.equal(A.vehicleHazards(route, [bridge], null).length, 0);
+});
+
+test('road reports: build, validate, snap to route, expire honestly', () => {
+  const now = 1000000000;
+  const r = A.buildReport(now, 'uid1', 'crash', { lat: 51.500049, lon: -0.120051 });
+  assert.equal(r.kind, 'crash');
+  assert.equal(r.lat, 51.50005); // 5dp ≈ 1 m — enough to mark a hazard, nothing more
+  assert.equal(A.buildReport(now, 'u', 'aliens', { lat: 1, lon: 1 }), null);
+  assert.equal(A.buildReport(now, 'u', 'crash', { lat: NaN, lon: 1 }), null);
+  assert.equal(A.validReport(r, now + 3600e3), true);          // 1h old — alive
+  assert.equal(A.validReport(r, now + 3 * 3600e3), false);     // 3h old — expired
+  assert.equal(A.validReport({ ...r, t: now + 600e3 }, now), false); // from the future
+  const pts = []; for (let i = 0; i <= 20; i++) pts.push({ lat: 51 + i * 0.001, lon: 0 });
+  const route = { geometry: pts, cum: [0], steps: [] };
+  for (let i = 1; i < pts.length; i++) route.cum.push(route.cum[i-1] + A.haversine(pts[i-1], pts[i]));
+  route.totalM = route.cum[route.cum.length - 1];
+  const mapped = A.mapReportsToRoute(route, [
+    { kind: 'crash', lat: 51.005, lon: 0, t: now },
+    { kind: 'crash', lat: 51.0055, lon: 0, t: now },   // dupe within 120m — dropped
+    { kind: 'roadworks', lat: 51.012, lon: 0, t: now },
+    { kind: 'hazard', lat: 51.01, lon: 0.03, t: now }, // off-route — dropped
+  ]);
+  assert.equal(mapped.length, 2);
+  const nxt = A.reportNext(mapped, 200);
+  assert.equal(nxt.report.kind, 'crash');
+  assert.ok(nxt.distM > 300);
+});
+
 test('calm routes: motorway cruise beats junction soup, guard caps the cost', () => {
   const cruise = { totalM: 20000, totalS: 900, steps: [
     { type: 'depart' }, { type: 'on ramp', modifier: 'right' },
