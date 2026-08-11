@@ -642,6 +642,18 @@
   <div id="routeStatus"></div>
   <div id="altList"></div>
   <div id="etaHonesty" style="display:none;text-align:center;color:var(--dim);font-size:12px;margin-top:8px"></div>
+  <div id="evRow" style="display:none;align-items:center;gap:10px;margin-top:10px;padding:10px 12px;border:1px solid rgba(52,211,153,0.4);border-radius:14px;background:rgba(52,211,153,0.08)">
+    <div style="font-size:20px">⚡</div>
+    <div style="flex:1;min-width:0">
+      <div id="evName" style="font-weight:650;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
+      <div id="evMeta" style="font-size:12px;color:var(--dim)"></div>
+    </div>
+    <button id="btnEvStop" style="flex:none;height:40px;padding:0 14px;border-radius:12px;background:rgba(52,211,153,0.16);border:1px solid var(--accent2);font-weight:700;font-size:13px">Add stop</button>
+  </div>
+  <div id="hazRow" style="display:none;gap:10px;margin-top:10px;padding:10px 12px;border:1px solid rgba(248,113,113,0.5);border-radius:14px;background:rgba(248,113,113,0.1);align-items:center">
+    <div style="font-size:20px">⛔</div>
+    <div id="hazText" style="flex:1;font-size:13px"></div>
+  </div>
   <div id="parkRow" style="display:none;align-items:center;gap:10px;margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,0.04)">
     <div style="font-size:20px">🅿</div>
     <div style="flex:1;min-width:0">
@@ -711,6 +723,10 @@
     <div class="seg" id="segTheme">
       <button data-v="auto">Auto</button><button data-v="day">Day</button><button data-v="night">Night</button>
     </div>
+  </div>
+  <div class="setRow">
+    <div class="lbl">🚗 My vehicle<div class="sub" id="vehSub">Car</div></div>
+    <button class="navCtl" id="btnOpenVehicle" aria-label="Open vehicle settings" style="width:auto;padding:0 16px;border-radius:12px">Open</button>
   </div>
   <div class="setRow">
     <div class="lbl">📊 My driving<div class="sub">Lifetime stats from your drives — on this device</div></div>
@@ -784,6 +800,31 @@
 </div>
 
 <!-- 📊 my driving sheet -->
+<div class="sheet" id="vehicleSheet" role="dialog" aria-label="My vehicle">
+  <div class="grab"></div>
+  <div style="display:flex;align-items:center">
+    <h3 style="flex:1">🚗 My vehicle</h3>
+    <button class="navCtl" id="btnCloseVehicle" aria-label="Close">✕</button>
+  </div>
+  <div class="setRow">
+    <div class="lbl">Type</div>
+    <div class="seg" id="segVehType">
+      <button data-v="car">Car</button><button data-v="ev">⚡ EV</button><button data-v="van">🚚 Van / tow</button>
+    </div>
+  </div>
+  <div id="evFields" style="display:none">
+    <div class="setRow"><div class="lbl">Battery<div class="sub">kWh</div></div><input class="convoyInput" id="evKWh" type="number" inputmode="decimal" placeholder="60" style="width:110px;height:42px"></div>
+    <div class="setRow"><div class="lbl">Charge now<div class="sub">%</div></div><input class="convoyInput" id="evSoc" type="number" inputmode="numeric" placeholder="80" style="width:110px;height:42px"></div>
+    <div class="setRow"><div class="lbl">Consumption<div class="sub">Wh/km (about 160 for most EVs)</div></div><input class="convoyInput" id="evWpk" type="number" inputmode="numeric" placeholder="160" style="width:110px;height:42px"></div>
+    <p style="color:var(--dim);font-size:11.5px;margin-top:10px">Routes longer than your range get a ⚡ charge stop suggested from real charger locations (OpenStreetMap).</p>
+  </div>
+  <div id="vanFields" style="display:none">
+    <div class="setRow"><div class="lbl">Height<div class="sub">metres</div></div><input class="convoyInput" id="vanH" type="number" inputmode="decimal" placeholder="3.6" style="width:110px;height:42px"></div>
+    <div class="setRow"><div class="lbl">Weight<div class="sub">tonnes</div></div><input class="convoyInput" id="vanW" type="number" inputmode="decimal" placeholder="7.5" style="width:110px;height:42px"></div>
+    <p style="color:var(--dim);font-size:11.5px;margin-top:10px">Atlas checks every route against low bridges and weight limits (OpenStreetMap) and warns before you set off — and picks a clear alternative when one exists.</p>
+  </div>
+</div>
+
 <div class="sheet" id="statsSheet" role="dialog" aria-label="My driving">
   <div class="grab"></div>
   <div style="display:flex;align-items:center">
@@ -944,10 +985,20 @@
     <div id="navMeta">— · —</div>
   </div>
   <div class="grow"></div>
+  <button class="navCtl" id="btnReport" aria-label="Report something on the road">⚠️</button>
   <button class="navCtl" id="btnDashcam" aria-label="Dashcam">📹</button>
   <button class="navCtl" id="btnMute" aria-label="Mute voice">🔊</button>
   <button class="navCtl" id="btnOverview" aria-label="Overview">🗺</button>
   <button class="navCtl" id="btnEnd" aria-label="End navigation">✕</button>
+</div>
+<div id="reportCard" style="position:fixed;z-index:60;left:12px;right:12px;bottom:calc(96px + var(--sab));background:var(--panel);border:1px solid rgba(255,255,255,0.14);border-radius:18px;box-shadow:var(--shadow),var(--lift);backdrop-filter:blur(18px) saturate(1.4);-webkit-backdrop-filter:blur(18px) saturate(1.4);padding:12px;display:none">
+  <div style="font-size:12px;color:var(--dim);text-align:center;margin-bottom:8px">What's on the road? One tap — shared anonymously with nearby Atlas drivers for 2 hours.</div>
+  <div style="display:flex;gap:8px">
+    <button class="chip" data-rk="crash"><div class="e">💥</div><div class="t">Crash</div></button>
+    <button class="chip" data-rk="roadworks"><div class="e">🚧</div><div class="t">Roadworks</div></button>
+    <button class="chip" data-rk="hazard"><div class="e">⚠️</div><div class="t">Hazard</div></button>
+    <button class="chip" data-rk="queue"><div class="e">🐢</div><div class="t">Queue</div></button>
+  </div>
 </div>
 <div id="speedBubble"><div id="speedVal">0</div><div id="speedUnit">km/h</div></div>
 <div id="limitSign" aria-label="Speed limit"><div id="limitVal">30</div><div id="limitUnit">km/h</div></div>
@@ -1023,7 +1074,7 @@ function load(key, fallback) {
 }
 function save(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch (e) {} }
 
-var settings = Object.assign({ units: 'metric', voice: 'on', theme: 'auto', codriver: 'off', cameras: 'on', traffic: 'on', baseLayer: 'map', view3d: 'on', buildings: 'on', overBuf: '0', routeStyle: 'fast' }, load('atlas.settings', {}));
+var settings = Object.assign({ units: 'metric', voice: 'on', theme: 'auto', codriver: 'off', cameras: 'on', traffic: 'on', baseLayer: 'map', view3d: 'on', buildings: 'on', overBuf: '0', routeStyle: 'fast', vehType: 'car', evKWh: '', evSoc: '', evWpk: '', vanH: '', vanW: '' }, load('atlas.settings', {}));
 var places = load('atlas.places', []);     // {name, addr, lat, lon, kind?, uses, lastUsed}
 var recents = load('atlas.recents', []);   // same shape, capped
 var pace = load('atlas.pace', {});         // per-profile personal pace factor (learned)
@@ -1427,6 +1478,26 @@ function drawRoutes(night) {
                      'rgba(251,191,36,0.95)', 3.5, [9, 7]);
       }
     }
+    // ⚠ community reports on this route
+    if (nav.active && nav.reports) {
+      var REP_EMOJI = { crash: '💥', roadworks: '🚧', hazard: '⚠️', queue: '🐢' };
+      for (var ri = 0; ri < nav.reports.length; ri++) {
+        var rp = toScreen(nav.reports[ri]);
+        ctx.beginPath(); ctx.arc(rp.x, rp.y, 11, 0, 7);
+        ctx.fillStyle = 'rgba(15,23,42,0.85)'; ctx.fill();
+        ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(251,191,36,0.9)'; ctx.stroke();
+        ctx.font = '13px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText(REP_EMOJI[nav.reports[ri].kind] || '⚠️', rp.x, rp.y + 4.5);
+      }
+    }
+    // ⚡ the charge stop, when one is on the route
+    if (trip.via) {
+      var vs = toScreen(trip.via);
+      ctx.beginPath(); ctx.arc(vs.x, vs.y, 11, 0, 7); ctx.fillStyle = '#fff'; ctx.fill();
+      ctx.beginPath(); ctx.arc(vs.x, vs.y, 8.5, 0, 7); ctx.fillStyle = '#10b981'; ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.font = '700 11px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('⚡', vs.x, vs.y + 4);
+    }
     // 🚶 the last leg on foot: parking → the real destination, drawn as a
     // dashed walking line with its own small pin
     if (trip.walkDest) {
@@ -1698,8 +1769,9 @@ function fetchJson(url) {
   });
 }
 
-function fetchRoute(from, to, profile) {
-  var coords = from.lon.toFixed(6) + ',' + from.lat.toFixed(6) + ';' + to.lon.toFixed(6) + ',' + to.lat.toFixed(6);
+function fetchRoute(from, to, profile, via) {
+  var pts = via ? [from, via, to] : [from, to];
+  var coords = pts.map(function (p) { return p.lon.toFixed(6) + ',' + p.lat.toFixed(6); }).join(';');
   var qs = '?alternatives=true&overview=full&steps=true&geometries=polyline';
   var urls = ROUTERS[profile] || ROUTERS.car;
   var attempt = function (i) {
@@ -1948,7 +2020,7 @@ var tapPoint = null;
 /* ------------------------------ sheets ---------------------------------- */
 
 function openSheet(id) {
-  ['searchSheet', 'routeSheet', 'settingsSheet', 'clipsSheet', 'convoySheet', 'musicSheet', 'statsSheet', 'proSheet'].forEach(function (s) {
+  ['searchSheet', 'routeSheet', 'settingsSheet', 'clipsSheet', 'convoySheet', 'musicSheet', 'statsSheet', 'proSheet', 'vehicleSheet'].forEach(function (s) {
     $(s).classList.toggle('open', s === id);
   });
 }
@@ -2106,7 +2178,7 @@ $('tapGo').addEventListener('click', function () {
 /* ============================ route preview ============================== */
 
 function chooseDestination(p) {
-  trip.dest = p; trip.demoOnly = false; trip.walkDest = null;
+  trip.dest = p; trip.demoOnly = false; trip.walkDest = null; trip.via = null;
   // bump recents
   recents = recents.filter(function (x) { return x.name !== p.name || Math.abs(x.lat - p.lat) > 1e-6; });
   recents.unshift({ name: p.name, addr: p.addr, lat: p.lat, lon: p.lon, uses: (p.uses || 0) + 1, lastUsed: Date.now() });
@@ -2124,6 +2196,8 @@ function requestRoutes() {
   trip.routes = []; trip.selected = 0;
   $('altList').innerHTML = '';
   $('parkRow').style.display = 'none';
+  $('evRow').style.display = 'none';
+  $('hazRow').style.display = 'none';
   needsDraw = true;
   if (!trip.dest) return;
   if (!from) {
@@ -2138,7 +2212,7 @@ function requestRoutes() {
     $('routeStatus').textContent = 'Finding the best routes…';
   }
   var dest = trip.dest, profile = trip.profile;
-  fetchRoute(from, dest, profile).then(function (routes) {
+  fetchRoute(from, dest, profile, trip.via).then(function (routes) {
     if (trip.dest !== dest || trip.profile !== profile) return; // stale
     trip.routes = routes.map(function (r) { return A.buildRoute(r); });
     trip.selected = 0;
@@ -2154,6 +2228,7 @@ function requestRoutes() {
     renderAlternatives(routes);
     fitRoute(trip.routes[trip.selected]);
     if (profile === 'car' && !trip.walkDest) fetchParking(dest);
+    if (profile === 'car') vehicleChecks(dest);
   }).catch(function () {
     if (trip.dest !== dest) return;
     $('routeStatus').className = 'err';
@@ -2199,6 +2274,101 @@ function fetchParking(dest) {
     $('parkRow').style.display = 'flex';
   }).catch(function () {});
 }
+/* ------------------- 🚗 vehicle-aware route checks ----------------------
+   EVs: if the trip outruns the usable range, suggest the furthest reachable
+   charger (OpenStreetMap) as a via stop. Vans: check every alternative
+   against low bridges / weight limits and steer to a clear one. */
+function corridorChain(route, stepM) {
+  var pts = [];
+  var step = Math.max(stepM || 1500, route.totalM / 60);
+  for (var m = 0; m <= route.totalM; m += step) {
+    var p = A.pointAtAlong(route, m);
+    pts.push(p.lat.toFixed(4) + ',' + p.lon.toFixed(4));
+  }
+  return pts.join(',');
+}
+function overpassFetch(q) {
+  var attempt = function (i) {
+    if (i >= OVERPASS.length) return Promise.reject(new Error('overpass unavailable'));
+    return fetch(OVERPASS[i], { method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'data=' + encodeURIComponent(q) })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .catch(function (err) { return i + 1 < OVERPASS.length ? attempt(i + 1) : Promise.reject(err); });
+  };
+  return attempt(0);
+}
+function vehicleChecks(dest) {
+  var v = vehicle();
+  var route = trip.routes[trip.selected];
+  if (!route || trip.demoOnly) return;
+  if (v.type === 'ev') {
+    var rangeM = A.evUsableRangeM(v);
+    if (!rangeM) return;
+    var plan0 = A.evChargePlan(route, rangeM, []);
+    if (!plan0.needed) return; // fits with reserve — silence
+    var q = '[out:json][timeout:12];node["amenity"="charging_station"](around:900,' + corridorChain(route) + ');out tags 80;';
+    overpassFetch(q).then(function (json) {
+      if (trip.dest !== dest) return;
+      var chargers = (json.elements || []).map(function (el) { return { lat: el.lat, lon: el.lon, tags: el.tags || {} }; });
+      var plan = A.evChargePlan(route, rangeM, chargers);
+      if (!plan.needed) return;
+      if (!plan.stop) {
+        $('evName').textContent = 'This trip outruns your range';
+        $('evMeta').textContent = '~' + Math.round(rangeM / 1000) + ' km usable, ' +
+          Math.round(route.totalM / 1000) + ' km to go — no charger found on the route';
+        $('btnEvStop').style.display = 'none';
+        $('evRow').style.display = 'flex';
+        return;
+      }
+      trip.evStop = plan.stop;
+      $('evName').textContent = '⚡ ' + (plan.stop.charger.tags.name || plan.stop.charger.tags.operator || 'Charging station');
+      $('evMeta').textContent = A.fmtDist(plan.stop.alongM, settings.units) + ' in · then ' +
+        A.fmtDist(plan.remainingAfterM, settings.units) + ' to go';
+      $('btnEvStop').style.display = '';
+      $('evRow').style.display = 'flex';
+    }).catch(function () {});
+  } else if (v.type === 'van' && (v.heightM || v.weightT)) {
+    var q2 = '[out:json][timeout:12];(way["maxheight"](around:30,' + corridorChain(route, 900) + ');' +
+             'way["maxweight"](around:30,' + corridorChain(route, 900) + '););out geom 200;';
+    overpassFetch(q2).then(function (json) {
+      if (trip.dest !== dest) return;
+      var ways = (json.elements || []).filter(function (el) { return el.type === 'way' && el.geometry; })
+        .map(function (el) { return { tags: el.tags || {}, geometry: el.geometry }; });
+      trip.routes.forEach(function (r) { r.hazards = A.vehicleHazards(r, ways, v); });
+      var cur = trip.routes[trip.selected];
+      if (!cur.hazards.length) return; // clear — silence
+      // steer to a clear alternative when one exists
+      var clearIdx = -1;
+      trip.routes.forEach(function (r, i) { if (clearIdx < 0 && !r.hazards.length) clearIdx = i; });
+      if (clearIdx >= 0) {
+        trip.selected = clearIdx;
+        renderAlternatives(trip.raw);
+        fitRoute(trip.routes[clearIdx]);
+        toast('⛔ ' + hazardLine(cur.hazards[0], v) + ' — switched to a clear route');
+        needsDraw = true;
+        return;
+      }
+      $('hazText').textContent = hazardLine(cur.hazards[0], v) +
+        (cur.hazards.length > 1 ? ' (+' + (cur.hazards.length - 1) + ' more)' : '') +
+        ' — no clear alternative found; check the route before you go';
+      $('hazRow').style.display = 'flex';
+    }).catch(function () {});
+  }
+}
+function hazardLine(h, v) {
+  return h.kind === 'height'
+    ? (h.limit + ' m bridge' + (h.name ? ' (' + h.name + ')' : '') + ' on this route — you need ' + v.heightM + ' m')
+    : (h.limit + ' t weight limit' + (h.name ? ' (' + h.name + ')' : '') + ' — you are ' + v.weightT + ' t');
+}
+$('btnEvStop').addEventListener('click', function () {
+  if (!trip.evStop) return;
+  trip.via = { lat: trip.evStop.charger.lat, lon: trip.evStop.charger.lon };
+  $('evRow').style.display = 'none';
+  requestRoutes();
+  toast('⚡ Charge stop added to the route');
+});
+
 $('btnParkThere').addEventListener('click', function () {
   var best = trip.parkBest;
   if (!best || !trip.dest) return;
@@ -2209,6 +2379,8 @@ $('btnParkThere').addEventListener('click', function () {
   $('destName').textContent = trip.dest.name;
   $('destAddr').textContent = trip.dest.addr;
   $('parkRow').style.display = 'none';
+  $('evRow').style.display = 'none';
+  $('hazRow').style.display = 'none';
   requestRoutes();
   toast('🅿 Ending at the car park — I\'ll point you to the door when you arrive');
 });
@@ -2244,7 +2416,9 @@ function renderAlternatives(rawRoutes) {
     b.querySelector('.ds').textContent = A.fmtDist(r.totalM, settings.units) + ' · arrive ' + A.etaClock(Date.now(), pacedS) +
       (tr && tr.adj.delayS >= 60 ? ' · ⚠ +' + A.fmtDur(tr.adj.delayS) + ' traffic' : '') +
       (glareS >= 45 ? ' · 🌅 ' + A.fmtDur(glareS) + ' low sun' : '');
-    b.querySelector('.tag').textContent = (i === calmIdx ? '🧘 calmest · ' : '') + (anyDelay && i === minIdx && trip.routes.length > 1 ? '🚦 fastest now · ' : '') + via;
+    var anyHaz = trip.routes.some(function (x) { return x.hazards && x.hazards.length; });
+    var clearTag = anyHaz && r.hazards && !r.hazards.length ? '✓ clear for your vehicle · ' : '';
+    b.querySelector('.tag').textContent = clearTag + (i === calmIdx ? '🧘 calmest · ' : '') + (anyDelay && i === minIdx && trip.routes.length > 1 ? '🚦 fastest now · ' : '') + via;
     b.addEventListener('click', function () {
       trip.selected = i;
       renderAlternatives(rawRoutes);
@@ -2470,7 +2644,7 @@ function fitRoute(route) {
 }
 
 function clearTrip() {
-  trip.dest = null; trip.routes = []; trip.selected = 0; trip.walkDest = null;
+  trip.dest = null; trip.routes = []; trip.selected = 0; trip.walkDest = null; trip.via = null;
   $('searchPillText').textContent = 'Where to?';
   needsDraw = true;
 }
@@ -2497,6 +2671,10 @@ function startDemoTrip(andGo) {
     route.traffic = { mapped: settings.traffic === 'on' ? mapped : [], factor: factor,
                       adj: A.trafficAdjust(route, settings.traffic === 'on' ? mapped : [], factor) };
   })(trip.routes[0]);
+  (function (route) {
+    var p = A.pointAtAlong(route, route.totalM * 0.45);
+    receiveReport({ id: 'demo-report', kind: 'roadworks', lat: p.lat, lon: p.lon, t: Date.now() });
+  })(trip.routes[0]);
   $('destName').textContent = DEMO_DEST.name;
   $('destAddr').textContent = DEMO_DEST.addr + ' · bundled demo route';
   $('searchPillText').textContent = DEMO_DEST.name;
@@ -2508,10 +2686,81 @@ function startDemoTrip(andGo) {
   if (andGo) startNav(true);
 }
 
+/* ------------- ⚠ community road reports — fleet data, v1 ----------------
+   One tap shares an anonymous point ("crash, here, now") with every Atlas
+   driver for 2 hours: BroadcastChannel same-device, Firestore across
+   devices (create-only rules, no trajectories — a report is one rounded
+   point and a kind, nothing else). Reports on your route are spoken as
+   you approach. */
+var reports = { cache: [], bc: null, fb: null, uid: null };
+try { if (window.BroadcastChannel) {
+  reports.bc = new BroadcastChannel('atlas-reports');
+  reports.bc.onmessage = function (e) { receiveReport(e.data); };
+} } catch (e) {}
+function receiveReport(r) {
+  if (!A.validReport(r, Date.now())) return;
+  for (var i = 0; i < reports.cache.length; i++) if (reports.cache[i].id === r.id) return;
+  reports.cache.push(r);
+  if (nav.active && nav.route) {
+    nav.reports = A.mapReportsToRoute(nav.route, reports.cache.filter(function (x) { return A.validReport(x, Date.now()); }));
+  }
+}
+function reportsFbInit() {
+  if (reports.fb || !window.ATLAS_FIREBASE_CONFIG) return Promise.resolve();
+  return loadFirebaseSdk(['app', 'auth', 'firestore']).then(function () {
+    var app = firebase.apps && firebase.apps.length ? firebase.app() : firebase.initializeApp(window.ATLAS_FIREBASE_CONFIG);
+    return firebase.auth(app).signInAnonymously().then(function (cred) {
+      reports.uid = (cred && cred.user && cred.user.uid) || null;
+      reports.fb = firebase.firestore(app);
+    });
+  }).catch(function () {});
+}
+function fetchReports() {
+  if (!window.ATLAS_FIREBASE_CONFIG) return Promise.resolve();
+  return reportsFbInit().then(function () {
+    if (!reports.fb) return;
+    return reports.fb.collection('atlas_reports')
+      .where('t', '>', Date.now() - 2 * 3600e3).limit(200).get()
+      .then(function (snap) { snap.forEach(function (d) { receiveReport(d.data()); }); });
+  }).catch(function () {});
+}
+function sendReport(kind) {
+  var pos = (nav.active && nav.demo && nav.simPos) ? nav.simPos : gps.fix;
+  if (!pos) { toast('No position yet — reports need a GPS fix'); return; }
+  var r = A.buildReport(Date.now(), reports.uid || 'local', kind, pos);
+  if (!r) return;
+  receiveReport(r);
+  if (reports.bc) { try { reports.bc.postMessage(r); } catch (e) {} }
+  reportsFbInit().then(function () {
+    if (!reports.fb || !reports.uid) return;
+    var doc = Object.assign({}, r, { id: reports.uid + '-' + r.t, uid: reports.uid });
+    reports.fb.collection('atlas_reports').doc(doc.id).set(doc).catch(function () {});
+  });
+  toast(A.REPORT_KINDS[kind] + ' reported — thank you, nearby drivers will hear about it');
+}
+$('btnReport').addEventListener('click', function () {
+  var c = $('reportCard');
+  c.style.display = c.style.display === 'none' || !c.style.display ? 'block' : 'none';
+});
+Array.prototype.forEach.call(document.querySelectorAll('#reportCard [data-rk]'), function (b) {
+  b.addEventListener('click', function () {
+    $('reportCard').style.display = 'none';
+    sendReport(b.getAttribute('data-rk'));
+  });
+});
+var REPORT_SPEECH = { crash: 'a crash', roadworks: 'roadworks', hazard: 'a hazard on the road', queue: 'slow traffic' };
+
 function startNav(demo) {
   var route = trip.routes[trip.selected];
   if (!route) return;
   nav.active = true; nav.demo = !!demo; nav.route = route;
+  nav.repSpoken = {};
+  nav.reports = A.mapReportsToRoute(route, reports.cache.filter(function (x) { return A.validReport(x, Date.now()); }));
+  if (!demo) fetchReports().then(function () {
+    if (nav.active && nav.route === route) {
+      nav.reports = A.mapReportsToRoute(route, reports.cache.filter(function (x) { return A.validReport(x, Date.now()); }));
+    }
+  });
   nav.guide = A.startGuidance();
   nav.lastReroute = Date.now();
   // 📼 flight recorder + ⏱ personal pace + 🏁 co-driver + 🛰 ghost mode state
@@ -2635,6 +2884,19 @@ function onNavFix(fix) {
       speak('Speed camera ahead' + (camHit.cam.kmh != null ? ' — the limit is ' + limitLabel(camHit.cam.kmh) : ''));
     }
   } else $('camChip').classList.remove('show');
+
+  // ⚠ community reports: one spoken heads-up per report as you approach
+  if (nav.reports && nav.reports.length && !r.arrived) {
+    var rn = A.reportNext(nav.reports, r.alongM);
+    if (rn && rn.distM <= Math.max(500, v * 20)) {
+      var rKey = rn.report.kind + Math.round(rn.report.alongM);
+      if (!nav.repSpoken[rKey] && !r.announce) {
+        nav.repSpoken[rKey] = 1;
+        speak('Heads up — ' + REPORT_SPEECH[rn.report.kind] + ' reported ' + A.speakDist(rn.distM, settings.units) + ' ahead');
+        toast(A.REPORT_KINDS[rn.report.kind] + ' reported ' + A.fmtDist(rn.distM, settings.units) + ' ahead');
+      }
+    }
+  }
 
   // 🚦 incident ahead: chip with live distance + one spoken alert each
   var trafWarn = null;
@@ -4256,7 +4518,7 @@ function segWire(id, key, after) {
   });
 }
 function syncSettingsUI() {
-  [['segUnits', 'units'], ['segVoice', 'voice'], ['segTheme', 'theme'], ['segCodriver', 'codriver'], ['segCameras', 'cameras'], ['segOverBuf', 'overBuf'], ['segRouteStyle', 'routeStyle'], ['segTraffic', 'traffic'], ['segLayer', 'baseLayer'], ['segView', 'view3d'], ['segTheme2', 'theme'], ['segBuildings', 'buildings']].forEach(function (pair) {
+  [['segUnits', 'units'], ['segVoice', 'voice'], ['segTheme', 'theme'], ['segCodriver', 'codriver'], ['segCameras', 'cameras'], ['segOverBuf', 'overBuf'], ['segRouteStyle', 'routeStyle'], ['segVehType', 'vehType'], ['segTraffic', 'traffic'], ['segLayer', 'baseLayer'], ['segView', 'view3d'], ['segTheme2', 'theme'], ['segBuildings', 'buildings']].forEach(function (pair) {
     Array.prototype.forEach.call($(pair[0]).querySelectorAll('button'), function (b) {
       b.classList.toggle('on', b.getAttribute('data-v') === settings[pair[1]]);
     });
@@ -4269,6 +4531,29 @@ segWire('segTheme', 'theme', function () { needsDraw = true; });
 segWire('segCodriver', 'codriver');
 segWire('segCameras', 'cameras', function () { needsDraw = true; });
 segWire('segOverBuf', 'overBuf');
+segWire('segVehType', 'vehType', function () { syncVehicleUI(); if (trip.routes.length && !trip.demoOnly) requestRoutes(); });
+function vehicle() {
+  var t = settings.vehType;
+  if (t === 'ev') return { type: 'ev', batteryKWh: parseFloat(settings.evKWh), socPct: parseFloat(settings.evSoc), whPerKm: parseFloat(settings.evWpk) || 160 };
+  if (t === 'van') return { type: 'van', heightM: parseFloat(settings.vanH) || null, weightT: parseFloat(settings.vanW) || null };
+  return { type: 'car' };
+}
+function syncVehicleUI() {
+  $('evFields').style.display = settings.vehType === 'ev' ? '' : 'none';
+  $('vanFields').style.display = settings.vehType === 'van' ? '' : 'none';
+  var v = vehicle();
+  $('vehSub').textContent = v.type === 'ev'
+    ? ('⚡ EV' + (A.evUsableRangeM(v) ? ' · ~' + Math.round(A.evUsableRangeM(v) / 1000) + ' km range' : ' — set your battery'))
+    : v.type === 'van' ? ('🚚 ' + (v.heightM ? v.heightM + ' m' : '') + (v.weightT ? ' · ' + v.weightT + ' t' : '') || 'Van') : 'Car';
+}
+['evKWh', 'evSoc', 'evWpk', 'vanH', 'vanW'].forEach(function (id) {
+  $(id).addEventListener('input', function () { settings[id] = $(id).value; persistSettings(); syncVehicleUI(); });
+});
+$('btnOpenVehicle').addEventListener('click', function () {
+  ['evKWh', 'evSoc', 'evWpk', 'vanH', 'vanW'].forEach(function (id) { $(id).value = settings[id] || ''; });
+  syncVehicleUI(); openSheet('vehicleSheet');
+});
+$('btnCloseVehicle').addEventListener('click', function () { syncVehicleUI(); openSheet('settingsSheet'); });
 segWire('segRouteStyle', 'routeStyle', function () {
   if (trip.routes.length > 1) {
     applyRouteStyle();

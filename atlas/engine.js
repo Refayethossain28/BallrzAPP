@@ -1837,6 +1837,125 @@
              dir: compassName(bearing(from, to)) };
   }
 
+
+  /* ======================= vehicle-aware routing ========================= */
+
+  /** Usable EV range in metres from battery size, charge %, and consumption,
+   *  with a 10% real-world haircut (cold, hills, speed). null if unset. */
+  function evUsableRangeM(v) {
+    if (!v) return null;
+    var kwh = Number(v.batteryKWh), soc = Number(v.socPct), wpk = Number(v.whPerKm) || 160;
+    if (!(kwh > 0) || !(soc > 0) || !(wpk > 0)) return null;
+    soc = Math.min(100, soc) / 100;
+    return (kwh * 1000 * soc / wpk) * 1000 * 0.9;
+  }
+
+  /** Plan a charge stop: none needed if the route + a 15% reserve fits the
+   *  range; otherwise the furthest charger reachable before the reserve
+   *  runs out (chargers snapped within 800 m of the route).
+   *  → {needed, stop: {charger, alongM, detourM} | null, remainingAfterM}. */
+  function evChargePlan(route, rangeM, chargers) {
+    if (!(rangeM > 0)) return { needed: false, stop: null };
+    var reserve = Math.max(rangeM * 0.15, 10000);
+    if (route.totalM + reserve <= rangeM) return { needed: false, stop: null };
+    var best = null;
+    (chargers || []).forEach(function (c) {
+      if (typeof c.lat !== 'number' || typeof c.lon !== 'number') return;
+      var s = snapToRoute(route, c);
+      if (s.crossTrack > 800) return;
+      if (s.alongM > rangeM - reserve) return; // beyond safe reach
+      if (s.alongM < 500) return;              // pointless stop at the door
+      if (!best || s.alongM > best.alongM) best = { charger: c, alongM: s.alongM, detourM: Math.round(s.crossTrack) };
+    });
+    return { needed: true, stop: best,
+             remainingAfterM: best ? route.totalM - best.alongM : null };
+  }
+
+  /** '3.5', '3.5 m', "11'6\"" → metres; null when unparseable. */
+  function parseMetres(v) {
+    if (v == null) return null;
+    var s = String(v).trim();
+    var ft = s.match(/^(\d+)'\s*(\d+)?"?$/);
+    if (ft) return Math.round(((+ft[1]) * 0.3048 + (+(ft[2] || 0)) * 0.0254) * 100) / 100;
+    var n = parseFloat(s);
+    return isFinite(n) && n > 0 ? n : null;
+  }
+
+  /** Ways with maxheight/maxweight your vehicle breaks, snapped to the
+   *  route (25 m). vehicle = {heightM?, weightT?}. → [{alongM, kind,
+   *  limit, need, name}] sorted, deduped. */
+  function vehicleHazards(route, ways, vehicle) {
+    if (!vehicle || (!vehicle.heightM && !vehicle.weightT)) return [];
+    var out = [];
+    (ways || []).forEach(function (w) {
+      var tags = w.tags || {};
+      var g = w.geometry || [];
+      if (!g.length) return;
+      var mh = parseMetres(tags.maxheight);
+      var mw = tags.maxweight != null ? parseFloat(tags.maxweight) : null;
+      var hV = vehicle.heightM && mh != null && vehicle.heightM > mh - 0.05;
+      var wV = vehicle.weightT && mw != null && isFinite(mw) && vehicle.weightT > mw;
+      if (!hV && !wV) return;
+      var mid = g[Math.floor(g.length / 2)];
+      var s = snapToRoute(route, mid);
+      if (s.crossTrack > 25) return;
+      out.push({ alongM: s.alongM, kind: hV ? 'height' : 'weight',
+                 limit: hV ? mh : mw, need: hV ? vehicle.heightM : vehicle.weightT,
+                 name: tags.name || null });
+    });
+    out.sort(function (a, b) { return a.alongM - b.alongM; });
+    return out.filter(function (h, i) { return i === 0 || h.alongM - out[i - 1].alongM > 50; });
+  }
+
+  /* ==================== community road reports (fleet v1) ================ */
+
+  var REPORT_KINDS = { crash: '💥 Crash', roadworks: '🚧 Roadworks', hazard: '⚠️ Hazard', queue: '🐢 Queue' };
+  var REPORT_TTL_MS = 2 * 3600e3;
+
+  /** A one-tap road report at the driver's position. null if unbuildable. */
+  function buildReport(now, uid, kind, pos) {
+    if (!REPORT_KINDS[kind] || !pos ||
+        typeof pos.lat !== 'number' || typeof pos.lon !== 'number' ||
+        !isFinite(pos.lat) || !isFinite(pos.lon)) return null;
+    return { id: String(uid || 'anon') + '-' + now, kind: kind,
+             lat: Math.round(pos.lat * 1e5) / 1e5, lon: Math.round(pos.lon * 1e5) / 1e5, t: now };
+  }
+
+  /** Receive-side: right shape, known kind, fresh (2h TTL, small future skew). */
+  function validReport(r, now) {
+    return !!(r && REPORT_KINDS[r.kind] &&
+      typeof r.lat === 'number' && isFinite(r.lat) &&
+      typeof r.lon === 'number' && isFinite(r.lon) &&
+      typeof r.t === 'number' && now - r.t <= REPORT_TTL_MS && r.t - now < 300e3);
+  }
+
+  /** Reports snapped onto the route (60 m), deduped per kind within 120 m. */
+  function mapReportsToRoute(route, reports) {
+    var out = [];
+    (reports || []).forEach(function (r) {
+      var s = snapToRoute(route, r);
+      if (s.crossTrack > 60) return;
+      out.push({ alongM: s.alongM, kind: r.kind, t: r.t, lat: r.lat, lon: r.lon });
+    });
+    out.sort(function (a, b) { return a.alongM - b.alongM; });
+    return out.filter(function (r, i) {
+      for (var j = 0; j < i; j++) {
+        if (out[j].kind === r.kind && Math.abs(out[j].alongM - r.alongM) < 120) return false;
+      }
+      return true;
+    });
+  }
+
+  /** The next report at/after alongM. → {report, distM} | null. */
+  function reportNext(reports, alongM) {
+    for (var i = 0; i < (reports || []).length; i++) {
+      if (reports[i].alongM > alongM - 15) {
+        return { report: reports[i], distM: Math.max(0, reports[i].alongM - alongM) };
+      }
+    }
+    return null;
+  }
+
   /* ================================ places ================================ */
 
   /**
@@ -1921,5 +2040,8 @@
     speechSafe: speechSafe,
     calmScore: calmScore, calmestRoute: calmestRoute, etaBand: etaBand,
     rankParking: rankParking, walkInfo: walkInfo,
+    evUsableRangeM: evUsableRangeM, evChargePlan: evChargePlan, parseMetres: parseMetres, vehicleHazards: vehicleHazards,
+    REPORT_KINDS: REPORT_KINDS, buildReport: buildReport, validReport: validReport,
+    mapReportsToRoute: mapReportsToRoute, reportNext: reportNext,
   };
 });

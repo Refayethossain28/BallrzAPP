@@ -506,6 +506,21 @@ service cloud.firestore {
         && (!('music' in request.resource.data) || request.resource.data.music is map);
     }
 
+    // ⚠ Atlas community road reports — fleet data with privacy as the
+    // architecture: one rounded point + a kind + a timestamp, created by
+    // its reporter, never edited or deleted by clients, read by any
+    // signed-in driver. Clients ignore anything older than 2 hours.
+    match /atlas_reports/{reportId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['id', 'uid', 'kind', 'lat', 'lon', 't'])
+        && request.resource.data.kind in ['crash', 'roadworks', 'hazard', 'queue']
+        && request.resource.data.lat is number && request.resource.data.lon is number
+        && request.resource.data.t is number;
+      allow update, delete: if false;
+    }
+
     // Convoy chat: text + short voice notes to everyone on the code. Create
     // only, as yourself, capped fields (voice notes are small data-URLs);
     // messages can never be edited or deleted by other members, and the
