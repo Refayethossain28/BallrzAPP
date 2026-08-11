@@ -1,0 +1,63 @@
+name: Publish trained model from a run artifact
+
+# Recovers a trained model that a "Train browser LLM" run produced but could
+# not push (e.g. it ran against a protected branch). Every training run also
+# uploads its weights as the `model-json` artifact; this downloads that artifact
+# from a given run and commits it to THIS branch (dispatch it on an unprotected
+# branch, then open a PR to main). No retraining.
+#
+# Run: Actions → "Publish trained model from a run artifact" → Run workflow →
+#      pick the unprotected branch, set run_id and out_model.
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Run id of the training run whose model-json artifact to publish"
+        required: true
+      out_model:
+        description: "Destination filename under llm-from-scratch/web/"
+        default: "model.json"
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the target branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          persist-credentials: true
+
+      - name: Download the model-json artifact from the training run
+        uses: actions/download-artifact@v4
+        with:
+          name: model-json
+          path: /tmp/model
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Commit the model to this branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # the artifact holds one .json (named by the training run's out_model)
+          SRC=$(ls /tmp/model/*.json | head -1)
+          cp "$SRC" /tmp/model.json
+          SIZE=$(wc -c < /tmp/model.json)
+          MSG="Publish trained model from run ${{ inputs.run_id }} → ${{ inputs.out_model }} [skip ci]"
+          for i in 1 2 3 4 5; do
+            git fetch origin "${{ github.ref_name }}"
+            git reset --hard "origin/${{ github.ref_name }}"
+            mkdir -p llm-from-scratch/web
+            cp /tmp/model.json "llm-from-scratch/web/${{ inputs.out_model }}"
+            git add "llm-from-scratch/web/${{ inputs.out_model }}"
+            if git diff --cached --quiet; then echo "already up to date"; break; fi
+            git commit -m "$MSG" -m "model.json ${SIZE} bytes."
+            if git push origin HEAD:"${{ github.ref_name }}"; then echo "pushed"; break; fi
+            echo "push $i failed — retrying"; sleep 5
+          done
