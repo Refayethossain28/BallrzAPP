@@ -1,4 +1,4 @@
-/* Offline service worker for "My Own AI Model".
+/* Offline service worker for "ApexAI".
  * The page and the JS inference engine are static; the model is RETRAINABLE —
  * the train-llm workflow commits a new model.json whenever the model is
  * retrained (now one dispatch away, on any Magpie-scraped corpus). So:
@@ -9,7 +9,7 @@
  *  - everything else (gpt.js, icons) is cache-first for speed and full
  *    offline use — once loaded, the whole model runs with no network.
  * Bump CACHE to force a clean reinstall. */
-const CACHE = 'my-ai-model-v2';
+const CACHE = 'apexai-v1';
 const ASSETS = ['./', './index.html', './gpt.js', './model.json', './manifest.json',
                 './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png'];
 

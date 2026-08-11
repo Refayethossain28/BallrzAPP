@@ -632,7 +632,7 @@
     { id: 'atlas',      name: 'Atlas',          emoji: '🗺️', url: '../atlas/',              desc: 'Your own satnav — voice turn-by-turn.' },
     { id: 'omni',       name: 'Omni',           emoji: '🧰', url: '../omni/',               desc: 'The do-everything app.' },
     { id: 'lingua',     name: 'Lingua',         emoji: '🗣️', url: '../lingua/',             desc: 'The fluency engine — every language.' },
-    { id: 'myownai',    name: 'My Own AI',      emoji: '⚡', url: '../llm/',                desc: 'A GPT built from first principles, on-device.' },
+    { id: 'myownai',    name: 'ApexAI',      emoji: '⚡', url: '../llm/',                desc: 'A GPT built from first principles, on-device.' },
     { id: 'splitbill',  name: 'Split the bill', emoji: '🧾', url: '../concepts/prototypes/concierge-split/', desc: 'AI concierge — agree a split, fire requests.' },
     { id: 'fixr',       name: 'Fixr',           emoji: '🛎️', url: '../fixr/',               desc: 'Luxury transport + concierge — the static demo.' }
   ];

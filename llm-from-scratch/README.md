@@ -185,7 +185,7 @@ the output stays varied and keeps its line/speaker structure. The same decoding
 (top-k + top-p + repetition penalty) is implemented in Python too — see
 `sample.py --top_p --repetition_penalty` and `GPT.generate(...)`.
 
-### "My Own AI Model" — the installable PWA
+### "ApexAI" — the installable PWA
 
 `web/` is a full **installable PWA**: an app manifest, offline service worker,
 and app icons ship alongside the page, so once loaded the model runs with no

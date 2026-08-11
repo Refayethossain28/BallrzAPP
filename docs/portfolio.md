@@ -89,7 +89,7 @@ payments, deploy workflows, iOS wrappers.
 
 | App | What it is | Path | Cloud | Tests |
 |---|---|---|---|---|
-| My Own AI Model | A GPT built from scratch in NumPy (autograd, transformer, BPE), weights baked into a web page | `llm-from-scratch/` | None | autograd numeric checks |
+| ApexAI | A GPT built from scratch in NumPy (autograd, transformer, BPE), weights baked into a web page | `llm-from-scratch/` | None | autograd numeric checks |
 
 ## Suites & concepts
 

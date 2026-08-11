@@ -1,4 +1,4 @@
-// server.mjs — the "Live AI" proxy for My Own AI Model.
+// server.mjs — the "Live AI" proxy for ApexAI.
 //
 // The app ships with a tiny GPT trained from scratch (runs 100% in the browser).
 // This optional proxy adds a second engine: a "Live AI" toggle that routes the
@@ -185,7 +185,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`My Own AI Model proxy on port ${PORT}`);
+  console.log(`ApexAI proxy on port ${PORT}`);
   console.log(API_KEY
     ? `→ Live AI enabled (${MODEL}); max_tokens<=${MAX_TOKENS_CAP}, rate ${RATE_MAX}/${RATE_WINDOW_MS / 1000}s/IP`
     : "→ no ANTHROPIC_API_KEY set: only the on-device model is available");

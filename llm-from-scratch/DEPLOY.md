@@ -1,6 +1,6 @@
 # Deploy the Live AI (Fable 5) proxy
 
-The **My Own AI Model** page ([`web/`](./web/)) ships a from-scratch GPT that runs
+The **ApexAI** page ([`web/`](./web/)) ships a from-scratch GPT that runs
 entirely in the browser. The optional **⚡ Live AI (Fable 5)** toggle routes the
 same prompt box to real frontier Claude through [`server.mjs`](./server.mjs), a
 zero-dependency Node proxy that keeps your Anthropic API key server-side.
