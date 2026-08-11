@@ -1736,6 +1736,107 @@
     return nonLatin.test(m[3]) ? m[1] : text;
   }
 
+
+  /* ===================== calm routes + honest ETAs ======================= */
+
+  /** How demanding a route is to drive: weighted manoeuvre load per km.
+   *  Merges, forks and roundabouts cost attention; long uninterrupted
+   *  stretches are calm. → {score 0..100 (higher = calmer), density, heavy}. */
+  var MANEUVER_LOAD = { roundabout: 2.2, rotary: 2.2, merge: 2.5, fork: 2.0,
+    'on ramp': 1.6, 'off ramp': 1.6, 'end of road': 1.4, turn: 1.2,
+    'exit roundabout': 0, 'exit rotary': 0, depart: 0, arrive: 0,
+    'new name': 0.2, continue: 0.3 };
+  function calmScore(route) {
+    var load = 0, heavy = 0;
+    for (var i = 0; i < (route.steps || []).length; i++) {
+      var s = route.steps[i];
+      var w = MANEUVER_LOAD[s.type] != null ? MANEUVER_LOAD[s.type] : 1;
+      if (s.modifier === 'uturn') w = 3;
+      else if (s.modifier === 'sharp left' || s.modifier === 'sharp right') w = Math.max(w, 1.8);
+      load += w;
+      if (w >= 2) heavy++;
+    }
+    var km = Math.max(0.5, route.totalM / 1000);
+    var density = load / km;
+    return { score: Math.max(0, Math.min(100, Math.round(100 - density * 16))),
+             density: density, heavy: heavy };
+  }
+
+  /** Which alternative to take when the driver asks for calm: the calmest
+   *  route whose (traffic-adjusted) time costs at most 25% or 10 min extra
+   *  over the fastest — calm should never quietly double a journey.
+   *  → {idx, score, extraS}. */
+  function calmestRoute(routes) {
+    if (!routes || !routes.length) return { idx: 0, score: 0, extraS: 0 };
+    var durOf = function (r) { return r.traffic ? r.traffic.adj.durS : r.totalS; };
+    var fastest = Infinity;
+    for (var i = 0; i < routes.length; i++) fastest = Math.min(fastest, durOf(routes[i]));
+    var best = 0, bestScore = -1;
+    for (var j = 0; j < routes.length; j++) {
+      var extra = durOf(routes[j]) - fastest;
+      if (extra > Math.min(fastest * 0.25, 600)) continue;
+      var sc = calmScore(routes[j]).score;
+      if (sc > bestScore) { bestScore = sc; best = j; }
+    }
+    return { idx: best, score: bestScore, extraS: durOf(routes[best]) - fastest };
+  }
+
+  /** An ETA that admits what it doesn't know. Uncertainty grows with urban
+   *  manoeuvre density, with how fast typical traffic is CHANGING right now
+   *  (rush-hour edges are volatile), and with live incidents on the route.
+   *  Late is likelier than early, so the band is asymmetric.
+   *  → {durS, lowS, highS, sigmaS, label: 'steady'|'variable'|'volatile'}. */
+  function etaBand(route, now) {
+    var d = route.traffic ? route.traffic.adj.durS : route.totalS;
+    var density = calmScore(route).density;
+    var t = new Date(now);
+    var hour = t.getHours() + t.getMinutes() / 60, dow = t.getDay();
+    var slope = Math.abs(typicalTrafficFactor((hour + 1) % 24, dow) - typicalTrafficFactor(hour, dow));
+    var incidents = (route.traffic && route.traffic.mapped) ? route.traffic.mapped.length : 0;
+    var frac = 0.04 + Math.min(0.06, density * 0.012) + Math.min(0.10, slope * 0.6);
+    var sigmaS = d * frac + incidents * 90;
+    var ratio = sigmaS / Math.max(1, d);
+    return {
+      durS: d,
+      lowS: Math.max(0, Math.round(d - sigmaS * 0.6)),
+      highS: Math.round(d + sigmaS * 1.4),
+      sigmaS: Math.round(sigmaS),
+      label: ratio < 0.07 ? 'steady' : ratio < 0.12 ? 'variable' : 'volatile',
+    };
+  }
+
+  /* ========================= parking-aware arrival ======================= */
+
+  /** Rank car parks near a destination (Overpass amenity=parking elements).
+   *  Closer wins; structures beat street-side; clearly private ones sink.
+   *  → up to 3 of {spot, distM, kind, fee, name, score}, best first. */
+  function rankParking(spots, dest) {
+    var out = [];
+    for (var i = 0; i < (spots || []).length; i++) {
+      var s = spots[i];
+      if (typeof s.lat !== 'number' || typeof s.lon !== 'number') continue;
+      var tags = s.tags || {};
+      var distM = haversine(s, dest);
+      if (distM > 600) continue;
+      var kind = tags.parking || 'surface';
+      var bonus = (kind === 'multi-storey' || kind === 'underground') ? -40 : kind === 'street_side' ? 30 : 0;
+      if (tags.access && tags.access !== 'yes' && tags.access !== 'public' && tags.access !== 'customers') bonus += 400;
+      if (tags.fee === 'no') bonus -= 30;
+      out.push({ spot: s, distM: Math.round(distM), kind: kind,
+                 fee: tags.fee || null, name: tags.name || null, score: distM + bonus });
+    }
+    out.sort(function (a, b) { return a.score - b.score; });
+    return out.slice(0, 3);
+  }
+
+  /** The walk from a parking spot to the real destination.
+   *  → {distM, minutes (80 m/min incl. crossings), dir compass}. */
+  function walkInfo(from, to) {
+    var d = haversine(from, to);
+    return { distM: Math.round(d), minutes: Math.max(1, Math.round(d / 80)),
+             dir: compassName(bearing(from, to)) };
+  }
+
   /* ================================ places ================================ */
 
   /**
@@ -1818,5 +1919,7 @@
     chatText: chatText, chatMsg: chatMsg, validChatMsg: validChatMsg, pruneChat: pruneChat, agoShort: agoShort,
     trackKey: trackKey, findLocalTrack: findLocalTrack, djTarget: djTarget, syncAdjust: syncAdjust,
     speechSafe: speechSafe,
+    calmScore: calmScore, calmestRoute: calmestRoute, etaBand: etaBand,
+    rankParking: rankParking, walkInfo: walkInfo,
   };
 });

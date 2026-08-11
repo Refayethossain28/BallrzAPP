@@ -1037,6 +1037,59 @@ test('updatePace: learns your speed honestly and stays clamped', () => {
 
 /* --------------------------------- run ---------------------------------- */
 
+test('calm routes: motorway cruise beats junction soup, guard caps the cost', () => {
+  const cruise = { totalM: 20000, totalS: 900, steps: [
+    { type: 'depart' }, { type: 'on ramp', modifier: 'right' },
+    { type: 'off ramp', modifier: 'left' }, { type: 'arrive' }] };
+  const soup = { totalM: 4000, totalS: 800, steps: [
+    { type: 'depart' }, { type: 'turn', modifier: 'left' }, { type: 'roundabout', exit: 2 },
+    { type: 'merge', modifier: 'right' }, { type: 'fork', modifier: 'left' },
+    { type: 'turn', modifier: 'sharp right' }, { type: 'turn', modifier: 'uturn' },
+    { type: 'end of road', modifier: 'left' }, { type: 'arrive' }] };
+  const cs = A.calmScore(cruise), ss = A.calmScore(soup);
+  assert.ok(cs.score > ss.score + 20, `cruise ${cs.score} should beat soup ${ss.score}`);
+  assert.ok(ss.heavy >= 4);
+  // calmest picks the calm one when the price is fair…
+  assert.equal(A.calmestRoute([soup, cruise]).idx, 1);
+  // …but never quietly doubles the journey
+  const slowCruise = { ...cruise, totalS: 2400 };
+  assert.equal(A.calmestRoute([soup, slowCruise]).idx, 0);
+});
+
+test('honest ETA: uncertainty admits urban mess, rush edges and incidents', () => {
+  const cruise = { totalM: 20000, totalS: 1800, steps: [{ type: 'depart' }, { type: 'arrive' }] };
+  const quiet = A.etaBand(cruise, new Date(2026, 7, 9, 3, 0).getTime()); // 3am Sunday
+  assert.ok(quiet.lowS < quiet.durS && quiet.durS < quiet.highS);
+  assert.ok(quiet.highS - quiet.durS > quiet.durS - quiet.lowS); // late likelier than early
+  assert.equal(quiet.label, 'steady');
+  const jam = { ...cruise, steps: Array.from({ length: 40 }, () => ({ type: 'turn', modifier: 'left' })),
+    totalM: 5000,
+    traffic: { adj: { durS: 2400, delayS: 600 }, mapped: [{}, {}, {}], factor: 1.3 } };
+  const messy = A.etaBand(jam, new Date(2026, 7, 12, 7, 30).getTime()); // Wednesday rush build-up
+  assert.ok(messy.sigmaS > quiet.sigmaS * 2);
+  assert.ok(messy.label !== 'steady');
+  assert.equal(messy.durS, 2400); // band sits on the traffic-adjusted time
+});
+
+test('parking: closer + public + structured wins; private and far sink', () => {
+  const dest = { lat: 51.5, lon: -0.12 };
+  const spots = [
+    { lat: 51.5008, lon: -0.1215, tags: { parking: 'multi-storey', name: 'Q-Park' } },   // ~140m
+    { lat: 51.5003, lon: -0.1204, tags: { parking: 'surface', access: 'private' } },     // ~45m but private
+    { lat: 51.5002, lon: -0.1208, tags: { parking: 'surface', fee: 'no' } },             // ~60m, free
+    { lat: 51.52, lon: -0.12, tags: { parking: 'surface' } },                            // ~2.2km — dropped
+  ];
+  const ranked = A.rankParking(spots, dest);
+  assert.ok(ranked.length >= 2 && ranked.length <= 3);
+  assert.equal(ranked[0].fee, 'no'); // near free surface beats all
+  assert.ok(ranked.every((p) => p.distM <= 600));
+  assert.ok(ranked[ranked.length - 1].score >= ranked[0].score);
+  const walk = A.walkInfo({ lat: 51.5008, lon: -0.1215 , }, dest);
+  assert.ok(walk.distM > 80 && walk.distM < 250);
+  assert.ok(walk.minutes >= 1 && walk.minutes <= 3);
+  assert.ok(typeof walk.dir === 'string' && walk.dir.length > 0);
+});
+
 test('speechSafe: Arabic street names drop from speech, Latin ones stay', () => {
   assert.equal(A.speechSafe('Turn left onto \u0634\u0627\u0631\u0639 \u0627\u0644\u0634\u064a\u062e \u0632\u0627\u064a\u062f'), 'Turn left');
   assert.equal(A.speechSafe('In 200 metres, at the roundabout, take the 2nd exit onto \u0634\u0627\u0631\u0639 2'),
