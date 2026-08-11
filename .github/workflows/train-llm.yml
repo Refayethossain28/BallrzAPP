@@ -119,16 +119,34 @@ jobs:
         working-directory: llm-from-scratch
         run: python export_web.py --ckpt ckpt.npz --out web/model.json
 
+      # Safety net: the trained weights survive even if the commit/push can't
+      # land (branch protection, a race, a non-fast-forward). Download from the
+      # run's Artifacts and drop into llm-from-scratch/web/ by hand if needed.
+      - name: Upload model.json artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-json
+          path: llm-from-scratch/web/model.json
+          retention-days: 14
+
       - name: Commit the trained model to the branch
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add llm-from-scratch/web/model.json
-          if git diff --cached --quiet; then
-            echo "model.json unchanged — nothing to commit"
-          else
-            SIZE=$(wc -c < llm-from-scratch/web/model.json)
-            git commit -m "Train browser LLM on runner (${{ inputs.n_layer }}L/${{ inputs.n_embd }}d, ${{ inputs.steps }} steps) [skip ci]" \
-              -m "Corpus: ${{ inputs.corpus_url }}; tokenizer ${{ inputs.tokenizer }} vocab ${{ inputs.vocab_size }}; model.json ${SIZE} bytes."
-            git push origin HEAD:${{ github.ref_name }}
-          fi
+          SIZE=$(wc -c < llm-from-scratch/web/model.json)
+          MSG1="Train browser LLM on runner (${{ inputs.n_layer }}L/${{ inputs.n_embd }}d, ${{ inputs.steps }} steps) [skip ci]"
+          MSG2="Corpus: ${{ inputs.corpus_url }}${{ inputs.seed_urls }}; tokenizer ${{ inputs.tokenizer }} vocab ${{ inputs.vocab_size }}; model.json ${SIZE} bytes."
+          cp llm-from-scratch/web/model.json /tmp/model.json
+          # Training took ~hours; the branch may have moved on. Rebase our single
+          # weights change onto the current tip and retry, so a non-fast-forward
+          # never throws away the run. (model.json is a generated blob — "ours".)
+          for i in 1 2 3 4 5; do
+            git fetch origin "${{ github.ref_name }}"
+            git reset --hard "origin/${{ github.ref_name }}"
+            cp /tmp/model.json llm-from-scratch/web/model.json
+            git add llm-from-scratch/web/model.json
+            if git diff --cached --quiet; then echo "model.json unchanged — nothing to commit"; break; fi
+            git commit -m "$MSG1" -m "$MSG2"
+            if git push origin HEAD:"${{ github.ref_name }}"; then echo "pushed"; break; fi
+            echo "push $i failed (branch advanced?) — retrying"; sleep 5
+          done
