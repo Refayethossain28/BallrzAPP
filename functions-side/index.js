@@ -322,7 +322,7 @@ exports.linguaAI = onCall(
 );
 
 /* ===========================================================================
- * llmLive — hosted Fable 5 proxy for the "My Own AI Model" app
+ * llmLive — hosted Fable 5 proxy for the "ApexAI" app
  *   (llm-from-scratch/web/index.html)
  *
  * The app ships a from-scratch GPT that runs in the browser; this HTTPS function

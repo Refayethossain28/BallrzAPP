@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Build an LLM training corpus from the live internet — Magpie feeds
- * "My Own AI".
+ * "ApexAI".
  *
  * Crawls from one or more seed URLs with the same unit-tested machinery the
  * Magpie scraper uses (magpie/engine.js in a vm sandbox): tolerant HTML
