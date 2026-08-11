@@ -63,3 +63,8 @@ self.addEventListener('fetch', (e) => {
   }
   // Everything else (navigating into an app) goes straight to the network.
 });
+
+/* tap-to-update: activate the new version when the page asks */
+self.addEventListener('message', function (e) {
+  if (e.data && e.data.type === 'SKIP_WAITING') self.skipWaiting();
+});

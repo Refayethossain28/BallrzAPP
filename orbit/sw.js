@@ -25,3 +25,8 @@ self.addEventListener('fetch', function (e) {
     })
   );
 });
+
+/* tap-to-update: activate the new version when the page asks */
+self.addEventListener('message', function (e) {
+  if (e.data && e.data.type === 'SKIP_WAITING') self.skipWaiting();
+});
