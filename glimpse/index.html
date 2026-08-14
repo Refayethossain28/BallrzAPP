@@ -123,17 +123,13 @@
   .filterbar{display:flex; align-items:center; gap:8px; margin-bottom:12px}
   .filterbar .chip{font-weight:600; color:var(--ink)}
 
-  /* ---------- world map ---------- */
-  .maprow{display:flex; gap:3px; margin-bottom:3px}
-  .mapcell{flex:1; aspect-ratio:1; border-radius:6px; background:var(--paper2); border:1px solid var(--line);
-    display:flex; align-items:center; justify-content:center; font-size:15px; position:relative; min-width:0}
-  .mapcell.lit{border-color:var(--line2); background:#fff; cursor:pointer}
-  .mapcell.lit:active{transform:scale(0.94)}
-  .mapcell .n{position:absolute; right:2px; bottom:0; font-size:9px; color:var(--ink2); font-weight:700}
-  .mapcell.night-cell{background:#2c3040; border-color:#2c3040}
-  .mapcell.lit.night-cell{background:#3a3f52; border-color:#3a3f52}
-  .sunstrip{display:flex; gap:3px; margin:2px 0 10px}
-  .sunstrip span{flex:1; text-align:center; font-size:12px}
+  /* ---------- the Earth ---------- */
+  .earthwrap{position:relative; border-radius:10px; overflow:hidden; background:#0b1024;
+    border:1px solid #262c4a}
+  .earthwrap canvas{display:block; width:100%; height:auto}
+  .emark{position:absolute; transform:translate(-50%,-56%); font-size:15px; line-height:1;
+    padding:2px; filter:drop-shadow(0 1px 2px rgba(0,0,0,.7))}
+  .emark:active{transform:translate(-50%,-56%) scale(1.25)}
   .maplegend{font-size:12.5px; color:var(--ink2); margin-top:10px; line-height:1.6}
 
   /* ---------- passport ---------- */
@@ -215,6 +211,13 @@
     border-radius:10px; padding:11px 16px; z-index:90; opacity:0; pointer-events:none;
     transition:all .22s ease; max-width:86vw; text-align:center}
   #toast.show{opacity:1; transform:translateX(-50%) translateY(0)}
+  #lightbox{position:fixed; inset:0; background:rgba(12,9,4,0.93); display:none;
+    align-items:center; justify-content:center; z-index:100; cursor:zoom-out}
+  #lightbox.show{display:flex}
+  #lightbox img{max-width:96vw; max-height:92vh; object-fit:contain; border-radius:8px}
+  @media (prefers-reduced-motion: reduce){
+    *{animation:none !important; transition:none !important}
+  }
   .empty{color:var(--ink2); text-align:center; padding:34px 24px; font-size:14.5px; line-height:1.7}
   .empty .big{font-family:var(--serif); font-size:17px; font-weight:700; color:var(--ink); display:block; margin-bottom:6px}
 </style>
@@ -275,11 +278,12 @@
     <!-- ============ MAP ============ -->
     <section class="view" id="view-map">
       <div class="section-title">The world, right now</div>
-      <div class="card">
-        <div class="sunstrip" id="sunstrip"></div>
-        <div id="worldmap"></div>
-        <div class="maplegend">Each tile is a slice of the planet — the freshest post there, dimmed where
-          it’s night. The strip above tracks the sun around the world right now.</div>
+      <div class="card" style="padding:10px">
+        <div class="earthwrap"><canvas id="earth" aria-label="World map with live day and night"></canvas>
+          <div id="earth-markers"></div></div>
+        <div class="maplegend" style="padding:0 4px 4px">Live: every dot is a piece of land lit exactly as the sun
+          lights it this second — real solar declination, so the terminator curves with the seasons, polar
+          night and midnight sun included. Posts sit on the map where they were seen.</div>
       </div>
       <div class="section-title">Skies right now</div>
       <div id="sky-row"></div>
@@ -333,7 +337,7 @@
   <div class="row">
     <button class="tabbtn on" data-action="tab" data-tab="world">World</button>
     <button class="tabbtn" data-action="tab" data-tab="near">Near</button>
-    <button class="fab" data-action="open-capture" title="Post what you’re seeing">+</button>
+    <button class="fab" data-action="open-capture" title="Post what you’re seeing" aria-label="Post what you’re seeing">+</button>
     <button class="tabbtn" data-action="tab" data-tab="map">Map</button>
     <button class="tabbtn" data-action="tab" data-tab="you">You</button>
   </div>
@@ -456,6 +460,8 @@
     <p style="font-size:12px;color:var(--ink3);margin-top:12px">Registered users only — no anonymous posting. See SETUP.md to point Glimpse at your own Firebase project.</p>
   </div>
 </div>
+
+<div id="lightbox" data-action="close-lightbox"><img id="lightbox-img" alt="Full-size photo"></div>
 
 <div id="toast"></div>
 
@@ -616,7 +622,7 @@ function skyClass(tod) { return 'sky-' + (tod || 'day'); }
 
 function glimpseCard(g, ctx) {
   var now = Date.now();
-  var tod = E.timeOfDayAt(g.place.lon, now);
+  var tod = E.skyAt(g.place.lat, g.place.lon, now);
   var postedTod = (g.scene && g.scene.tod) ? g.scene.tod : tod.key;
   var h = '<article class="gcard" data-gid="' + esc(g.id) + '">';
   h += '<div class="head">';
@@ -637,12 +643,15 @@ function glimpseCard(g, ctx) {
   }
   if (g.caption) h += '<div class="caption">' + E.renderCaption(g.caption) + '</div>';
   if (ctx && ctx.distanceLabel) h += '<div style="font-size:12.5px;color:var(--ink3);margin-top:6px">🧭 ' + esc(ctx.distanceLabel) + '</div>';
+  if (g.mine && S.cloud && S.cloud.enabled && !g.cloudId) {
+    h += '<div style="font-size:12px;color:var(--ink3);margin-top:6px">Queued — posting when the network allows</div>';
+  }
   h += '<div class="actions">';
   for (var i = 0; i < REACTS.length; i++) {
     var em = REACTS[i];
     var on = g.reactions && g.reactions.me === em;
     var n = reactCount(g, em);
-    h += '<button class="rbtn' + (on ? ' on' : '') + '" data-action="react" data-gid="' + esc(g.id) + '" data-emoji="' + em + '">' +
+    h += '<button class="rbtn' + (on ? ' on' : '') + '" data-action="react" data-gid="' + esc(g.id) + '" data-emoji="' + em + '" aria-label="React ' + em + '"' + (on ? ' aria-pressed="true"' : '') + '>' +
          em + (n ? '<span class="n">' + E.formatCount(n) + '</span>' : '') + '</button>';
   }
   h += '<button class="act" data-action="share" data-gid="' + esc(g.id) + '">↗ share</button>';
@@ -719,34 +728,67 @@ function renderNear() {
   observeCards(el);
 }
 
+// The Earth: every 5° of land as a dot, each lit by the sun's true elevation
+// there at this exact moment — the day side warm, civil twilight amber, the
+// night side slate — with the subsolar point glowing and posts pinned where
+// they were seen. Pure engine math; this just paints it.
+function drawEarth(now) {
+  var cv = $('earth');
+  if (!cv || !cv.getContext) return;
+  var W = 720, H = 360, SS = 2;
+  cv.width = W * SS; cv.height = H * SS;
+  var ctx = cv.getContext('2d');
+  if (!ctx) return;
+  ctx.setTransform(SS, 0, 0, SS, 0, 0);
+  ctx.fillStyle = '#0b1024';
+  ctx.fillRect(0, 0, W, H);
+
+  var sun = E.subsolarPoint(now);
+  var sx = (sun.lon + 180) / 360 * W, sy = (90 - sun.lat) / 180 * H;
+  var glow = ctx.createRadialGradient(sx, sy, 4, sx, sy, 90);
+  glow.addColorStop(0, 'rgba(244,192,108,0.5)');
+  glow.addColorStop(1, 'rgba(244,192,108,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, W, H);
+
+  var dots = E.worldDots();
+  for (var i = 0; i < dots.length; i++) {
+    var d = dots[i];
+    var el = E.solarElevation(d.lat, d.lon, now);
+    ctx.fillStyle = el > 0 ? '#ece1c6' : el > -6 ? '#b9834f' : '#39415f';
+    var x = (d.lon + 180) / 360 * W, y = (90 - d.lat) / 180 * H;
+    ctx.beginPath();
+    ctx.arc(x, y, 3.1, 0, 2 * Math.PI);
+    ctx.fill();
+  }
+  ctx.fillStyle = '#f4c06c';
+  ctx.beginPath(); ctx.arc(sx, sy, 5, 0, 2 * Math.PI); ctx.fill();
+}
+
 function renderMap() {
   var now = Date.now();
-  var strip = E.sunStrip(12, now);
-  var sh = '';
-  for (var i = 0; i < strip.length; i++) sh += '<span title="' + esc(strip[i].label) + '">' + strip[i].emoji + '</span>';
-  $('sunstrip').innerHTML = sh;
+  drawEarth(now);
 
-  var map = E.worldMapCells(allGlimpses(), 12, 6, now);
-  var byKey = {};
-  for (var c = 0; c < map.cells.length; c++) byKey[map.cells[c].x + ':' + map.cells[c].y] = map.cells[c];
-  var h = '';
-  for (var y = 0; y < map.rows; y++) {
-    h += '<div class="maprow">';
-    for (var x = 0; x < map.cols; x++) {
-      var cell = byKey[x + ':' + y];
-      if (cell) {
-        var nightCls = cell.tod.key === 'night' ? ' night-cell' : '';
-        h += '<div class="mapcell lit' + nightCls + '" data-action="map-cell" data-x="' + x + '" data-y="' + y + '" title="' + esc(cell.name || '') + '">' +
-             esc(cell.emoji) + (cell.count > 1 ? '<span class="n">' + cell.count + '</span>' : '') + '</div>';
-      } else {
-        var lonCenter = (x + 0.5) / 12 * 360 - 180;
-        var tod = E.timeOfDayAt(lonCenter, now);
-        h += '<div class="mapcell' + (tod.key === 'night' ? ' night-cell' : '') + '"></div>';
-      }
-    }
-    h += '</div>';
+  // one marker per place, freshest glimpse wins, capped so the map stays a map
+  var byPlace = {}, order = [];
+  var all = allGlimpses().slice().sort(function (a, b) { return b.ts - a.ts; });
+  for (var i = 0; i < all.length; i++) {
+    var pl = all[i].place;
+    if (!pl || byPlace[pl.name]) continue;
+    byPlace[pl.name] = { g: all[i], count: 0 };
+    order.push(pl.name);
   }
-  $('worldmap').innerHTML = h;
+  for (var j = 0; j < all.length; j++) if (all[j].place) byPlace[all[j].place.name].count++;
+  var mh = '';
+  for (var k = 0; k < order.length && k < 24; k++) {
+    var m = byPlace[order[k]];
+    var x = (m.g.place.lon + 180) / 360 * 100, y = (90 - m.g.place.lat) / 180 * 100;
+    mh += '<button class="emark" style="left:' + x.toFixed(2) + '%;top:' + y.toFixed(2) + '%" ' +
+          'data-action="map-marker" data-name="' + esc(m.g.place.name) + '" ' +
+          'aria-label="Posts from ' + esc(m.g.place.name) + '">' +
+          esc((m.g.scene && m.g.scene.emoji) || '📍') + '</button>';
+  }
+  $('earth-markers').innerHTML = mh;
 
   // Skies right now: one row per distinct country, its local sky.
   var seen = {}, rows = '';
@@ -755,7 +797,7 @@ function renderMap() {
     var pl = all[g].place;
     if (!pl || seen[pl.cc]) continue;
     seen[pl.cc] = 1;
-    var t = E.timeOfDayAt(pl.lon, now);
+    var t = E.skyAt(pl.lat, pl.lon, now);
     rows += '<div class="card" style="padding:10px 14px;display:flex;align-items:center;gap:10px">' +
       '<span style="font-size:20px">' + esc(pl.flag || '📍') + '</span>' +
       '<span style="flex:1;font-weight:600">' + esc(pl.name) + '</span>' +
@@ -874,7 +916,7 @@ function submitCapture() {
     authorId: 'me', authorName: S.me.name || 'You', authorHandle: S.me.handle || 'you', avatar: S.me.avatar,
     caption: v.caption, tags: E.extractTags(v.caption),
     place: v.place,
-    scene: { emoji: CAPTURE.photo ? '' : (CAPTURE.scene || '🏙️'), tod: E.timeOfDayAt(v.place.lon, now).key },
+    scene: { emoji: CAPTURE.photo ? '' : (CAPTURE.scene || '🏙️'), tod: E.skyAt(v.place.lat, v.place.lon, now).key },
     ts: now, reactions: {}
   };
   if (CAPTURE.photo) g.photo = CAPTURE.photo;
@@ -1413,6 +1455,7 @@ function accountReady(user, email) {
   save();
   subscribeCloud();
   subscribeMine();
+  retryOutbox();
   closeSheets();
   render();
 }
@@ -1442,6 +1485,7 @@ function resumeCloud() {
         save();
         subscribeCloud();
         subscribeMine();
+        retryOutbox();
         if (S.push && S.push.on && pushSupported() && Notification.permission === 'granted') enablePush(false);
         render();
       } else {
@@ -1502,7 +1546,8 @@ function subscribeCloud() {
     }, function () { /* listen failed; stay local */ });
 }
 function cloudPublish(g) {
-  if (!FB.db) return;
+  if (!FB.db || g.cloudId || g.publishing) return;
+  g.publishing = true;
   var doc = {
     authorUid: S.cloud.uid, name: g.authorName, handle: g.authorHandle, avatar: g.avatar,
     caption: g.caption, place: g.place, scene: g.scene, ts: g.ts, reactions: {}
@@ -1510,8 +1555,32 @@ function cloudPublish(g) {
   // A downscaled photo fits comfortably in one Firestore doc; skip giants.
   if (g.photo && g.photo.length < 500000) doc.photo = g.photo;
   FB.db.collection('glimpse_moments').add(doc)
-    .then(function (ref) { g.cloudId = ref.id; save(); })
-    .catch(function () { toast('Posted on this device — couldn’t reach the live world.'); });
+    .then(function (ref) {
+      g.publishing = false;
+      g.cloudId = ref.id;
+      delete g.publishFailed;
+      save();
+      render();
+    })
+    .catch(function () {
+      // The outbox has it: the post stays queued and retries when the network
+      // comes back (or on the next sign-in resume). Complain once, not per try.
+      g.publishing = false;
+      if (!g.publishFailed) {
+        g.publishFailed = true;
+        toast('Saved — will reach the live world when you’re back online.');
+      }
+      save();
+      render();
+    });
+}
+
+function retryOutbox() {
+  if (!(S.cloud && S.cloud.enabled) || !FB.db) return;
+  for (var i = 0; i < S.glimpses.length; i++) {
+    var g = S.glimpses[i];
+    if (g.mine && !g.cloudId) cloudPublish(g);
+  }
 }
 function cloudReact(g) {
   if (!FB.db || !g.cloudId) return;
@@ -1559,6 +1628,11 @@ document.addEventListener('click', function (ev) {
     closeSheets(); setTab('world');
     return;
   }
+  if (t && t.classList && t.classList.contains('gphoto')) {
+    $('lightbox-img').src = t.src;
+    $('lightbox').className = 'show';
+    return;
+  }
   var el = t && t.closest ? t.closest('[data-action]') : null;
   if (!el) return;
   var a = el.getAttribute('data-action');
@@ -1594,18 +1668,17 @@ document.addEventListener('click', function (ev) {
     if (S.onboarded) { setMyPlace(chosen); closeSheets(); }
     else { OB.place = chosen; $('ob-geo-note').textContent = ''; renderPlaceGrid('ob-places', pb.name); }
   }
-  else if (a === 'map-cell') {
-    var cx = el.getAttribute('data-x'), cy = el.getAttribute('data-y');
-    var map = E.worldMapCells(allGlimpses(), 12, 6, Date.now());
-    for (var i = 0; i < map.cells.length; i++) {
-      if (String(map.cells[i].x) === cx && String(map.cells[i].y) === cy) {
-        var cell = map.cells[i];
-        toast((cell.flag ? cell.flag + ' ' : '') + (cell.name || 'This slice') + ' — ' +
-              cell.count + (cell.count === 1 ? ' glimpse' : ' glimpses') + ', ' + cell.tod.emoji + ' ' + cell.tod.label + ' there now');
-        break;
-      }
+  else if (a === 'map-marker') {
+    var mn = el.getAttribute('data-name');
+    var mg = allGlimpses().filter(function (g) { return g.place && g.place.name === mn; });
+    if (mg.length) {
+      var mp = mg[0].place;
+      var msky = E.skyAt(mp.lat, mp.lon, Date.now());
+      toast((mp.flag ? mp.flag + ' ' : '') + mp.name + ' — ' + mg.length +
+            (mg.length === 1 ? ' post' : ' posts') + ', ' + msky.emoji + ' ' + esc(msky.label) + ' there now');
     }
   }
+  else if (a === 'close-lightbox') $('lightbox').className = '';
   else if (a === 'export') exportData();
   else if (a === 'reset') {
     if (typeof confirm !== 'function' || confirm('Erase everything on this device? Your live account (if any) is not deleted.')) resetAll();
@@ -1635,6 +1708,10 @@ document.addEventListener('input', function (ev) {
     el.className = n > E.MAX_CAPTION ? 'cap-count over' : 'cap-count';
   }
 });
+
+try {
+  window.addEventListener('online', function () { retryOutbox(); });
+} catch (e) {}
 
 document.addEventListener('change', function (ev) {
   var t = ev.target;
