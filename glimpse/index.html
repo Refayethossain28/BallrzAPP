@@ -247,6 +247,7 @@
   <header class="top">
     <div class="logo"><img src="icon.svg" alt=""> Glimpse</div>
     <div class="spacer"></div>
+    <button class="chip" data-action="open-search" title="Find people">🔍</button>
     <button class="chip" id="chip-place" data-action="open-place" title="Your window">🪟</button>
   </header>
 
@@ -373,6 +374,27 @@
     <div style="margin-bottom:10px"><button class="btn ghost" data-action="use-geo">📍 Use my location</button>
       <span id="geo-note" style="font-size:12.5px;color:var(--ink3);margin-left:8px"></span></div>
     <div class="place-grid" id="place-grid"></div>
+  </div>
+</div>
+
+<!-- ============ SEARCH SHEET ============ -->
+<div class="sheet-wrap" id="sheet-search">
+  <div class="dim" data-action="close-sheets"></div>
+  <div class="sheet">
+    <div class="grab"></div>
+    <h3>Find people 🔍</h3>
+    <input id="search-q" placeholder="Name or @handle…" autocomplete="off" autocapitalize="off">
+    <div id="search-results" style="margin-top:12px"></div>
+  </div>
+</div>
+
+<!-- ============ PERSON SHEET ============ -->
+<div class="sheet-wrap" id="sheet-person">
+  <div class="dim" data-action="close-sheets"></div>
+  <div class="sheet">
+    <div class="grab"></div>
+    <div id="person-head"></div>
+    <div id="person-glimpses" style="margin-top:12px"></div>
   </div>
 </div>
 
@@ -600,6 +622,7 @@ function applyFilter(list) {
   return list.filter(function (g) {
     if (FILTER.kind === 'cc') return g.place && g.place.cc === FILTER.value;
     if (FILTER.kind === 'tag') return (g.tags || E.extractTags(g.caption)).indexOf(FILTER.value) !== -1;
+    if (FILTER.kind === 'author') return g.authorId === FILTER.value;
     return true;
   });
 }
@@ -918,6 +941,106 @@ function shareGlimpse(gid) {
   toast(text);
 }
 
+/* ============================ finding people ============================ */
+// The engine ranks; this feeds it candidates — the demo personas, you, and
+// (signed in) live profiles: a one-shot directory fetch plus an exact-handle
+// lookup so @someone always resolves even beyond the fetched page.
+var CLOUD_USERS = [];
+var CLOUD_USERS_FETCHED = false;
+var searchDebounce = null;
+
+function userDirectory() {
+  var out = [{ id: 'me', name: S.me.name || 'You', handle: S.me.handle || 'you', avatar: S.me.avatar }];
+  for (var i = 0; i < E.PERSONAS.length; i++) {
+    var p = E.PERSONAS[i];
+    out.push({ id: p.id, name: p.name, handle: p.handle, avatar: p.avatar, place: E.placeByName(p.city) });
+  }
+  return out.concat(CLOUD_USERS);
+}
+
+function addCloudUser(uid, d) {
+  var id = 'c:' + uid;
+  if (uid === (S.cloud && S.cloud.uid)) return;
+  for (var i = 0; i < CLOUD_USERS.length; i++) if (CLOUD_USERS[i].id === id) return;
+  CLOUD_USERS.push({ id: id, name: d.name || 'Someone', handle: d.handle || '', avatar: d.avatar || '🌍', cloud: true });
+}
+
+function fetchCloudUsers() {
+  if (CLOUD_USERS_FETCHED || !(S.cloud && S.cloud.enabled) || !FB.db) return;
+  CLOUD_USERS_FETCHED = true;
+  FB.db.collection('glimpse_users').limit(100).get().then(function (snap) {
+    snap.forEach(function (doc) { addCloudUser(doc.id, doc.data() || {}); });
+    runSearch();
+  }).catch(function () { CLOUD_USERS_FETCHED = false; });
+}
+
+function lookupExactHandle(q) {
+  if (!(S.cloud && S.cloud.enabled) || !FB.db || !q) return;
+  FB.db.collection('glimpse_handles').doc(q).get().then(function (doc) {
+    if (!doc.exists) return;
+    var uid = (doc.data() || {}).uid;
+    if (!uid) return;
+    return FB.db.collection('glimpse_users').doc(uid).get().then(function (u) {
+      if (u.exists) { addCloudUser(uid, u.data() || {}); runSearch(); }
+    });
+  }).catch(function () {});
+}
+
+function openSearch() {
+  $('search-q').value = '';
+  $('search-results').innerHTML =
+    '<div class="empty" style="padding:20px"><span class="big">🌍</span>Type a name or @handle.<br>' +
+    (S.cloud && S.cloud.enabled ? 'Searching everyone live on Glimpse.' : 'Searching this device’s world — go live to find real people.') + '</div>';
+  openSheet('sheet-search');
+  fetchCloudUsers();
+  try { $('search-q').focus(); } catch (e) {}
+}
+
+function runSearch() {
+  var qEl = $('search-q');
+  var q = String((qEl && qEl.value) || '');
+  var box = $('search-results');
+  if (!q.trim()) return;
+  var results = E.searchUsers(q, userDirectory(), { limit: 12 });
+  var h = '';
+  for (var i = 0; i < results.length; i++) {
+    var u = results[i].user;
+    h += '<button data-action="open-person" data-uid="' + esc(u.id) + '" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px 12px;margin-bottom:8px">' +
+      '<span class="ava sm">' + esc(u.avatar || '👤') + '</span>' +
+      '<span style="flex:1;min-width:0"><span style="font-weight:700">' + esc(u.name) + '</span>' +
+      (u.cloud ? ' <span class="chip" style="font-size:10px;padding:2px 7px">LIVE</span>' : '') +
+      '<br><span style="font-size:12.5px;color:var(--ink3)">@' + esc(u.handle) +
+      (u.place ? ' · ' + esc(u.place.flag || '') + ' ' + esc(u.place.name) : '') + '</span></span></button>';
+  }
+  box.innerHTML = h || '<div class="empty" style="padding:20px"><span class="big">🌫️</span>Nobody by that name yet.</div>';
+}
+
+function personById(uid) {
+  var dir = userDirectory();
+  for (var i = 0; i < dir.length; i++) if (dir[i].id === uid) return dir[i];
+  return null;
+}
+
+function openPerson(uid) {
+  var u = personById(uid);
+  if (!u) return;
+  var theirs = allGlimpses().filter(function (g) { return g.authorId === uid; })
+    .sort(function (a, b) { return b.ts - a.ts; });
+  var place = u.place || (theirs[0] && theirs[0].place) || null;
+  $('person-head').innerHTML =
+    '<div class="me-row"><div class="ava" style="font-size:26px">' + esc(u.avatar || '👤') + '</div>' +
+    '<div class="who"><div style="font-weight:800;font-size:17px">' + esc(u.name) +
+    (u.cloud ? ' <span class="chip" style="font-size:10px;padding:2px 7px">LIVE</span>' : '') + '</div>' +
+    '<div style="font-size:13px;color:var(--ink3)">@' + esc(u.handle) +
+    (place ? ' · ' + esc(place.flag || '') + ' ' + esc(place.name) : '') + '</div></div>' +
+    '<button class="chip" data-action="person-filter" data-uid="' + esc(u.id) + '" data-handle="' + esc(u.handle) + '">their windows 🌍</button></div>';
+  var h = '';
+  for (var i = 0; i < theirs.length && i < 12; i++) h += glimpseCard(theirs[i], {});
+  $('person-glimpses').innerHTML = h ||
+    '<div class="empty" style="padding:20px"><span class="big">🪟</span>No windows from them on this device yet.</div>';
+  openSheet('sheet-person');
+}
+
 /* ============================ why receipts ============================ */
 function openWhy(gid) {
   var item = null;
@@ -1107,6 +1230,7 @@ function signOutCloud() {
   if (FB.auth) { try { FB.auth.signOut(); } catch (e) {} }
   S.cloud = { enabled: false, uid: '', status: 'off' };
   CLOUD_GLIMPSES = [];
+  CLOUD_USERS = []; CLOUD_USERS_FETCHED = false;
   save(); render();
   toast('Signed out — your window stays yours 🔒');
 }
@@ -1234,6 +1358,12 @@ document.addEventListener('click', function (ev) {
     closeSheets(); setTab('world');
   }
   else if (a === 'clear-filter') { FILTER = null; render(); }
+  else if (a === 'open-search') openSearch();
+  else if (a === 'open-person') openPerson(el.getAttribute('data-uid'));
+  else if (a === 'person-filter') {
+    FILTER = { kind: 'author', value: el.getAttribute('data-uid'), label: '@' + el.getAttribute('data-handle') };
+    closeSheets(); setTab('world');
+  }
   else if (a === 'open-place') { renderPlaceGrid('place-grid', S.me.place && S.me.place.name); $('geo-note').textContent = ''; openSheet('sheet-place'); }
   else if (a === 'use-geo') useGeolocation('geo-note');
   else if (a === 'pick-place') {
@@ -1272,6 +1402,12 @@ document.addEventListener('click', function (ev) {
 
 document.addEventListener('input', function (ev) {
   var t = ev.target;
+  if (t && t.id === 'search-q') {
+    runSearch();
+    if (searchDebounce) clearTimeout(searchDebounce);
+    var q = E.normalizeHandle(t.value);
+    if (q.length >= 2) searchDebounce = setTimeout(function () { lookupExactHandle(q); }, 400);
+  }
   if (t && t.id === 'cap-caption') {
     var n = String(t.value || '').length;
     var el = $('cap-count');

@@ -268,6 +268,38 @@ test('horizonStage is monotonic in countries seen', () => {
   }
 });
 
+/* ---------- finding people ---------- */
+const USERS = [
+  { id: 'kenji', name: 'Kenji', handle: 'kenji_sees', avatar: '🍜' },
+  { id: 'ken', name: 'Ken Adams', handle: 'ken', avatar: '🎸' },
+  { id: 'maya', name: 'Maya', handle: 'maya_nyc', avatar: '🗽' },
+  { id: 'z', name: 'Zed Kenwright', handle: 'zed', avatar: '🦉' },
+];
+test('searchUsers: exact handle beats prefix beats substring', () => {
+  const r = E.searchUsers('ken', USERS);
+  deepEq(r.map((x) => x.user.id), ['ken', 'kenji', 'z'], 'exact > prefix > name-word');
+  assert.equal(r[0].score, 100);
+  assert.ok(r[0].score > r[1].score && r[1].score > r[2].score);
+});
+test('searchUsers: @-prefixed query restricts matching to handles', () => {
+  const r = E.searchUsers('@ken', USERS);
+  deepEq(r.map((x) => x.user.id), ['ken', 'kenji'], 'name-only matches drop out');
+  assert.ok(r.every((x) => x.match === 'handle'));
+});
+test('searchUsers: case-insensitive, trims, empty query returns nothing', () => {
+  deepEq(E.searchUsers('  KENJI_SEES ', USERS).map((x) => x.user.id), ['kenji']);
+  deepEq(E.searchUsers('', USERS), []);
+  deepEq(E.searchUsers('   ', USERS), []);
+  deepEq(E.searchUsers('zzz-no-match', USERS), []);
+});
+test('searchUsers: deterministic order, alphabetical tiebreak, respects limit', () => {
+  const many = Array.from({ length: 9 }, (_, i) => ({ id: 'u' + i, name: 'Same Name', handle: 'h' + (8 - i) }));
+  const r = E.searchUsers('same', many, { limit: 4 });
+  assert.equal(r.length, 4);
+  deepEq(r.map((x) => x.user.handle), ['h0', 'h1', 'h2', 'h3'], 'equal scores sort by handle');
+  deepEq(E.searchUsers('same', many, { limit: 4 }), r, 'stable across calls');
+});
+
 /* ---------- daily prompt ---------- */
 test('dailyPrompt: stable for a date, rotates across dates, always from the list', () => {
   const a = E.dailyPrompt('2026-08-14');

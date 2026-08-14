@@ -345,6 +345,44 @@
              progress: Math.max(0, Math.min(1, progress)) };
   }
 
+  /* ---------------- finding people: search by name or handle ---------------- */
+  // Pure ranking over a candidate list — the app feeds it demo personas plus
+  // whatever live profiles it has fetched. Exact handle beats handle prefix
+  // beats name prefix beats substring; ties break alphabetically by handle so
+  // results never reshuffle under the keyboard.
+  function searchUsers(query, users, opts) {
+    var q = normalizeHandle(query);           // trims, lowercases, strips a leading @
+    var wantHandle = /^@/.test(String(query == null ? '' : query).trim());
+    if (!q) return [];
+    var limit = (opts && opts.limit) || 10;
+    var out = [];
+    for (var i = 0; i < (users || []).length; i++) {
+      var u = users[i];
+      var handle = String(u.handle || '').toLowerCase();
+      var name = String(u.name || '').toLowerCase();
+      var score = 0, match = '';
+      if (handle === q) { score = 100; match = 'handle'; }
+      else if (handle.indexOf(q) === 0) { score = 70; match = 'handle'; }
+      else if (!wantHandle && name.indexOf(q) === 0) { score = 60; match = 'name'; }
+      else if (!wantHandle && nameWordStarts(name, q)) { score = 50; match = 'name'; }
+      else if (handle.indexOf(q) !== -1) { score = 40; match = 'handle'; }
+      else if (!wantHandle && name.indexOf(q) !== -1) { score = 30; match = 'name'; }
+      if (!score) continue;
+      out.push({ user: u, score: score, match: match });
+    }
+    out.sort(function (a, b) {
+      if (b.score !== a.score) return b.score - a.score;
+      var ha = String(a.user.handle || ''), hb = String(b.user.handle || '');
+      return ha < hb ? -1 : ha > hb ? 1 : 0;
+    });
+    return out.slice(0, limit);
+  }
+  function nameWordStarts(name, q) {
+    var words = name.split(/\s+/);
+    for (var i = 1; i < words.length; i++) if (words[i].indexOf(q) === 0) return true;
+    return false;
+  }
+
   /* ---------------- one honest prompt a day ---------------- */
   var PROMPTS = [
     'Show us your sky, exactly as it is right now.',
@@ -521,7 +559,7 @@
     solarHour: solarHour, timeOfDay: timeOfDay, timeOfDayAt: timeOfDayAt,
     worldFeed: worldFeed, feedHops: feedHops, nearFeed: nearFeed,
     worldMapCells: worldMapCells, sunStrip: sunStrip,
-    passport: passport, horizonStage: horizonStage, dailyPrompt: dailyPrompt,
+    passport: passport, horizonStage: horizonStage, dailyPrompt: dailyPrompt, searchUsers: searchUsers,
     formatCount: formatCount, timeAgo: timeAgo,
     placeByName: placeByName, seedWorld: seedWorld
   };

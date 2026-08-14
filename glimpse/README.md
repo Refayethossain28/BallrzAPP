@@ -27,6 +27,11 @@ window — while you look through everyone else's.
   🌍 Globetrotter → 🛰️ Worldeye.
 - **👁 One honest prompt a day** for the whole planet at once ("Show us your
   sky, exactly as it is right now").
+- **🔍 Find people** — search by name or @handle (exact handle beats prefix
+  beats substring, deterministic order), open their profile and their recent
+  windows, or filter the world feed to just their glimpses. Signed in, search
+  covers everyone live on Glimpse, with an exact-handle lookup that resolves
+  `@someone` even beyond the fetched directory page.
 - **📷 Camera-first capture** — photos are downscaled on-device; no photo? Set
   the scene with an emoji and the app paints the sky it was shot under.
 
@@ -46,7 +51,7 @@ security rules, reactions as the single shared surface. Setup in
 ## The engine
 
 All product logic — geo distance/bearing, solar time, the globe-hopping feed
-ranker with receipts, the near feed, world-map cells, the passport, prompts and
-the seeded demo world — is a pure, deterministic, clock-injected engine:
-[`engine.js`](./engine.js), tested by `npm run test:glimpse` (35 tests).
-`index.html` just renders it.
+ranker with receipts, the near feed, world-map cells, the passport, people
+search, prompts and the seeded demo world — is a pure, deterministic,
+clock-injected engine: [`engine.js`](./engine.js), tested by
+`npm run test:glimpse` (39 tests). `index.html` just renders it.
