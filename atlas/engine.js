@@ -1376,9 +1376,9 @@
    */
   function roofFactor(heightM, lat, zoom) {
     var mpp = metresPerPixel(lat, zoom);          // ground metres per pixel
-    var cameraPx = 1400;                          // virtual camera height, px
+    var cameraPx = 550;                           // virtual camera height, px
     var hPx = heightM / mpp;                      // building height in px
-    return Math.min(0.22, hPx / cameraPx);
+    return Math.min(0.4, hPx / cameraPx);
   }
 
   /** Wall brightness 0..1 for an edge a→b (screen coords, y down): fixed
