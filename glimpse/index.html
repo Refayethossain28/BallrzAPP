@@ -469,6 +469,13 @@ function load() {
   if (!S.passportCC) S.passportCC = {};
   if (!S.glimpses) S.glimpses = [];
   if (!S.cloud) S.cloud = defaultState().cloud;
+  // Devices that onboarded before demo accounts were removed still carry the
+  // seeded posts in storage — purge them once here.
+  var before = S.glimpses.length;
+  S.glimpses = S.glimpses.filter(function (g) {
+    return !g.demo && String(g.id).indexOf('demo-') !== 0;
+  });
+  if (S.glimpses.length !== before) save();
 }
 
 function save() {
