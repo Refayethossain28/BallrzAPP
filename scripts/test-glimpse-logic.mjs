@@ -134,6 +134,71 @@ test('timeOfDayAt: at 12:00 UTC London is day and Tokyo is night-ish evening', (
   assert.ok(tokyo === 'night' || tokyo === 'dusk', `got ${tokyo}`);
 });
 
+/* ---------- real solar astronomy ---------- */
+const JUNE = Date.UTC(2026, 5, 21, 12, 0, 0);   // solstice, noon UTC
+const DEC = Date.UTC(2026, 11, 21, 12, 0, 0);   // solstice, noon UTC
+const MARCH = Date.UTC(2026, 2, 20, 12, 0, 0);  // equinox, noon UTC
+test('solarDeclination: solstices near ±23.4°, equinox near 0°', () => {
+  assert.ok(Math.abs(E.solarDeclination(JUNE) - 23.44) < 1, `june ${E.solarDeclination(JUNE)}`);
+  assert.ok(Math.abs(E.solarDeclination(DEC) + 23.44) < 1, `dec ${E.solarDeclination(DEC)}`);
+  assert.ok(Math.abs(E.solarDeclination(MARCH)) < 2, `march ${E.solarDeclination(MARCH)}`);
+});
+test('solarElevation: equator equinox noon is overhead, London June noon ≈ 62°', () => {
+  assert.ok(E.solarElevation(0, 0, MARCH) > 85, `equator ${E.solarElevation(0, 0, MARCH)}`);
+  const ldn = E.solarElevation(51.5, 0, JUNE);
+  assert.ok(Math.abs(ldn - 62) < 3, `london ${ldn}`);
+});
+test('solarElevation: midnight sun and polar night at 78°N', () => {
+  const midnightJune = E.solarElevation(78, 0, Date.UTC(2026, 5, 21, 0, 0, 0));
+  assert.ok(midnightJune > 0, `midnight sun ${midnightJune}`);
+  const noonDec = E.solarElevation(78, 0, DEC);
+  assert.ok(noonDec < -6, `polar night ${noonDec}`);
+});
+test('skyAt: day/night/dawn from true elevation, with graceful lat fallback', () => {
+  assert.equal(E.skyAt(51.5, 0, JUNE).key, 'day');
+  assert.equal(E.skyAt(78, 0, DEC).key, 'night', 'noon but polar night');
+  assert.equal(E.skyAt(78, 0, Date.UTC(2026, 5, 21, 0, 0, 0)).key, 'day', 'midnight but midnight sun');
+  const dawn = E.skyAt(51.5, 0, Date.UTC(2026, 5, 21, 3, 30, 0));
+  assert.equal(dawn.key, 'dawn', `got ${dawn.key} at el ${dawn.elevation}`);
+  assert.ok(['dawn', 'day', 'dusk', 'night'].includes(E.skyAt(undefined, 0, JUNE).key), 'fallback works');
+});
+test('subsolarPoint: noon UTC over the prime meridian, midnight over the antimeridian', () => {
+  assert.ok(Math.abs(E.subsolarPoint(JUNE).lon) < 1);
+  assert.ok(Math.abs(E.subsolarPoint(JUNE).lat - 23.44) < 1);
+  assert.ok(Math.abs(Math.abs(E.subsolarPoint(Date.UTC(2026, 5, 21, 0, 0, 0)).lon) - 180) < 1);
+});
+
+/* ---------- the Earth, as dots ---------- */
+test('LAND mask is well-formed (36 rows × 72 cols, only . and #)', () => {
+  assert.equal(E.LAND.length, 36);
+  for (const row of E.LAND) {
+    assert.equal(row.length, 72, `row length ${row.length}: ${row}`);
+    assert.ok(/^[.#]+$/.test(row), `bad chars in: ${row}`);
+  }
+});
+test('landAt: every shipped city is on land', () => {
+  for (const p of E.PLACES) {
+    assert.ok(E.landAt(p.lat, p.lon), `${p.name} (${p.lat}, ${p.lon}) fell in the sea`);
+  }
+});
+test('landAt: open oceans are water', () => {
+  const oceans = [
+    ['mid-Atlantic', 0, -30], ['mid-Pacific', 0, -150], ['Indian Ocean', -20, 80],
+    ['North Atlantic', 40, -40], ['NE Pacific', 30, -140], ['Southern Ocean', -55, 100],
+  ];
+  for (const [name, lat, lon] of oceans) {
+    assert.ok(!E.landAt(lat, lon), `${name} (${lat}, ${lon}) came up land`);
+  }
+});
+test('worldDots: a plausible planet (land fraction, both hemispheres)', () => {
+  const dots = E.worldDots();
+  const frac = dots.length / (72 * 36);
+  assert.ok(frac > 0.2 && frac < 0.45, `land fraction ${frac}`);
+  assert.ok(dots.some((d) => d.lat > 40), 'northern land');
+  assert.ok(dots.some((d) => d.lat < -20 && d.lat > -60), 'southern land');
+  deepEq(E.worldDots(), dots, 'deterministic');
+});
+
 /* ---------- the world feed ---------- */
 test('worldFeed: freshest glimpse leads', () => {
   const feed = E.worldFeed([

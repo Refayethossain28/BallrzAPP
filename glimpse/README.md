@@ -13,12 +13,17 @@ window — while you look through everyone else's.
   somewhere else* — recency × diversity, where a fresh window from a country
   this scroll hasn't visited jumps the queue. Every card has a **"why?"
   receipt**, and the feed draws the journey: *"✈️ 9,560 km NE to Reykjavík 🇮🇸"*.
-- **🌅 Solar skies.** Longitude is a clock — every glimpse knows whether it's
-  dawn, day, evening or night outside that window *right now*, and scene cards
+- **🌅 Real solar skies.** Not timezone tables — actual astronomy: solar
+  declination from the day of the year, hour angle from longitude, true sun
+  elevation from both. Every glimpse knows whether it's dawn, day, evening or
+  night outside that window *right now* — including polar night in a
+  Reykjavík December and midnight sun in a Svalbard June — and scene cards
   are painted with the sky they were shot under.
-- **🗺️ The world, right now.** A live map view: every window on one wall, night
-  side dimmed, with a sun strip showing where on Earth it's 🌅 ☀️ 🌆 🌙 at this
-  exact moment.
+- **🗺️ The Earth, live.** A dot-matrix planet drawn from a hand-tuned 5° land
+  mask (unit tests assert every shipped city lands on land and the open oceans
+  stay water), each dot lit by the sun's true elevation there this second — so
+  the day/night terminator curves with the seasons — with the subsolar point
+  glowing and every post pinned where it was seen.
 - **🧭 Near you.** The same windows sorted by real distance and compass
   direction — *"344 km SE of you"*.
 - **🛂 A passport, not a score.** The only number in Glimpse counts *countries
@@ -32,8 +37,11 @@ window — while you look through everyone else's.
   posts, or filter the world feed to just their glimpses. Signed in, search
   covers everyone on Glimpse, with an exact-handle lookup that resolves
   `@someone` even beyond the fetched directory page.
-- **📷 Camera-first capture** — photos are downscaled on-device; no photo? Set
-  the scene with an emoji and the app paints the sky it was shot under.
+- **📷 Camera-first capture** — photos are downscaled on-device (tap any photo
+  for full-screen); no photo? Set the scene with an emoji and the app paints
+  the sky it was shot under. Posting is **offline-resilient**: signed in with
+  no signal, your glimpse queues and reaches the live world the moment the
+  network returns.
 - **🔔 Quiet notifications** — an Activity sheet groups events into humane
   lines ("Maya and 2 others reacted to your post", "Oliver posted from London —
   close to your window"), with an unread dot in the header and optional device
@@ -59,8 +67,9 @@ security rules, reactions as the single shared surface. Setup in
 
 ## The engine
 
-All product logic — geo distance/bearing, solar time, the globe-hopping feed
-ranker with receipts, the near feed, world-map cells, the passport, people
-search and daily prompts — is a pure, deterministic, clock-injected engine:
-[`engine.js`](./engine.js), tested by `npm run test:glimpse` (40 tests).
+All product logic — geo distance/bearing, real solar astronomy (declination,
+elevation, the subsolar point, the dot-matrix Earth), the globe-hopping feed
+ranker with receipts, the near feed, the passport, people search, activity
+grouping and daily prompts — is a pure, deterministic, clock-injected engine:
+[`engine.js`](./engine.js), tested by `npm run test:glimpse` (49 tests).
 `index.html` just renders it.

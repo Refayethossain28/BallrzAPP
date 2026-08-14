@@ -182,6 +182,110 @@
 
   function timeOfDayAt(lon, utcMs) { return timeOfDay(solarHour(lon, utcMs)); }
 
+  /* ---------------- real solar astronomy ---------------- */
+  // The upgrade from "longitude is a clock" to the actual sun: declination
+  // from the day of the year, hour angle from solar time, and from those the
+  // sun's true elevation at any point on Earth. This is what makes December
+  // in Reykjavík read as night at noon and June in Svalbard read as day at
+  // midnight — and what draws the curved terminator on the world map.
+  function solarDeclination(utcMs) {
+    var start = Date.UTC(new Date(utcMs).getUTCFullYear(), 0, 0);
+    var day = (utcMs - start) / DAY;
+    return -23.44 * Math.cos(2 * Math.PI * (day + 10) / 365.24);
+  }
+
+  function solarElevation(lat, lon, utcMs) {
+    var decl = toRad(solarDeclination(utcMs));
+    var phi = toRad(Number(lat) || 0);
+    var hourAngle = toRad((solarHour(lon, utcMs) - 12) * 15);
+    var sinEl = Math.sin(phi) * Math.sin(decl) +
+                Math.cos(phi) * Math.cos(decl) * Math.cos(hourAngle);
+    return Math.asin(Math.max(-1, Math.min(1, sinEl))) * 180 / Math.PI;
+  }
+
+  // Sky bucket from true elevation: day above the horizon, dawn/dusk in
+  // civil twilight (0 to −6°, split by whether the sun is climbing), night
+  // below. Falls back cleanly when lat is unknown.
+  function skyAt(lat, lon, utcMs) {
+    if (!isFinite(Number(lat))) return timeOfDayAt(lon, utcMs);
+    var el = solarElevation(lat, lon, utcMs);
+    var t;
+    if (el > 0) t = TODS[1];
+    else if (el > -6) t = solarHour(lon, utcMs) < 12 ? TODS[0] : TODS[2];
+    else t = TODS[3];
+    return { key: t.key, label: t.label, emoji: t.emoji, elevation: Math.round(el * 10) / 10 };
+  }
+
+  // Where the sun is directly overhead right now.
+  function subsolarPoint(utcMs) {
+    var lon = (12 - ((utcMs / HOUR) % 24)) * 15;
+    lon = ((lon + 180) % 360 + 360) % 360 - 180;
+    return { lat: solarDeclination(utcMs), lon: lon };
+  }
+
+  /* ---------------- the Earth, as dots ---------------- */
+  // A 72×36 land mask (5° cells, lat 90..−90 top-to-bottom, lon −180..180
+  // left-to-right) hand-tuned against real city coordinates — the unit tests
+  // assert that every city Glimpse ships lands on land and the open oceans
+  // stay water. '#' is land, '.' is sea.
+  var LAND = [
+    '........................................................................',
+    '........................................................................',
+    '............##########..########........................................',
+    '............##########..########................########################',
+    '...####################...#####......###################################',
+    '...####################...######.....###################################',
+    '..........##############..........##.###################################',
+    '..........##############..........##.###################################',
+    '..........##############...........#############..........#####.........',
+    '...........###########............########...######.......#######.......',
+    '...........###########............#################.....####.####.......',
+    '............#########.............####....#..######.....####..###.......',
+    '..............###..#.............#########.#################............',
+    '..............###..##............#########.####...##########............',
+    '................###..............##############...##..####..#...........',
+    '.................##..............##############...##..####..#...........',
+    '....................######.......###########............#...#...........',
+    '....................#########.........######...........##.##............',
+    '....................#########.........######...........##.###.####......',
+    '.....................########.........######.............##...####......',
+    '.....................#######..........######.#.............########.....',
+    '.....................#######..........######.#.............########.....',
+    '......................######...........####..#.............########.....',
+    '......................####.............####................########.....',
+    '......................###..............###.................########.....',
+    '......................###.......................................##....##',
+    '.....................##..........................................#...##.',
+    '.....................##.................................................',
+    '.....................##.................................................',
+    '........................................................................',
+    '........................................................................',
+    '........................................................................',
+    '########################################################################',
+    '########################################################################',
+    '########################################################################',
+    '########################################################################'
+  ];
+
+  function landAt(lat, lon) {
+    var row = Math.min(35, Math.max(0, Math.floor((90 - lat) / 5)));
+    var col = Math.min(71, Math.max(0, Math.floor((lon + 180) / 5)));
+    return LAND[row].charAt(col) === '#';
+  }
+
+  // Every 5° cell as a dot with its center coordinates — the map view draws
+  // these, lighting each by solarElevation at this exact moment.
+  function worldDots() {
+    var dots = [];
+    for (var row = 0; row < 36; row++) {
+      for (var col = 0; col < 72; col++) {
+        if (LAND[row].charAt(col) !== '#') continue;
+        dots.push({ row: row, col: col, lat: 87.5 - row * 5, lon: -177.5 + col * 5 });
+      }
+    }
+    return dots;
+  }
+
   /* ---------------- the world feed: a scroll that circles the globe ---------------- */
   //
   // Most feeds show you more of what you just saw. Glimpse's world feed does
@@ -518,6 +622,8 @@
     normalizeHandle: normalizeHandle, validateAccount: validateAccount, validateGlimpse: validateGlimpse,
     haversineKm: haversineKm, bearingDeg: bearingDeg, compassDir: compassDir, formatKm: formatKm,
     solarHour: solarHour, timeOfDay: timeOfDay, timeOfDayAt: timeOfDayAt,
+    solarDeclination: solarDeclination, solarElevation: solarElevation, skyAt: skyAt,
+    subsolarPoint: subsolarPoint, landAt: landAt, worldDots: worldDots, LAND: LAND,
     worldFeed: worldFeed, feedHops: feedHops, nearFeed: nearFeed,
     worldMapCells: worldMapCells, sunStrip: sunStrip,
     passport: passport, horizonStage: horizonStage, dailyPrompt: dailyPrompt, searchUsers: searchUsers,
