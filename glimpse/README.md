@@ -34,6 +34,11 @@ window — while you look through everyone else's.
   `@someone` even beyond the fetched directory page.
 - **📷 Camera-first capture** — photos are downscaled on-device; no photo? Set
   the scene with an emoji and the app paints the sky it was shot under.
+- **🔔 Quiet notifications** — an Activity sheet groups events into humane
+  lines ("Maya and 2 others reacted to your post", "Oliver posted from London —
+  close to your window"), with an unread dot in the header and optional device
+  alerts when the app is in the background. Reactions arriving on your posts
+  sync live onto them; no polling, everything rides the existing listeners.
 
 ## Real people only
 
@@ -54,5 +59,5 @@ security rules, reactions as the single shared surface. Setup in
 All product logic — geo distance/bearing, solar time, the globe-hopping feed
 ranker with receipts, the near feed, world-map cells, the passport, people
 search and daily prompts — is a pure, deterministic, clock-injected engine:
-[`engine.js`](./engine.js), tested by `npm run test:glimpse` (36 tests).
+[`engine.js`](./engine.js), tested by `npm run test:glimpse` (40 tests).
 `index.html` just renders it.

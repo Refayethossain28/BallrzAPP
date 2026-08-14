@@ -300,6 +300,49 @@ test('searchUsers: deterministic order, alphabetical tiebreak, respects limit', 
   deepEq(E.searchUsers('same', many, { limit: 4 }), r, 'stable across calls');
 });
 
+/* ---------- activity grouping ---------- */
+test('groupActivity collapses same type+target into one line, newest first', () => {
+  const ev = (over) => ({ type: 'react', targetId: 'g1', actorId: 'a', actorName: 'Ana', emoji: '❤️', ts: NOW, ...over });
+  const groups = E.groupActivity([
+    ev({}),
+    ev({ actorId: 'b', actorName: 'Ben', ts: NOW - 10 * MINUTE }),
+    ev({ actorId: 'c', actorName: 'Cy', ts: NOW - 20 * MINUTE }),
+    ev({ type: 'near', targetId: 'near', actorId: 'b', actorName: 'Ben', placeName: 'Paris', ts: NOW - 5 * MINUTE }),
+  ], NOW);
+  assert.equal(groups.length, 2);
+  const react = groups.find((g) => g.type === 'react');
+  assert.equal(react.actors.length, 3);
+  assert.ok(react.text.includes('Ana and 2 others reacted to your post'), react.text);
+  const near = groups.find((g) => g.type === 'near');
+  assert.ok(near.text.includes('Ben posted from Paris'), near.text);
+});
+test('groupActivity: single reactor keeps the emoji and caption snippet', () => {
+  const groups = E.groupActivity([
+    { type: 'react', targetId: 'g1', targetLabel: 'the harbour', actorId: 'a', actorName: 'Ana', emoji: '❤️', ts: NOW },
+  ], NOW);
+  assert.equal(groups[0].text, 'Ana reacted ❤️ to your post “the harbour”');
+});
+test('groupActivity: same actor twice counts once; far-apart events stay separate', () => {
+  const twice = E.groupActivity([
+    { type: 'react', targetId: 'g1', actorId: 'a', actorName: 'Ana', ts: NOW },
+    { type: 'react', targetId: 'g1', actorId: 'a', actorName: 'Ana', ts: NOW - MINUTE },
+  ], NOW);
+  assert.equal(twice.length, 1);
+  assert.equal(twice[0].actors.length, 1);
+  const apart = E.groupActivity([
+    { type: 'react', targetId: 'g1', actorId: 'a', actorName: 'Ana', ts: NOW },
+    { type: 'react', targetId: 'g1', actorId: 'b', actorName: 'Ben', ts: NOW - 10 * HOUR },
+  ], NOW);
+  assert.equal(apart.length, 2);
+});
+test('unreadActivity counts only events after the read watermark', () => {
+  const events = [{ ts: NOW }, { ts: NOW - HOUR }, { ts: NOW - 2 * HOUR }];
+  assert.equal(E.unreadActivity(events, NOW - 90 * MINUTE), 2);
+  assert.equal(E.unreadActivity(events, NOW), 0);
+  assert.equal(E.unreadActivity(events, 0), 3);
+  assert.equal(E.unreadActivity([], NOW), 0);
+});
+
 /* ---------- daily prompt ---------- */
 test('dailyPrompt: stable for a date, rotates across dates, always from the list', () => {
   const a = E.dailyPrompt('2026-08-14');
