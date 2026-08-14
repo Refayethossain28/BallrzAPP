@@ -680,5 +680,51 @@ service cloud.firestore {
         allow delete: if bloomRegistered() && resource.data.authorUid == request.auth.uid;
       }
     }
+
+    // ── Glimpse — share what you're seeing with the world (glimpse/) ──────
+    // The live world is REGISTERED people only: email+password Firebase Auth
+    // accounts, never anonymous ones (Ripple's anonymous users share this
+    // project — they cannot write Glimpse data). Every write is scoped to
+    // its author. A moment is a caption + a place + an optional downscaled
+    // photo (a data URL, capped well under the 1 MB document limit).
+    // Reactions are the one shared surface: any registered user may update a
+    // moment, but ONLY the reactions map — never the caption, place, photo,
+    // author or timestamp.
+    function glimpseRegistered() {
+      return signedIn()
+        && request.auth.token.firebase.sign_in_provider != 'anonymous';
+    }
+    match /glimpse_users/{uid} {
+      allow read:  if signedIn();
+      allow write: if glimpseRegistered() && isUser(uid);
+    }
+    // Unique public handles: handle -> {uid}. Readable so signup can check
+    // availability; you may only claim a handle that points at YOU, and you
+    // can't steal one someone else owns.
+    match /glimpse_handles/{handle} {
+      allow read:   if signedIn();
+      allow create: if glimpseRegistered() && request.resource.data.uid == request.auth.uid;
+      allow update: if glimpseRegistered() && resource.data.uid == request.auth.uid
+                    && request.resource.data.uid == request.auth.uid;
+      allow delete: if glimpseRegistered() && resource.data.uid == request.auth.uid;
+    }
+    match /glimpse_moments/{momentId} {
+      allow read:   if signedIn();
+      allow create: if glimpseRegistered()
+        && request.resource.data.authorUid == request.auth.uid
+        && request.resource.data.caption is string
+        && request.resource.data.caption.size() <= 400
+        && request.resource.data.place is map
+        && request.resource.data.place.lat is number
+        && request.resource.data.place.lon is number
+        && (!('photo' in request.resource.data)
+            || (request.resource.data.photo is string
+                && request.resource.data.photo.size() < 500000));
+      allow update: if glimpseRegistered()
+        && ( resource.data.authorUid == request.auth.uid
+             || request.resource.data.diff(resource.data).affectedKeys()
+                  .hasOnly(['reactions']) );
+      allow delete: if glimpseRegistered() && resource.data.authorUid == request.auth.uid;
+    }
   }
 }
