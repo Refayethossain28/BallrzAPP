@@ -74,7 +74,7 @@ payments, deploy workflows, iOS wrappers.
 
 | App | What it is | Path | Cloud | Tests |
 |---|---|---|---|---|
-| Ballrz | Pocket football career: live match tickers, tactics, transfers, league + cup, penalties, endless seasons — one deterministic engine | `ballrz/` | None | `test:ballrz` (42) |
+| Ballrz | Pocket football career with the 20 real Premier League clubs: live match tickers, tactics, transfers, league + cup, penalties, endless seasons — one deterministic engine | `ballrz/` | None | `test:ballrz` (42) |
 | Bloom | Social network where the user owns the ranking algorithm | `bloom/` | Optional Firebase | `test:bloom` (34) |
 | Ripple | Private messenger: schedule/edit/unsend, polls, App Lock encryption | `ripple/` | Optional Firebase | `test:ripple` |
 | Imposter | Pass-and-play social-deduction party game (3–12 players) | `imposter/` | Optional Anthropic | `test:imposter` (20) |
