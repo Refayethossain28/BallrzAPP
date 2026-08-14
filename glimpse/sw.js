@@ -2,7 +2,7 @@
  * navigations are network-first (freshest build online, cached shell offline)
  * and static assets are cache-first for speed. Bump CACHE to force a clean
  * reinstall. */
-const CACHE = 'glimpse-v3';
+const CACHE = 'glimpse-v4';
 const ASSETS = ['./', './index.html', './engine.js', './config.js',
                 './manifest.json', './icon.svg'];
 
