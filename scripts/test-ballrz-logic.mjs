@@ -348,12 +348,12 @@ test('matchdayIncome and seasonPrize reward success', () => {
 });
 
 /* ---------- career state machine ---------- */
-test('newGame: deterministic, calendar has 38 league rounds + 5 cup dates', () => {
+test('newGame: deterministic, calendar has 38 league rounds + 6 cup dates', () => {
   const g1 = E.newGame('career', 'c5');
   const g2 = E.newGame('career', 'c5');
   deepEq(g1, g2);
   assert.equal(g1.calendar.filter((e) => e.type === 'league').length, 38);
-  assert.equal(g1.calendar.filter((e) => e.type === 'cup').length, 5);
+  assert.equal(g1.calendar.filter((e) => e.type === 'cup').length, 6, 'six cup dates: 4 rounds + two-legged semi');
   assert.equal(g1.myClubId, 'c5');
   assert.equal(g1.season, 1);
 });
@@ -462,6 +462,256 @@ test('awards: golden boot goes to the top scorer, POTY needs 10 apps', () => {
   assert.equal(aw.playmaker, b);
   assert.equal(aw.playerOfSeason, b, 'part-timers do not win POTY');
 });
+/* ---------- contracts & wages ---------- */
+test('weeklyWage: floor holds, scales with value, renewal raises compound', () => {
+  const dud = { pos: 'DF', age: 36, pace: 20, technique: 20, defending: 20, finishing: 20, keeping: 20, stamina: 20 };
+  assert.equal(E.weeklyWage(dud), 2000, 'nobody plays for free');
+  const star = { pos: 'FW', age: 25, pace: 85, technique: 80, defending: 30, finishing: 88, keeping: 20, stamina: 80 };
+  assert.ok(E.weeklyWage(star) > E.weeklyWage(dud) * 5, 'stars earn like stars');
+  const renewed = { ...star, wageMul: 1.15 };
+  assert.ok(E.weeklyWage(renewed) > E.weeklyWage(star), 'renewal raise sticks');
+  const squad = [dud, star];
+  assert.equal(E.wageBill(squad), E.weeklyWage(dud) + E.weeklyWage(star));
+});
+test('genLeague: every player starts on a 1–4 season contract', () => {
+  const L = E.genLeague('deals');
+  for (const id in L.players) {
+    const c = L.players[id].contract;
+    assert.ok(c >= 1 && c <= 4, `contract ${c} in range`);
+  }
+});
+test('advanceRound: the wage bill leaves your budget every matchday', () => {
+  const g = E.newGame('payday', 'c1');
+  const me = g.league.clubs.find((c) => c.id === 'c1');
+  const bill = E.wageBill(me.squad.map((id) => g.league.players[id]));
+  assert.ok(bill > 0);
+  const g2 = E.advanceRound(g);
+  assert.equal(g2.lastWageBill, bill);
+  const me2 = g2.league.clubs.find((c) => c.id === 'c1');
+  // Budget moved by exactly (gate income if home) − wages.
+  const wasHome = g2.lastMatch.homeClub.id === 'c1';
+  const delta = me2.budget - me.budget;
+  if (wasHome) assert.ok(delta > -bill, 'gate income softened the bill');
+  else assert.equal(delta, -bill, 'away day: wages only');
+});
+test('endSeason: contracts tick down; my expiring players become renewal decisions; AI re-signs', () => {
+  let g = E.newGame('expiry', 'c9');
+  while (!g.seasonOver) g = E.advanceRound(g);
+  const expiring = g.league.clubs.find((c) => c.id === 'c9').squad
+    .filter((id) => g.league.players[id].contract === 1).length;
+  const g2 = E.endSeason(g);
+  assert.equal((g2.pendingRenewals || []).length >= 1 || expiring === 0, true,
+    'players whose deal ran out are on the desk');
+  for (const c of g2.league.clubs) {
+    for (const id of c.squad) {
+      const p = g2.league.players[id];
+      if (c.id !== 'c9') assert.ok(p.contract >= 1, 'AI players always under contract');
+      else assert.ok(p.contract >= 1 || g2.pendingRenewals.includes(id), 'mine renewed or pending');
+    }
+  }
+});
+test('renewContract: two fresh seasons and a 15% raise; releasePlayer: walks on a free', () => {
+  let g = E.newGame('renew', 'c3');
+  while (!g.seasonOver) g = E.advanceRound(g);
+  g = E.endSeason(g);
+  if (!(g.pendingRenewals || []).length) return;   // seed produced no expiries — other test covers presence
+  const pid = g.pendingRenewals[0];
+  const before = E.weeklyWage(g.league.players[pid]);
+  const g2 = E.renewContract(g, pid);
+  assert.equal(g2.league.players[pid].contract, 2);
+  assert.ok(E.weeklyWage(g2.league.players[pid]) > before, 'raise applied');
+  assert.ok(!g2.pendingRenewals.includes(pid));
+  if (g.pendingRenewals.length > 1) {
+    const pid2 = g.pendingRenewals[1];
+    if (g.league.players[pid2].pos !== 'GK') {
+      const g3 = E.releasePlayer(g, pid2);
+      const me3 = g3.league.clubs.find((c) => c.id === 'c3');
+      assert.ok(!me3.squad.includes(pid2), 'released player gone');
+      assert.equal(g3.league.players[pid2].clubId === 'c3', false, 'joined another club');
+    }
+  }
+});
+test('advanceRound: renewal offers left on the desk auto-sign on default terms', () => {
+  let g = E.newGame('desk', 'c6');
+  while (!g.seasonOver) g = E.advanceRound(g);
+  g = E.endSeason(g);
+  if (!(g.pendingRenewals || []).length) return;
+  const pid = g.pendingRenewals[0];
+  const g2 = E.advanceRound(g);
+  assert.equal(g2.pendingRenewals.length, 0);
+  assert.equal(g2.league.players[pid].contract, 2, 'auto-renewed before kick-off');
+});
+
+/* ---------- two-legged semi-finals ---------- */
+test('simulateMatch: aggregate offsets decide extra time in a second leg', () => {
+  const [h, a] = matchTeams('agg');
+  for (let i = 0; i < 30; i++) {
+    const r = E.simulateMatch('agg' + i, h, a, { extraTime: true, agg: { H: 2, A: 0 } });
+    const level = (r.homeGoals + 2) === (r.awayGoals + 0);
+    const wentToEt = r.events.some((e) => e.type === 'et');
+    if (r.needsShootout) assert.ok(level, 'pens only when level on aggregate');
+    if (!wentToEt) {
+      // no ET means it was NOT level on aggregate at 90
+      const at90 = r.events.filter((e) => e.type === 'goal');
+      const h90 = at90.filter((e) => e.team === 'H').length + 2;
+      const a90 = at90.filter((e) => e.team === 'A').length;
+      assert.notEqual(h90, a90, 'skipped ET only when aggregate was decided');
+    }
+  }
+});
+test('career: the cup semi-final is two-legged and settled on aggregate', () => {
+  let g = E.newGame('twoleg', 'c12');
+  while (!g.seasonOver) g = E.advanceRound(g);
+  const names = g.cup.ties.map((t) => t.name);
+  deepEq(names, ['Preliminary', 'Round of 16', 'Quarter-final',
+    'Semi-final 1st leg', 'Semi-final 2nd leg', 'Final']);
+  const leg1 = g.cup.ties[3].results, leg2 = g.cup.ties[4].results;
+  assert.equal(leg1.length, 2); assert.equal(leg2.length, 2);
+  for (let i = 0; i < 2; i++) {
+    assert.equal(leg2[i].home, leg1[i].away, 'second leg reverses the venue');
+    assert.equal(leg2[i].away, leg1[i].home);
+    assert.ok(!leg1[i].winner, 'a first leg eliminates nobody');
+    assert.ok(leg2[i].winner, 'the return decides it');
+    const [hAgg, aAgg] = leg2[i].agg.split('–').map(Number);
+    assert.equal(hAgg, leg2[i].hg + leg1[i].ag, 'aggregate arithmetic holds');
+    assert.equal(aAgg, leg2[i].ag + leg1[i].hg);
+    const winByAgg = hAgg > aAgg ? leg2[i].home : aAgg > hAgg ? leg2[i].away : null;
+    if (winByAgg) assert.equal(leg2[i].winner, winByAgg);
+    else assert.ok(leg2[i].pens, 'level aggregate went to penalties');
+  }
+  assert.ok(g.cup.winnerId, 'the final still crowns a winner');
+  const finalists = [g.cup.ties[5].results[0].home, g.cup.ties[5].results[0].away];
+  assert.ok(finalists.includes(leg2[0].winner) && finalists.includes(leg2[1].winner));
+});
+
+/* ---------- career summary ---------- */
+test('careerSummary: record adds up, legend is the top career scorer', () => {
+  let g = E.newGame('legend', 'c2');
+  for (let i = 0; i < 10; i++) g = E.advanceRound(g);
+  const sum = E.careerSummary(g);
+  assert.equal(sum.record.w + sum.record.d + sum.record.l, sum.record.p);
+  assert.ok(sum.record.p >= 9, 'league + cup appearances counted');
+  assert.equal(sum.club.short, g.league.clubs.find((c) => c.id === 'c2').short);
+  assert.equal(sum.seasons, 1);
+  if (sum.legend) assert.ok(sum.legend.goals >= 0 && sum.legend.name);
+  // across a season boundary the ledger persists
+  while (!g.seasonOver) g = E.advanceRound(g);
+  const fullRec = E.careerSummary(g).record;
+  const g2 = E.endSeason(g);
+  deepEq(E.careerSummary(g2).record, fullRec, 'endSeason folds, not forgets');
+  assert.equal(E.careerSummary(g2).bestFinish, g2.history[0].myPos);
+});
+
+/* ---------- the Live desk: URL builders & payload parsers ---------- */
+test('live URLs: correct ESPN shapes, league ids encoded', () => {
+  assert.equal(E.liveScoreboardUrl('eng.1'),
+    'https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard');
+  assert.equal(E.liveScoreboardUrl('eng.1', '20260814'),
+    'https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard?dates=20260814');
+  assert.ok(E.liveStandingsUrl('uefa.champions').includes('/v2/sports/soccer/uefa.champions/standings'));
+  assert.ok(E.liveNewsUrl('esp.1').endsWith('/soccer/esp.1/news'));
+  assert.equal(E.LIVE_LEAGUES.length, 6);
+});
+// Recorded-shape fixture: trimmed to the fields Ballrz reads, matching the
+// structure of ESPN's public scoreboard payload.
+const SCOREBOARD_FIXTURE = {
+  events: [{
+    id: '733103', date: '2026-08-14T19:00Z',
+    status: { type: { state: 'in', shortDetail: "63'" } },
+    competitions: [{
+      competitors: [
+        { homeAway: 'home', score: '2', winner: false,
+          team: { id: '364', displayName: 'Liverpool', abbreviation: 'LIV', logo: 'https://a.espncdn.com/i/teamlogos/soccer/500/364.png' } },
+        { homeAway: 'away', score: '1', winner: false,
+          team: { id: '360', displayName: 'Manchester United', abbreviation: 'MAN', logos: [{ href: 'https://a.espncdn.com/i/teamlogos/soccer/500/360.png' }] } },
+      ],
+      details: [
+        { scoringPlay: true, clock: { displayValue: "12'" }, team: { id: '364' },
+          athletesInvolved: [{ displayName: 'Mohamed Salah' }] },
+        { scoringPlay: true, penaltyKick: true, clock: { displayValue: "45'+2'" }, team: { id: '360' },
+          athletesInvolved: [{ displayName: 'Bruno Fernandes' }] },
+        { scoringPlay: false, clock: { displayValue: "50'" }, team: { id: '364' },
+          athletesInvolved: [{ displayName: 'Somebody Booked' }] },
+        { scoringPlay: true, clock: { displayValue: "61'" }, team: { id: '364' },
+          athletesInvolved: [{ displayName: 'Cody Gakpo' }] },
+      ],
+    }],
+  }],
+};
+test('parseScoreboard: teams, score, clock, scorers with pens marked', () => {
+  const games = E.parseScoreboard(SCOREBOARD_FIXTURE);
+  assert.equal(games.length, 1);
+  const g = games[0];
+  assert.equal(g.state, 'in');
+  assert.equal(g.clock, "63'");
+  assert.equal(g.home.name, 'Liverpool');
+  assert.equal(g.home.score, 2);
+  assert.equal(g.away.abbr, 'MAN');
+  assert.ok(g.away.logo.includes('360.png'), 'logo found in logos[] fallback');
+  assert.equal(g.scorers.length, 3, 'non-scoring plays skipped');
+  assert.equal(g.scorers[1].name, 'Bruno Fernandes (pen)');
+  assert.equal(g.scorers[0].home, true);
+  assert.equal(g.scorers[1].home, false);
+});
+const STANDINGS_FIXTURE = {
+  children: [{
+    standings: { entries: [
+      { team: { displayName: 'Arsenal', abbreviation: 'ARS', logos: [{ href: 'x' }] },
+        note: { description: 'Champions League' },
+        stats: [
+          { name: 'rank', value: 1 }, { name: 'gamesPlayed', value: 2 },
+          { name: 'wins', value: 2 }, { name: 'ties', value: 0 }, { name: 'losses', value: 0 },
+          { name: 'pointsFor', value: 5 }, { name: 'pointsAgainst', value: 1 },
+          { name: 'pointDifferential', value: 4 }, { name: 'points', value: 6 },
+        ] },
+      { team: { displayName: 'Everton', abbreviation: 'EVE' },
+        stats: [
+          { name: 'rank', value: 2 }, { name: 'gamesPlayed', value: 2 },
+          { name: 'wins', value: 1 }, { name: 'ties', value: 1 }, { name: 'losses', value: 0 },
+          { name: 'pointsFor', value: 3 }, { name: 'pointsAgainst', value: 1 },
+          { name: 'pointDifferential', value: 2 }, { name: 'points', value: 4 },
+        ] },
+    ] },
+  }],
+};
+test('parseStandings: rows in rank order with the numbers a fan wants', () => {
+  const rows = E.parseStandings(STANDINGS_FIXTURE);
+  assert.equal(rows.length, 2);
+  deepEq(rows.map((r) => r.team), ['Arsenal', 'Everton']);
+  assert.equal(rows[0].pts, 6);
+  assert.equal(rows[0].gd, 4);
+  assert.equal(rows[0].note, 'Champions League');
+  assert.equal(rows[1].d, 1);
+  assert.equal(rows[1].note, null);
+});
+test('parseNews: headline, blurb, link, image', () => {
+  const items = E.parseNews({ articles: [
+    { headline: 'Deadline day drama', description: 'A striker moves.',
+      published: '2026-08-14T10:00Z', links: { web: { href: 'https://example.com/x' } },
+      images: [{ url: 'https://example.com/i.jpg' }] },
+    { description: 'no headline — dropped' },
+  ] });
+  assert.equal(items.length, 1);
+  assert.equal(items[0].title, 'Deadline day drama');
+  assert.equal(items[0].link, 'https://example.com/x');
+  assert.equal(items[0].image, 'https://example.com/i.jpg');
+});
+test('live parsers: junk-safe — null, empty and malformed payloads give []', () => {
+  for (const junk of [null, undefined, {}, { events: 'nope' }, { children: [{}] }, { articles: [{}] }, 42]) {
+    deepEq(E.parseScoreboard(junk), []);
+    deepEq(E.parseStandings(junk), []);
+    deepEq(E.parseNews(junk), []);
+  }
+});
+test('agoLabel: freshness stamps from an injected clock', () => {
+  const now = Date.parse('2026-08-14T12:00:00Z');
+  assert.equal(E.agoLabel('2026-08-14T11:59:40Z', now), 'just now');
+  assert.equal(E.agoLabel('2026-08-14T11:30:00Z', now), '30m ago');
+  assert.equal(E.agoLabel('2026-08-14T09:00:00Z', now), '3h ago');
+  assert.equal(E.agoLabel('2026-08-04T12:00:00Z', now), '10d ago');
+  assert.equal(E.agoLabel('garbage', now), '');
+});
+
 test('newsForResult: deterministic, mentions the score', () => {
   const home = { name: 'Rivergate United', short: 'RIV' };
   const away = { name: 'Harbour City', short: 'HBC' };

@@ -199,6 +199,34 @@
   .subtabs button{flex:none; font-size:13px; font-weight:700; color:var(--ink2); padding:7px 13px;
     border-radius:999px; background:var(--bg2); border:1px solid var(--line2)}
   .subtabs button.on{color:#08130c; background:var(--pitch2); border-color:var(--pitch2)}
+
+  /* ---------- the Live desk ---------- */
+  .livegame{padding:10px 0; border-top:1px solid var(--line)}
+  .livegame:first-of-type{border-top:none}
+  .livegame .score-line{display:flex; align-items:center; gap:8px}
+  .livegame .tm{flex:1; display:flex; align-items:center; gap:8px; min-width:0; font-weight:700; font-size:13.5px}
+  .livegame .tm.a{justify-content:flex-end; text-align:right}
+  .livegame .tm img{width:22px; height:22px; object-fit:contain; flex:none}
+  .livegame .tm span{white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .livegame .sc{flex:none; min-width:64px; text-align:center; font-weight:900; font-size:16px}
+  .livegame .sc small{display:block; font-size:10.5px; font-weight:700; color:var(--ink3)}
+  .livegame .sc small.inplay{color:var(--pitch2)}
+  .livegame .scorerline{font-size:11px; color:var(--ink3); margin-top:4px; text-align:center}
+  .livebadge{display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--pitch2);
+    animation:pulse 1.4s infinite; margin-right:4px; vertical-align:1px}
+  @keyframes pulse{0%,100%{opacity:1} 50%{opacity:0.3}}
+  .newscard{display:flex; gap:10px; padding:10px 0; border-top:1px solid var(--line); align-items:flex-start}
+  .newscard:first-of-type{border-top:none}
+  .newscard img{width:74px; height:52px; object-fit:cover; border-radius:10px; flex:none; background:var(--bg2)}
+  .newscard a{color:var(--ink); text-decoration:none; font-weight:700; font-size:13.5px; line-height:1.3}
+  .newscard .d{font-size:12px; color:var(--ink2); margin-top:2px}
+  .stale{font-size:11.5px; color:var(--gold); text-align:center; padding:6px 0 0}
+  .loading{text-align:center; color:var(--ink3); padding:26px 0; font-size:13px}
+  .loading .livebadge{background:var(--ink3)}
+  table.lg img.tl{width:18px; height:18px; object-fit:contain; vertical-align:-4px; margin-right:6px}
+
+  /* ---------- career card ---------- */
+  #careerCanvas{width:100%; border-radius:16px; border:1px solid var(--line2)}
 </style>
 </head>
 <body>
@@ -218,6 +246,7 @@
     <button class="tabbtn" data-tab="squad"><span class="ic">👥</span>Squad</button>
     <button class="fab" id="playBtn">▶</button>
     <button class="tabbtn" data-tab="league"><span class="ic">🏆</span>League</button>
+    <button class="tabbtn" data-tab="live"><span class="ic">📡</span>Live</button>
     <button class="tabbtn" data-tab="more"><span class="ic">💰</span>Club</button>
   </div>
 </nav>
@@ -232,7 +261,7 @@
  * engine.js; this file only draws state and forwards button presses. */
 var E = Ballrz;
 var esc = E.escapeHTML, money = E.fmtMoney;
-var SAVE_KEY = 'ballrz.save.v1';
+var SAVE_KEY = 'ballrz.save.v2';   // bumped: v1 careers predate contracts & two-leg semis
 var S = null;              // the whole career state (engine-shaped)
 var ui = { tab: 'home', leagueTab: 'table', resultsRound: null, squadSort: 'pos', mktPos: 'ALL' };
 
@@ -306,14 +335,165 @@ function setTab(tab) {
 /* ---------------- views ---------------- */
 
 function render() {
-  if (!S) { renderOnboarding(); return; }
+  if (!S) {
+    if (ui.guestLive) { renderGuestLive(); } else { renderOnboarding(); }
+    return;
+  }
   renderChrome();
   var v = ui.tab;
   $('main').innerHTML =
     v === 'home' ? viewHome() :
     v === 'squad' ? viewSquad() :
     v === 'league' ? viewLeague() :
+    v === 'live' ? viewLive() :
     viewMore();
+  if (v === 'live') loadLive();
+}
+
+/* ---------------- the Live desk: real-world scores, tables, news ----------------
+ * Data comes from ESPN's public keyless JSON API, fetched by the browser and
+ * cached in localStorage so the last-seen numbers still show offline (with an
+ * honest "updated X ago" stamp). All parsing is pure engine code.
+ */
+
+var liveUI = { league: 'eng.1', tab: 'scores', dayOffset: 0, seq: 0 };
+var LIVE_TTL = { scores: 60e3, table: 10 * 60e3, news: 10 * 60e3 };
+
+function liveDateParam() {
+  if (!liveUI.dayOffset) return null;
+  var d = new Date(Date.now() + liveUI.dayOffset * 864e5);
+  var mm = String(d.getMonth() + 1); if (mm.length < 2) mm = '0' + mm;
+  var dd = String(d.getDate()); if (dd.length < 2) dd = '0' + dd;
+  return '' + d.getFullYear() + mm + dd;
+}
+
+function liveGet(url, ttl, cb) {
+  var key = 'ballrz.live.' + url;
+  var cached = null;
+  try { cached = JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) {}
+  if (cached && Date.now() - cached.ts < ttl) { cb(null, cached.data, cached.ts, false); return; }
+  fetch(url)
+    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function (data) {
+      try { localStorage.setItem(key, JSON.stringify({ ts: Date.now(), data: data })); } catch (e) {}
+      cb(null, data, Date.now(), false);
+    })
+    .catch(function (err) {
+      if (cached) cb(null, cached.data, cached.ts, true);
+      else cb(err);
+    });
+}
+
+function viewLive() {
+  var html = '<div class="subtabs">' + E.LIVE_LEAGUES.map(function (l) {
+    return '<button data-livelg="' + l.id + '" class="' + (liveUI.league === l.id ? 'on' : '') + '">' +
+      l.flag + ' ' + esc(l.name) + '</button>';
+  }).join('') + '</div>';
+  html += '<div class="subtabs">' + [['scores', 'Matches'], ['table', 'Table'], ['news', 'News']]
+    .map(function (s) {
+      return '<button data-livetab="' + s[0] + '" class="' + (liveUI.tab === s[0] ? 'on' : '') + '">' + s[1] + '</button>';
+    }).join('') + '</div>';
+  if (liveUI.tab === 'scores') {
+    var when = liveUI.dayOffset === 0 ? 'Today' : liveUI.dayOffset === -1 ? 'Yesterday'
+      : liveUI.dayOffset === 1 ? 'Tomorrow' : (liveUI.dayOffset > 0 ? '+' : '') + liveUI.dayOffset + 'd';
+    html += '<div class="card"><div class="row" style="justify-content:space-between">' +
+      '<button class="btn ghost tiny" data-ldate="-1">←</button><h3 style="margin:0">' + when +
+      '</h3><button class="btn ghost tiny" data-ldate="1">→</button></div>' +
+      '<div id="liveBox"><div class="loading"><span class="livebadge"></span>fetching matches…</div></div></div>';
+  } else {
+    html += '<div class="card"><div class="row" style="justify-content:space-between">' +
+      '<h3 style="margin:0">' + (liveUI.tab === 'table' ? 'Standings' : 'Latest news') + '</h3>' +
+      '<button class="btn ghost tiny" data-liverefresh="1">↻ refresh</button></div>' +
+      '<div id="liveBox"><div class="loading"><span class="livebadge"></span>fetching…</div></div></div>';
+  }
+  html += '<p class="dim small" style="text-align:center">Live data: ESPN public feeds, fetched by your ' +
+    'browser and cached on-device for offline reading. The career game itself never needs a connection.</p>';
+  return html;
+}
+
+function loadLive(force) {
+  var seq = ++liveUI.seq;
+  var tab = liveUI.tab, lg = liveUI.league;
+  var url = tab === 'scores' ? E.liveScoreboardUrl(lg, liveDateParam())
+    : tab === 'table' ? E.liveStandingsUrl(lg) : E.liveNewsUrl(lg);
+  if (force) { try { localStorage.removeItem('ballrz.live.' + url); } catch (e) {} }
+  liveGet(url, LIVE_TTL[tab], function (err, data, ts, stale) {
+    if (seq !== liveUI.seq) return;   // user moved on
+    var box = $('liveBox');
+    if (!box) return;
+    if (err) {
+      box.innerHTML = '<div class="empty">Couldn\'t reach the live feed — check your connection.' +
+        '<div style="height:10px"></div><button class="btn ghost tiny" data-liverefresh="1">Try again</button></div>';
+      return;
+    }
+    var html = tab === 'scores' ? renderScores(E.parseScoreboard(data))
+      : tab === 'table' ? renderLiveTable(E.parseStandings(data))
+      : renderLiveNews(E.parseNews(data));
+    if (stale) {
+      html += '<div class="stale">⚠ offline — showing data from ' +
+        esc(E.agoLabel(new Date(ts).toISOString(), Date.now())) + '</div>';
+    }
+    box.innerHTML = html;
+  });
+}
+
+function renderScores(games) {
+  if (!games.length) return '<div class="empty">No matches in this competition on this day.</div>';
+  return games.map(function (g) {
+    var live = g.state === 'in';
+    var label = live ? '<span class="livebadge"></span>' + esc(g.clock)
+      : g.state === 'post' ? 'FT' : esc(g.clock || '');
+    var score = g.home.score != null && g.state !== 'pre'
+      ? g.home.score + '–' + g.away.score : 'v';
+    var scorers = g.scorers.length
+      ? '<div class="scorerline">⚽ ' + g.scorers.map(function (s) {
+          return esc(s.name) + ' ' + esc(s.minute);
+        }).join(' · ') + '</div>' : '';
+    return '<div class="livegame"><div class="score-line">' +
+      '<span class="tm">' + (g.home.logo ? '<img src="' + esc(g.home.logo) + '" alt="" loading="lazy">' : '') +
+      '<span>' + esc(g.home.name) + '</span></span>' +
+      '<span class="sc">' + score + '<small class="' + (live ? 'inplay' : '') + '">' + label + '</small></span>' +
+      '<span class="tm a"><span>' + esc(g.away.name) + '</span>' +
+      (g.away.logo ? '<img src="' + esc(g.away.logo) + '" alt="" loading="lazy">' : '') + '</span>' +
+      '</div>' + scorers + '</div>';
+  }).join('');
+}
+
+function renderLiveTable(rows) {
+  if (!rows.length) return '<div class="empty">No standings available right now.</div>';
+  var html = '<table class="lg"><thead><tr><th class="l"></th><th class="l">Club</th>' +
+    '<th>P</th><th>W</th><th>D</th><th>L</th><th>GD</th><th>Pts</th></tr></thead><tbody>';
+  rows.forEach(function (r, i) {
+    html += '<tr' + (r.note ? ' title="' + esc(r.note) + '"' : '') + '>' +
+      '<td class="l"><span class="posnum">' + (r.pos || i + 1) + '</span></td>' +
+      '<td class="l">' + (r.logo ? '<img class="tl" src="' + esc(r.logo) + '" alt="" loading="lazy">' : '') +
+      esc(r.team) + '</td>' +
+      '<td>' + r.p + '</td><td>' + r.w + '</td><td>' + r.d + '</td><td>' + r.l + '</td>' +
+      '<td>' + (r.gd > 0 ? '+' : '') + r.gd + '</td><td><b>' + r.pts + '</b></td></tr>';
+  });
+  return html + '</tbody></table>';
+}
+
+function renderLiveNews(items) {
+  if (!items.length) return '<div class="empty">No headlines right now.</div>';
+  return items.slice(0, 12).map(function (a) {
+    return '<div class="newscard">' +
+      (a.image ? '<img src="' + esc(a.image) + '" alt="" loading="lazy">' : '') +
+      '<div class="grow">' +
+      (a.link ? '<a href="' + esc(a.link) + '" target="_blank" rel="noopener noreferrer">' + esc(a.title) + '</a>'
+        : '<b>' + esc(a.title) + '</b>') +
+      '<div class="d">' + esc(a.desc).slice(0, 140) + '</div>' +
+      '<div class="d dim">' + esc(E.agoLabel(a.published, Date.now())) + '</div></div></div>';
+  }).join('');
+}
+
+function renderGuestLive() {
+  $('topbar').style.display = 'none';
+  $('tabs').style.display = 'none';
+  $('main').innerHTML = '<div class="row" style="padding:10px 0 4px">' +
+    '<button class="btn ghost tiny" data-act="backOnboard">← Ballrz</button>' +
+    '<b style="font-size:17px">📡 Live football</b></div>' + viewLive();
+  loadLive();
 }
 
 function nextEntry() { return S.calendar[S.pointer] || null; }
@@ -338,7 +518,9 @@ function nextFixture() {
       }
       return { comp: 'Cup · ' + E.CUP_ROUNDS[0] + ' (you have a bye)', home: null, away: null };
     }
-    var pairs = E.cupPairs(S.seed + ':s' + S.season, E.CUP_ROUNDS[S.cup.round], S.cup.alive);
+    var pairs = S.cup.round === 4 && S.cup.sf
+      ? S.cup.sf.pairs.map(function (t) { return { home: t.away, away: t.home }; })
+      : E.cupPairs(S.seed + ':s' + S.season, E.CUP_ROUNDS[S.cup.round], S.cup.alive);
     for (var k = 0; k < pairs.length; k++) {
       if (pairs[k].home === S.myClubId || pairs[k].away === S.myClubId) {
         return { comp: 'Cup · ' + E.CUP_ROUNDS[S.cup.round], home: pairs[k].home, away: pairs[k].away };
@@ -353,6 +535,13 @@ function viewHome() {
   var t = table();
   var fx = nextFixture();
   var html = '';
+
+  if ((S.pendingRenewals || []).length) {
+    html += '<div class="card"><h3>Contract talks</h3><p class="muted small">' +
+      S.pendingRenewals.length + ' player' + (S.pendingRenewals.length > 1 ? 's are' : ' is') +
+      ' out of contract — renew or release before kick-off (undecided deals auto-renew).</p>' +
+      '<button class="btn wide gold" data-act="renewals">🖊 Open contract talks</button></div>';
+  }
 
   if (S.seasonOver) {
     html += '<div class="card"><h3>Season complete</h3>' +
@@ -441,8 +630,10 @@ function viewSquad() {
     var o = E.overall(p);
     html += '<button class="plrow" style="width:100%" data-player="' + p.id + '">' +
       '<span class="posbadge ' + p.pos + '">' + p.pos + '</span>' +
-      '<span class="grow" style="text-align:left"><span class="plname">' + esc(p.name) + statusTags(p) + '</span>' +
-      '<div class="plmeta">' + p.age + 'y · ' + money(E.playerValue(p)) +
+      '<span class="grow" style="text-align:left"><span class="plname">' + esc(p.name) + statusTags(p) +
+      (p.contract === 1 ? '<span class="tag ban">final yr</span>' : '') + '</span>' +
+      '<div class="plmeta">' + p.age + 'y · ' + money(E.playerValue(p)) + ' · ' +
+      money(E.weeklyWage(p)) + '/wk · ' + (p.contract || 0) + 'y' +
       (st.apps ? ' · ' + st.apps + ' apps ' + (st.goals || 0) + 'g ' + (st.assists || 0) + 'a · avg ' +
         (Math.round(st.ratingSum / st.apps * 10) / 10).toFixed(1) : '') + '</div></span>' +
       '<span class="ovr' + (o >= 78 ? ' hi' : '') + '">' + o + '</span></button>';
@@ -458,7 +649,8 @@ function playerSheet(pid) {
   var st = S.playerStats[pid] || {};
   var html = '<div class="grabber"></div><h2>' + esc(p.name) + '</h2>' +
     '<div class="muted small">' + p.pos + ' · ' + p.age + ' years · ' + esc(clubById(p.clubId).name) +
-    ' · overall <b class="gold">' + E.overall(p) + '</b> · value ' + money(E.playerValue(p)) + '</div>' +
+    ' · overall <b class="gold">' + E.overall(p) + '</b> · value ' + money(E.playerValue(p)) +
+    ' · ' + money(E.weeklyWage(p)) + '/wk · ' + (p.contract || 0) + 'y left</div>' +
     '<div style="height:14px"></div><div class="bars">';
   E.ATTRS.forEach(function (a) {
     html += '<div class="bar"><div class="lab"><span>' + a + '</span><span>' + p[a] + '</span></div>' +
@@ -539,6 +731,7 @@ function viewLeague() {
       round.results.forEach(function (r) {
         var h = clubById(r.home), a = clubById(r.away);
         html += '<div class="kv"><span>' + esc(h.name) + '</span><span><b>' + r.hg + '–' + r.ag + '</b>' +
+          (r.agg ? ' <span class="dim small">(agg ' + r.agg + ')</span>' : '') +
           (r.pens ? ' <span class="dim small">(' + r.pens + ' pens)</span>' : '') + '</span>' +
           '<span style="text-align:right">' + esc(a.name) + '</span></div>';
       });
@@ -582,6 +775,8 @@ function viewMore() {
       '<div class="dim small">Tier ' + me.tier + ' ' + stars(me.tier) + ' · morale ' + me.morale + '</div></div></div>' +
       '<div style="height:10px"></div>' +
       '<div class="kv"><span>Budget</span><b class="gold">' + money(me.budget) + '</b></div>' +
+      '<div class="kv"><span>Wage bill</span><span class="red">-' +
+      money(E.wageBill(me.squad.map(P))) + ' / matchday</span></div>' +
       '<div class="kv"><span>League position</span><b>' + ordinal(myPos()) + '</b></div>' +
       '<div class="kv"><span>Next home gate (est.)</span><span>' + money(E.matchdayIncome(me, myPos())) + '</span></div>' +
       '<div class="kv"><span>Season prize if season ended now</span><span>' + money(E.seasonPrize(myPos())) + '</span></div>' +
@@ -592,6 +787,16 @@ function viewMore() {
       html += '<div class="trophy">🏆 <b>' + esc(tr.name) + '</b><span class="dim">Season ' + tr.season + '</span></div>';
     });
     html += '</div>';
+    var cs = E.careerSummary(S);
+    html += '<div class="card"><h3>Manager career</h3>' +
+      '<div class="kv"><span>Record</span><b>' + cs.record.w + 'W ' + cs.record.d + 'D ' + cs.record.l +
+      'L</b></div>' +
+      '<div class="kv"><span>Win rate</span><b class="green">' + cs.winPct + '%</b></div>' +
+      '<div class="kv"><span>Goals</span><span>' + cs.record.gf + ' for · ' + cs.record.ga + ' against</span></div>' +
+      (cs.legend ? '<div class="kv"><span>Club legend</span><span>' + esc(cs.legend.name) + ' — ' +
+        cs.legend.goals + 'g in ' + cs.legend.apps + ' apps</span></div>' : '') +
+      '<div style="height:12px"></div>' +
+      '<button class="btn wide" data-careercard="1">🖼 Create shareable career card</button></div>';
   } else if (tab === 'history') {
     html += '<div class="card"><h3>Past seasons</h3>';
     var hist = (S.history || []).slice().reverse();
@@ -753,7 +958,17 @@ function showReport() {
   if (!box || box.dataset.done) return;
   box.dataset.done = '1';
   var st = m.sim.stats;
-  var html = '<div class="card" style="margin-top:14px"><h3>Match report</h3>' +
+  var html = '';
+  if (m.res.comp === 'cup' && m.res.round === 3) {
+    html += '<div class="card" style="margin-top:14px"><h3>First leg</h3>' +
+      '<p class="muted small" style="margin:0">The tie is decided over two legs — the return fixture settles it.</p></div>';
+  }
+  if (m.res.agg) {
+    html += '<div class="card" style="margin-top:14px"><h3>Aggregate</h3>' +
+      '<p style="margin:0; font-size:20px; font-weight:900">' + esc(m.res.agg) +
+      (m.res.pens ? ' <span class="dim small">(pens ' + esc(m.res.pens) + ')</span>' : '') + '</p></div>';
+  }
+  html += '<div class="card" style="margin-top:14px"><h3>Match report</h3>' +
     statRow('possession', st.possH, st.possA, function (v) { return v + '%'; }) +
     statRow('shots', st.shotsH, st.shotsA) +
     statRow('on target', st.onTargetH, st.onTargetA) +
@@ -834,6 +1049,94 @@ function ceremony() {
   openSheet(html);
 }
 
+/* ---------------- career card (canvas → share/save) ---------------- */
+
+function careerCardSheet() {
+  var cs = E.careerSummary(S);
+  openSheet('<div class="grabber"></div><h2>Career card</h2>' +
+    '<canvas id="careerCanvas" width="1000" height="620"></canvas>' +
+    '<div style="height:12px"></div><div class="row">' +
+    '<button class="btn grow" data-savecard="1">⬇ Save image</button>' +
+    '<button class="btn ghost" data-act="closeModal">Close</button></div>');
+  var cv = $('careerCanvas');
+  if (!cv || !cv.getContext) return;
+  var x = cv.getContext('2d');
+  var W = 1000, H = 620;
+  var grad = x.createLinearGradient(0, 0, W, H);
+  grad.addColorStop(0, cs.club.color); grad.addColorStop(1, cs.club.color2);
+  x.fillStyle = '#0a120d'; x.fillRect(0, 0, W, H);
+  x.fillStyle = grad; x.globalAlpha = 0.28; x.fillRect(0, 0, W, H); x.globalAlpha = 1;
+  // pitch rings
+  x.strokeStyle = 'rgba(126,240,170,0.18)'; x.lineWidth = 3;
+  x.beginPath(); x.arc(W / 2, H + 160, 330, Math.PI, 2 * Math.PI); x.stroke();
+  x.beginPath(); x.arc(W / 2, H + 160, 250, Math.PI, 2 * Math.PI); x.stroke();
+  // crest
+  x.fillStyle = grad;
+  x.beginPath();
+  if (x.roundRect) x.roundRect(60, 60, 130, 130, 34); else x.rect(60, 60, 130, 130);
+  x.fill();
+  x.fillStyle = '#fff'; x.font = '900 44px system-ui,sans-serif'; x.textAlign = 'center';
+  x.fillText(cs.club.short, 125, 143);
+  // header
+  x.textAlign = 'left'; x.fillStyle = '#eaf2ec';
+  x.font = '900 54px system-ui,sans-serif';
+  x.fillText(cs.club.name, 220, 122);
+  x.font = '600 26px system-ui,sans-serif'; x.fillStyle = '#9db3a4';
+  x.fillText('Manager career · Season ' + cs.seasons, 220, 165);
+  // record row
+  var stats = [[cs.record.w, 'WINS'], [cs.record.d, 'DRAWS'], [cs.record.l, 'LOSSES'], [cs.winPct + '%', 'WIN RATE']];
+  stats.forEach(function (s, i) {
+    var sx = 80 + i * 230;
+    x.fillStyle = '#eaf2ec'; x.font = '900 64px system-ui,sans-serif';
+    x.fillText(String(s[0]), sx, 305);
+    x.fillStyle = '#6d8374'; x.font = '700 22px system-ui,sans-serif';
+    x.fillText(s[1], sx, 340);
+  });
+  // trophies + legend
+  x.fillStyle = '#ffd479'; x.font = '700 30px system-ui,sans-serif';
+  x.fillText('🏆 ' + (cs.trophies.length ? cs.trophies.map(function (t) {
+    return t.name + ' (S' + t.season + ')';
+  }).join(' · ') : 'The cabinet awaits…'), 80, 420);
+  x.fillStyle = '#9db3a4'; x.font = '600 26px system-ui,sans-serif';
+  if (cs.legend) x.fillText('Club legend: ' + cs.legend.name + ' — ' + cs.legend.goals + ' goals in ' + cs.legend.apps + ' apps', 80, 470);
+  if (cs.bestFinish) x.fillText('Best league finish: ' + ordinal(cs.bestFinish), 80, 510);
+  x.fillText('Goals: ' + cs.record.gf + ' for · ' + cs.record.ga + ' against', 80, cs.bestFinish ? 550 : 510);
+  // footer
+  x.fillStyle = '#7ef0aa'; x.font = '900 30px system-ui,sans-serif';
+  x.textAlign = 'right'; x.fillText('⚽ BALLRZ', W - 60, H - 45);
+}
+
+function saveCareerCard() {
+  var cv = $('careerCanvas');
+  if (!cv || !cv.toDataURL) return;
+  var a = document.createElement('a');
+  a.href = cv.toDataURL('image/png');
+  a.download = 'ballrz-career.png';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+/* ---------------- contract renewals ---------------- */
+
+function renewalsSheet() {
+  var list = S.pendingRenewals || [];
+  if (!list.length) { closeModal(); render(); return; }
+  var html = '<div class="grabber"></div><h2>Contract talks</h2>' +
+    '<p class="muted small">These deals have expired. Renew (two seasons, +15% wages) or let them walk on a free. ' +
+    'Anyone left undecided re-signs automatically on matchday.</p>';
+  list.forEach(function (pid) {
+    var p = P(pid);
+    if (!p) return;
+    var newWage = Math.round(E.weeklyWage(p) * 1.15 / 100) * 100;
+    html += '<div class="plrow"><span class="posbadge ' + p.pos + '">' + p.pos + '</span>' +
+      '<span class="grow"><span class="plname">' + esc(p.name) + '</span>' +
+      '<div class="plmeta">' + p.age + 'y · ovr ' + E.overall(p) + ' · asks ~' + money(newWage) + '/wk</div></span>' +
+      '<button class="btn tiny" data-renew="' + pid + '">Renew</button>' +
+      '<button class="btn tiny danger" data-release="' + pid + '">Release</button></div>';
+  });
+  html += '<div style="height:10px"></div><button class="btn ghost wide" data-act="closeModal">Decide later</button>';
+  openSheet(html);
+}
+
 var onboardSeed = null;
 function renderOnboarding() {
   $('topbar').style.display = 'none';
@@ -846,7 +1149,9 @@ function renderOnboarding() {
     'penalties, glory. Offline, deterministic, yours.</p>' +
     '<div class="row" style="justify-content:center; margin-top:12px; gap:8px">' +
     '<span class="chip">universe <b>' + esc(onboardSeed) + '</b></span>' +
-    '<button class="btn ghost tiny" data-act="reroll">🎲 new universe</button></div></div>';
+    '<button class="btn ghost tiny" data-act="reroll">🎲 new universe</button></div>' +
+    '<div style="margin-top:12px"><button class="btn ghost tiny" data-act="openLiveGuest">' +
+    '📡 Just here for real scores, tables &amp; news? Open the Live desk →</button></div></div>';
   html += '<div class="clubgrid">';
   preview.clubs.forEach(function (c) {
     var rating = Math.round(c.squad.reduce(function (s, id) { return s + E.overall(preview.players[id]); }, 0) / c.squad.length);
@@ -867,7 +1172,7 @@ function closeModal() { $('modal').classList.remove('on'); }
 /* ---------------- events (one delegated listener) ---------------- */
 
 document.addEventListener('click', function (ev) {
-  var t = ev.target && ev.target.closest ? ev.target.closest('[data-tab],[data-act],[data-form],[data-ment],[data-player],[data-sell],[data-lgtab],[data-moretab],[data-sqsort],[data-mktpos],[data-negotiate],[data-offer],[data-counter],[data-choose],[data-speed],[data-rnav]') : null;
+  var t = ev.target && ev.target.closest ? ev.target.closest('[data-tab],[data-act],[data-form],[data-ment],[data-player],[data-sell],[data-lgtab],[data-moretab],[data-sqsort],[data-mktpos],[data-negotiate],[data-offer],[data-counter],[data-choose],[data-speed],[data-rnav],[data-livelg],[data-livetab],[data-ldate],[data-liverefresh],[data-renew],[data-release],[data-careercard],[data-savecard]') : null;
   if (!t) return;
   var d = t.dataset;
   if (d.tab) return setTab(d.tab);
@@ -896,6 +1201,20 @@ document.addEventListener('click', function (ev) {
     return;
   }
   if (d.speed) { ticker.speed = Number(d.speed); return; }
+  if (d.livelg) { liveUI.league = d.livelg; liveUI.dayOffset = 0; render(); return; }
+  if (d.livetab) { liveUI.tab = d.livetab; render(); return; }
+  if (d.ldate) { liveUI.dayOffset += Number(d.ldate); render(); return; }
+  if (d.liverefresh) { render(); loadLive(true); return; }
+  if (d.careercard) return careerCardSheet();
+  if (d.savecard) return saveCareerCard();
+  if (d.renew) {
+    try { S = E.renewContract(S, d.renew); save(); renewalsSheet(); } catch (e) { alert(e.message); }
+    return;
+  }
+  if (d.release) {
+    try { S = E.releasePlayer(S, d.release); save(); renewalsSheet(); } catch (e) { alert(e.message); }
+    return;
+  }
   if (d.rnav) {
     var keys = Object.keys(leagueResults().reduce(function (acc, r) { acc[r.round] = 1; return acc; }, {}))
       .map(Number).sort(function (a, b) { return a - b; });
@@ -909,7 +1228,15 @@ document.addEventListener('click', function (ev) {
   if (d.act === 'closeMatch') { $('matchOverlay').classList.remove('on'); render(); return; }
   if (d.act === 'closeModal') return closeModal();
   if (d.act === 'endseason') return ceremony();
-  if (d.act === 'newseason') { S = E.endSeason(S); save(); closeModal(); render(); return; }
+  if (d.act === 'newseason') {
+    S = E.endSeason(S); save();
+    if ((S.pendingRenewals || []).length) { renewalsSheet(); render(); }
+    else { closeModal(); render(); }
+    return;
+  }
+  if (d.act === 'renewals') return renewalsSheet();
+  if (d.act === 'openLiveGuest') { ui.guestLive = true; render(); return; }
+  if (d.act === 'backOnboard') { ui.guestLive = false; render(); return; }
   if (d.act === 'gotoLeague') { ui.leagueTab = 'table'; return setTab('league'); }
   if (d.act === 'reroll') { onboardSeed = 'ballrz-' + Math.random().toString(36).slice(2, 8); render(); return; }
   if (d.act === 'reset') {
@@ -928,6 +1255,13 @@ $('modal').addEventListener('click', function (ev) { if (ev.target === $('modal'
 
 S = load();
 render();
+
+// Debug/test hook: lets the harness fast-forward a career deterministically.
+window.__ballrz = {
+  E: E,
+  getState: function () { return S; },
+  setState: function (s) { S = s; save(); render(); },
+};
 
 if (navigator.serviceWorker && typeof navigator.serviceWorker.register === 'function') {
   navigator.serviceWorker.register('sw.js').catch(function () {});

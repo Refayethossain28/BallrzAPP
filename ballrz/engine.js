@@ -189,6 +189,7 @@
           var boost = (made < stars && pos !== 'GK' && k === 0) ? 8 : 0;
           if (boost) made++;
           var pl = genPlayer(r, pos, t.tier, boost);
+          pl.contract = 1 + Math.floor(r() * 4);   // seasons left on the deal
           pl.id = 'p' + (nextId++);
           pl.clubId = 'c' + (c + 1);
           players[pl.id] = pl;
@@ -460,11 +461,15 @@
     events.push({ min: 45, type: 'ht', score: goals.H + '–' + goals.A,
       text: 'Half-time: ' + home.club.short + ' ' + goals.H + '–' + goals.A + ' ' + away.club.short });
     half(46, 90, false);
+    // In a two-legged tie the first-leg score decides whether we go on:
+    // opts.agg carries each side's goals from the earlier leg.
+    var agg = opts.agg || { H: 0, A: 0 };
     var needsShootout = false;
-    if (opts.extraTime && goals.H === goals.A) {
-      events.push({ min: 90, type: 'et', text: 'Level after 90 — extra time!' });
+    if (opts.extraTime && goals.H + agg.H === goals.A + agg.A) {
+      events.push({ min: 90, type: 'et',
+        text: (agg.H || agg.A ? 'Level on aggregate after 90 — extra time!' : 'Level after 90 — extra time!') });
       half(91, 120, true);
-      if (goals.H === goals.A) needsShootout = true;
+      if (goals.H + agg.H === goals.A + agg.A) needsShootout = true;
     }
     events.push({ min: opts.extraTime && events.some(function (e) { return e.type === 'et'; }) ? 120 : 90,
       type: 'ft', score: goals.H + '–' + goals.A,
@@ -574,7 +579,9 @@
     return pairs;
   }
 
-  var CUP_ROUNDS = ['Preliminary', 'Round of 16', 'Quarter-final', 'Semi-final', 'Final'];
+  // The semi-final is played over two legs, like a proper cup semi should be.
+  var CUP_ROUNDS = ['Preliminary', 'Round of 16', 'Quarter-final',
+    'Semi-final 1st leg', 'Semi-final 2nd leg', 'Final'];
 
   /* ---------------- development, transfers, money ---------------- */
 
@@ -637,6 +644,21 @@
   }
 
   function sellPrice(p) { return Math.round(playerValue(p) * 0.9 / 25000) * 25000; }
+
+  /* ---------------- contracts & wages ---------------- */
+
+  // What a player costs you every matchday, derived from his market value.
+  // Renewals compound a raise into wageMul — good players get expensive to keep.
+  function weeklyWage(p) {
+    var base = Math.max(2000, Math.round(playerValue(p) * 0.004 / 500) * 500);
+    return Math.round(base * (p.wageMul || 1) / 100) * 100;
+  }
+
+  function wageBill(players) {
+    var s = 0;
+    for (var i = 0; i < players.length; i++) s += weeklyWage(players[i]);
+    return s;
+  }
 
   // Gate money for a home game: a bigger club, a better mood, a fuller ground.
   function matchdayIncome(club, tablePos) {
@@ -703,8 +725,8 @@
   /* ---------------- the career: one pure state machine ---------------- */
 
   function buildCalendar(nLeagueRounds) {
-    // Cup dates land after league rounds 7, 14, 21, 28 and 34.
-    var cupAfter = { 7: 0, 14: 1, 21: 2, 28: 3, 34: 4 };
+    // Cup dates land after league rounds 7, 14, 21, 26, 30 and 34.
+    var cupAfter = { 7: 0, 14: 1, 21: 2, 26: 3, 30: 4, 34: 5 };
     var cal = [];
     for (var i = 0; i < nLeagueRounds; i++) {
       cal.push({ type: 'league', round: i });
@@ -832,6 +854,22 @@
     }
     tickBans();
 
+    // Renewal offers left on the desk get signed on default terms — the squad
+    // never walks out mid-season because you forgot the paperwork.
+    if (s.pendingRenewals && s.pendingRenewals.length) {
+      s.pendingRenewals.forEach(function (pid) {
+        var p = s.league.players[pid];
+        if (p) { p.contract = 2; p.wageMul = Math.round((p.wageMul || 1) * 1.15 * 100) / 100; }
+      });
+      s.pendingRenewals = [];
+    }
+
+    // Payday: your club pays its wage bill every matchday. (AI club books are
+    // abstracted — they always make payroll.)
+    var myClubRef = byId[s.myClubId];
+    s.lastWageBill = wageBill(myClubRef.squad.map(function (id) { return s.league.players[id]; }));
+    myClubRef.budget -= s.lastWageBill;
+
     if (entry.type === 'league') {
       var games = s.fixtures[entry.round];
       var tablePosBefore = {};
@@ -857,42 +895,71 @@
         }
       });
     } else {
-      // Cup day. Build this round's ties from the draw or the survivors.
-      var ties;
+      // Cup day. Single-leg rounds settle on the night (extra time + pens);
+      // the semi-final is two legs, decided on aggregate after the second.
+      var cround = s.cup.round;
       var ids = s.cup.alive;
-      if (s.cup.round === 0) ties = s.cup.draw.prelim;
-      else ties = cupPairs(s.seed + ':s' + s.season, CUP_ROUNDS[s.cup.round], ids);
-      var winners = s.cup.round === 0 ? s.cup.draw.byes.slice() : [];
+      var ties, legOne = null;
+      if (cround === 0) ties = s.cup.draw.prelim;
+      else if (cround === 4) {
+        // Second legs: reverse the first-leg fixtures.
+        legOne = s.cup.sf.leg1;
+        ties = s.cup.sf.pairs.map(function (t) { return { home: t.away, away: t.home }; });
+      } else {
+        ties = cupPairs(s.seed + ':s' + s.season, CUP_ROUNDS[cround], ids);
+        if (cround === 3) s.cup.sf = { pairs: ties, leg1: [] };
+      }
+      var winners = cround === 0 ? s.cup.draw.byes.slice() : [];
       var tieResults = [];
-      ties.forEach(function (t) {
+      ties.forEach(function (t, ti) {
         var home = byId[t.home], away = byId[t.away];
-        var seed = s.seed + ':s' + s.season + ':C' + s.cup.round + ':' + t.home + 'v' + t.away;
-        var played = playTie(s, seed, home, away, { extraTime: true });
+        var seed = s.seed + ':s' + s.season + ':C' + cround + ':' + t.home + 'v' + t.away;
+        var opts = cround === 3 ? {}   // a first leg is allowed to end level
+          : cround === 4 ? { extraTime: true, agg: { H: legOne[ti].ag, A: legOne[ti].hg } }
+          : { extraTime: true };
+        var played = playTie(s, seed, home, away, opts);
         var book = applyMatchBookkeeping(s, home, away, played);
-        var winId = played.sim.homeGoals > played.sim.awayGoals ? t.home
-          : played.sim.awayGoals > played.sim.homeGoals ? t.away
-          : (played.pens.winner === 'H' ? t.home : t.away);
-        winners.push(winId);
-        var res = { comp: 'cup', round: s.cup.round, home: t.home, away: t.away,
+        var res = { comp: 'cup', round: cround, home: t.home, away: t.away,
           hg: played.sim.homeGoals, ag: played.sim.awayGoals,
-          pens: played.pens ? played.pens.hScore + '–' + played.pens.aScore : null,
-          winner: winId };
+          pens: played.pens ? played.pens.hScore + '–' + played.pens.aScore : null };
+        var winId = null, mineIn = home.id === s.myClubId || away.id === s.myClubId;
+        if (cround === 3) {
+          s.cup.sf.leg1.push(res);
+        } else if (cround === 4) {
+          var hAgg = played.sim.homeGoals + legOne[ti].ag;
+          var aAgg = played.sim.awayGoals + legOne[ti].hg;
+          winId = hAgg > aAgg ? t.home : aAgg > hAgg ? t.away
+            : (played.pens.winner === 'H' ? t.home : t.away);
+          res.agg = hAgg + '–' + aAgg;
+        } else {
+          winId = played.sim.homeGoals > played.sim.awayGoals ? t.home
+            : played.sim.awayGoals > played.sim.homeGoals ? t.away
+            : (played.pens.winner === 'H' ? t.home : t.away);
+        }
+        if (winId) { winners.push(winId); res.winner = winId; }
         tieResults.push(res);
-        if (home.id === s.myClubId || away.id === s.myClubId) {
+        if (mineIn) {
           myMatch = { res: res, sim: played.sim, pens: played.pens, motm: book.motm,
             homeClub: { id: home.id, name: home.name, short: home.short, color: home.color },
             awayClub: { id: away.id, name: away.name, short: away.short, color: away.color } };
-          if (winId !== s.myClubId) s.cup.myOut = true;
-          s.news.unshift({ season: s.season,
-            text: (winId === s.myClubId ? 'Cup progress! ' : 'Cup exit. ') +
-              byId[winId].name + ' win the ' + CUP_ROUNDS[s.cup.round].toLowerCase() +
-              (res.pens ? ' on penalties (' + res.pens + ')' : '') + '.' });
+          if (cround === 3) {
+            s.news.unshift({ season: s.season,
+              text: 'Semi-final, first leg: ' + home.short + ' ' + res.hg + '–' + res.ag + ' ' +
+                away.short + '. All to play for in the return.' });
+          } else {
+            if (winId !== s.myClubId) s.cup.myOut = true;
+            s.news.unshift({ season: s.season,
+              text: (winId === s.myClubId ? 'Cup progress! ' : 'Cup exit. ') +
+                byId[winId].name + ' win the ' + CUP_ROUNDS[cround].toLowerCase() +
+                (res.agg ? ' ' + res.agg + ' on aggregate' : '') +
+                (res.pens ? ' on penalties (' + res.pens + ')' : '') + '.' });
+          }
         }
       });
-      s.cup.ties.push({ name: CUP_ROUNDS[s.cup.round], results: tieResults });
-      s.cup.alive = winners;
+      s.cup.ties.push({ name: CUP_ROUNDS[cround], results: tieResults });
+      if (cround !== 3) s.cup.alive = winners;   // first legs eliminate nobody
       s.cup.round++;
-      if (s.cup.round >= CUP_ROUNDS.length || winners.length === 1) {
+      if (s.cup.round >= CUP_ROUNDS.length || (cround !== 3 && winners.length === 1)) {
         s.cup.winnerId = winners[0];
         s.news.unshift({ season: s.season,
           text: '🏆 ' + byId[winners[0]].name + ' lift the Ballrz Cup!' });
@@ -925,6 +992,26 @@
     s.history.push({ season: s.season, championId: champion.id, myPos: myPos,
       cupWinnerId: s.cup.winnerId, awards: s.awards });
 
+    // The career ledger: my club's all-time record and my players' all-time
+    // numbers, folded in before the season sheet is wiped.
+    s.careerRecord = s.careerRecord || { p: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0 };
+    s.results.forEach(function (r) {
+      var mineH = r.home === s.myClubId, mineA = r.away === s.myClubId;
+      if (!mineH && !mineA) return;
+      var f = mineH ? r.hg : r.ag, a = mineH ? r.ag : r.hg;
+      s.careerRecord.p++; s.careerRecord.gf += f; s.careerRecord.ga += a;
+      if (f > a) s.careerRecord.w++; else if (f < a) s.careerRecord.l++; else s.careerRecord.d++;
+    });
+    s.careerTotals = s.careerTotals || {};
+    byId[s.myClubId].squad.forEach(function (id) {
+      var st = s.playerStats[id];
+      if (!st || !st.apps) return;
+      var tot = s.careerTotals[id] || (s.careerTotals[id] = {
+        name: s.league.players[id].name, apps: 0, goals: 0, assists: 0 });
+      tot.name = s.league.players[id].name;
+      tot.apps += st.apps; tot.goals += st.goals || 0; tot.assists += st.assists || 0;
+    });
+
     // Development + retirement, minutes-weighted; academy kids fill the gaps.
     var totalApps = s.calendar.filter(function (e) { return e.type === 'league'; }).length;
     var devR = rng(s.seed + ':dev:s' + s.season);
@@ -940,7 +1027,19 @@
           }
           return;
         }
-        s.league.players[id] = developPlayer(p, devR, share);
+        var grown = developPlayer(p, devR, share);
+        // A season ticks off every deal. AI boards renew quietly; your
+        // expiring players land on your desk as renewal decisions.
+        grown.contract = Math.max(0, (grown.contract == null ? 2 : grown.contract) - 1);
+        if (grown.contract === 0) {
+          if (c.id === s.myClubId) {
+            s.pendingRenewals = s.pendingRenewals || [];
+            s.pendingRenewals.push(id);
+          } else {
+            grown.contract = 1 + Math.floor(devR() * 3);
+          }
+        }
+        s.league.players[id] = grown;
         kept.push(id);
       });
       c.squad = kept;
@@ -951,6 +1050,7 @@
         while (counts[pos] < SQUAD_SHAPE[pos]) {
           var kid = genPlayer(devR, pos, Math.min(4, c.tier + 1), 0);
           kid.age = 17 + Math.floor(devR() * 2);
+          kid.contract = 2 + Math.floor(devR() * 2);
           kid.id = 'p' + (hashStr(s.seed + c.id + pos + counts[pos] + 's' + s.season) % 1e9 + 1e9);
           kid.clubId = c.id;
           s.league.players[kid.id] = kid;
@@ -992,6 +1092,7 @@
     seller.squad = seller.squad.filter(function (id) { return id !== playerId; });
     me.squad.push(playerId);
     p.clubId = me.id;
+    p.contract = 3;   // a new signing gets a fresh three-season deal
     s.news.unshift({ season: s.season,
       text: '✍️ ' + p.name + ' joins ' + me.name + ' from ' + seller.name + ' for ' + fmtMoney(price) + '.' });
     return s;
@@ -1020,6 +1121,208 @@
     return s;
   }
 
+  // Sign an expiring player to fresh terms: two more seasons, a 15% raise.
+  function renewContract(state, playerId) {
+    var s = clone(state);
+    var p = s.league.players[playerId];
+    if (!p || p.clubId !== s.myClubId) throw new Error('not your player');
+    p.contract = 2;
+    p.wageMul = Math.round((p.wageMul || 1) * 1.15 * 100) / 100;
+    s.pendingRenewals = (s.pendingRenewals || []).filter(function (id) { return id !== playerId; });
+    s.news.unshift({ season: s.season,
+      text: '🖊 ' + p.name + ' signs a new two-season deal (' + fmtMoney(weeklyWage(p)) + '/wk).' });
+    return s;
+  }
+
+  // Let an expiring player walk — no fee, off the wage bill, same squad guards
+  // as a sale so you can never strip yourself below a matchday squad.
+  function releasePlayer(state, playerId) {
+    var s = clone(state);
+    var p = s.league.players[playerId];
+    var me = s.league.clubs.find(function (c) { return c.id === s.myClubId; });
+    if (!p || p.clubId !== me.id) throw new Error('not your player');
+    if (me.squad.length <= 14) throw new Error('squad too thin to release (min 14)');
+    var counts = { GK: 0, DF: 0, MF: 0, FW: 0 };
+    me.squad.forEach(function (id) { counts[s.league.players[id].pos]++; });
+    if (p.pos === 'GK' && counts.GK <= 1) throw new Error('cannot release your only keeper');
+    me.squad = me.squad.filter(function (id) { return id !== playerId; });
+    var buyer = s.league.clubs.filter(function (c) { return c.id !== me.id && c.squad.length < 25; })
+      .sort(function (a, b) { return b.budget - a.budget; })[0];
+    buyer.squad.push(playerId);
+    p.clubId = buyer.id;
+    p.contract = 2; p.wageMul = 1;
+    s.pendingRenewals = (s.pendingRenewals || []).filter(function (id) { return id !== playerId; });
+    s.news.unshift({ season: s.season,
+      text: '👋 ' + p.name + ' leaves on a free; ' + buyer.name + ' snap him up.' });
+    return s;
+  }
+
+  // Everything the shareable career card needs, in one pure read.
+  function careerSummary(state) {
+    var rec = clone(state.careerRecord || { p: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0 });
+    state.results.forEach(function (r) {
+      var mineH = r.home === state.myClubId, mineA = r.away === state.myClubId;
+      if (!mineH && !mineA) return;
+      var f = mineH ? r.hg : r.ag, a = mineH ? r.ag : r.hg;
+      rec.p++; rec.gf += f; rec.ga += a;
+      if (f > a) rec.w++; else if (f < a) rec.l++; else rec.d++;
+    });
+    // Fold the running season into the all-time scorer chart.
+    var totals = {};
+    var id;
+    var stored = state.careerTotals || {};
+    for (id in stored) totals[id] = clone(stored[id]);
+    var me = state.league.clubs.find(function (c) { return c.id === state.myClubId; });
+    me.squad.forEach(function (pid) {
+      var st = state.playerStats[pid];
+      if (!st || !st.apps) return;
+      var t = totals[pid] || (totals[pid] = { name: state.league.players[pid].name, apps: 0, goals: 0, assists: 0 });
+      t.apps += st.apps; t.goals += st.goals || 0; t.assists += st.assists || 0;
+    });
+    var legend = null;
+    for (id in totals) {
+      if (!legend || totals[id].goals > totals[legend].goals) legend = id;
+    }
+    var bestFinish = null;
+    (state.history || []).forEach(function (h) {
+      if (bestFinish == null || h.myPos < bestFinish) bestFinish = h.myPos;
+    });
+    return {
+      club: { name: me.name, short: me.short, color: me.color, color2: me.color2 },
+      seasons: state.season,
+      record: rec,
+      winPct: rec.p ? Math.round(rec.w / rec.p * 100) : 0,
+      trophies: clone(state.trophies || []),
+      bestFinish: bestFinish,
+      legend: legend ? clone(totals[legend]) : null,
+    };
+  }
+
+  /* ---------------- the Live desk: real-world football data ----------------
+   * Ballrz doubles as a football information app. These helpers build the
+   * request URLs for ESPN's public (keyless, CORS-open) JSON API and turn its
+   * payloads into small flat shapes the UI can render — all pure, so the
+   * parsers are pinned by recorded-shape fixtures in the test suite. Network
+   * I/O stays in index.html; nothing here fetches.
+   */
+
+  var LIVE_LEAGUES = [
+    { id: 'eng.1', name: 'Premier League', flag: '🏴󠁧󠁢󠁥󠁮󠁧󠁿' },
+    { id: 'esp.1', name: 'La Liga', flag: '🇪🇸' },
+    { id: 'ita.1', name: 'Serie A', flag: '🇮🇹' },
+    { id: 'ger.1', name: 'Bundesliga', flag: '🇩🇪' },
+    { id: 'fra.1', name: 'Ligue 1', flag: '🇫🇷' },
+    { id: 'uefa.champions', name: 'Champions League', flag: '🏆' },
+  ];
+
+  var LIVE_BASE = 'https://site.api.espn.com/apis';
+
+  function liveScoreboardUrl(leagueId, yyyymmdd) {
+    return LIVE_BASE + '/site/v2/sports/soccer/' + encodeURIComponent(leagueId) +
+      '/scoreboard' + (yyyymmdd ? '?dates=' + encodeURIComponent(yyyymmdd) : '');
+  }
+  function liveStandingsUrl(leagueId) {
+    return LIVE_BASE + '/v2/sports/soccer/' + encodeURIComponent(leagueId) + '/standings';
+  }
+  function liveNewsUrl(leagueId) {
+    return LIVE_BASE + '/site/v2/sports/soccer/' + encodeURIComponent(leagueId) + '/news';
+  }
+
+  function arr(x) { return Array.isArray(x) ? x : []; }
+
+  // events[] → [{id, date, state, clock, home/away:{name,abbr,score,logo,winner}, scorers[]}]
+  function parseScoreboard(json) {
+    return arr(json && json.events).map(function (ev) {
+      var comp = arr(ev.competitions)[0] || {};
+      var side = { home: null, away: null };
+      arr(comp.competitors).forEach(function (c) {
+        var t = c.team || {};
+        var box = {
+          name: t.displayName || t.name || '?',
+          abbr: t.abbreviation || (t.displayName || '?').slice(0, 3).toUpperCase(),
+          score: c.score != null ? Number(c.score) : null,
+          logo: t.logo || (arr(t.logos)[0] || {}).href || null,
+          winner: c.winner === true,
+        };
+        if (c.homeAway === 'home') side.home = box; else if (c.homeAway === 'away') side.away = box;
+      });
+      var status = (ev.status || {}).type || {};
+      var scorers = [];
+      arr(comp.details).forEach(function (d) {
+        if (!d.scoringPlay) return;
+        var who = (arr(d.athletesInvolved)[0] || {}).displayName;
+        if (!who) return;
+        scorers.push({
+          name: who + (d.ownGoal ? ' (og)' : d.penaltyKick ? ' (pen)' : ''),
+          minute: (d.clock && d.clock.displayValue) || '',
+          home: !!(d.team && side.home && String(d.team.id) === String((arr(comp.competitors).find(function (c) { return c.homeAway === 'home'; }) || { team: {} }).team.id)),
+        });
+      });
+      return {
+        id: ev.id || '',
+        date: ev.date || '',
+        state: status.state || 'pre',           // 'pre' | 'in' | 'post'
+        clock: status.shortDetail || status.detail || '',
+        home: side.home, away: side.away,
+        scorers: scorers,
+      };
+    }).filter(function (m) { return m.home && m.away; });
+  }
+
+  // standings → [{pos, team, abbr, logo, p, w, d, l, gf, ga, gd, pts, note}]
+  function parseStandings(json) {
+    var root = (arr(json && json.children)[0] || {}).standings || (json || {}).standings || {};
+    return arr(root.entries).map(function (e) {
+      var by = {};
+      arr(e.stats).forEach(function (st) {
+        if (st.name) by[st.name] = st.value != null ? st.value : st.displayValue;
+        if (st.abbreviation && by[st.abbreviation] == null) {
+          by[st.abbreviation] = st.value != null ? st.value : st.displayValue;
+        }
+      });
+      var t = e.team || {};
+      var n = function (k, alt) { var v = by[k] != null ? by[k] : by[alt]; return v == null ? 0 : Number(v); };
+      var row = {
+        pos: n('rank', 'R') || null,
+        team: t.displayName || t.name || '?',
+        abbr: t.abbreviation || (t.displayName || '?').slice(0, 3).toUpperCase(),
+        logo: (arr(t.logos)[0] || {}).href || null,
+        p: n('gamesPlayed', 'GP'), w: n('wins', 'W'), d: n('ties', 'D'), l: n('losses', 'L'),
+        gf: n('pointsFor', 'F'), ga: n('pointsAgainst', 'A'),
+        gd: n('pointDifferential', 'PD'), pts: n('points', 'P'),
+        note: (e.note && e.note.description) || null,
+      };
+      return row;
+    }).sort(function (a, b) {
+      return (a.pos || 99) - (b.pos || 99) || b.pts - a.pts || b.gd - a.gd;
+    });
+  }
+
+  // news → [{title, desc, published, link, image}]
+  function parseNews(json) {
+    return arr(json && json.articles).map(function (a) {
+      return {
+        title: a.headline || a.title || '',
+        desc: a.description || '',
+        published: a.published || '',
+        link: (a.links && a.links.web && a.links.web.href) || '',
+        image: (arr(a.images)[0] || {}).url || null,
+      };
+    }).filter(function (a) { return a.title; });
+  }
+
+  // "31'" ago-style stamp for cached data, injected clock for testability.
+  function agoLabel(thenISO, nowMs) {
+    var t = Date.parse(thenISO || '');
+    if (!isFinite(t)) return '';
+    var mins = Math.max(0, Math.round((nowMs - t) / 60000));
+    if (mins < 1) return 'just now';
+    if (mins < 60) return mins + 'm ago';
+    var h = Math.round(mins / 60);
+    if (h < 48) return h + 'h ago';
+    return Math.round(h / 24) + 'd ago';
+  }
+
   /* ---------------- exports ---------------- */
 
   var Ballrz = {
@@ -1043,10 +1346,18 @@
     askingPrice: askingPrice, offerResult: offerResult, transferList: transferList,
     sellPrice: sellPrice, matchdayIncome: matchdayIncome, seasonPrize: seasonPrize,
     awards: awards, newsForResult: newsForResult,
+    weeklyWage: weeklyWage, wageBill: wageBill,
     // the career state machine
     newGame: newGame, advanceRound: advanceRound, endSeason: endSeason,
     buyPlayer: buyPlayer, sellPlayer: sellPlayer,
+    renewContract: renewContract, releasePlayer: releasePlayer,
+    careerSummary: careerSummary,
     availablePlayers: availablePlayers, clubRating: clubRating,
+    // the Live desk (real-world data: URL builders + pure payload parsers)
+    LIVE_LEAGUES: LIVE_LEAGUES,
+    liveScoreboardUrl: liveScoreboardUrl, liveStandingsUrl: liveStandingsUrl, liveNewsUrl: liveNewsUrl,
+    parseScoreboard: parseScoreboard, parseStandings: parseStandings, parseNews: parseNews,
+    agoLabel: agoLabel,
   };
 
   root.Ballrz = Ballrz;
