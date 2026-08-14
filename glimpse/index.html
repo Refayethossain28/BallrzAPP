@@ -45,6 +45,12 @@
     border:1px solid var(--line2); border-radius:999px; padding:5px 11px; background:var(--card)}
   .chip.accent{color:#fff; background:var(--accent); border-color:var(--accent); font-weight:600}
   .chip:active{transform:scale(0.97)}
+  .chip .dot{width:7px; height:7px; border-radius:50%; background:var(--accent); display:none}
+  .chip .dot.show{display:inline-block}
+  .actrow{display:flex; gap:10px; align-items:baseline; padding:11px 2px; border-bottom:1px solid var(--line); font-size:14.5px}
+  .actrow:last-child{border-bottom:none}
+  .actrow .when{flex:none; font-size:12px; color:var(--ink3)}
+  .actrow.unread{font-weight:600}
 
   nav.tabs{position:fixed; bottom:0; left:0; right:0; z-index:40;
     background:var(--paper); border-top:1px solid var(--line);
@@ -248,6 +254,7 @@
     <div class="logo"><img src="icon.svg" alt=""> Glimpse</div>
     <div class="spacer"></div>
     <button class="chip" data-action="open-search">Search</button>
+    <button class="chip" data-action="open-activity">Activity<span class="dot" id="activity-dot"></span></button>
     <button class="chip" id="chip-place" data-action="open-place">Set place</button>
   </header>
 
@@ -376,6 +383,18 @@
   </div>
 </div>
 
+<!-- ============ ACTIVITY SHEET ============ -->
+<div class="sheet-wrap" id="sheet-activity">
+  <div class="dim" data-action="close-sheets"></div>
+  <div class="sheet">
+    <div class="grab"></div>
+    <h3>Activity</h3>
+    <div class="kv" style="padding-top:0"><span class="k">Device alerts when the app is in the background</span>
+      <button class="chip" id="alerts-toggle" data-action="toggle-alerts">Off</button></div>
+    <div id="activity-list"></div>
+  </div>
+</div>
+
 <!-- ============ SEARCH SHEET ============ -->
 <div class="sheet-wrap" id="sheet-search">
   <div class="dim" data-action="close-sheets"></div>
@@ -456,6 +475,10 @@ function defaultState() {
     me: { id: 'me', name: '', handle: '', avatar: '🙂', place: null },
     glimpses: [],          // yours (cloud ones are merged in at render)
     passportCC: {},        // cc -> {flag, country} — windows genuinely looked through
+    activity: [],          // grouped in the Activity sheet; capped at 80
+    activityReadTs: 0,
+    alerts: false,
+    cloudSeenTs: 0,        // watermark for "posted near you" events
     cloud: { enabled: false, uid: '', status: 'off', email: '' }
   };
 }
@@ -469,6 +492,9 @@ function load() {
   if (!S.passportCC) S.passportCC = {};
   if (!S.glimpses) S.glimpses = [];
   if (!S.cloud) S.cloud = defaultState().cloud;
+  if (!S.activity) S.activity = [];
+  if (!S.activityReadTs) S.activityReadTs = 0;
+  if (!S.cloudSeenTs) S.cloudSeenTs = 0;
   // Devices that onboarded before demo accounts were removed still carry the
   // seeded posts in storage — purge them once here.
   var before = S.glimpses.length;
@@ -780,6 +806,7 @@ function render() {
   else if (TAB === 'you') renderYou();
   var plc = S.me.place;
   $('chip-place').textContent = plc ? (plc.flag ? plc.flag + ' ' : '') + plc.name : 'Set place';
+  updateActivityDot();
 }
 
 /* ============================ capture ============================ */
@@ -1040,6 +1067,125 @@ function openPerson(uid) {
   openSheet('sheet-person');
 }
 
+/* ============================ activity ============================ */
+// Events come from two live sources: reactions landing on your own posts
+// (diffed against what each post last saw) and new posts close to your
+// window. The engine groups them into humane lines; a dot on the header
+// chip marks unread, and optional device alerts fire when the app is
+// hidden. No polling — everything rides the existing live listeners.
+function updateActivityDot() {
+  var dot = $('activity-dot');
+  if (!dot) return;
+  dot.className = E.unreadActivity(S.activity, S.activityReadTs) > 0 ? 'dot show' : 'dot';
+}
+
+function addActivity(events) {
+  if (!events.length) return;
+  S.activity = events.concat(S.activity).slice(0, 80);
+  save();
+  updateActivityDot();
+  try {
+    if (S.alerts && typeof Notification !== 'undefined' && Notification.permission === 'granted' &&
+        typeof document.hidden !== 'undefined' && document.hidden) {
+      var g = E.groupActivity(events, Date.now())[0];
+      if (g) new Notification('Glimpse', { body: g.text, icon: 'icon.svg' });
+    }
+  } catch (e) {}
+  render();
+}
+
+function actorName(uid) {
+  var u = personById('c:' + uid);
+  return u ? u.name : 'Someone';
+}
+
+// Fetch an unknown actor's profile once, then patch their name into any
+// stored events so the sheet stops saying "Someone".
+function resolveActor(uid) {
+  if (personById('c:' + uid) || !FB.db) return;
+  FB.db.collection('glimpse_users').doc(uid).get().then(function (doc) {
+    if (!doc.exists) return;
+    addCloudUser(uid, doc.data() || {});
+    var name = actorName(uid);
+    for (var i = 0; i < S.activity.length; i++) {
+      if (S.activity[i].actorId === uid) S.activity[i].actorName = name;
+    }
+    save();
+    if ($('sheet-activity').className.indexOf('show') !== -1) renderActivity(false);
+  }).catch(function () {});
+}
+
+function renderActivity(markRead) {
+  var groups = E.groupActivity(S.activity, Date.now());
+  var h = '';
+  for (var i = 0; i < groups.length && i < 30; i++) {
+    var g = groups[i];
+    var unread = g.latestTs > (S.activityReadTs || 0);
+    h += '<div class="actrow' + (unread ? ' unread' : '') + '"><span style="flex:1">' + esc(g.text) + '</span>' +
+         '<span class="when">' + esc(E.timeAgo(g.latestTs, Date.now())) + '</span></div>';
+  }
+  $('activity-list').innerHTML = h ||
+    '<div class="empty"><span class="big">All quiet</span>Reactions to your posts and windows opening near you will land here.</div>';
+  var t = $('alerts-toggle');
+  t.textContent = S.alerts ? 'On' : 'Off';
+  t.className = S.alerts ? 'chip accent' : 'chip';
+  if (markRead) { S.activityReadTs = Date.now(); save(); updateActivityDot(); }
+}
+
+function openActivity() {
+  renderActivity(true);
+  openSheet('sheet-activity');
+}
+
+function toggleAlerts() {
+  if (S.alerts) { S.alerts = false; save(); renderActivity(false); return; }
+  try {
+    if (typeof Notification === 'undefined') { toast('This browser has no notifications.'); return; }
+    if (Notification.permission === 'granted') { S.alerts = true; save(); renderActivity(false); return; }
+    Notification.requestPermission().then(function (perm) {
+      S.alerts = perm === 'granted';
+      save();
+      renderActivity(false);
+      if (perm !== 'granted') toast('Notifications are blocked for this site.');
+    });
+  } catch (e) { toast('This browser has no notifications.'); }
+}
+
+// Reactions on your own posts: one live query over your moments; each doc
+// diffs against the reactions that post last saw.
+function subscribeMine() {
+  if (!FB.db) return;
+  if (FB.unsubMine) { try { FB.unsubMine(); } catch (e) {} }
+  FB.unsubMine = FB.db.collection('glimpse_moments').where('authorUid', '==', S.cloud.uid)
+    .onSnapshot(function (snap) {
+      var fresh = [];
+      snap.forEach(function (doc) {
+        var d = doc.data() || {};
+        var g = null;
+        for (var i = 0; i < S.glimpses.length; i++) {
+          if (S.glimpses[i].cloudId === doc.id) { g = S.glimpses[i]; break; }
+        }
+        if (!g) return; // posted from another device — nothing local to annotate
+        var prev = g.remoteReactions || {};
+        var cur = d.reactions || {};
+        for (var uid in cur) {
+          if (uid === S.cloud.uid) continue;
+          if (prev[uid] !== cur[uid]) {
+            fresh.push({ type: 'react', targetId: doc.id, targetLabel: (g.caption || '').slice(0, 32),
+                         actorId: uid, actorName: actorName(uid), emoji: cur[uid], ts: Date.now() });
+            resolveActor(uid);
+          }
+        }
+        g.remoteReactions = cur;
+        var mine = g.reactions && g.reactions.me;
+        g.reactions = { me: mine || null };
+        for (var u2 in cur) if (u2 !== S.cloud.uid) g.reactions['c:' + u2] = cur[u2];
+      });
+      save();
+      if (fresh.length) addActivity(fresh); else render();
+    }, function () {});
+}
+
 /* ============================ why receipts ============================ */
 function openWhy(gid) {
   var item = null;
@@ -1086,7 +1232,7 @@ function resetAll() {
  * unique handle per account (claimed in glimpse_handles, enforced by the
  * security rules), moments in glimpse_moments. The demo world needs no
  * account and never leaves the device. */
-var FB = { app: null, db: null, auth: null, unsub: null, ready: null };
+var FB = { app: null, db: null, auth: null, unsub: null, unsubMine: null, ready: null };
 var FB_SDK = 'https://www.gstatic.com/firebasejs/9.23.0/';
 function loadScript(src) {
   return new Promise(function (resolve, reject) {
@@ -1203,6 +1349,7 @@ function accountReady(user, email) {
   S.cloud = { enabled: true, uid: user.uid, status: 'on', email: email || (user.email || '') };
   save();
   subscribeCloud();
+  subscribeMine();
   closeSheets();
   render();
 }
@@ -1216,6 +1363,7 @@ function forgotPassword() {
 }
 function signOutCloud() {
   if (FB.unsub) { try { FB.unsub(); } catch (e) {} FB.unsub = null; }
+  if (FB.unsubMine) { try { FB.unsubMine(); } catch (e) {} FB.unsubMine = null; }
   if (FB.auth) { try { FB.auth.signOut(); } catch (e) {} }
   S.cloud = { enabled: false, uid: '', status: 'off' };
   CLOUD_GLIMPSES = [];
@@ -1230,6 +1378,7 @@ function resumeCloud() {
         S.cloud = { enabled: true, uid: user.uid, status: 'on', email: user.email || S.cloud.email || '' };
         save();
         subscribeCloud();
+        subscribeMine();
         render();
       } else {
         S.cloud = { enabled: false, uid: '', status: 'off' };
@@ -1268,7 +1417,24 @@ function subscribeCloud() {
         });
       });
       CLOUD_GLIMPSES = cloud;
-      render();
+      // "Posted near you": new posts within 150 km of your window, after the
+      // watermark so the initial backlog never floods the sheet.
+      var here = S.me.place;
+      var nearEvents = [];
+      var maxTs = S.cloudSeenTs || 0;
+      for (var n = 0; n < cloud.length; n++) {
+        var c = cloud[n];
+        if ((c.ts || 0) > maxTs) maxTs = c.ts;
+        if (!S.cloudSeenTs || !here) continue;
+        if ((c.ts || 0) > S.cloudSeenTs && E.haversineKm(here, c.place) < 150) {
+          // stamped with arrival time, not post time — unread means "new to you"
+          nearEvents.push({ type: 'near', targetId: 'near', actorId: c.authorId.replace(/^c:/, ''),
+                            actorName: c.authorName, placeName: c.place.name, ts: Date.now() });
+        }
+      }
+      S.cloudSeenTs = maxTs;
+      save();
+      if (nearEvents.length) addActivity(nearEvents); else render();
     }, function () { /* listen failed; stay local */ });
 }
 function cloudPublish(g) {
@@ -1347,6 +1513,8 @@ document.addEventListener('click', function (ev) {
   }
   else if (a === 'clear-filter') { FILTER = null; render(); }
   else if (a === 'open-search') openSearch();
+  else if (a === 'open-activity') openActivity();
+  else if (a === 'toggle-alerts') toggleAlerts();
   else if (a === 'open-person') openPerson(el.getAttribute('data-uid'));
   else if (a === 'person-filter') {
     FILTER = { kind: 'author', value: el.getAttribute('data-uid'), label: '@' + el.getAttribute('data-handle') };

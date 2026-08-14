@@ -383,6 +383,58 @@
     return false;
   }
 
+  /* ---------------- activity: quiet, grouped notifications ---------------- */
+  // Never forty pings. Events of the same kind on the same target within a
+  // 6-hour window collapse into one line — "Maya and 2 others reacted to
+  // your post" — newest first, each group carrying a human sentence.
+  function groupActivity(events, now) {
+    var sorted = (events || []).slice().sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); });
+    var groups = [], index = {};
+    for (var i = 0; i < sorted.length; i++) {
+      var e = sorted[i];
+      var key = e.type + ':' + (e.targetId || '');
+      var g = index[key];
+      if (g && g.latestTs - (e.ts || 0) < 6 * HOUR) {
+        if (g.actorIds.indexOf(e.actorId) === -1) {
+          g.actorIds.push(e.actorId);
+          g.actors.push(e.actorName || 'Someone');
+        }
+        g.count++;
+      } else {
+        g = { type: e.type, targetId: e.targetId || '', targetLabel: e.targetLabel || '',
+              actorIds: [e.actorId], actors: [e.actorName || 'Someone'],
+              latestTs: e.ts || 0, count: 1, emoji: e.emoji || '', placeName: e.placeName || '' };
+        index[key] = g;
+        groups.push(g);
+      }
+    }
+    for (var j = 0; j < groups.length; j++) groups[j].text = activityText(groups[j]);
+    return groups;
+  }
+
+  function activityText(g) {
+    var who = g.actors[0];
+    if (g.actors.length === 2) who = g.actors[0] + ' and ' + g.actors[1];
+    else if (g.actors.length > 2) who = g.actors[0] + ' and ' + (g.actors.length - 1) + ' others';
+    if (g.type === 'react') {
+      return who + ' reacted' + (g.actors.length === 1 && g.emoji ? ' ' + g.emoji : '') + ' to your post' +
+             (g.targetLabel ? ' “' + g.targetLabel + '”' : '');
+    }
+    if (g.type === 'near') {
+      if (g.actors.length === 1) return who + ' posted from ' + (g.placeName || 'near you') + ' — close to your window';
+      return who + ' posted near you';
+    }
+    return who + ' did something';
+  }
+
+  function unreadActivity(events, readTs) {
+    var n = 0;
+    for (var i = 0; i < (events || []).length; i++) {
+      if ((events[i].ts || 0) > (readTs || 0)) n++;
+    }
+    return n;
+  }
+
   /* ---------------- one honest prompt a day ---------------- */
   var PROMPTS = [
     'Show us your sky, exactly as it is right now.',
@@ -469,6 +521,7 @@
     worldFeed: worldFeed, feedHops: feedHops, nearFeed: nearFeed,
     worldMapCells: worldMapCells, sunStrip: sunStrip,
     passport: passport, horizonStage: horizonStage, dailyPrompt: dailyPrompt, searchUsers: searchUsers,
+    groupActivity: groupActivity, unreadActivity: unreadActivity,
     formatCount: formatCount, timeAgo: timeAgo,
     placeByName: placeByName
   };
