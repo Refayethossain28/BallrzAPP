@@ -3,7 +3,7 @@
  * Unit tests for glimpse/engine.js — the pure "what the world is seeing"
  * engine behind Glimpse (geo distance/bearing, solar time-of-day, the
  * globe-hopping world feed, the near feed, world map cells, the passport
- * and horizon stages, daily prompts and the seeded demo world).
+ * and horizon stages, people search and daily prompts).
  * Loaded in a vm sandbox (repo is type:module).
  * Run: node scripts/test-glimpse-logic.mjs
  */
@@ -327,30 +327,6 @@ test('rand01/hashStr are stable and spread', () => {
   const r = E.rand01('seed-x');
   assert.equal(r, E.rand01('seed-x'));
   assert.ok(r >= 0 && r < 1);
-});
-
-/* ---------- the demo world ---------- */
-test('seedWorld is deterministic and well-formed', () => {
-  const w1 = E.seedWorld('seed-1', NOW);
-  const w2 = E.seedWorld('seed-1', NOW);
-  deepEq(w1, w2);
-  assert.ok(w1.length >= E.PERSONAS.length * 2, 'at least two glimpses per persona');
-  for (const g of w1) {
-    assert.ok(g.place && isFinite(g.place.lat) && isFinite(g.place.lon), 'every glimpse has coordinates');
-    assert.ok(g.ts <= NOW && g.ts > NOW - 40 * HOUR, 'timestamps within the demo window');
-    assert.ok(E.validateGlimpse(g).ok, 'every demo glimpse passes validation');
-    assert.ok(['dawn', 'day', 'dusk', 'night'].includes(g.scene.tod), 'scene knows its sky');
-  }
-  const w3 = E.seedWorld('seed-2', NOW);
-  assert.notEqual(JSON.stringify(w1), JSON.stringify(w3), 'different seed, different world');
-});
-test('seedWorld spans many countries (the demo feed can actually hop)', () => {
-  const ccs = new Set(E.seedWorld('s', NOW).map((g) => g.place.cc));
-  assert.ok(ccs.size >= 8, `got ${ccs.size}`);
-});
-test('seedWorld sorts newest-first', () => {
-  const w = E.seedWorld('s', NOW);
-  for (let i = 1; i < w.length; i++) assert.ok(w[i - 1].ts >= w[i].ts);
 });
 
 /* ---------- run ---------- */

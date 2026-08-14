@@ -427,9 +427,9 @@
 
   function round1(x) { return Math.round(x * 10) / 10; }
 
-  /* ---------------- the demo world: alive out of the box ---------------- */
-  // Real coordinates for real cities — the demo personas live here, and the
-  // place picker offers them to people who'd rather not share GPS.
+  /* ---------------- places: real coordinates for real cities ---------------- */
+  // The place picker offers these to people who'd rather not share GPS, and
+  // geolocation snaps to the nearest one for its country and flag.
   var PLACES = [
     { name: 'Tokyo',          country: 'Japan',          cc: 'JP', flag: '🇯🇵', lat: 35.68,  lon: 139.69 },
     { name: 'London',         country: 'United Kingdom', cc: 'GB', flag: '🇬🇧', lat: 51.51,  lon: -0.13 },
@@ -458,100 +458,9 @@
     return null;
   }
 
-  var PERSONAS = [
-    { id: 'kenji',  name: 'Kenji',  handle: 'kenji_sees',   avatar: '🍜', city: 'Tokyo',
-      scenes: [
-        { emoji: '🌸', caption: 'The cherry tree by the station holds one last week of #spring. Everyone slows down under it.' },
-        { emoji: '🏮', caption: 'Lanterns coming on down the alley — the ramen queue is already round the corner. #streetfood' },
-        { emoji: '🚉', caption: 'Rush hour from the footbridge. A thousand people, not one collision. #citylife' } ] },
-    { id: 'amara',  name: 'Amara',  handle: 'amara_lagos',  avatar: '🎧', city: 'Lagos',
-      scenes: [
-        { emoji: '🌆', caption: 'Third Mainland Bridge doing its golden-hour thing. Traffic forgiven. #sunset' },
-        { emoji: '🥁', caption: 'Someone’s rehearsing talking drums next door and honestly? Free concert. #music' },
-        { emoji: '⛅', caption: 'Rainy-season clouds stacking up like they mean it. Ten minutes to shelter, tops. #weather' } ] },
-    { id: 'sofia',  name: 'Sofía',  handle: 'sofia_rio',    avatar: '🌊', city: 'Rio de Janeiro',
-      scenes: [
-        { emoji: '🏖️', caption: 'Ipanema before the crowds — just the sweepers, the surfers and me. #morning' },
-        { emoji: '⛰️', caption: 'Clouds snagged on the Sugarloaf again. The cable car just vanished into one. #view' },
-        { emoji: '⚽', caption: 'Beach football at dusk. The keeper is maybe seven years old and fearless. #futebol' } ] },
-    { id: 'oliver', name: 'Oliver', handle: 'ollie_ldn',    avatar: '☕', city: 'London',
-      scenes: [
-        { emoji: '🌧️', caption: 'Rain on the bus window, Thames the colour of strong tea. Perfect, honestly. #rain' },
-        { emoji: '🦊', caption: 'A fox just crossed the road like it pays council tax here. #urbanwildlife' },
-        { emoji: '🎡', caption: 'The Eye stopped turning for a second and the whole skyline held its breath. #skyline' } ] },
-    { id: 'priya',  name: 'Priya',  handle: 'priya_mum',    avatar: '🪁', city: 'Mumbai',
-      scenes: [
-        { emoji: '🌊', caption: 'Marine Drive at high tide — the sea keeps trying to join the traffic. #monsoon' },
-        { emoji: '🍋', caption: 'The lime seller stacked a pyramid taller than his cart. An engineer, truly. #market' },
-        { emoji: '🚂', caption: 'Local train doors open, whole city breathing in and out of them. #mumbai' } ] },
-    { id: 'freya',  name: 'Freyja', handle: 'freyja_north', avatar: '🧊', city: 'Reykjavík',
-      scenes: [
-        { emoji: '🌌', caption: 'Green curtains over the harbour tonight. Phone camera refuses to believe it. #aurora' },
-        { emoji: '☕', caption: 'Snow sideways, café windows steamed up, everyone pretending it’s cosy. It is. #winter' },
-        { emoji: '🐋', caption: 'A minke surfaced twice off the old pier and the whole dock went quiet. #whales' } ] },
-    { id: 'omar',   name: 'Omar',   handle: 'omar_cairo',   avatar: '🫖', city: 'Cairo',
-      scenes: [
-        { emoji: '🕌', caption: 'Sunset call to prayer rolling across the rooftops, one minaret at a time. #dusk' },
-        { emoji: '📚', caption: 'The book market spills further into the street every week. No complaints. #books' },
-        { emoji: '🐪', caption: 'From the ridge you can see the pyramids AND the traffic jam. Five thousand years apart. #giza' } ] },
-    { id: 'maya',   name: 'Maya',   handle: 'maya_nyc',     avatar: '🗽', city: 'New York',
-      scenes: [
-        { emoji: '🌇', caption: 'Manhattanhenge tonight — the sun lined up down 42nd like it booked the slot. #sunset' },
-        { emoji: '🎷', caption: 'Sax player on the platform playing to exactly nobody and absolutely everybody. #subway' },
-        { emoji: '🥯', caption: 'Saturday bagel line status: around the block, spirits high. #breakfast' } ] },
-    { id: 'jae',    name: 'Jae',    handle: 'jae_seoul',    avatar: '🎮', city: 'Seoul',
-      scenes: [
-        { emoji: '🌃', caption: 'Han river at night — every bridge a different colour, water keeping all of them. #nightview' },
-        { emoji: '🥟', caption: 'Steam from the mandu cart fogging the whole alley. Following my nose. #streetfood' },
-        { emoji: '🏔️', caption: 'Hiked Bukhansan before work. The city looks so quiet from up here. It is not. #hike' } ] },
-    { id: 'zola',   name: 'Zola',   handle: 'zola_kenya',   avatar: '🦒', city: 'Nairobi',
-      scenes: [
-        { emoji: '🦒', caption: 'Giraffes at the edge of the park with the skyline right behind them. Two worlds, one photo. #safari' },
-        { emoji: '🌩️', caption: 'The afternoon storm arrived on schedule. Kenyan rain has excellent time-keeping. #weather' },
-        { emoji: '🫘', caption: 'Coffee cherries drying in the sun up-country. Next year’s espresso, currently a carpet. #coffee' } ] },
-    { id: 'lucia',  name: 'Lucía',  handle: 'lucia_mx',     avatar: '🌮', city: 'Mexico City',
-      scenes: [
-        { emoji: '🎈', caption: 'Balloon seller crossing the Zócalo — a hundred colours against grey stone. #cdmx' },
-        { emoji: '🌋', caption: 'Popocatépetl puffing on the horizon, casual as a kettle. #volcano' },
-        { emoji: '🎺', caption: 'Mariachis warming up in Garibaldi. The trumpets have already won. #music' } ] },
-    { id: 'noa',    name: 'Noa',    handle: 'noa_sydney',   avatar: '🏄', city: 'Sydney',
-      scenes: [
-        { emoji: '🌊', caption: 'Dawn patrol at Bondi — glassy sets, water warmer than the air. #surf' },
-        { emoji: '🎭', caption: 'The Opera House sails catching the last light like they rehearsed it. #harbour' },
-        { emoji: '🦜', caption: 'Cockatoos are dismantling someone’s balcony furniture with real dedication. #birds' } ] }
-  ];
-
-  // Deterministic demo world: same seed + same clock ⇒ the same planet.
-  function seedWorld(seed, now) {
-    var glimpses = [];
-    for (var i = 0; i < PERSONAS.length; i++) {
-      var per = PERSONAS[i];
-      var place = placeByName(per.city);
-      var n = 2 + Math.floor(rand01(seed + ':n:' + per.id) * 2); // 2–3 each
-      for (var j = 0; j < n && j < per.scenes.length; j++) {
-        var ageH = 0.4 + rand01(seed + ':t:' + per.id + ':' + j) * 34; // spread over ~34h
-        var ts = Math.round(now - ageH * HOUR);
-        var scene = per.scenes[j];
-        glimpses.push({
-          id: 'demo-' + per.id + '-' + j,
-          demo: true,
-          authorId: per.id, authorName: per.name, authorHandle: per.handle, avatar: per.avatar,
-          caption: scene.caption,
-          tags: extractTags(scene.caption),
-          place: { name: place.name, country: place.country, cc: place.cc, flag: place.flag, lat: place.lat, lon: place.lon },
-          scene: { emoji: scene.emoji, tod: timeOfDayAt(place.lon, ts).key },
-          ts: ts,
-          reactions: {}
-        });
-      }
-    }
-    glimpses.sort(function (a, b) { return b.ts - a.ts || (a.id < b.id ? -1 : 1); });
-    return glimpses;
-  }
-
   var E = {
     SECOND: SECOND, MINUTE: MINUTE, HOUR: HOUR, DAY: DAY,
-    MAX_CAPTION: MAX_CAPTION, PLACES: PLACES, PERSONAS: PERSONAS, PROMPTS: PROMPTS, HORIZONS: HORIZONS,
+    MAX_CAPTION: MAX_CAPTION, PLACES: PLACES, PROMPTS: PROMPTS, HORIZONS: HORIZONS,
     hashStr: hashStr, rand01: rand01,
     escapeHTML: escapeHTML, renderCaption: renderCaption, extractTags: extractTags,
     normalizeHandle: normalizeHandle, validateAccount: validateAccount, validateGlimpse: validateGlimpse,
@@ -561,7 +470,7 @@
     worldMapCells: worldMapCells, sunStrip: sunStrip,
     passport: passport, horizonStage: horizonStage, dailyPrompt: dailyPrompt, searchUsers: searchUsers,
     formatCount: formatCount, timeAgo: timeAgo,
-    placeByName: placeByName, seedWorld: seedWorld
+    placeByName: placeByName
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = E;
