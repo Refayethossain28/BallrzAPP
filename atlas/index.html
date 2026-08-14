@@ -82,6 +82,9 @@
   #map { position: absolute; inset: 0; display: block; background: #0d1322;
     transform-origin: 50% 72%; transition: transform .45s cubic-bezier(.4,.1,.2,1); }
   #map.threeD { transform: rotateX(52deg) scale(1.75); }
+  /* 🚗 Driver view: windshield-height chase cam — steeper plane, the car
+     anchored low, world scaled up so the horizon rushes past */
+  #map.fpv { transform-origin: 50% 84%; transform: rotateX(63deg) scale(2.6); }
   #vignette { position: fixed; inset: 0; pointer-events: none; z-index: 20;
     background:
       linear-gradient(180deg, rgba(6,10,22,0.42) 0%, transparent 13%),
@@ -609,7 +612,7 @@
     <div class="seg" id="segLayer"><button data-v="map">🗺 Map</button><button data-v="positron">◽ Minimal</button><button data-v="sat">🛰 Sat</button></div>
   </div>
   <div class="lrow"><div class="ll">View</div>
-    <div class="seg" id="segView"><button data-v="off">2D</button><button data-v="on">3D drive</button></div>
+    <div class="seg" id="segView"><button data-v="off">2D</button><button data-v="on">3D</button><button data-v="fpv">🚗 Driver</button></div>
   </div>
   <div class="lrow"><div class="ll">Buildings</div>
     <div class="seg" id="segBuildings"><button data-v="on">🏙 3D</button><button data-v="off">Off</button></div>
@@ -1201,7 +1204,9 @@ function nightMode() {
 }
 
 /* screen anchor: where the camera centre sits (lower in nav mode) */
-function anchor() { return { x: W / 2, y: view.navMode ? H * 0.72 : H / 2 }; }
+function isFpv() { return settings.view3d === 'fpv'; }
+function navZoom() { return isFpv() ? 17.3 : 16.5; }
+function anchor() { return { x: W / 2, y: view.navMode ? H * (isFpv() ? 0.84 : 0.72) : H / 2 }; }
 
 function worldOf(p) { return A.lonLatToWorld(p, view.zoom); }
 function toScreen(p) {
@@ -1717,8 +1722,9 @@ $('btnLayers').addEventListener('click', function () {
 
 /** 3D drive view: tilt the map plane while navigating + following. */
 function apply3d() {
-  var on = settings.view3d === 'on' && view.navMode && view.follow;
-  canvas.classList.toggle('threeD', on);
+  var driving = view.navMode && view.follow;
+  canvas.classList.toggle('threeD', settings.view3d === 'on' && driving);
+  canvas.classList.toggle('fpv', settings.view3d === 'fpv' && driving);
 }
 
 function updateAttribution() {
@@ -2837,7 +2843,7 @@ function startNav(demo) {
   $('speedBubble').classList.add('show');
   $('speedUnit').textContent = settings.units === 'imperial' ? 'mph' : 'km/h';
   view.navMode = true; view.follow = true;
-  view.zoom = Math.max(view.zoom, 16.5);
+  view.zoom = Math.max(view.zoom, navZoom());
   apply3d();
   $('layersCard').classList.remove('show');
   requestWakeLock();
@@ -3315,7 +3321,7 @@ $('btnEnd').addEventListener('click', function () {
 });
 $('btnOverview').addEventListener('click', function () {
   if (view.navMode) { fitRoute(nav.route); view.navMode = false; }
-  else { view.navMode = true; view.follow = true; view.zoom = 16.5; glueCamera(); }
+  else { view.navMode = true; view.follow = true; view.zoom = navZoom(); glueCamera(); }
   apply3d();
   needsDraw = true;
 });
@@ -4596,7 +4602,11 @@ segWire('segRouteStyle', 'routeStyle', function () {
 });
 segWire('segTraffic', 'traffic', function () { needsDraw = true; if (trip.routes.length && !trip.demoOnly) requestRoutes(); });
 segWire('segLayer', 'baseLayer', function () { updateAttribution(); needsDraw = true; });
-segWire('segView', 'view3d', function () { apply3d(); });
+segWire('segView', 'view3d', function () {
+  apply3d();
+  if (view.navMode && view.follow) { view.zoom = navZoom(); glueCamera(); }
+  needsDraw = true;
+});
 segWire('segBuildings', 'buildings', function () { needsDraw = true; });
 segWire('segTheme2', 'theme', function () { needsDraw = true; });
 updateAttribution();
