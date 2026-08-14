@@ -14,7 +14,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import numpy as np
+from backend import np, to_numpy  # numpy, or CuPy when LLM_BACKEND=cupy
+import numpy as _hnp  # host-side numpy for sampling & RNG
 
 from autograd import Tensor, cross_entropy
 from nn import Block, Embedding, LayerNorm, Linear, Module
@@ -84,15 +85,18 @@ class GPT(Module):
         (>1) discourages re-picking tokens already in the context, which stops a
         small model from collapsing into loops. Kept in sync with web/gpt.js.
         """
-        rng = rng or np.random.default_rng()
-        idx = np.asarray(idx)
+        # Sampling is host-side by design: the forward pass may run on the GPU
+        # (CuPy backend), but the tiny per-token softmax/top-k/top-p math and
+        # the RNG stay in plain numpy — to_numpy() is the device boundary.
+        rng = rng or _hnp.random.default_rng()
+        idx = _hnp.asarray(idx)
         for _ in range(max_new_tokens):
             idx_cond = idx[:, -self.config.block_size:]
             logits, _ = self.forward(idx_cond)
-            logits = logits.data[:, -1, :].astype(np.float64)  # (1, V)
+            logits = to_numpy(logits.data)[:, -1, :].astype(_hnp.float64)  # (1, V)
 
             if repetition_penalty and repetition_penalty != 1.0:
-                for tok in np.unique(idx_cond[0]):
+                for tok in _hnp.unique(idx_cond[0]):
                     if logits[0, tok] > 0:
                         logits[0, tok] /= repetition_penalty
                     else:
@@ -101,20 +105,20 @@ class GPT(Module):
             logits = logits / max(temperature, 1e-6)
             if top_k is not None:
                 k = min(top_k, logits.shape[-1])
-                kth = np.sort(logits, axis=-1)[:, -k][:, None]
-                logits = np.where(logits < kth, -np.inf, logits)
+                kth = _hnp.sort(logits, axis=-1)[:, -k][:, None]
+                logits = _hnp.where(logits < kth, -_hnp.inf, logits)
             probs = _softmax_np(logits)
 
             if top_p and top_p < 1.0:
-                order = np.argsort(probs[0])[::-1]
-                cum = np.cumsum(probs[0][order])
-                keep = order[:max(1, int(np.searchsorted(cum, top_p) + 1))]
-                mask = np.zeros_like(probs[0]); mask[keep] = 1.0
+                order = _hnp.argsort(probs[0])[::-1]
+                cum = _hnp.cumsum(probs[0][order])
+                keep = order[:max(1, int(_hnp.searchsorted(cum, top_p) + 1))]
+                mask = _hnp.zeros_like(probs[0]); mask[keep] = 1.0
                 probs = (probs * mask)
                 probs = probs / probs.sum(axis=-1, keepdims=True)
 
             next_id = rng.choice(probs.shape[-1], p=probs[0])
-            idx = np.concatenate([idx, [[next_id]]], axis=1)
+            idx = _hnp.concatenate([idx, [[next_id]]], axis=1)
         return idx
 
     # --- checkpointing --------------------------------------------------------
@@ -124,10 +128,10 @@ class GPT(Module):
     def load_state(self, arrays):
         for p, a in zip(self.parameters(), arrays):
             assert p.data.shape == a.shape, "checkpoint shape mismatch"
-            p.data = a.astype(np.float32)
+            p.data = np.asarray(a).astype(np.float32)  # host → active backend
 
 
 def _softmax_np(x):
     x = x - x.max(axis=-1, keepdims=True)
-    e = np.exp(x)
+    e = _hnp.exp(x)
     return e / e.sum(axis=-1, keepdims=True)

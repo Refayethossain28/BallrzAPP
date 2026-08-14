@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 
-import numpy as np
+from backend import np  # numpy, or CuPy when LLM_BACKEND=cupy
 
 from autograd import Tensor, softmax
 

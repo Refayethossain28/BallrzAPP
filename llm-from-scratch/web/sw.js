@@ -9,7 +9,7 @@
  *  - everything else (gpt.js, icons) is cache-first for speed and full
  *    offline use — once loaded, the whole model runs with no network.
  * Bump CACHE to force a clean reinstall. */
-const CACHE = 'apexai-v1';
+const CACHE = 'apexai-v2';
 const ASSETS = ['./', './index.html', './gpt.js', './model.json', './manifest.json',
                 './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png'];
 

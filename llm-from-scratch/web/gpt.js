@@ -11,13 +11,32 @@
 (function (root) {
   "use strict";
 
-  // --- base64 -> Float32Array (weights are exported little-endian f32) -------
-  function b64ToFloat32(b64) {
+  // --- base64 -> Float32Array ------------------------------------------------
+  // Weights are exported little-endian as float32 ("f4") or float16 ("f2" —
+  // half the download; export_web.py --dtype f2). f16 is decoded manually so it
+  // works everywhere (Float16Array is too new to rely on).
+  function b64ToBytes(b64) {
     const bin = (typeof atob === "function")
       ? atob(b64)
       : Buffer.from(b64, "base64").toString("binary");
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  }
+  function halfToFloat(h) {
+    const s = (h & 0x8000) ? -1 : 1, e = (h >> 10) & 0x1f, m = h & 0x03ff;
+    if (e === 0) return s * m * 5.960464477539063e-8;        // subnormal: m * 2^-24
+    if (e === 31) return m ? NaN : s * Infinity;
+    return s * (1 + m / 1024) * Math.pow(2, e - 15);
+  }
+  function b64ToFloat32(b64, dtype) {
+    const bytes = b64ToBytes(b64);
+    if (dtype === "f2") {
+      const u16 = new Uint16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 2);
+      const out = new Float32Array(u16.length);
+      for (let i = 0; i < u16.length; i++) out[i] = halfToFloat(u16[i]);
+      return out;
+    }
     return new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4);
   }
 
@@ -102,7 +121,8 @@
     this.config = spec.config;
     this.tokenizer = makeTokenizer(spec.tokenizer);
     const w = {};
-    for (const name in spec.weights) w[name] = b64ToFloat32(spec.weights[name].data);
+    const dtype = spec.dtype || "f4";
+    for (const name in spec.weights) w[name] = b64ToFloat32(spec.weights[name].data, dtype);
     this.w = w;
   }
 

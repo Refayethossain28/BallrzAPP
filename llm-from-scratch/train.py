@@ -13,7 +13,8 @@ import math
 import os
 import time
 
-import numpy as np
+from backend import np, to_numpy, GPU, BACKEND  # numpy, or CuPy when LLM_BACKEND=cupy
+import numpy as hnp  # host-side numpy: batch RNG and .npz checkpoint files
 
 from model import GPT, GPTConfig
 from optim import Adam, clip_grad_norm
@@ -65,8 +66,10 @@ def parse_args():
 
 def main():
     args = parse_args()
-    rng = np.random.default_rng(args.seed)
-    np.random.seed(args.seed)
+    rng = hnp.random.default_rng(args.seed)   # host RNG: batch indices, eval
+    np.random.seed(args.seed)                  # backend RNG: weight init
+    if GPU:
+        print(f"backend: {BACKEND} (GPU)")
 
     with open(args.data, "r", encoding="utf-8") as f:
         text = f.read()
@@ -79,7 +82,7 @@ def main():
     resuming = os.path.exists(state_path)
 
     if resuming:
-        st = np.load(state_path, allow_pickle=True)
+        st = hnp.load(state_path, allow_pickle=True)
         tok = load_tokenizer(st["tokenizer"][0])
         config = GPTConfig(**dict(st["config"][0]))
         print(f"resuming from {state_path}")
@@ -125,7 +128,7 @@ def main():
     start_step = 0
     best_val_resumed = float("inf")
     if resuming:
-        model.load_state([np.asarray(a) for a in st["params"]])
+        model.load_state(list(st["params"]))  # load_state moves host → backend
         opt.m = [np.asarray(a) for a in st["opt_m"]]
         opt.v = [np.asarray(a) for a in st["opt_v"]]
         opt.t = int(st["opt_t"][0])
@@ -146,25 +149,25 @@ def main():
         return min_lr + 0.5 * (args.lr - min_lr) * (1 + math.cos(math.pi * min(1.0, prog)))
 
     def save():
-        np.savez(
+        hnp.savez(
             args.out,
-            params=np.array(model.state(), dtype=object),
-            config=np.array([config.to_dict()], dtype=object),
-            tokenizer=np.array([tok.to_json()], dtype=object),
+            params=hnp.array([to_numpy(a) for a in model.state()], dtype=object),
+            config=hnp.array([config.to_dict()], dtype=object),
+            tokenizer=hnp.array([tok.to_json()], dtype=object),
         )
 
     def save_state(step, best):
         # Full training state for resume: params + Adam moments + counters.
-        np.savez(
+        hnp.savez(
             state_path,
-            params=np.array(model.state(), dtype=object),
-            opt_m=np.array(opt.m, dtype=object),
-            opt_v=np.array(opt.v, dtype=object),
-            opt_t=np.array([opt.t]),
-            step=np.array([step]),
-            best_val=np.array([best]),
-            config=np.array([config.to_dict()], dtype=object),
-            tokenizer=np.array([tok.to_json()], dtype=object),
+            params=hnp.array([to_numpy(a) for a in model.state()], dtype=object),
+            opt_m=hnp.array([to_numpy(a) for a in opt.m], dtype=object),
+            opt_v=hnp.array([to_numpy(a) for a in opt.v], dtype=object),
+            opt_t=hnp.array([opt.t]),
+            step=hnp.array([step]),
+            best_val=hnp.array([best]),
+            config=hnp.array([config.to_dict()], dtype=object),
+            tokenizer=hnp.array([tok.to_json()], dtype=object),
         )
 
     # Keep the BEST-val checkpoint, not merely the last one, so a late-training
@@ -198,7 +201,7 @@ def main():
     print(f"saved best checkpoint (val {best_val:.4f}) to {args.out}")
 
     # Show a quick sample so you can eyeball that it learned something.
-    start = np.array([[tok.stoi.get("\n", 0)]])
+    start = hnp.array([[tok.stoi.get("\n", 0)]])
     out = model.generate(start, max_new_tokens=300, temperature=0.8, top_k=20, rng=rng)
     print("\n--- sample ---")
     print(tok.decode(out[0]))
