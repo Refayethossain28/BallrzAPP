@@ -1,0 +1,1352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a1020">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Glimpse — share what you’re seeing with the world</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<style>
+  :root{
+    --bg:#0a1020; --bg2:#0d1528; --card:#111a30; --card2:#16203a;
+    --line:rgba(125,190,255,0.10); --line2:rgba(125,190,255,0.20);
+    --ink:#eaf1fb; --ink2:#9fb2cc; --ink3:#6b7f9c;
+    --sky:#4dc3ff; --sky2:#8fdcff; --amber:#ffc46b; --rose:#ff9d9d;
+    --shadow:0 10px 30px rgba(0,0,0,0.4);
+    --r:18px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html,body{margin:0; padding:0; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    font-size:16px; line-height:1.45; overscroll-behavior-y:contain}
+  body{min-height:100vh}
+  button{font:inherit; color:inherit; background:none; border:none; cursor:pointer; padding:0}
+  input,textarea{font:inherit; color:var(--ink); background:var(--bg2);
+    border:1px solid var(--line2); border-radius:12px; padding:10px 12px; outline:none; width:100%}
+  input:focus,textarea:focus{border-color:var(--sky)}
+  a{color:var(--sky2)}
+  ::selection{background:rgba(77,195,255,0.35)}
+
+  /* ---------- shell ---------- */
+  #app{max-width:560px; margin:0 auto; padding-bottom:calc(76px + env(safe-area-inset-bottom))}
+  header.top{position:sticky; top:0; z-index:30; backdrop-filter:blur(14px);
+    background:rgba(10,16,32,0.84); border-bottom:1px solid var(--line);
+    padding:calc(10px + env(safe-area-inset-top)) 16px 10px; display:flex; align-items:center; gap:10px}
+  .logo{display:flex; align-items:center; gap:8px; font-weight:800; font-size:20px; letter-spacing:0.2px}
+  .logo img{width:26px; height:26px; border-radius:7px}
+  .top .spacer{flex:1}
+  .chip{display:inline-flex; align-items:center; gap:6px; font-size:12.5px; color:var(--ink2);
+    border:1px solid var(--line2); border-radius:999px; padding:5px 10px; background:var(--bg2)}
+  .chip.accent{color:#04101e; background:var(--sky); border-color:var(--sky); font-weight:700}
+  .chip:active{transform:scale(0.97)}
+
+  nav.tabs{position:fixed; bottom:0; left:0; right:0; z-index:40;
+    background:rgba(10,16,32,0.93); backdrop-filter:blur(14px); border-top:1px solid var(--line);
+    padding:6px 8px calc(8px + env(safe-area-inset-bottom))}
+  nav.tabs .row{max-width:560px; margin:0 auto; display:flex; align-items:center; justify-content:space-around}
+  .tabbtn{display:flex; flex-direction:column; align-items:center; gap:2px; font-size:11px;
+    color:var(--ink3); padding:6px 12px; border-radius:12px}
+  .tabbtn .ic{font-size:21px; line-height:1}
+  .tabbtn.on{color:var(--sky2)}
+  .fab{width:52px; height:52px; border-radius:18px; background:linear-gradient(135deg,var(--sky2),var(--sky));
+    color:#04101e; font-size:25px; display:flex; align-items:center; justify-content:center;
+    box-shadow:0 8px 22px rgba(77,195,255,0.35); margin-top:-18px}
+  .fab:active{transform:scale(0.95)}
+
+  main{padding:14px 14px 30px}
+  .view{display:none}
+  .view.on{display:block; animation:fadein .18s ease}
+  @keyframes fadein{from{opacity:0; transform:translateY(4px)} to{opacity:1; transform:none}}
+  .section-title{font-size:13px; font-weight:700; letter-spacing:1.2px; text-transform:uppercase;
+    color:var(--ink3); margin:18px 4px 8px}
+
+  /* ---------- cards & glimpses ---------- */
+  .card{background:var(--card); border:1px solid var(--line); border-radius:var(--r);
+    padding:14px; margin-bottom:12px}
+  .prompt-card{background:linear-gradient(135deg, rgba(255,196,107,0.10), rgba(77,195,255,0.08));
+    border-color:rgba(255,196,107,0.25)}
+  .prompt-card .tag-line{font-size:12px; font-weight:700; letter-spacing:1px; color:var(--amber); text-transform:uppercase}
+  .prompt-card .q{font-size:17px; font-weight:700; margin:6px 0 10px}
+  .btn{display:inline-flex; align-items:center; gap:7px; font-weight:700; font-size:14.5px;
+    background:var(--sky); color:#04101e; border-radius:12px; padding:10px 16px}
+  .btn.ghost{background:var(--bg2); color:var(--ink); border:1px solid var(--line2); font-weight:600}
+  .btn.warm{background:var(--amber); color:#1b1405}
+  .btn.danger{background:none; color:var(--rose); border:1px solid rgba(255,157,157,0.35)}
+  .btn:active{transform:scale(0.97)}
+  .btn[disabled]{opacity:0.45; pointer-events:none}
+
+  .gcard{background:var(--card); border:1px solid var(--line); border-radius:var(--r);
+    padding:14px 14px 10px; margin-bottom:12px}
+  .gcard .head{display:flex; align-items:center; gap:10px}
+  .ava{width:42px; height:42px; border-radius:14px; display:flex; align-items:center; justify-content:center;
+    font-size:22px; flex:none; background:var(--card2); border:1px solid var(--line2)}
+  .ava.sm{width:32px; height:32px; font-size:17px; border-radius:10px}
+  .gcard .who{flex:1; min-width:0}
+  .gcard .name{font-weight:700; font-size:15px; display:flex; align-items:center; gap:6px}
+  .gcard .sub{font-size:12.5px; color:var(--ink3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .gcard .sub .place{color:var(--sky2); font-weight:600; cursor:pointer}
+  .why{font-size:11.5px; color:var(--ink3); border:1px solid var(--line); border-radius:999px; padding:3px 9px; flex:none}
+  .why:active{color:var(--sky2)}
+  .gcard .caption{margin:10px 2px 6px; font-size:15.5px; overflow-wrap:break-word}
+  .gcard .caption .tag{color:var(--sky2); font-weight:600; cursor:pointer}
+  .gphoto{width:100%; border-radius:14px; margin-top:10px; border:1px solid var(--line); display:block}
+  .scene{width:100%; border-radius:14px; margin-top:10px; border:1px solid var(--line);
+    height:150px; display:flex; align-items:center; justify-content:center; font-size:56px; position:relative; overflow:hidden}
+  .scene .tod-tag{position:absolute; right:10px; top:8px; font-size:11.5px; font-weight:700;
+    background:rgba(4,10,24,0.45); color:#fff; border-radius:999px; padding:3px 9px; backdrop-filter:blur(4px)}
+  .sky-dawn{background:linear-gradient(180deg,#2a3f6e,#c97b8e 55%,#ffc46b)}
+  .sky-day{background:linear-gradient(180deg,#2f8fd6,#8fd8ff 60%,#d6f2ff)}
+  .sky-dusk{background:linear-gradient(180deg,#1d2c55,#7a4d8e 55%,#ff9d6b)}
+  .sky-night{background:linear-gradient(180deg,#04081a,#0d1736 60%,#1b2c55)}
+  .actions{display:flex; align-items:center; gap:4px; margin-top:8px; border-top:1px solid var(--line); padding-top:6px}
+  .rbtn{font-size:17px; padding:5px 8px; border-radius:10px; opacity:0.65}
+  .rbtn.on{opacity:1; background:rgba(77,195,255,0.16)}
+  .rbtn .n{font-size:11px; color:var(--ink2); margin-left:2px}
+  .act{display:inline-flex; align-items:center; gap:5px; font-size:13px; color:var(--ink2);
+    padding:6px 9px; border-radius:10px; margin-left:auto}
+  .act:active{background:var(--card2)}
+
+  .hop{display:flex; align-items:center; gap:10px; margin:2px 6px 12px; color:var(--ink3); font-size:12.5px}
+  .hop .ln{flex:1; height:1px; background:var(--line2)}
+  .hop .txt{white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:78%}
+
+  .filterbar{display:flex; align-items:center; gap:8px; margin-bottom:12px}
+  .filterbar .chip{font-weight:700; color:var(--sky2); border-color:var(--line2)}
+
+  /* ---------- world map ---------- */
+  .maprow{display:flex; gap:3px; margin-bottom:3px}
+  .mapcell{flex:1; aspect-ratio:1; border-radius:7px; background:var(--bg2); border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center; font-size:15px; position:relative; min-width:0}
+  .mapcell.lit{border-color:var(--line2); background:var(--card2); cursor:pointer}
+  .mapcell.lit:active{transform:scale(0.94)}
+  .mapcell .n{position:absolute; right:2px; bottom:0; font-size:9px; color:var(--ink2); font-weight:700}
+  .mapcell.night-cell{filter:brightness(0.55)}
+  .sunstrip{display:flex; gap:3px; margin:2px 0 10px}
+  .sunstrip span{flex:1; text-align:center; font-size:12px; opacity:0.85}
+  .maplegend{font-size:12px; color:var(--ink3); margin-top:10px; line-height:1.7}
+
+  /* ---------- passport ---------- */
+  .horizon{display:flex; align-items:center; gap:14px}
+  .horizon .big{font-size:44px; line-height:1}
+  .horizon .info{flex:1}
+  .horizon .stage-name{font-weight:800; font-size:18px}
+  .horizon .hint{font-size:13px; color:var(--ink2); margin-top:2px}
+  .bar{height:8px; background:var(--bg2); border-radius:99px; margin-top:10px; overflow:hidden}
+  .bar i{display:block; height:100%; background:linear-gradient(90deg,var(--sky),var(--sky2)); border-radius:99px}
+  .flags{display:flex; flex-wrap:wrap; gap:6px; margin-top:12px}
+  .flags .fl{font-size:15px; background:var(--bg2); border:1px solid var(--line2); border-radius:10px; padding:4px 9px;
+    display:inline-flex; gap:6px; align-items:center; color:var(--ink2)}
+  .flags .fl b{color:var(--ink); font-weight:600; font-size:12.5px}
+
+  .me-row{display:flex; align-items:center; gap:12px}
+  .me-row .who{flex:1}
+  .kv{display:flex; justify-content:space-between; align-items:center; padding:11px 2px;
+    border-bottom:1px solid var(--line); font-size:14.5px}
+  .kv:last-child{border-bottom:none}
+  .kv .k{color:var(--ink2)}
+  .mini-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:10px}
+  .mini{border-radius:12px; border:1px solid var(--line); aspect-ratio:1; overflow:hidden;
+    display:flex; align-items:center; justify-content:center; font-size:30px; position:relative}
+  .mini img{width:100%; height:100%; object-fit:cover}
+
+  /* ---------- sheets ---------- */
+  .sheet-wrap{position:fixed; inset:0; z-index:60; display:none}
+  .sheet-wrap.show{display:block}
+  .sheet-wrap .dim{position:absolute; inset:0; background:rgba(2,6,16,0.66)}
+  .sheet{position:absolute; left:0; right:0; bottom:0; max-width:560px; margin:0 auto;
+    background:var(--bg2); border-radius:22px 22px 0 0; border:1px solid var(--line2); border-bottom:none;
+    padding:16px 16px calc(20px + env(safe-area-inset-bottom)); max-height:88vh; overflow-y:auto;
+    animation:sheetup .22s ease}
+  @keyframes sheetup{from{transform:translateY(40px); opacity:0} to{transform:none; opacity:1}}
+  .sheet .grab{width:44px; height:4px; background:var(--line2); border-radius:99px; margin:0 auto 14px}
+  .sheet h3{margin:0 0 12px; font-size:17px}
+  .sheet .lbl{font-size:12.5px; font-weight:700; color:var(--ink3); text-transform:uppercase;
+    letter-spacing:0.8px; margin:14px 0 6px}
+  .cap-count{font-size:12px; color:var(--ink3); text-align:right; margin-top:4px}
+  .cap-count.over{color:var(--rose); font-weight:700}
+  .scene-pick{display:flex; flex-wrap:wrap; gap:8px}
+  .scene-pick button{font-size:22px; padding:8px 10px; border-radius:12px; background:var(--card);
+    border:1px solid var(--line)}
+  .scene-pick button.on{border-color:var(--sky); background:rgba(77,195,255,0.14)}
+  .place-grid{display:grid; grid-template-columns:1fr 1fr; gap:8px}
+  .place-grid button{display:flex; align-items:center; gap:8px; font-size:13.5px; text-align:left;
+    background:var(--card); border:1px solid var(--line); border-radius:12px; padding:10px 12px}
+  .place-grid button.on{border-color:var(--sky); background:rgba(77,195,255,0.12)}
+  .place-grid .flg{font-size:18px}
+  .preview-wrap{position:relative; margin-top:8px; display:none}
+  .preview-wrap img{width:100%; border-radius:14px; border:1px solid var(--line2); display:block}
+  .preview-wrap .rm{position:absolute; top:8px; right:8px; background:rgba(2,6,16,0.7); color:#fff;
+    border-radius:99px; width:30px; height:30px; font-size:15px}
+  .why-list{list-style:none; margin:0; padding:0}
+  .why-list li{display:flex; justify-content:space-between; gap:10px; padding:9px 2px;
+    border-bottom:1px solid var(--line); font-size:14px}
+  .why-list li:last-child{border-bottom:none}
+  .why-list .pts{color:var(--sky2); font-weight:700; flex:none}
+  .err{color:var(--rose); font-size:13.5px; min-height:18px; margin-top:8px}
+  .seg{display:flex; background:var(--card); border:1px solid var(--line2); border-radius:12px; overflow:hidden; margin-bottom:12px}
+  .seg button{flex:1; padding:9px; font-size:14px; color:var(--ink2)}
+  .seg button.on{background:var(--sky); color:#04101e; font-weight:700}
+
+  /* ---------- onboarding ---------- */
+  #onboard{position:fixed; inset:0; z-index:80; background:var(--bg); overflow-y:auto; display:none}
+  #onboard.show{display:block}
+  #onboard .inner{max-width:560px; margin:0 auto; padding:calc(30px + env(safe-area-inset-top)) 22px 40px}
+  #onboard h1{font-size:30px; margin:14px 0 6px; letter-spacing:-0.3px}
+  #onboard .lead{color:var(--ink2); font-size:15.5px; margin-bottom:22px}
+  #onboard .lead b{color:var(--sky2)}
+  .ava-pick{display:flex; flex-wrap:wrap; gap:8px; margin-top:8px}
+  .ava-pick button{font-size:22px; padding:8px 10px; border-radius:12px; background:var(--card); border:1px solid var(--line)}
+  .ava-pick button.on{border-color:var(--sky); background:rgba(77,195,255,0.14)}
+
+  /* ---------- toast ---------- */
+  #toast{position:fixed; left:50%; bottom:calc(86px + env(safe-area-inset-bottom)); transform:translateX(-50%) translateY(20px);
+    background:var(--card2); border:1px solid var(--line2); color:var(--ink); font-size:14px;
+    border-radius:14px; padding:11px 16px; z-index:90; opacity:0; pointer-events:none;
+    transition:all .25s ease; max-width:86vw; text-align:center; box-shadow:var(--shadow)}
+  #toast.show{opacity:1; transform:translateX(-50%) translateY(0)}
+  .empty{color:var(--ink3); text-align:center; padding:34px 20px; font-size:14.5px; line-height:1.7}
+  .empty .big{font-size:38px; display:block; margin-bottom:8px}
+</style>
+</head>
+<body>
+
+<div id="onboard">
+  <div class="inner">
+    <div style="font-size:52px">🔭</div>
+    <h1>Glimpse</h1>
+    <p class="lead">Right now, somewhere, it’s <b>dawn over a harbour</b> and <b>midnight in a market</b>.
+      Glimpse is one thing: <b>share what you’re seeing</b> — and look through everyone else’s window.
+      No filters culture, no follower counts. Just eyes, everywhere.</p>
+
+    <div class="card">
+      <div class="lbl" style="font-size:12.5px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">Who’s looking?</div>
+      <input id="ob-name" placeholder="Your name" maxlength="30" autocomplete="off">
+      <div style="height:8px"></div>
+      <input id="ob-handle" placeholder="handle (letters, numbers, _)" maxlength="20" autocomplete="off" autocapitalize="off">
+      <div class="ava-pick" id="ob-avatars"></div>
+    </div>
+
+    <div class="card">
+      <div class="lbl" style="font-size:12.5px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">Where’s your window? 🪟</div>
+      <div style="margin-bottom:10px"><button class="btn ghost" data-action="ob-geo">📍 Use my location</button>
+        <span id="ob-geo-note" style="font-size:12.5px;color:var(--ink3);margin-left:8px"></span></div>
+      <div class="place-grid" id="ob-places"></div>
+    </div>
+
+    <button class="btn" style="width:100%;justify-content:center;font-size:16px;padding:14px" data-action="ob-done">Open the window 🌍</button>
+    <p style="font-size:12.5px;color:var(--ink3);margin-top:14px">Works fully on this device, no account needed — the demo world is alive out of the box.
+      Create a free account later to go live and share with the real world.</p>
+  </div>
+</div>
+
+<div id="app">
+  <header class="top">
+    <div class="logo"><img src="icon.svg" alt=""> Glimpse</div>
+    <div class="spacer"></div>
+    <button class="chip" id="chip-place" data-action="open-place" title="Your window">🪟</button>
+  </header>
+
+  <main>
+    <!-- ============ WORLD ============ -->
+    <section class="view" id="view-world">
+      <div id="filterbar-world"></div>
+      <div id="prompt-slot"></div>
+      <div id="feed-world"></div>
+    </section>
+
+    <!-- ============ NEAR ============ -->
+    <section class="view" id="view-near">
+      <div class="section-title" id="near-title">Windows near you</div>
+      <div id="feed-near"></div>
+    </section>
+
+    <!-- ============ MAP ============ -->
+    <section class="view" id="view-map">
+      <div class="section-title">The world, right now</div>
+      <div class="card">
+        <div class="sunstrip" id="sunstrip"></div>
+        <div id="worldmap"></div>
+        <div class="maplegend">Each tile is a slice of the planet — the freshest glimpse there, dimmed where it’s night.
+          The strip above is the sun: where it’s 🌅 dawn, ☀️ day, 🌆 evening, 🌙 night at this exact moment.</div>
+      </div>
+      <div class="section-title">Skies right now</div>
+      <div id="sky-row"></div>
+    </section>
+
+    <!-- ============ YOU ============ -->
+    <section class="view" id="view-you">
+      <div class="card">
+        <div class="me-row">
+          <div class="ava" id="me-ava">🙂</div>
+          <div class="who">
+            <div style="font-weight:800" id="me-name">—</div>
+            <div style="font-size:13px;color:var(--ink3)" id="me-sub">—</div>
+          </div>
+          <button class="chip" data-action="open-place">Move 🪟</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="horizon">
+          <div class="big" id="hz-emoji">🪟</div>
+          <div class="info">
+            <div class="stage-name" id="hz-name">Windowsill</div>
+            <div class="hint" id="hz-hint"></div>
+            <div class="bar"><i id="hz-bar" style="width:0%"></i></div>
+            <div style="font-size:12px;color:var(--ink3);margin-top:6px" id="hz-next"></div>
+          </div>
+        </div>
+        <div class="flags" id="passport-flags"></div>
+      </div>
+
+      <div class="card" id="cloud-card">
+        <div class="kv"><span class="k">Live account</span><span id="cloud-status">off — on-device only</span></div>
+        <div id="cloud-actions" style="margin-top:10px"></div>
+        <p style="font-size:12.5px;color:var(--ink3);margin:10px 0 0">Signed in, your glimpses reach every Glimpse user on Earth, live.
+          Without an account everything stays on this device.</p>
+      </div>
+
+      <div class="section-title">Your glimpses</div>
+      <div id="my-glimpses"></div>
+
+      <div class="card">
+        <div class="kv"><span class="k">Export your data</span><button class="chip" data-action="export">JSON ⬇</button></div>
+        <div class="kv"><span class="k">Regenerate the demo world</span><button class="chip" data-action="reseed">🌱</button></div>
+        <div class="kv"><span class="k">Start over</span><button class="chip" data-action="reset" style="color:var(--rose)">Erase</button></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<nav class="tabs">
+  <div class="row">
+    <button class="tabbtn on" data-action="tab" data-tab="world"><span class="ic">🌍</span>World</button>
+    <button class="tabbtn" data-action="tab" data-tab="near"><span class="ic">🧭</span>Near</button>
+    <button class="fab" data-action="open-capture" title="Share what you’re seeing">📷</button>
+    <button class="tabbtn" data-action="tab" data-tab="map"><span class="ic">🗺️</span>Map</button>
+    <button class="tabbtn" data-action="tab" data-tab="you"><span class="ic">🪟</span>You</button>
+  </div>
+</nav>
+
+<!-- ============ CAPTURE SHEET ============ -->
+<div class="sheet-wrap" id="sheet-capture">
+  <div class="dim" data-action="close-sheets"></div>
+  <div class="sheet">
+    <div class="grab"></div>
+    <h3>What are you seeing? 👀</h3>
+    <div class="kv" style="border-bottom:none;padding-top:0">
+      <span class="k">Looking from</span>
+      <button class="chip" id="cap-place" data-action="open-place">📍 —</button>
+    </div>
+
+    <label class="btn ghost" style="width:100%;justify-content:center">
+      📷 Point your camera at it
+      <input type="file" id="cap-file" accept="image/*" capture="environment" style="display:none">
+    </label>
+    <div class="preview-wrap" id="cap-preview-wrap">
+      <img id="cap-preview" alt="Your photo">
+      <button class="rm" data-action="cap-remove-photo">✕</button>
+    </div>
+
+    <div class="lbl" id="cap-scene-lbl">…or set the scene</div>
+    <div class="scene-pick" id="cap-scenes"></div>
+
+    <div class="lbl">Say what it is</div>
+    <textarea id="cap-caption" rows="3" placeholder="The rain finally stopped and the whole street is gold… #sunset"></textarea>
+    <div class="cap-count" id="cap-count">0 / 280</div>
+
+    <div class="err" id="cap-err"></div>
+    <button class="btn" style="width:100%;justify-content:center;font-size:15.5px;padding:13px" data-action="cap-submit">Share it with the world 🌍</button>
+  </div>
+</div>
+
+<!-- ============ PLACE SHEET ============ -->
+<div class="sheet-wrap" id="sheet-place">
+  <div class="dim" data-action="close-sheets"></div>
+  <div class="sheet">
+    <div class="grab"></div>
+    <h3>Where’s your window? 🪟</h3>
+    <div style="margin-bottom:10px"><button class="btn ghost" data-action="use-geo">📍 Use my location</button>
+      <span id="geo-note" style="font-size:12.5px;color:var(--ink3);margin-left:8px"></span></div>
+    <div class="place-grid" id="place-grid"></div>
+  </div>
+</div>
+
+<!-- ============ WHY SHEET ============ -->
+<div class="sheet-wrap" id="sheet-why">
+  <div class="dim" data-action="close-sheets"></div>
+  <div class="sheet">
+    <div class="grab"></div>
+    <h3>Why this window? 🔎</h3>
+    <p style="font-size:13.5px;color:var(--ink2);margin:0 0 10px">The world feed is built to hop the globe —
+      recency times diversity, and a window from a country this scroll hasn’t visited jumps the queue. Receipts:</p>
+    <ul class="why-list" id="why-list"></ul>
+  </div>
+</div>
+
+<!-- ============ ACCOUNT SHEET ============ -->
+<div class="sheet-wrap" id="sheet-account">
+  <div class="dim" data-action="close-sheets"></div>
+  <div class="sheet">
+    <div class="grab"></div>
+    <h3 id="ac-title">Go live 🌍</h3>
+    <div class="seg" id="ac-mode">
+      <button data-action="ac-mode" data-mode="signup" class="on">Create account</button>
+      <button data-action="ac-mode" data-mode="signin">Sign in</button>
+    </div>
+    <div id="ac-signup-fields">
+      <div class="lbl">Name</div>
+      <input id="ac-name" maxlength="30" autocomplete="name">
+      <div class="lbl">Handle — claimed forever</div>
+      <input id="ac-handle" maxlength="20" autocapitalize="off" autocomplete="off" placeholder="yours_alone">
+    </div>
+    <div class="lbl">Email</div>
+    <input id="ac-email" type="email" autocomplete="email" placeholder="you@example.com">
+    <div class="lbl">Password</div>
+    <input id="ac-password" type="password" autocomplete="new-password" placeholder="8+ characters">
+    <div class="err" id="ac-error"></div>
+    <button class="btn" style="width:100%;justify-content:center;padding:13px" id="ac-submit" data-action="ac-submit">Create account 🌍</button>
+    <button class="chip" id="ac-forgot" data-action="ac-forgot" style="margin-top:10px;display:none">Forgot password?</button>
+    <p style="font-size:12px;color:var(--ink3);margin-top:12px">Registered users only — no anonymous posting. See SETUP.md to point Glimpse at your own Firebase project.</p>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="engine.js"></script>
+<script src="config.js"></script>
+<script>
+'use strict';
+var E = GlimpseEngine;
+function $(id) { return document.getElementById(id); }
+var esc = E.escapeHTML;
+
+/* ============================ state ============================ */
+var LS_KEY = 'glimpse-state-v1';
+var S = null;
+
+function defaultState() {
+  return {
+    onboarded: false,
+    me: { id: 'me', name: '', handle: '', avatar: '🙂', place: null },
+    glimpses: [],          // demo + mine (cloud ones are merged in at render)
+    passportCC: {},        // cc -> {flag, country} — windows genuinely looked through
+    seed: '',
+    cloud: { enabled: false, uid: '', status: 'off', email: '' }
+  };
+}
+
+function load() {
+  try {
+    var raw = localStorage.getItem(LS_KEY);
+    S = raw ? JSON.parse(raw) : defaultState();
+  } catch (e) { S = defaultState(); }
+  if (!S.me) S.me = defaultState().me;
+  if (!S.passportCC) S.passportCC = {};
+  if (!S.glimpses) S.glimpses = [];
+  if (!S.cloud) S.cloud = defaultState().cloud;
+}
+
+function save() {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(S));
+  } catch (e) {
+    // Quota: photos are the heavy part — drop the oldest local photos and retry.
+    try {
+      var mine = S.glimpses.filter(function (g) { return g.mine && g.photo; })
+        .sort(function (a, b) { return a.ts - b.ts; });
+      for (var i = 0; i < mine.length && i < 5; i++) delete mine[i].photo;
+      localStorage.setItem(LS_KEY, JSON.stringify(S));
+    } catch (e2) { /* still full — keep running in memory */ }
+  }
+}
+
+/* ============================ tiny ui helpers ============================ */
+var toastTimer = null;
+function toast(msg) {
+  var t = $('toast');
+  t.textContent = msg;
+  t.className = 'show';
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () { t.className = ''; }, 2600);
+}
+
+function openSheet(id) { closeSheets(); $(id).className = 'sheet-wrap show'; }
+function closeSheets() {
+  var ws = document.querySelectorAll('.sheet-wrap');
+  for (var i = 0; i < ws.length; i++) ws[i].className = 'sheet-wrap';
+}
+
+var TAB = 'world';
+function setTab(tab) {
+  TAB = tab;
+  var views = document.querySelectorAll('.view');
+  for (var i = 0; i < views.length; i++) views[i].className = 'view';
+  var v = $('view-' + tab);
+  if (v) v.className = 'view on';
+  var btns = document.querySelectorAll('.tabbtn');
+  for (var j = 0; j < btns.length; j++) {
+    btns[j].className = btns[j].getAttribute('data-tab') === tab ? 'tabbtn on' : 'tabbtn';
+  }
+  render();
+  try { window.scrollTo(0, 0); } catch (e) {}
+}
+
+/* ============================ the passport ============================ */
+// Looking counts. When a glimpse card genuinely enters the viewport (or you
+// react to one, or post your own), its country is stamped into your passport.
+function stampPassport(place) {
+  if (!place || !place.cc) return;
+  if (S.passportCC[place.cc]) return;
+  S.passportCC[place.cc] = { flag: place.flag || '', country: place.country || place.cc };
+  save();
+  var n = E.passport(S.passportCC).length;
+  var st = E.horizonStage(n);
+  if (st.min === n && n > 0) toast(st.emoji + ' ' + st.name + ' — ' + n + (n === 1 ? ' country' : ' countries') + ' seen');
+}
+
+var seenObserver = null;
+function ensureObserver() {
+  if (seenObserver || typeof IntersectionObserver === 'undefined') return;
+  try {
+    seenObserver = new IntersectionObserver(function (entries) {
+      for (var i = 0; i < entries.length; i++) {
+        if (!entries[i].isIntersecting) continue;
+        var el = entries[i].target;
+        var g = findGlimpse(el.getAttribute('data-gid'));
+        if (g) stampPassport(g.place);
+        try { seenObserver.unobserve(el); } catch (e) {}
+      }
+    }, { threshold: 0.6 });
+  } catch (e) { seenObserver = null; }
+}
+function observeCards(rootEl) {
+  ensureObserver();
+  if (!seenObserver) return;
+  var cards = rootEl.querySelectorAll('.gcard[data-gid]');
+  for (var i = 0; i < cards.length; i++) seenObserver.observe(cards[i]);
+}
+
+/* ============================ data access ============================ */
+var CLOUD_GLIMPSES = [];
+function allGlimpses() {
+  return S.glimpses.concat(CLOUD_GLIMPSES);
+}
+function findGlimpse(id) {
+  var all = allGlimpses();
+  for (var i = 0; i < all.length; i++) if (String(all[i].id) === String(id)) return all[i];
+  return null;
+}
+
+var REACTS = ['❤️', '😮', '🌍', '👋'];
+// Demo glimpses arrive with believable, deterministic reaction counts.
+function reactCount(g, emoji) {
+  var others = 0;
+  for (var k in (g.reactions || {})) {
+    if (k !== 'me' && g.reactions[k] === emoji) others++;
+  }
+  if (g.demo) others += Math.floor(E.rand01('rx:' + g.id + ':' + emoji) * 9);
+  return others + (g.reactions && g.reactions.me === emoji ? 1 : 0);
+}
+
+/* ============================ rendering ============================ */
+var FILTER = null; // null | {kind:'tag'|'cc', value, label}
+var lastFeedItems = [];
+
+function skyClass(tod) { return 'sky-' + (tod || 'day'); }
+
+function glimpseCard(g, ctx) {
+  var now = Date.now();
+  var tod = E.timeOfDayAt(g.place.lon, now);
+  var postedTod = (g.scene && g.scene.tod) ? g.scene.tod : tod.key;
+  var h = '<article class="gcard" data-gid="' + esc(g.id) + '">';
+  h += '<div class="head">';
+  h += '<div class="ava">' + esc(g.avatar || '👤') + '</div>';
+  h += '<div class="who"><div class="name">' + esc(g.authorName || 'Someone') +
+       (g.cloud ? ' <span class="chip" style="font-size:10px;padding:2px 7px">LIVE</span>' : '') + '</div>';
+  h += '<div class="sub"><span class="place" data-action="filter-cc" data-cc="' + esc(g.place.cc) + '" data-label="' +
+       esc(g.place.country || g.place.name) + '">' + esc(g.place.flag ? g.place.flag + ' ' : '') + esc(g.place.name) + '</span>' +
+       ' · ' + tod.emoji + ' ' + esc(tod.label) + ' there · ' + esc(E.timeAgo(g.ts, now)) + '</div></div>';
+  if (ctx && ctx.why) h += '<button class="why" data-action="why" data-gid="' + esc(g.id) + '">why?</button>';
+  h += '</div>';
+  if (g.photo) {
+    h += '<img class="gphoto" loading="lazy" src="' + g.photo + '" alt="What ' + esc(g.authorName || 'someone') + ' is seeing">';
+  } else if (g.scene && g.scene.emoji) {
+    var TOD_EMOJI = { dawn: '🌅', day: '☀️', dusk: '🌆', night: '🌙' };
+    h += '<div class="scene ' + skyClass(postedTod) + '"><span>' + esc(g.scene.emoji) + '</span>' +
+         '<span class="tod-tag">' + (TOD_EMOJI[postedTod] || '☀️') + ' shot at ' + esc(postedTod) + '</span></div>';
+  }
+  if (g.caption) h += '<div class="caption">' + E.renderCaption(g.caption) + '</div>';
+  if (ctx && ctx.distanceLabel) h += '<div style="font-size:12.5px;color:var(--ink3);margin-top:6px">🧭 ' + esc(ctx.distanceLabel) + '</div>';
+  h += '<div class="actions">';
+  for (var i = 0; i < REACTS.length; i++) {
+    var em = REACTS[i];
+    var on = g.reactions && g.reactions.me === em;
+    var n = reactCount(g, em);
+    h += '<button class="rbtn' + (on ? ' on' : '') + '" data-action="react" data-gid="' + esc(g.id) + '" data-emoji="' + em + '">' +
+         em + (n ? '<span class="n">' + E.formatCount(n) + '</span>' : '') + '</button>';
+  }
+  h += '<button class="act" data-action="share" data-gid="' + esc(g.id) + '">↗ share</button>';
+  h += '</div></article>';
+  return h;
+}
+
+function applyFilter(list) {
+  if (!FILTER) return list;
+  return list.filter(function (g) {
+    if (FILTER.kind === 'cc') return g.place && g.place.cc === FILTER.value;
+    if (FILTER.kind === 'tag') return (g.tags || E.extractTags(g.caption)).indexOf(FILTER.value) !== -1;
+    return true;
+  });
+}
+
+function renderFilterBar() {
+  var el = $('filterbar-world');
+  if (!FILTER) { el.innerHTML = ''; return; }
+  el.innerHTML = '<div class="filterbar"><span class="chip">' +
+    (FILTER.kind === 'tag' ? '#' + esc(FILTER.value) : esc(FILTER.label || FILTER.value)) +
+    '</span><button class="chip" data-action="clear-filter">✕ show the whole world</button></div>';
+}
+
+function renderWorld() {
+  renderFilterBar();
+  var now = Date.now();
+  var iso = new Date(now).toISOString().slice(0, 10);
+  var p = E.dailyPrompt(iso);
+  $('prompt-slot').innerHTML =
+    '<div class="card prompt-card"><div class="tag-line">👁 Today, everywhere</div>' +
+    '<div class="q">' + esc(p.prompt) + '</div>' +
+    '<button class="btn warm" data-action="open-capture">Show yours 📷</button></div>';
+
+  var list = applyFilter(allGlimpses());
+  // Your own freshly shared glimpse leads while it's still warm — after that
+  // it takes its chances in the world scroll like everyone else's.
+  var pinned = FILTER ? [] : list.filter(function (g) { return g.mine && now - g.ts < 10 * E.MINUTE; });
+  if (pinned.length) list = list.filter(function (g) { return pinned.indexOf(g) === -1; });
+  var items = E.worldFeed(list, { limit: 60, seenCC: S.passportCC }, now);
+  lastFeedItems = items;
+  var hops = E.feedHops(items);
+  var h = '';
+  for (var pi = 0; pi < pinned.length; pi++) {
+    h += '<div class="hop"><span>📌</span><span class="txt">just shared — the world can see this</span><span class="ln"></span></div>';
+    h += glimpseCard(pinned[pi], {});
+  }
+  for (var i = 0; i < items.length; i++) {
+    if (hops[i]) h += '<div class="hop"><span>✈️</span><span class="txt">' + esc(hops[i].label) + '</span><span class="ln"></span></div>';
+    h += glimpseCard(items[i].glimpse, { why: true });
+  }
+  if (!items.length) {
+    h = '<div class="empty"><span class="big">🌫️</span>Nothing through this window yet.<br>Open the filter, or share the first glimpse.</div>';
+  } else {
+    h += '<div class="empty"><span class="big">🌍</span>That’s the whole world for now.<br>Someone, somewhere, is about to see something.</div>';
+  }
+  var feedEl = $('feed-world');
+  feedEl.innerHTML = h;
+  observeCards(feedEl);
+}
+
+function renderNear() {
+  var here = S.me.place || E.PLACES[0];
+  $('near-title').textContent = 'Windows near ' + (here.name || 'you');
+  var items = E.nearFeed(allGlimpses(), here, Date.now());
+  var h = '';
+  for (var i = 0; i < items.length && i < 40; i++) {
+    h += glimpseCard(items[i].glimpse, { distanceLabel: items[i].distanceLabel });
+  }
+  if (!h) h = '<div class="empty"><span class="big">🧭</span>No windows nearby yet — be the first pair of eyes here.</div>';
+  var el = $('feed-near');
+  el.innerHTML = h;
+  observeCards(el);
+}
+
+function renderMap() {
+  var now = Date.now();
+  var strip = E.sunStrip(12, now);
+  var sh = '';
+  for (var i = 0; i < strip.length; i++) sh += '<span title="' + esc(strip[i].label) + '">' + strip[i].emoji + '</span>';
+  $('sunstrip').innerHTML = sh;
+
+  var map = E.worldMapCells(allGlimpses(), 12, 6, now);
+  var byKey = {};
+  for (var c = 0; c < map.cells.length; c++) byKey[map.cells[c].x + ':' + map.cells[c].y] = map.cells[c];
+  var h = '';
+  for (var y = 0; y < map.rows; y++) {
+    h += '<div class="maprow">';
+    for (var x = 0; x < map.cols; x++) {
+      var cell = byKey[x + ':' + y];
+      if (cell) {
+        var nightCls = cell.tod.key === 'night' ? ' night-cell' : '';
+        h += '<div class="mapcell lit' + nightCls + '" data-action="map-cell" data-x="' + x + '" data-y="' + y + '" title="' + esc(cell.name || '') + '">' +
+             esc(cell.emoji) + (cell.count > 1 ? '<span class="n">' + cell.count + '</span>' : '') + '</div>';
+      } else {
+        var lonCenter = (x + 0.5) / 12 * 360 - 180;
+        var tod = E.timeOfDayAt(lonCenter, now);
+        h += '<div class="mapcell' + (tod.key === 'night' ? ' night-cell' : '') + '"></div>';
+      }
+    }
+    h += '</div>';
+  }
+  $('worldmap').innerHTML = h;
+
+  // Skies right now: one row per distinct country, its local sky.
+  var seen = {}, rows = '';
+  var all = allGlimpses().slice().sort(function (a, b) { return b.ts - a.ts; });
+  for (var g = 0; g < all.length && Object.keys(seen).length < 8; g++) {
+    var pl = all[g].place;
+    if (!pl || seen[pl.cc]) continue;
+    seen[pl.cc] = 1;
+    var t = E.timeOfDayAt(pl.lon, now);
+    rows += '<div class="card" style="padding:10px 14px;display:flex;align-items:center;gap:10px">' +
+      '<span style="font-size:20px">' + esc(pl.flag || '📍') + '</span>' +
+      '<span style="flex:1;font-weight:600">' + esc(pl.name) + '</span>' +
+      '<span class="chip">' + t.emoji + ' ' + esc(t.label) + '</span></div>';
+  }
+  $('sky-row').innerHTML = rows;
+}
+
+function renderYou() {
+  $('me-ava').textContent = S.me.avatar || '🙂';
+  $('me-name').textContent = S.me.name || 'You';
+  var pl = S.me.place;
+  $('me-sub').textContent = '@' + (S.me.handle || 'you') + (pl ? ' · ' + (pl.flag ? pl.flag + ' ' : '') + pl.name : '');
+  $('chip-place').textContent = pl ? '🪟 ' + (pl.flag ? pl.flag + ' ' : '') + pl.name : '🪟';
+
+  var countries = E.passport(S.passportCC);
+  var st = E.horizonStage(countries.length);
+  $('hz-emoji').textContent = st.emoji;
+  $('hz-name').textContent = st.name;
+  $('hz-hint').textContent = st.hint;
+  $('hz-bar').style.width = Math.round(st.progress * 100) + '%';
+  $('hz-next').textContent = st.next
+    ? countries.length + (countries.length === 1 ? ' country' : ' countries') + ' seen · ' + st.next.needed + ' more to ' + st.next.name
+    : countries.length + ' countries seen · the horizon is yours';
+  var fh = '';
+  for (var i = 0; i < countries.length; i++) {
+    fh += '<span class="fl">' + esc(countries[i].flag || '🏳️') + ' <b>' + esc(countries[i].country) + '</b></span>';
+  }
+  $('passport-flags').innerHTML = fh || '<span style="font-size:13px;color:var(--ink3)">No stamps yet — go look at the world.</span>';
+
+  // cloud card
+  var on = S.cloud && S.cloud.enabled;
+  $('cloud-status').textContent = on ? '🟢 live as @' + (S.me.handle || '') : 'off — on-device only';
+  $('cloud-actions').innerHTML = on
+    ? '<button class="btn danger" data-action="cloud-signout">Sign out</button>'
+    : '<button class="btn" data-action="open-account" data-mode="signup">Go live — create account 🌍</button> ' +
+      '<button class="btn ghost" data-action="open-account" data-mode="signin">Sign in</button>';
+
+  // my glimpses
+  var mine = S.glimpses.filter(function (g) { return g.mine; }).sort(function (a, b) { return b.ts - a.ts; });
+  var mh = '';
+  for (var m = 0; m < mine.length; m++) mh += glimpseCard(mine[m], {});
+  $('my-glimpses').innerHTML = mh ||
+    '<div class="empty"><span class="big">📷</span>You haven’t shown the world anything yet.<br>What can you see right now?</div>';
+}
+
+function render() {
+  if (!S.onboarded) return;
+  if (TAB === 'world') renderWorld();
+  else if (TAB === 'near') renderNear();
+  else if (TAB === 'map') renderMap();
+  else if (TAB === 'you') renderYou();
+  var plc = S.me.place;
+  $('chip-place').textContent = plc ? '🪟 ' + (plc.flag ? plc.flag + ' ' : '') + plc.name : '🪟';
+}
+
+/* ============================ capture ============================ */
+var SCENES = ['🏙️', '🌳', '🌊', '🏔️', '🌇', '☕', '📚', '🚉', '🌧️', '🌸', '🍜', '🛣️'];
+var CAPTURE = { photo: null, scene: '' };
+
+function openCapture() {
+  CAPTURE = { photo: null, scene: '' };
+  $('cap-caption').value = '';
+  $('cap-err').textContent = '';
+  $('cap-preview-wrap').style.display = 'none';
+  $('cap-count').textContent = '0 / ' + E.MAX_CAPTION;
+  renderCaptureScenes();
+  var pl = S.me.place;
+  $('cap-place').textContent = pl ? '📍 ' + (pl.flag ? pl.flag + ' ' : '') + pl.name : '📍 pick a place';
+  openSheet('sheet-capture');
+}
+
+function renderCaptureScenes() {
+  var h = '';
+  for (var i = 0; i < SCENES.length; i++) {
+    h += '<button data-action="cap-scene" data-v="' + SCENES[i] + '"' + (CAPTURE.scene === SCENES[i] ? ' class="on"' : '') + '>' + SCENES[i] + '</button>';
+  }
+  $('cap-scenes').innerHTML = h;
+}
+
+// Downscale to ≤900px JPEG so a photo fits localStorage and a Firestore doc.
+function handlePhotoFile(file) {
+  if (!file) return;
+  try {
+    var reader = new FileReader();
+    reader.onload = function () {
+      var img = new Image();
+      img.onload = function () {
+        try {
+          var MAX = 900;
+          var w = img.width, hh = img.height;
+          var scale = Math.min(1, MAX / Math.max(w, hh));
+          var canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, Math.round(w * scale));
+          canvas.height = Math.max(1, Math.round(hh * scale));
+          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+          CAPTURE.photo = canvas.toDataURL('image/jpeg', 0.72);
+          $('cap-preview').src = CAPTURE.photo;
+          $('cap-preview-wrap').style.display = 'block';
+        } catch (e) { toast('Couldn’t read that photo 😕'); }
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  } catch (e) { toast('Couldn’t read that photo 😕'); }
+}
+
+function submitCapture() {
+  var v = E.validateGlimpse({ caption: $('cap-caption').value, photo: CAPTURE.photo, place: S.me.place });
+  if (!v.ok) { $('cap-err').textContent = v.reason; return; }
+  var now = Date.now();
+  var g = {
+    id: 'g-' + now.toString(36) + '-' + Math.floor(Math.random() * 1e6).toString(36),
+    mine: true,
+    authorId: 'me', authorName: S.me.name || 'You', authorHandle: S.me.handle || 'you', avatar: S.me.avatar,
+    caption: v.caption, tags: E.extractTags(v.caption),
+    place: v.place,
+    scene: { emoji: CAPTURE.photo ? '' : (CAPTURE.scene || '🏙️'), tod: E.timeOfDayAt(v.place.lon, now).key },
+    ts: now, reactions: {}
+  };
+  if (CAPTURE.photo) g.photo = CAPTURE.photo;
+  S.glimpses.unshift(g);
+  stampPassport(v.place);
+  save();
+  if (S.cloud && S.cloud.enabled) cloudPublish(g);
+  closeSheets();
+  setTab('world');
+  toast('The world can see it now 🌍');
+}
+
+/* ============================ place picking ============================ */
+var PLACE_TARGET = 'me'; // where a picked place lands; always 'me' — one window at a time
+
+function renderPlaceGrid(elId, selectedName) {
+  var h = '';
+  for (var i = 0; i < E.PLACES.length; i++) {
+    var p = E.PLACES[i];
+    h += '<button data-action="pick-place" data-name="' + esc(p.name) + '"' +
+         (selectedName === p.name ? ' class="on"' : '') + '><span class="flg">' + p.flag + '</span> ' + esc(p.name) + '</button>';
+  }
+  $(elId).innerHTML = h;
+}
+
+function setMyPlace(place, note) {
+  S.me.place = place;
+  save();
+  var lbl = (place.flag ? place.flag + ' ' : '') + place.name;
+  $('cap-place').textContent = '📍 ' + lbl;
+  render();
+  if (note !== false) toast('Your window now looks out from ' + lbl);
+}
+
+function nearestPlace(lat, lon) {
+  var best = null, bestKm = Infinity;
+  for (var i = 0; i < E.PLACES.length; i++) {
+    var km = E.haversineKm({ lat: lat, lon: lon }, E.PLACES[i]);
+    if (km < bestKm) { bestKm = km; best = E.PLACES[i]; }
+  }
+  return { base: best, km: bestKm };
+}
+
+function useGeolocation(noteElId) {
+  var note = $(noteElId);
+  if (typeof navigator === 'undefined' || !navigator.geolocation || !navigator.geolocation.getCurrentPosition) {
+    if (note) note.textContent = 'No location on this device — pick a city.';
+    return;
+  }
+  if (note) note.textContent = 'Finding you…';
+  try {
+    navigator.geolocation.getCurrentPosition(function (pos) {
+      var lat = pos.coords.latitude, lon = pos.coords.longitude;
+      var near = nearestPlace(lat, lon);
+      var b = near.base;
+      var place = {
+        name: near.km < 60 ? b.name : 'Near ' + b.name,
+        country: b.country, cc: b.cc, flag: b.flag,
+        lat: Math.round(lat * 100) / 100, lon: Math.round(lon * 100) / 100
+      };
+      if (note) note.textContent = '';
+      if (S.onboarded) { setMyPlace(place); closeSheets(); }
+      else { OB.place = place; $('ob-geo-note').textContent = '✓ ' + (place.flag || '') + ' ' + place.name; renderPlaceGrid('ob-places', ''); }
+    }, function () {
+      if (note) note.textContent = 'Couldn’t get a fix — pick a city instead.';
+    }, { enableHighAccuracy: false, timeout: 8000, maximumAge: 600000 });
+  } catch (e) {
+    if (note) note.textContent = 'No location on this device — pick a city.';
+  }
+}
+
+/* ============================ reactions & share ============================ */
+function toggleReact(gid, emoji) {
+  var g = findGlimpse(gid);
+  if (!g) return;
+  if (!g.reactions) g.reactions = {};
+  g.reactions.me = g.reactions.me === emoji ? null : emoji;
+  if (g.reactions.me) stampPassport(g.place);
+  if (!g.cloud) save();
+  if (g.cloud && S.cloud && S.cloud.enabled) cloudReact(g);
+  render();
+}
+
+function shareGlimpse(gid) {
+  var g = findGlimpse(gid);
+  if (!g) return;
+  var text = '👀 ' + (g.authorName || 'Someone') + ' in ' + (g.place.flag ? g.place.flag + ' ' : '') + g.place.name +
+             (g.caption ? ': “' + g.caption + '”' : '') + ' — seen on Glimpse';
+  try {
+    if (navigator.share) { navigator.share({ text: text }).catch(function () {}); return; }
+  } catch (e) {}
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { toast('Copied — paste it anywhere 📋'); });
+      return;
+    }
+  } catch (e) {}
+  toast(text);
+}
+
+/* ============================ why receipts ============================ */
+function openWhy(gid) {
+  var item = null;
+  for (var i = 0; i < lastFeedItems.length; i++) {
+    if (String(lastFeedItems[i].glimpse.id) === String(gid)) { item = lastFeedItems[i]; break; }
+  }
+  var h = '';
+  if (item) {
+    for (var j = 0; j < item.reasons.length; j++) {
+      var r = item.reasons[j];
+      h += '<li><span>' + esc(r.label) + '</span><span class="pts">' + (r.pts ? '+' + r.pts : '•') + '</span></li>';
+    }
+    h += '<li><span style="font-weight:700">Slot value in this scroll</span><span class="pts">' + item.score + '</span></li>';
+  } else {
+    h = '<li><span>This window came straight from the source — no ranking involved.</span><span class="pts">•</span></li>';
+  }
+  $('why-list').innerHTML = h;
+  openSheet('sheet-why');
+}
+
+/* ============================ export / reseed / reset ============================ */
+function exportData() {
+  try {
+    var blob = new Blob([JSON.stringify(S, null, 2)], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'glimpse-export.json';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { try { URL.revokeObjectURL(a.href); a.remove(); } catch (e) {} }, 800);
+    toast('Everything you’ve seen and shared — yours 📦');
+  } catch (e) { toast('Export needs a modern browser 😕'); }
+}
+
+function reseedDemo() {
+  var seed = 'glimpse-' + Date.now().toString(36);
+  S.seed = seed;
+  var mine = S.glimpses.filter(function (g) { return g.mine; });
+  S.glimpses = mine.concat(E.seedWorld(seed, Date.now()));
+  save();
+  render();
+  toast('A fresh world outside every window 🌱');
+}
+
+function resetAll() {
+  try { localStorage.removeItem(LS_KEY); } catch (e) {}
+  S = defaultState();
+  CLOUD_GLIMPSES = [];
+  showOnboard();
+}
+
+/* ============================ cloud (registered accounts) ============================ */
+/* Live mode mirrors the house pattern: email+password Firebase Auth, one
+ * unique handle per account (claimed in glimpse_handles, enforced by the
+ * security rules), moments in glimpse_moments. The demo world needs no
+ * account and never leaves the device. */
+var FB = { app: null, db: null, auth: null, unsub: null, ready: null };
+var FB_SDK = 'https://www.gstatic.com/firebasejs/9.23.0/';
+function loadScript(src) {
+  return new Promise(function (resolve, reject) {
+    var s = document.createElement('script');
+    s.src = src; s.onload = resolve; s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+function ensureFirebase() {
+  if (FB.ready) return FB.ready;
+  var cfg = (typeof GLIMPSE_FIREBASE_CONFIG !== 'undefined') ? GLIMPSE_FIREBASE_CONFIG : null;
+  if (!cfg) return Promise.reject(new Error('no-config'));
+  FB.ready = loadScript(FB_SDK + 'firebase-app-compat.js')
+    .then(function () { return loadScript(FB_SDK + 'firebase-auth-compat.js'); })
+    .then(function () { return loadScript(FB_SDK + 'firebase-firestore-compat.js'); })
+    .then(function () {
+      FB.app = firebase.apps && firebase.apps.length ? firebase.app() : firebase.initializeApp(cfg);
+      FB.auth = firebase.auth(); FB.db = firebase.firestore();
+    });
+  return FB.ready;
+}
+
+var ACCOUNT = { mode: 'signup', busy: false };
+function openAccount(mode) {
+  ACCOUNT.mode = mode || 'signup';
+  $('ac-error').textContent = '';
+  $('ac-password').value = '';
+  $('ac-name').value = S.me.name || '';
+  $('ac-handle').value = S.me.handle || '';
+  renderAccountMode();
+  openSheet('sheet-account');
+}
+function renderAccountMode() {
+  var up = ACCOUNT.mode === 'signup';
+  $('ac-title').textContent = up ? 'Go live 🌍' : 'Welcome back';
+  $('ac-signup-fields').style.display = up ? 'block' : 'none';
+  $('ac-submit').textContent = up ? 'Create account 🌍' : 'Sign in';
+  $('ac-forgot').style.display = up ? 'none' : 'inline-flex';
+  var segs = document.querySelectorAll('#ac-mode button');
+  for (var i = 0; i < segs.length; i++) {
+    segs[i].className = segs[i].getAttribute('data-mode') === ACCOUNT.mode ? 'on' : '';
+  }
+}
+function authErrorMsg(err) {
+  var code = err && err.code ? String(err.code) : '';
+  if (code.indexOf('email-already-in-use') !== -1) return 'That email already has an account — try Sign in.';
+  if (code.indexOf('invalid-email') !== -1) return 'That email doesn’t look right.';
+  if (code.indexOf('weak-password') !== -1) return 'Password too weak — use at least 8 characters.';
+  if (code.indexOf('user-not-found') !== -1 || code.indexOf('wrong-password') !== -1 ||
+      code.indexOf('invalid-credential') !== -1 || code.indexOf('invalid-login') !== -1)
+    return 'Email or password doesn’t match an account.';
+  if (code.indexOf('too-many-requests') !== -1) return 'Too many tries — wait a minute and try again.';
+  if (code.indexOf('network') !== -1) return 'Network problem — are you online?';
+  if (code.indexOf('operation-not-allowed') !== -1) return 'Email sign-in isn’t enabled yet — see SETUP.md.';
+  return 'Couldn’t connect (' + (code || 'unknown') + ') — see SETUP.md.';
+}
+function submitAccount() {
+  if (ACCOUNT.busy) return;
+  var email = String($('ac-email').value || '').trim();
+  var password = String($('ac-password').value || '');
+  var errEl = $('ac-error');
+  errEl.textContent = '';
+
+  if (ACCOUNT.mode === 'signup') {
+    var v = E.validateAccount({ name: $('ac-name').value, handle: $('ac-handle').value, email: email, password: password });
+    if (!v.ok) { errEl.textContent = v.errors.join(' '); return; }
+    ACCOUNT.busy = true; $('ac-submit').textContent = 'Opening the window…';
+    ensureFirebase()
+      .then(function () { return FB.db.collection('glimpse_handles').doc(v.handle).get(); })
+      .then(function (doc) {
+        if (doc.exists) throw { code: 'glimpse/handle-taken' };
+        return FB.auth.createUserWithEmailAndPassword(v.email, password);
+      })
+      .then(function (cred) {
+        var u = cred.user;
+        return FB.db.collection('glimpse_handles').doc(v.handle).set({ uid: u.uid })
+          .then(function () {
+            return FB.db.collection('glimpse_users').doc(u.uid).set({
+              name: v.name, handle: v.handle, avatar: S.me.avatar || '🙂', ts: Date.now()
+            }, { merge: true });
+          })
+          .then(function () {
+            S.me.name = v.name; S.me.handle = v.handle;
+            accountReady(u, v.email);
+            toast('You’re live, ' + v.name + ' — the world is watching 🌍');
+          });
+      })
+      .catch(function (err) {
+        if (err && err.code === 'glimpse/handle-taken') errEl.textContent = 'That handle is taken — try another.';
+        else errEl.textContent = authErrorMsg(err);
+      })
+      .then(function () { ACCOUNT.busy = false; renderAccountMode(); });
+  } else {
+    if (!email || !password) { errEl.textContent = 'Enter your email and password.'; return; }
+    ACCOUNT.busy = true; $('ac-submit').textContent = 'Signing in…';
+    ensureFirebase()
+      .then(function () { return FB.auth.signInWithEmailAndPassword(email, password); })
+      .then(function (cred) {
+        var u = cred.user;
+        return FB.db.collection('glimpse_users').doc(u.uid).get().then(function (doc) {
+          var d = doc.exists ? (doc.data() || {}) : {};
+          if (d.name) S.me.name = d.name;
+          if (d.handle) S.me.handle = d.handle;
+          if (d.avatar) S.me.avatar = d.avatar;
+          accountReady(u, email);
+          toast('Welcome back — the world kept moving 🌍');
+        });
+      })
+      .catch(function (err) { errEl.textContent = authErrorMsg(err); })
+      .then(function () { ACCOUNT.busy = false; renderAccountMode(); });
+  }
+}
+function accountReady(user, email) {
+  S.cloud = { enabled: true, uid: user.uid, status: 'on', email: email || (user.email || '') };
+  save();
+  subscribeCloud();
+  closeSheets();
+  render();
+}
+function forgotPassword() {
+  var email = String($('ac-email').value || '').trim();
+  if (!email) { $('ac-error').textContent = 'Type your email above first, then tap forgot.'; return; }
+  ensureFirebase()
+    .then(function () { return FB.auth.sendPasswordResetEmail(email); })
+    .then(function () { toast('Reset link sent to ' + email + ' 📬'); })
+    .catch(function (err) { $('ac-error').textContent = authErrorMsg(err); });
+}
+function signOutCloud() {
+  if (FB.unsub) { try { FB.unsub(); } catch (e) {} FB.unsub = null; }
+  if (FB.auth) { try { FB.auth.signOut(); } catch (e) {} }
+  S.cloud = { enabled: false, uid: '', status: 'off' };
+  CLOUD_GLIMPSES = [];
+  save(); render();
+  toast('Signed out — your window stays yours 🔒');
+}
+function resumeCloud() {
+  ensureFirebase().then(function () {
+    FB.auth.onAuthStateChanged(function (user) {
+      if (user && !user.isAnonymous) {
+        S.cloud = { enabled: true, uid: user.uid, status: 'on', email: user.email || S.cloud.email || '' };
+        save();
+        subscribeCloud();
+        render();
+      } else {
+        S.cloud = { enabled: false, uid: '', status: 'off' };
+        CLOUD_GLIMPSES = [];
+        save(); render();
+      }
+    });
+  }).catch(function () { /* offline or no config — stay local */ });
+}
+function subscribeCloud() {
+  if (!FB.db) return;
+  if (FB.unsub) { try { FB.unsub(); } catch (e) {} }
+  FB.unsub = FB.db.collection('glimpse_moments').orderBy('ts', 'desc').limit(60)
+    .onSnapshot(function (snap) {
+      var mine = S.cloud.uid;
+      var cloud = [];
+      snap.forEach(function (doc) {
+        var d = doc.data() || {};
+        if (d.authorUid === mine) return; // my own glimpses already live locally
+        var p = d.place || {};
+        var lat = Number(p.lat), lon = Number(p.lon);
+        if (!isFinite(lat) || !isFinite(lon)) return;
+        var reactions = {};
+        for (var k in (d.reactions || {})) reactions[k === mine ? 'me' : 'c:' + k] = d.reactions[k];
+        cloud.push({
+          id: 'cloud-' + doc.id, cloudId: doc.id, cloud: true,
+          authorId: 'c:' + (d.authorUid || '?'), authorName: d.name || 'Someone', authorHandle: d.handle || 'live',
+          avatar: d.avatar || '🌍',
+          caption: String(d.caption || '').slice(0, 400),
+          tags: E.extractTags(d.caption || ''),
+          place: { name: String(p.name || 'Somewhere'), country: String(p.country || ''), cc: String(p.cc || '??'),
+                   flag: String(p.flag || ''), lat: lat, lon: lon },
+          scene: { emoji: String((d.scene && d.scene.emoji) || ''), tod: String((d.scene && d.scene.tod) || 'day') },
+          photo: (typeof d.photo === 'string' && d.photo.indexOf('data:image/') === 0) ? d.photo : null,
+          ts: d.ts || 0, reactions: reactions
+        });
+      });
+      CLOUD_GLIMPSES = cloud;
+      render();
+    }, function () { /* listen failed; stay local */ });
+}
+function cloudPublish(g) {
+  if (!FB.db) return;
+  var doc = {
+    authorUid: S.cloud.uid, name: g.authorName, handle: g.authorHandle, avatar: g.avatar,
+    caption: g.caption, place: g.place, scene: g.scene, ts: g.ts, reactions: {}
+  };
+  // A downscaled photo fits comfortably in one Firestore doc; skip giants.
+  if (g.photo && g.photo.length < 500000) doc.photo = g.photo;
+  FB.db.collection('glimpse_moments').add(doc)
+    .then(function (ref) { g.cloudId = ref.id; save(); })
+    .catch(function () { toast('Shared on this device — the live world didn’t hear it 📴'); });
+}
+function cloudReact(g) {
+  if (!FB.db || !g.cloudId) return;
+  var patch = {};
+  patch['reactions.' + S.cloud.uid] = g.reactions.me || firebase.firestore.FieldValue.delete();
+  FB.db.collection('glimpse_moments').doc(g.cloudId).update(patch).catch(function () {});
+}
+
+/* ============================ onboarding ============================ */
+var AVATARS = ['🙂', '😎', '🧢', '🌻', '🐧', '🦊', '🐨', '🌵', '🍩', '⚡', '🎈', '🐳'];
+var OB = { avatar: '🙂', place: null };
+
+function showOnboard() {
+  $('onboard').className = 'show';
+  renderOnboardBits();
+}
+function renderOnboardBits() {
+  var av = '';
+  for (var i = 0; i < AVATARS.length; i++) {
+    av += '<button data-action="ob-avatar" data-v="' + AVATARS[i] + '"' + (OB.avatar === AVATARS[i] ? ' class="on"' : '') + '>' + AVATARS[i] + '</button>';
+  }
+  $('ob-avatars').innerHTML = av;
+  renderPlaceGrid('ob-places', OB.place && OB.place.name);
+}
+function finishOnboard() {
+  var name = String($('ob-name').value || '').trim() || 'Someone';
+  var handle = String($('ob-handle').value || '').trim().toLowerCase().replace(/[^a-z0-9_]/g, '') || 'someone';
+  if (!OB.place) { toast('Pick where your window is first 🪟'); return; }
+  S.me = { id: 'me', name: name, handle: handle, avatar: OB.avatar, place: OB.place };
+  S.onboarded = true;
+  S.seed = 'glimpse-' + Date.now().toString(36);
+  S.glimpses = E.seedWorld(S.seed, Date.now());
+  stampPassport(OB.place);
+  save();
+  $('onboard').className = '';
+  setTab('world');
+  toast('Welcome, ' + name + ' — the world’s windows are open 🌍');
+}
+
+/* ============================ event wiring (delegated) ============================ */
+document.addEventListener('click', function (ev) {
+  var t = ev.target;
+  var tagEl = t && t.closest ? t.closest('.tag[data-tag]') : null;
+  if (tagEl) {
+    FILTER = { kind: 'tag', value: tagEl.getAttribute('data-tag') };
+    closeSheets(); setTab('world');
+    return;
+  }
+  var el = t && t.closest ? t.closest('[data-action]') : null;
+  if (!el) return;
+  var a = el.getAttribute('data-action');
+  if (a === 'tab') setTab(el.getAttribute('data-tab'));
+  else if (a === 'open-capture') openCapture();
+  else if (a === 'close-sheets') closeSheets();
+  else if (a === 'cap-submit') submitCapture();
+  else if (a === 'cap-remove-photo') { CAPTURE.photo = null; $('cap-preview-wrap').style.display = 'none'; }
+  else if (a === 'cap-scene') { CAPTURE.scene = el.getAttribute('data-v'); renderCaptureScenes(); }
+  else if (a === 'react') toggleReact(el.getAttribute('data-gid'), el.getAttribute('data-emoji'));
+  else if (a === 'share') shareGlimpse(el.getAttribute('data-gid'));
+  else if (a === 'why') openWhy(el.getAttribute('data-gid'));
+  else if (a === 'filter-cc') {
+    FILTER = { kind: 'cc', value: el.getAttribute('data-cc'), label: el.getAttribute('data-label') };
+    closeSheets(); setTab('world');
+  }
+  else if (a === 'clear-filter') { FILTER = null; render(); }
+  else if (a === 'open-place') { renderPlaceGrid('place-grid', S.me.place && S.me.place.name); $('geo-note').textContent = ''; openSheet('sheet-place'); }
+  else if (a === 'use-geo') useGeolocation('geo-note');
+  else if (a === 'pick-place') {
+    var pb = E.placeByName(el.getAttribute('data-name'));
+    if (!pb) return;
+    var chosen = { name: pb.name, country: pb.country, cc: pb.cc, flag: pb.flag, lat: pb.lat, lon: pb.lon };
+    if (S.onboarded) { setMyPlace(chosen); closeSheets(); }
+    else { OB.place = chosen; $('ob-geo-note').textContent = ''; renderPlaceGrid('ob-places', pb.name); }
+  }
+  else if (a === 'map-cell') {
+    var cx = el.getAttribute('data-x'), cy = el.getAttribute('data-y');
+    var map = E.worldMapCells(allGlimpses(), 12, 6, Date.now());
+    for (var i = 0; i < map.cells.length; i++) {
+      if (String(map.cells[i].x) === cx && String(map.cells[i].y) === cy) {
+        var cell = map.cells[i];
+        toast((cell.flag ? cell.flag + ' ' : '') + (cell.name || 'This slice') + ' — ' +
+              cell.count + (cell.count === 1 ? ' glimpse' : ' glimpses') + ', ' + cell.tod.emoji + ' ' + cell.tod.label + ' there now');
+        break;
+      }
+    }
+  }
+  else if (a === 'export') exportData();
+  else if (a === 'reseed') reseedDemo();
+  else if (a === 'reset') {
+    if (typeof confirm !== 'function' || confirm('Erase everything on this device? Your live account (if any) is not deleted.')) resetAll();
+  }
+  else if (a === 'open-account') openAccount(el.getAttribute('data-mode') || 'signup');
+  else if (a === 'ac-mode') { ACCOUNT.mode = el.getAttribute('data-mode'); renderAccountMode(); }
+  else if (a === 'ac-submit') submitAccount();
+  else if (a === 'ac-forgot') forgotPassword();
+  else if (a === 'cloud-signout') signOutCloud();
+  else if (a === 'ob-avatar') { OB.avatar = el.getAttribute('data-v'); renderOnboardBits(); }
+  else if (a === 'ob-geo') useGeolocation('ob-geo-note');
+  else if (a === 'ob-done') finishOnboard();
+});
+
+document.addEventListener('input', function (ev) {
+  var t = ev.target;
+  if (t && t.id === 'cap-caption') {
+    var n = String(t.value || '').length;
+    var el = $('cap-count');
+    el.textContent = n + ' / ' + E.MAX_CAPTION;
+    el.className = n > E.MAX_CAPTION ? 'cap-count over' : 'cap-count';
+  }
+});
+
+document.addEventListener('change', function (ev) {
+  var t = ev.target;
+  if (t && t.id === 'cap-file' && t.files && t.files[0]) handlePhotoFile(t.files[0]);
+});
+
+/* ============================ boot ============================ */
+load();
+if (S.onboarded) {
+  setTab('world');
+  if (S.cloud && S.cloud.enabled) resumeCloud();
+} else {
+  showOnboard();
+}
+
+if (navigator && 'serviceWorker' in navigator) {
+  try { navigator.serviceWorker.register('sw.js'); } catch (e) {}
+}
+</script>
+
+<script>
+/* Tap-to-update — shows a prompt when a newer version of the app is ready, then
+ * swaps it in on tap. Shared across BallrzAPP PWAs; observes the existing service
+ * worker registration, so it doesn't re-register or change caching. */
+(function () {
+  try {
+  if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
+  var ready = navigator.serviceWorker.ready;
+  if (!ready || typeof ready.then !== 'function') return;
+  var tapped = false;
+  navigator.serviceWorker.addEventListener('controllerchange', function () {
+    if (tapped) { tapped = false; location.reload(); }
+  });
+  function banner(reg) {
+    if (document.getElementById('pwa-update-bar')) return;
+    var b = document.createElement('button');
+    b.id = 'pwa-update-bar'; b.type = 'button';
+    b.textContent = '🔄 New version — tap to update';
+    b.setAttribute('aria-label', 'A new version is available. Tap to update.');
+    b.style.cssText = 'position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom));'
+      + 'transform:translateX(-50%);z-index:2147483000;font:600 14px/1.2 -apple-system,'
+      + 'BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#04101e;'
+      + 'background:linear-gradient(92deg,#4dc3ff,#8fdcff);border:0;border-radius:999px;'
+      + 'padding:12px 18px;box-shadow:0 8px 24px rgba(0,0,0,.45);cursor:pointer;';
+    b.addEventListener('click', function () {
+      tapped = true;
+      var w = reg.waiting;
+      if (w) w.postMessage({ type: 'SKIP_WAITING' });
+      b.remove();
+      setTimeout(function () { if (tapped) { tapped = false; location.reload(); } }, 2500);
+    });
+    document.body.appendChild(b);
+  }
+  ready.then(function (reg) {
+    try {
+      if (reg.waiting && navigator.serviceWorker.controller) banner(reg);
+      reg.addEventListener('updatefound', function () {
+        var w = reg.installing;
+        if (!w) return;
+        w.addEventListener('statechange', function () {
+          if (w.state === 'installed' && navigator.serviceWorker.controller) banner(reg);
+        });
+      });
+      setInterval(function () { reg.update().catch(function () {}); }, 3600000);
+    } catch (e) {}
+  }).catch(function () {});
+  } catch (e) {}
+})();
+</script>
+</body>
+</html>
