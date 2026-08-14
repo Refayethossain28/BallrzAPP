@@ -43,6 +43,23 @@ What the rules enforce:
 - **Bounded documents** — captions ≤ 400 chars, photos are downscaled data URLs
   capped at 500 KB, and a place must carry numeric coordinates.
 
+## 4. Push notifications (optional)
+
+Everything ships in the repo except one public key:
+
+1. Firebase console → **Project settings → Cloud Messaging → Web configuration
+   → Web Push certificates → Generate key pair**.
+2. Paste the key (a long Base64 string — public, safe to commit) into
+   `GLIMPSE_FCM_VAPID_KEY` in [`config.js`](./config.js).
+
+That's it. The **Push** toggle in the app's Activity sheet then works: the
+device registers an FCM token against Glimpse's own service worker (which
+displays incoming pushes), stores it in the private `glimpse_push/{uid}` doc,
+and the `glimpsePushOnReaction` Cloud Function
+([`../functions-side/index.js`](../functions-side/index.js) — deployed
+automatically by the repo's Firebase workflow) notifies a post's author the
+moment someone reacts, pruning dead tokens as devices are wiped.
+
 ## Data layout
 
 | Collection        | Doc                                                              | Who writes           |
@@ -50,6 +67,7 @@ What the rules enforce:
 | `glimpse_users`   | `{name, handle, avatar, ts}` keyed by uid                        | the owner            |
 | `glimpse_handles` | `{uid}` keyed by handle — the uniqueness lock                    | the claiming owner   |
 | `glimpse_moments` | `{authorUid, name, handle, avatar, caption, place, scene, photo?, ts, reactions}` | author (reactions: anyone registered) |
+| `glimpse_push`    | `{fcmTokens: [...]}` keyed by uid — private device push tokens   | the owner (read server-side by the push function) |
 
 Glimpse keeps all data in `glimpse_*` collections, so it never touches the
 ApexVIP / Ripple / Bloom data that shares the project.

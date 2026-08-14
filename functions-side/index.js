@@ -614,3 +614,79 @@ exports.ripplePushOnCall = onDocumentCreated(
     logger.info('ripplePushOnCall', { callId: event.params.callId, sent: res.successCount });
   }
 );
+
+/* ===========================================================================
+ * Glimpse push — notify the author the moment someone reacts to their post
+ *
+ * Fires on writes to glimpse_moments/{momentId}. A reaction is the only thing
+ * a non-author can change on a moment (enforced by firestore.rules), so the
+ * diff of the `reactions` map against the previous revision IS the event.
+ * Reads the author's device tokens from the private glimpse_push/{uid} doc
+ * via the Admin SDK and prunes dead registrations, mirroring ripplePush.
+ * Push is opt-in client-side and needs the project's Web Push (VAPID) key in
+ * glimpse/config.js — see glimpse/SETUP.md.
+ * ======================================================================== */
+const GLIMPSE_LINK = 'https://refayethossain28.github.io/BallrzAPP/glimpse/';
+
+exports.glimpsePushOnReaction = onDocumentWritten(
+  { document: 'glimpse_moments/{momentId}', region: 'us-central1' },
+  async (event) => {
+    const before = event.data.before.exists ? event.data.before.data() : null;
+    const after = event.data.after.exists ? event.data.after.data() : null;
+    if (!before || !after) return; // create/delete — not a reaction
+    const authorUid = after.authorUid;
+    if (!authorUid) return;
+
+    const prev = before.reactions || {};
+    const cur = after.reactions || {};
+    const changed = Object.keys(cur).filter((uid) => uid !== authorUid && prev[uid] !== cur[uid]);
+    if (!changed.length) return;
+
+    const db = admin.firestore();
+    const ps = await db.collection('glimpse_push').doc(authorUid).get();
+    const tokens = ((ps.exists && ps.data().fcmTokens) || []).filter(Boolean);
+    if (!tokens.length) return;
+
+    let name = 'Someone';
+    try {
+      const u = await db.collection('glimpse_users').doc(changed[0]).get();
+      if (u.exists && u.data().name) name = String(u.data().name);
+    } catch (e) { /* keep 'Someone' */ }
+    const emoji = cur[changed[0]] || '';
+    const cap = String(after.caption || '').replace(/\s+/g, ' ').trim();
+    const snippet = cap ? ' \u201c' + (cap.length > 40 ? cap.slice(0, 37) + '\u2026' : cap) + '\u201d' : '';
+    const extra = changed.length > 1 ? ' and ' + (changed.length - 1) + ' more' : '';
+    const body = name + extra + ' reacted' + (emoji ? ' ' + emoji : '') + ' to your post' + snippet;
+
+    let res;
+    try {
+      res = await admin.messaging().sendEachForMulticast({
+        tokens,
+        notification: { title: 'Glimpse', body },
+        data: { url: GLIMPSE_LINK, momentId: event.params.momentId },
+        webpush: {
+          fcmOptions: { link: GLIMPSE_LINK },
+          notification: { icon: GLIMPSE_LINK + 'icon.svg', badge: GLIMPSE_LINK + 'icon.svg', tag: 'glimpse-react' },
+        },
+      });
+    } catch (err) {
+      logger.error('glimpsePush', err.message);
+      return;
+    }
+
+    const dead = tokens.filter((_, i) => {
+      const r = res.responses[i];
+      if (r.success) return false;
+      const code = r.error && r.error.code;
+      return code === 'messaging/registration-token-not-registered' ||
+             code === 'messaging/invalid-registration-token' ||
+             code === 'messaging/invalid-argument';
+    });
+    if (dead.length) {
+      await db.collection('glimpse_push').doc(authorUid).update({
+        fcmTokens: admin.firestore.FieldValue.arrayRemove(...dead),
+      }).catch(() => {});
+    }
+    logger.info('glimpsePush', { momentId: event.params.momentId, sent: res.successCount, failed: res.failureCount });
+  }
+);

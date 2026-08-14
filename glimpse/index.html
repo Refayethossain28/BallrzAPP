@@ -389,8 +389,10 @@
   <div class="sheet">
     <div class="grab"></div>
     <h3>Activity</h3>
-    <div class="kv" style="padding-top:0"><span class="k">Device alerts when the app is in the background</span>
+    <div class="kv" style="padding-top:0"><span class="k">Alerts while the app is open in the background</span>
       <button class="chip" id="alerts-toggle" data-action="toggle-alerts">Off</button></div>
+    <div class="kv"><span class="k">Push — even when the app is closed</span>
+      <button class="chip" id="push-toggle" data-action="toggle-push">Off</button></div>
     <div id="activity-list"></div>
   </div>
 </div>
@@ -478,6 +480,7 @@ function defaultState() {
     activity: [],          // grouped in the Activity sheet; capped at 80
     activityReadTs: 0,
     alerts: false,
+    push: { on: false, token: '' },
     cloudSeenTs: 0,        // watermark for "posted near you" events
     cloud: { enabled: false, uid: '', status: 'off', email: '' }
   };
@@ -495,6 +498,7 @@ function load() {
   if (!S.activity) S.activity = [];
   if (!S.activityReadTs) S.activityReadTs = 0;
   if (!S.cloudSeenTs) S.cloudSeenTs = 0;
+  if (!S.push) S.push = { on: false, token: '' };
   // Devices that onboarded before demo accounts were removed still carry the
   // seeded posts in storage — purge them once here.
   var before = S.glimpses.length;
@@ -1129,6 +1133,9 @@ function renderActivity(markRead) {
   var t = $('alerts-toggle');
   t.textContent = S.alerts ? 'On' : 'Off';
   t.className = S.alerts ? 'chip accent' : 'chip';
+  var pt = $('push-toggle');
+  pt.textContent = S.push && S.push.on ? 'On' : 'Off';
+  pt.className = S.push && S.push.on ? 'chip accent' : 'chip';
   if (markRead) { S.activityReadTs = Date.now(); save(); updateActivityDot(); }
 }
 
@@ -1149,6 +1156,62 @@ function toggleAlerts() {
       if (perm !== 'granted') toast('Notifications are blocked for this site.');
     });
   } catch (e) { toast('This browser has no notifications.'); }
+}
+
+/* Web push: notifications that arrive with the app fully closed. The token
+ * is minted against Glimpse's own service worker (which displays incoming
+ * pushes) and stored in the private glimpse_push/{uid} doc; the
+ * glimpsePushOnReaction Cloud Function reads it with the Admin SDK when
+ * someone reacts to one of your moments. Needs the project's public VAPID
+ * key in config.js — see SETUP.md. */
+function pushVapid() {
+  return (typeof GLIMPSE_FCM_VAPID_KEY !== 'undefined' && GLIMPSE_FCM_VAPID_KEY) ? GLIMPSE_FCM_VAPID_KEY : null;
+}
+function pushSupported() {
+  return typeof Notification !== 'undefined' && typeof navigator !== 'undefined' &&
+         !!navigator.serviceWorker;
+}
+function ensureMessaging() {
+  return ensureFirebase().then(function () {
+    if (firebase.messaging) return null;
+    return loadScript(FB_SDK + 'firebase-messaging-compat.js');
+  });
+}
+function enablePush(interactive) {
+  if (!(S.cloud && S.cloud.enabled)) { if (interactive) toast('Create an account first — push follows your live posts.'); return; }
+  if (!pushVapid()) { if (interactive) toast('Push needs the project’s Web Push key — see SETUP.md.'); return; }
+  if (!pushSupported()) { if (interactive) toast('This browser can’t do push.'); return; }
+  Notification.requestPermission().then(function (perm) {
+    if (perm !== 'granted') { if (interactive) toast('Notifications are blocked for this site.'); return; }
+    return navigator.serviceWorker.ready.then(function (reg) {
+      return ensureMessaging().then(function () {
+        return firebase.messaging().getToken({ vapidKey: pushVapid(), serviceWorkerRegistration: reg });
+      });
+    }).then(function (token) {
+      if (!token) return;
+      S.push = { on: true, token: token };
+      save();
+      renderActivity(false);
+      return FB.db.collection('glimpse_push').doc(S.cloud.uid).set({
+        fcmTokens: firebase.firestore.FieldValue.arrayUnion(token),
+        updatedAt: Date.now()
+      }, { merge: true }).then(function () { if (interactive) toast('Push is on.'); });
+    });
+  }).catch(function (err) { if (interactive) toast((err && err.message) || 'Couldn’t enable push.'); });
+}
+function disablePush() {
+  var tok = S.push && S.push.token;
+  S.push = { on: false, token: '' };
+  save();
+  renderActivity(false);
+  if (tok && FB.db && S.cloud.uid) {
+    FB.db.collection('glimpse_push').doc(S.cloud.uid).set({
+      fcmTokens: firebase.firestore.FieldValue.arrayRemove(tok)
+    }, { merge: true }).catch(function () {});
+  }
+  try {
+    ensureMessaging().then(function () { return firebase.messaging().deleteToken(); }).catch(function () {});
+  } catch (e) {}
 }
 
 // Reactions on your own posts: one live query over your moments; each doc
@@ -1379,6 +1442,7 @@ function resumeCloud() {
         save();
         subscribeCloud();
         subscribeMine();
+        if (S.push && S.push.on && pushSupported() && Notification.permission === 'granted') enablePush(false);
         render();
       } else {
         S.cloud = { enabled: false, uid: '', status: 'off' };
@@ -1515,6 +1579,7 @@ document.addEventListener('click', function (ev) {
   else if (a === 'open-search') openSearch();
   else if (a === 'open-activity') openActivity();
   else if (a === 'toggle-alerts') toggleAlerts();
+  else if (a === 'toggle-push') { if (S.push && S.push.on) disablePush(); else enablePush(true); }
   else if (a === 'open-person') openPerson(el.getAttribute('data-uid'));
   else if (a === 'person-filter') {
     FILTER = { kind: 'author', value: el.getAttribute('data-uid'), label: '@' + el.getAttribute('data-handle') };
