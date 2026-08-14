@@ -7,7 +7,7 @@ per-parameter step size. This is what nearly every transformer is trained with.
 
 from __future__ import annotations
 
-import numpy as np
+from backend import np  # numpy, or CuPy when LLM_BACKEND=cupy
 
 
 class Adam:

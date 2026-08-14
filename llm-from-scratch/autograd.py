@@ -13,7 +13,7 @@ gradients come for free.
 
 from __future__ import annotations
 
-import numpy as np
+from backend import np, index_add  # numpy, or CuPy when LLM_BACKEND=cupy
 
 
 def _acc(existing, new):
@@ -172,7 +172,12 @@ class Tensor:
         if not axes:
             axes = tuple(reversed(range(self.data.ndim)))
         out = Tensor(self.data.transpose(*axes), (self,), "transpose")
-        inv = np.argsort(axes)
+        # Inverse permutation, computed host-side (axes is a tiny Python tuple;
+        # under the CuPy backend np.argsort would needlessly make a GPU array).
+        inv = [0] * len(axes)
+        for i, a in enumerate(axes):
+            inv[a] = i
+        inv = tuple(inv)
 
         def _backward():
             self.grad = _acc(self.grad, out.grad.transpose(*inv))
@@ -245,7 +250,7 @@ def embedding(weight: Tensor, idx: np.ndarray) -> Tensor:
 
     def _backward():
         g = np.zeros_like(weight.data)
-        np.add.at(g, idx, out.grad)
+        index_add(g, idx, out.grad)  # np.add.at has no CuPy equivalent
         weight.grad = _acc(weight.grad, g)
 
     out._backward = _backward

@@ -111,6 +111,18 @@ The "Train browser LLM" workflow accepts a committed corpus path too: build
 `corpus_url = data/web.txt` — the trained model lands in `web/model.json` and
 GitHub Pages serves your internet-fed AI.
 
+### Train on a GPU (the big-model path)
+
+The stack is backend-switchable: `LLM_BACKEND=cupy` swaps NumPy for
+[CuPy](https://cupy.dev) and the identical from-scratch code runs on an NVIDIA
+GPU — 10–30× faster than CPU, which is what makes a **~17M-parameter** model
+(3× the runner-trained one) practical. `train_on_colab.ipynb` is the ready-made
+path: open it in Google Colab, pick a T4, and it scrapes a corpus with Magpie,
+trains 8L/384d/BPE-4096, and exports **fp16** weights (`export_web.py --dtype
+f2`, half the download; `web/gpt.js` decodes either precision). Sampling stays
+host-side, checkpoints stay plain `.npz`, and every existing test runs
+unchanged on the default numpy backend.
+
 ### Niche generators — where a tiny model is actually useful
 
 A 5M-parameter model can't be a general assistant, but it *is* good at a narrow,
