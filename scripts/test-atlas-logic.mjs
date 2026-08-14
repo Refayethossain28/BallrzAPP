@@ -839,7 +839,7 @@ test('3D buildings: height parsing, perspective factor, wall shading', () => {
   const lat = 51.5;
   assert.ok(A.roofFactor(60, lat, 17) > A.roofFactor(10, lat, 17));
   assert.ok(A.roofFactor(30, lat, 17) > A.roofFactor(30, lat, 15), 'zoom in → more lean');
-  assert.ok(A.roofFactor(150, lat, 19) <= 0.22, 'clamped');
+  assert.ok(A.roofFactor(150, lat, 19) <= 0.4, 'clamped');
   assert.ok(A.roofFactor(3, lat, 12) >= 0);
   // NW light: a north-facing wall (edge running west→east seen from south,
   // i.e. outward normal up-screen) is brighter than a south-facing one

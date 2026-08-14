@@ -1379,12 +1379,22 @@ function drawBuildings(night) {
       cx += sp[j].x; cy += sp[j].y;
     }
     cx /= sp.length; cy /= sp.length;
-    list.push({ sp: sp, rp: rp, d: Math.hypot(cx - a.x, cy - a.y) });
+    list.push({ sp: sp, rp: rp, b: b, d: Math.hypot(cx - a.x, cy - a.y) });
     if (list.length >= BLD_DRAW_CAP) break;
   }
   list.sort(function (p, q) { return q.d - p.d; }); // far first, near paints over
+  // 🪟 windows: deterministic per building/wall/floor — the skyline never
+  // flickers. A per-frame budget keeps phones at full frame rate; the
+  // wall-height gate spends it on buildings near enough to matter.
+  var winBudget = 1500;
+  var wantWin = view.zoom >= 15.7;
+  function seedHash(n) { n = (n ^ (n >>> 15)) * 2246822519; n = (n ^ (n >>> 13)) * 3266489917; return ((n ^ (n >>> 16)) >>> 0) / 4294967296; }
   for (var li = 0; li < list.length; li++) {
-    var bb = list[li], sp2 = bb.sp, rp2 = bb.rp;
+    var bb = list[li], sp2 = bb.sp, rp2 = bb.rp, bref = bb.b;
+    if (bref.seed == null) {
+      bref.seed = Math.abs(Math.round(bref.pts[0].lat * 1e5) * 31 + Math.round(bref.pts[0].lon * 1e5)) >>> 0;
+    }
+    var tint = seedHash(bref.seed) * 10 - 5; // ±5 per-building colour jitter
     for (var e = 0; e < sp2.length - 1; e++) {
       var g0 = sp2[e], g1 = sp2[e + 1], r0 = rp2[e], r1 = rp2[e + 1];
       var sh = A.wallShade(g0.x, g0.y, g1.x, g1.y);
@@ -1393,19 +1403,74 @@ function drawBuildings(night) {
       ctx.lineTo(r1.x, r1.y); ctx.lineTo(r0.x, r0.y);
       ctx.closePath();
       ctx.fillStyle = night
-        ? 'rgb(' + Math.round(18 + 30 * sh) + ',' + Math.round(24 + 36 * sh) + ',' + Math.round(38 + 48 * sh) + ')'
-        : 'rgb(' + Math.round(150 + 62 * sh) + ',' + Math.round(154 + 62 * sh) + ',' + Math.round(162 + 62 * sh) + ')';
+        ? 'rgb(' + Math.round(18 + 30 * sh + tint) + ',' + Math.round(24 + 36 * sh + tint) + ',' + Math.round(38 + 48 * sh + tint) + ')'
+        : 'rgb(' + Math.round(150 + 62 * sh + tint) + ',' + Math.round(154 + 62 * sh + tint) + ',' + Math.round(162 + 62 * sh + tint) + ')';
       ctx.fill();
+      // window grid on walls that are close and tall enough to read
+      var wallPx = Math.hypot(g1.x - g0.x, g1.y - g0.y);
+      var wallHPx = Math.hypot(r0.x - g0.x, r0.y - g0.y);
+      if (wantWin && winBudget > 0 && wallPx > 20 && wallHPx > 9 && bref.h > 5) {
+        var floors = Math.min(22, Math.max(1, Math.round(bref.h / 3.2)));
+        var cols = Math.min(18, Math.floor(wallPx / 8));
+        if (cols >= 1 && floors * cols <= winBudget) {
+          winBudget -= floors * cols;
+          for (var fl = 0; fl < floors; fl++) {
+            var v0 = (fl + 0.3) / floors, v1 = (fl + 0.72) / floors;
+            for (var c = 0; c < cols; c++) {
+              var t0 = (c + 0.28) / cols, t1 = (c + 0.74) / cols;
+              var lit = night && seedHash(bref.seed + e * 131 + fl * 17 + c * 7) < 0.34;
+              var bx0 = g0.x + (g1.x - g0.x) * t0, by0 = g0.y + (g1.y - g0.y) * t0;
+              var bx1 = g0.x + (g1.x - g0.x) * t1, by1 = g0.y + (g1.y - g0.y) * t1;
+              var tx0 = r0.x + (r1.x - r0.x) * t0, ty0 = r0.y + (r1.y - r0.y) * t0;
+              var tx1 = r0.x + (r1.x - r0.x) * t1, ty1 = r0.y + (r1.y - r0.y) * t1;
+              ctx.beginPath();
+              ctx.moveTo(bx0 + (tx0 - bx0) * v0, by0 + (ty0 - by0) * v0);
+              ctx.lineTo(bx1 + (tx1 - bx1) * v0, by1 + (ty1 - by1) * v0);
+              ctx.lineTo(bx1 + (tx1 - bx1) * v1, by1 + (ty1 - by1) * v1);
+              ctx.lineTo(bx0 + (tx0 - bx0) * v1, by0 + (ty0 - by0) * v1);
+              ctx.closePath();
+              ctx.fillStyle = night
+                ? (lit ? 'rgba(255,214,140,0.85)' : 'rgba(8,12,24,0.55)')
+                : 'rgba(58,68,92,0.16)';
+              ctx.fill();
+            }
+          }
+        }
+      }
     }
+    // grounding shadow along the footprint — buildings sit ON the map
+    ctx.beginPath();
+    ctx.moveTo(sp2[0].x, sp2[0].y);
+    for (var gv = 1; gv < sp2.length; gv++) ctx.lineTo(sp2[gv].x, sp2[gv].y);
+    ctx.closePath();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = night ? 'rgba(0,0,0,0.4)' : 'rgba(30,40,60,0.22)';
+    ctx.stroke();
+    // roof with a parapet: outer slab, then an inset face a touch darker
     ctx.beginPath();
     ctx.moveTo(rp2[0].x, rp2[0].y);
     for (var v = 1; v < rp2.length; v++) ctx.lineTo(rp2[v].x, rp2[v].y);
     ctx.closePath();
-    ctx.fillStyle = night ? '#2a3654' : '#e6e9ee';
+    ctx.fillStyle = night
+      ? 'rgb(' + Math.round(42 + tint) + ',' + Math.round(54 + tint) + ',' + Math.round(84 + tint) + ')'
+      : 'rgb(' + Math.round(230 + tint) + ',' + Math.round(233 + tint) + ',' + Math.round(238 + tint) + ')';
     ctx.fill();
     ctx.lineWidth = 0.8;
-    ctx.strokeStyle = night ? 'rgba(120,145,200,0.25)' : 'rgba(90,100,120,0.28)';
+    ctx.strokeStyle = night ? 'rgba(140,170,230,0.35)' : 'rgba(90,100,120,0.3)';
     ctx.stroke();
+    if (wantWin && rp2.length > 3) {
+      var rcx = 0, rcy = 0;
+      for (var rc = 0; rc < rp2.length - 1; rc++) { rcx += rp2[rc].x; rcy += rp2[rc].y; }
+      rcx /= (rp2.length - 1); rcy /= (rp2.length - 1);
+      ctx.beginPath();
+      ctx.moveTo(rp2[0].x + (rcx - rp2[0].x) * 0.16, rp2[0].y + (rcy - rp2[0].y) * 0.16);
+      for (var rv = 1; rv < rp2.length; rv++) {
+        ctx.lineTo(rp2[rv].x + (rcx - rp2[rv].x) * 0.16, rp2[rv].y + (rcy - rp2[rv].y) * 0.16);
+      }
+      ctx.closePath();
+      ctx.fillStyle = night ? 'rgba(0,0,0,0.22)' : 'rgba(30,40,60,0.08)';
+      ctx.fill();
+    }
   }
 }
 
