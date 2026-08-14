@@ -2,7 +2,7 @@
  * navigations are network-first (freshest build online, cached shell offline)
  * and static assets are cache-first for speed. Bump CACHE to force a clean
  * reinstall. */
-const CACHE = 'glimpse-v5';
+const CACHE = 'glimpse-v6';
 const ASSETS = ['./', './index.html', './engine.js', './config.js',
                 './manifest.json', './icon.svg'];
 
@@ -48,4 +48,29 @@ self.addEventListener('fetch', (e) => {
 /* tap-to-update: activate the new version when the page asks */
 self.addEventListener('message', function (e) {
   if (e.data && e.data.type === 'SKIP_WAITING') self.skipWaiting();
+});
+
+/* Web push (FCM): the page registers its token against THIS worker, so
+ * incoming pushes land here — display the payload and focus the app on tap. */
+self.addEventListener('push', (e) => {
+  let p = {};
+  try { p = e.data ? e.data.json() : {}; } catch (err) {}
+  const n = p.notification || {};
+  e.waitUntil(self.registration.showNotification(n.title || 'Glimpse', {
+    body: n.body || '',
+    icon: './icon.svg',
+    badge: './icon.svg',
+    data: { url: (p.data && p.data.url) || './' },
+    tag: (p.data && p.data.tag) || 'glimpse',
+  }));
+});
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || './';
+  e.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then((wins) => {
+    for (const w of wins) {
+      if (w.url.indexOf('/glimpse') !== -1) return w.focus();
+    }
+    return clients.openWindow(url);
+  }));
 });

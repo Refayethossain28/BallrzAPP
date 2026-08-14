@@ -22,6 +22,18 @@
  * Classic script (not a module) so it also loads in the headless smoke
  * sandbox; it only declares a global and does nothing else.
  */
+/* Push notifications (optional)
+ * -----------------------------
+ * To enable web push (notifications when Glimpse is closed), paste the
+ * project's "Web Push certificate" public key here:
+ *   Firebase console → Project settings → Cloud Messaging → Web configuration →
+ *   "Web Push certificates" → Key pair (the long Base64 string).
+ * The glimpsePushOnReaction Cloud Function (functions-side/) deploys
+ * automatically with the repo's Firebase workflow. Leave as null to keep push
+ * off. (This is a public VAPID key — safe to commit.) */
+var GLIMPSE_FCM_VAPID_KEY = null;
+if (typeof window !== 'undefined') window.GLIMPSE_FCM_VAPID_KEY = GLIMPSE_FCM_VAPID_KEY;
+
 var GLIMPSE_FIREBASE_CONFIG = {
   apiKey: "AIzaSyAr3OsrEG3yVx-bD3jxc_kSBY7bkCQUPxI",
   authDomain: "apexvip-1b4a9.firebaseapp.com",

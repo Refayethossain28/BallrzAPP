@@ -39,6 +39,9 @@ window — while you look through everyone else's.
   close to your window"), with an unread dot in the header and optional device
   alerts when the app is in the background. Reactions arriving on your posts
   sync live onto them; no polling, everything rides the existing listeners.
+  With the one-time Web Push key ([SETUP.md](./SETUP.md)), **real push** works
+  too: a Cloud Function notifies you the moment someone reacts — even with the
+  app fully closed.
 
 ## Real people only
 

@@ -708,6 +708,12 @@ service cloud.firestore {
                     && request.resource.data.uid == request.auth.uid;
       allow delete: if glimpseRegistered() && resource.data.uid == request.auth.uid;
     }
+    // Private push tokens — readable/writable ONLY by their owner (the
+    // glimpsePushOnReaction Cloud Function reads them with the Admin SDK,
+    // which bypasses these rules).
+    match /glimpse_push/{uid} {
+      allow read, write: if glimpseRegistered() && isUser(uid);
+    }
     match /glimpse_moments/{momentId} {
       allow read:   if signedIn();
       allow create: if glimpseRegistered()
