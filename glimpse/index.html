@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0a1020">
+<meta name="theme-color" content="#faf6ef">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Glimpse — share what you’re seeing with the world</title>
@@ -12,133 +12,134 @@
 <link rel="apple-touch-icon" href="icon.svg">
 <style>
   :root{
-    --bg:#0a1020; --bg2:#0d1528; --card:#111a30; --card2:#16203a;
-    --line:rgba(125,190,255,0.10); --line2:rgba(125,190,255,0.20);
-    --ink:#eaf1fb; --ink2:#9fb2cc; --ink3:#6b7f9c;
-    --sky:#4dc3ff; --sky2:#8fdcff; --amber:#ffc46b; --rose:#ff9d9d;
-    --shadow:0 10px 30px rgba(0,0,0,0.4);
-    --r:18px;
+    --paper:#faf6ef; --paper2:#f1ebdf; --card:#fffdf8;
+    --line:#e7dfd0; --line2:#d9cfba;
+    --ink:#232019; --ink2:#6e675a; --ink3:#9c937f;
+    --accent:#bc4420; --accent2:#a03a1b;
+    --link:#295a8f; --red:#a03a1b;
+    --serif:'Iowan Old Style','Palatino Linotype',Palatino,Georgia,'Times New Roman',serif;
+    --r:12px;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
-  html,body{margin:0; padding:0; background:var(--bg); color:var(--ink);
+  html,body{margin:0; padding:0; background:var(--paper); color:var(--ink);
     font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
     font-size:16px; line-height:1.45; overscroll-behavior-y:contain}
   body{min-height:100vh}
   button{font:inherit; color:inherit; background:none; border:none; cursor:pointer; padding:0}
-  input,textarea{font:inherit; color:var(--ink); background:var(--bg2);
-    border:1px solid var(--line2); border-radius:12px; padding:10px 12px; outline:none; width:100%}
-  input:focus,textarea:focus{border-color:var(--sky)}
-  a{color:var(--sky2)}
-  ::selection{background:rgba(77,195,255,0.35)}
+  input,textarea{font:inherit; color:var(--ink); background:var(--card);
+    border:1px solid var(--line2); border-radius:10px; padding:10px 12px; outline:none; width:100%}
+  input:focus,textarea:focus{border-color:var(--ink2)}
+  a{color:var(--link)}
+  ::selection{background:rgba(188,68,32,0.18)}
 
   /* ---------- shell ---------- */
   #app{max-width:560px; margin:0 auto; padding-bottom:calc(76px + env(safe-area-inset-bottom))}
-  header.top{position:sticky; top:0; z-index:30; backdrop-filter:blur(14px);
-    background:rgba(10,16,32,0.84); border-bottom:1px solid var(--line);
+  header.top{position:sticky; top:0; z-index:30;
+    background:var(--paper); border-bottom:1px solid var(--line);
     padding:calc(10px + env(safe-area-inset-top)) 16px 10px; display:flex; align-items:center; gap:10px}
-  .logo{display:flex; align-items:center; gap:8px; font-weight:800; font-size:20px; letter-spacing:0.2px}
-  .logo img{width:26px; height:26px; border-radius:7px}
+  .logo{display:flex; align-items:baseline; gap:8px; font-family:var(--serif);
+    font-weight:700; font-size:22px; letter-spacing:-0.02em}
+  .logo img{width:22px; height:22px; border-radius:5px; align-self:center}
   .top .spacer{flex:1}
-  .chip{display:inline-flex; align-items:center; gap:6px; font-size:12.5px; color:var(--ink2);
-    border:1px solid var(--line2); border-radius:999px; padding:5px 10px; background:var(--bg2)}
-  .chip.accent{color:#04101e; background:var(--sky); border-color:var(--sky); font-weight:700}
+  .chip{display:inline-flex; align-items:center; gap:6px; font-size:13px; color:var(--ink2);
+    border:1px solid var(--line2); border-radius:999px; padding:5px 11px; background:var(--card)}
+  .chip.accent{color:#fff; background:var(--accent); border-color:var(--accent); font-weight:600}
   .chip:active{transform:scale(0.97)}
 
   nav.tabs{position:fixed; bottom:0; left:0; right:0; z-index:40;
-    background:rgba(10,16,32,0.93); backdrop-filter:blur(14px); border-top:1px solid var(--line);
+    background:var(--paper); border-top:1px solid var(--line);
     padding:6px 8px calc(8px + env(safe-area-inset-bottom))}
   nav.tabs .row{max-width:560px; margin:0 auto; display:flex; align-items:center; justify-content:space-around}
-  .tabbtn{display:flex; flex-direction:column; align-items:center; gap:2px; font-size:11px;
-    color:var(--ink3); padding:6px 12px; border-radius:12px}
-  .tabbtn .ic{font-size:21px; line-height:1}
-  .tabbtn.on{color:var(--sky2)}
-  .fab{width:52px; height:52px; border-radius:18px; background:linear-gradient(135deg,var(--sky2),var(--sky));
-    color:#04101e; font-size:25px; display:flex; align-items:center; justify-content:center;
-    box-shadow:0 8px 22px rgba(77,195,255,0.35); margin-top:-18px}
-  .fab:active{transform:scale(0.95)}
+  .tabbtn{font-size:14px; color:var(--ink3); padding:10px 12px 8px; border-bottom:2px solid transparent}
+  .tabbtn.on{color:var(--ink); font-weight:600; border-bottom-color:var(--accent)}
+  .fab{width:46px; height:46px; border-radius:50%; background:var(--accent);
+    color:#fff; font-size:26px; font-weight:400; line-height:1; display:flex; align-items:center;
+    justify-content:center; padding-bottom:3px}
+  .fab:active{transform:scale(0.95); background:var(--accent2)}
 
   main{padding:14px 14px 30px}
   .view{display:none}
-  .view.on{display:block; animation:fadein .18s ease}
-  @keyframes fadein{from{opacity:0; transform:translateY(4px)} to{opacity:1; transform:none}}
-  .section-title{font-size:13px; font-weight:700; letter-spacing:1.2px; text-transform:uppercase;
-    color:var(--ink3); margin:18px 4px 8px}
+  .view.on{display:block; animation:fadein .15s ease}
+  @keyframes fadein{from{opacity:0} to{opacity:1}}
+  .section-title{font-family:var(--serif); font-size:17px; font-weight:700; color:var(--ink);
+    margin:20px 4px 10px; letter-spacing:-0.01em}
 
   /* ---------- cards & glimpses ---------- */
   .card{background:var(--card); border:1px solid var(--line); border-radius:var(--r);
     padding:14px; margin-bottom:12px}
-  .prompt-card{background:linear-gradient(135deg, rgba(255,196,107,0.10), rgba(77,195,255,0.08));
-    border-color:rgba(255,196,107,0.25)}
-  .prompt-card .tag-line{font-size:12px; font-weight:700; letter-spacing:1px; color:var(--amber); text-transform:uppercase}
-  .prompt-card .q{font-size:17px; font-weight:700; margin:6px 0 10px}
-  .btn{display:inline-flex; align-items:center; gap:7px; font-weight:700; font-size:14.5px;
-    background:var(--sky); color:#04101e; border-radius:12px; padding:10px 16px}
-  .btn.ghost{background:var(--bg2); color:var(--ink); border:1px solid var(--line2); font-weight:600}
-  .btn.warm{background:var(--amber); color:#1b1405}
-  .btn.danger{background:none; color:var(--rose); border:1px solid rgba(255,157,157,0.35)}
-  .btn:active{transform:scale(0.97)}
+  .prompt-card{background:var(--paper2); border-color:var(--line2)}
+  .prompt-card .tag-line{font-size:11px; font-weight:700; letter-spacing:0.12em; color:var(--ink3); text-transform:uppercase}
+  .prompt-card .q{font-family:var(--serif); font-size:18px; font-weight:700; margin:6px 0 12px; letter-spacing:-0.01em}
+  .btn{display:inline-flex; align-items:center; gap:7px; font-weight:600; font-size:14.5px;
+    background:var(--accent); color:#fff; border-radius:10px; padding:10px 16px}
+  .btn:active{background:var(--accent2)}
+  .btn.ghost{background:var(--card); color:var(--ink); border:1px solid var(--line2)}
+  .btn.warm{background:var(--ink); color:var(--paper)}
+  .btn.danger{background:none; color:var(--red); border:1px solid var(--line2)}
   .btn[disabled]{opacity:0.45; pointer-events:none}
 
   .gcard{background:var(--card); border:1px solid var(--line); border-radius:var(--r);
-    padding:14px 14px 10px; margin-bottom:12px}
+    padding:14px 14px 8px; margin-bottom:12px}
   .gcard .head{display:flex; align-items:center; gap:10px}
-  .ava{width:42px; height:42px; border-radius:14px; display:flex; align-items:center; justify-content:center;
-    font-size:22px; flex:none; background:var(--card2); border:1px solid var(--line2)}
-  .ava.sm{width:32px; height:32px; font-size:17px; border-radius:10px}
+  .ava{width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    font-size:20px; flex:none; background:var(--paper2); border:1px solid var(--line)}
+  .ava.sm{width:32px; height:32px; font-size:16px}
   .gcard .who{flex:1; min-width:0}
   .gcard .name{font-weight:700; font-size:15px; display:flex; align-items:center; gap:6px}
-  .gcard .sub{font-size:12.5px; color:var(--ink3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
-  .gcard .sub .place{color:var(--sky2); font-weight:600; cursor:pointer}
+  .gcard .sub{font-size:12.5px; color:var(--ink2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .gcard .sub .place{color:var(--link); font-weight:600; cursor:pointer}
   .why{font-size:11.5px; color:var(--ink3); border:1px solid var(--line); border-radius:999px; padding:3px 9px; flex:none}
-  .why:active{color:var(--sky2)}
-  .gcard .caption{margin:10px 2px 6px; font-size:15.5px; overflow-wrap:break-word}
-  .gcard .caption .tag{color:var(--sky2); font-weight:600; cursor:pointer}
-  .gphoto{width:100%; border-radius:14px; margin-top:10px; border:1px solid var(--line); display:block}
-  .scene{width:100%; border-radius:14px; margin-top:10px; border:1px solid var(--line);
-    height:150px; display:flex; align-items:center; justify-content:center; font-size:56px; position:relative; overflow:hidden}
-  .scene .tod-tag{position:absolute; right:10px; top:8px; font-size:11.5px; font-weight:700;
-    background:rgba(4,10,24,0.45); color:#fff; border-radius:999px; padding:3px 9px; backdrop-filter:blur(4px)}
-  .sky-dawn{background:linear-gradient(180deg,#2a3f6e,#c97b8e 55%,#ffc46b)}
-  .sky-day{background:linear-gradient(180deg,#2f8fd6,#8fd8ff 60%,#d6f2ff)}
-  .sky-dusk{background:linear-gradient(180deg,#1d2c55,#7a4d8e 55%,#ff9d6b)}
-  .sky-night{background:linear-gradient(180deg,#04081a,#0d1736 60%,#1b2c55)}
+  .why:active{color:var(--ink)}
+  .gcard .caption{margin:10px 2px 8px; font-size:15.5px; overflow-wrap:break-word}
+  .gcard .caption .tag{color:var(--link); font-weight:600; cursor:pointer}
+  .gphoto{width:100%; border-radius:10px; margin-top:10px; border:1px solid var(--line); display:block}
+  .scene{width:100%; border-radius:10px; margin-top:10px; border:1px solid var(--line);
+    height:150px; display:flex; align-items:center; justify-content:center; font-size:54px; position:relative; overflow:hidden}
+  .scene .tod-tag{position:absolute; right:10px; top:8px; font-size:11px; font-weight:600;
+    background:rgba(20,18,14,0.55); color:#fff; border-radius:999px; padding:3px 9px}
+  .sky-dawn{background:linear-gradient(180deg,#33436b,#c08297 55%,#f4c06c)}
+  .sky-day{background:linear-gradient(180deg,#4a97d2,#9ed4f2 60%,#e8f4fb)}
+  .sky-dusk{background:linear-gradient(180deg,#273458,#7c5488 55%,#ef9a68)}
+  .sky-night{background:linear-gradient(180deg,#0b0f21,#182242 60%,#253459)}
   .actions{display:flex; align-items:center; gap:4px; margin-top:8px; border-top:1px solid var(--line); padding-top:6px}
-  .rbtn{font-size:17px; padding:5px 8px; border-radius:10px; opacity:0.65}
-  .rbtn.on{opacity:1; background:rgba(77,195,255,0.16)}
-  .rbtn .n{font-size:11px; color:var(--ink2); margin-left:2px}
+  .rbtn{font-size:16px; padding:5px 8px; border-radius:8px; opacity:0.6}
+  .rbtn.on{opacity:1; background:var(--paper2)}
+  .rbtn .n{font-size:11.5px; color:var(--ink2); margin-left:3px}
   .act{display:inline-flex; align-items:center; gap:5px; font-size:13px; color:var(--ink2);
-    padding:6px 9px; border-radius:10px; margin-left:auto}
-  .act:active{background:var(--card2)}
+    padding:6px 9px; border-radius:8px; margin-left:auto}
+  .act:active{background:var(--paper2)}
 
-  .hop{display:flex; align-items:center; gap:10px; margin:2px 6px 12px; color:var(--ink3); font-size:12.5px}
+  .hop{display:flex; align-items:center; gap:10px; margin:2px 6px 12px; color:var(--ink3); font-size:12px;
+    letter-spacing:0.02em}
   .hop .ln{flex:1; height:1px; background:var(--line2)}
-  .hop .txt{white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:78%}
+  .hop .txt{white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:82%}
 
   .filterbar{display:flex; align-items:center; gap:8px; margin-bottom:12px}
-  .filterbar .chip{font-weight:700; color:var(--sky2); border-color:var(--line2)}
+  .filterbar .chip{font-weight:600; color:var(--ink)}
 
   /* ---------- world map ---------- */
   .maprow{display:flex; gap:3px; margin-bottom:3px}
-  .mapcell{flex:1; aspect-ratio:1; border-radius:7px; background:var(--bg2); border:1px solid var(--line);
+  .mapcell{flex:1; aspect-ratio:1; border-radius:6px; background:var(--paper2); border:1px solid var(--line);
     display:flex; align-items:center; justify-content:center; font-size:15px; position:relative; min-width:0}
-  .mapcell.lit{border-color:var(--line2); background:var(--card2); cursor:pointer}
+  .mapcell.lit{border-color:var(--line2); background:#fff; cursor:pointer}
   .mapcell.lit:active{transform:scale(0.94)}
   .mapcell .n{position:absolute; right:2px; bottom:0; font-size:9px; color:var(--ink2); font-weight:700}
-  .mapcell.night-cell{filter:brightness(0.55)}
+  .mapcell.night-cell{background:#2c3040; border-color:#2c3040}
+  .mapcell.lit.night-cell{background:#3a3f52; border-color:#3a3f52}
   .sunstrip{display:flex; gap:3px; margin:2px 0 10px}
-  .sunstrip span{flex:1; text-align:center; font-size:12px; opacity:0.85}
-  .maplegend{font-size:12px; color:var(--ink3); margin-top:10px; line-height:1.7}
+  .sunstrip span{flex:1; text-align:center; font-size:12px}
+  .maplegend{font-size:12.5px; color:var(--ink2); margin-top:10px; line-height:1.6}
 
   /* ---------- passport ---------- */
   .horizon{display:flex; align-items:center; gap:14px}
-  .horizon .big{font-size:44px; line-height:1}
+  .horizon .big{font-size:40px; line-height:1}
   .horizon .info{flex:1}
-  .horizon .stage-name{font-weight:800; font-size:18px}
+  .horizon .stage-name{font-family:var(--serif); font-weight:700; font-size:19px; letter-spacing:-0.01em}
   .horizon .hint{font-size:13px; color:var(--ink2); margin-top:2px}
-  .bar{height:8px; background:var(--bg2); border-radius:99px; margin-top:10px; overflow:hidden}
-  .bar i{display:block; height:100%; background:linear-gradient(90deg,var(--sky),var(--sky2)); border-radius:99px}
+  .bar{height:6px; background:var(--paper2); border-radius:99px; margin-top:10px; overflow:hidden}
+  .bar i{display:block; height:100%; background:var(--accent); border-radius:99px}
   .flags{display:flex; flex-wrap:wrap; gap:6px; margin-top:12px}
-  .flags .fl{font-size:15px; background:var(--bg2); border:1px solid var(--line2); border-radius:10px; padding:4px 9px;
+  .flags .fl{font-size:14px; background:var(--card); border:1px solid var(--line); border-radius:8px; padding:4px 9px;
     display:inline-flex; gap:6px; align-items:center; color:var(--ink2)}
   .flags .fl b{color:var(--ink); font-weight:600; font-size:12.5px}
 
@@ -149,81 +150,80 @@
   .kv:last-child{border-bottom:none}
   .kv .k{color:var(--ink2)}
   .mini-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:10px}
-  .mini{border-radius:12px; border:1px solid var(--line); aspect-ratio:1; overflow:hidden;
+  .mini{border-radius:10px; border:1px solid var(--line); aspect-ratio:1; overflow:hidden;
     display:flex; align-items:center; justify-content:center; font-size:30px; position:relative}
   .mini img{width:100%; height:100%; object-fit:cover}
 
   /* ---------- sheets ---------- */
   .sheet-wrap{position:fixed; inset:0; z-index:60; display:none}
   .sheet-wrap.show{display:block}
-  .sheet-wrap .dim{position:absolute; inset:0; background:rgba(2,6,16,0.66)}
+  .sheet-wrap .dim{position:absolute; inset:0; background:rgba(30,26,18,0.45)}
   .sheet{position:absolute; left:0; right:0; bottom:0; max-width:560px; margin:0 auto;
-    background:var(--bg2); border-radius:22px 22px 0 0; border:1px solid var(--line2); border-bottom:none;
-    padding:16px 16px calc(20px + env(safe-area-inset-bottom)); max-height:88vh; overflow-y:auto;
-    animation:sheetup .22s ease}
-  @keyframes sheetup{from{transform:translateY(40px); opacity:0} to{transform:none; opacity:1}}
-  .sheet .grab{width:44px; height:4px; background:var(--line2); border-radius:99px; margin:0 auto 14px}
-  .sheet h3{margin:0 0 12px; font-size:17px}
-  .sheet .lbl{font-size:12.5px; font-weight:700; color:var(--ink3); text-transform:uppercase;
-    letter-spacing:0.8px; margin:14px 0 6px}
+    background:var(--paper); border-radius:16px 16px 0 0; border:1px solid var(--line2); border-bottom:none;
+    padding:14px 16px calc(20px + env(safe-area-inset-bottom)); max-height:88vh; overflow-y:auto;
+    animation:sheetup .2s ease}
+  @keyframes sheetup{from{transform:translateY(30px); opacity:0} to{transform:none; opacity:1}}
+  .sheet .grab{width:40px; height:4px; background:var(--line2); border-radius:99px; margin:0 auto 14px}
+  .sheet h3{margin:0 0 12px; font-family:var(--serif); font-size:19px; letter-spacing:-0.01em}
+  .sheet .lbl{font-size:11px; font-weight:700; color:var(--ink3); text-transform:uppercase;
+    letter-spacing:0.12em; margin:14px 0 6px}
   .cap-count{font-size:12px; color:var(--ink3); text-align:right; margin-top:4px}
-  .cap-count.over{color:var(--rose); font-weight:700}
+  .cap-count.over{color:var(--red); font-weight:700}
   .scene-pick{display:flex; flex-wrap:wrap; gap:8px}
-  .scene-pick button{font-size:22px; padding:8px 10px; border-radius:12px; background:var(--card);
+  .scene-pick button{font-size:21px; padding:8px 10px; border-radius:10px; background:var(--card);
     border:1px solid var(--line)}
-  .scene-pick button.on{border-color:var(--sky); background:rgba(77,195,255,0.14)}
+  .scene-pick button.on{border-color:var(--accent); background:#fff}
   .place-grid{display:grid; grid-template-columns:1fr 1fr; gap:8px}
   .place-grid button{display:flex; align-items:center; gap:8px; font-size:13.5px; text-align:left;
-    background:var(--card); border:1px solid var(--line); border-radius:12px; padding:10px 12px}
-  .place-grid button.on{border-color:var(--sky); background:rgba(77,195,255,0.12)}
-  .place-grid .flg{font-size:18px}
+    background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 12px}
+  .place-grid button.on{border-color:var(--accent); background:#fff}
+  .place-grid .flg{font-size:17px}
   .preview-wrap{position:relative; margin-top:8px; display:none}
-  .preview-wrap img{width:100%; border-radius:14px; border:1px solid var(--line2); display:block}
-  .preview-wrap .rm{position:absolute; top:8px; right:8px; background:rgba(2,6,16,0.7); color:#fff;
+  .preview-wrap img{width:100%; border-radius:10px; border:1px solid var(--line2); display:block}
+  .preview-wrap .rm{position:absolute; top:8px; right:8px; background:rgba(20,18,14,0.65); color:#fff;
     border-radius:99px; width:30px; height:30px; font-size:15px}
   .why-list{list-style:none; margin:0; padding:0}
   .why-list li{display:flex; justify-content:space-between; gap:10px; padding:9px 2px;
     border-bottom:1px solid var(--line); font-size:14px}
   .why-list li:last-child{border-bottom:none}
-  .why-list .pts{color:var(--sky2); font-weight:700; flex:none}
-  .err{color:var(--rose); font-size:13.5px; min-height:18px; margin-top:8px}
-  .seg{display:flex; background:var(--card); border:1px solid var(--line2); border-radius:12px; overflow:hidden; margin-bottom:12px}
+  .why-list .pts{color:var(--accent); font-weight:700; flex:none}
+  .err{color:var(--red); font-size:13.5px; min-height:18px; margin-top:8px}
+  .seg{display:flex; background:var(--card); border:1px solid var(--line2); border-radius:10px; overflow:hidden; margin-bottom:12px}
   .seg button{flex:1; padding:9px; font-size:14px; color:var(--ink2)}
-  .seg button.on{background:var(--sky); color:#04101e; font-weight:700}
+  .seg button.on{background:var(--ink); color:var(--paper); font-weight:600}
 
   /* ---------- onboarding ---------- */
-  #onboard{position:fixed; inset:0; z-index:80; background:var(--bg); overflow-y:auto; display:none}
+  #onboard{position:fixed; inset:0; z-index:80; background:var(--paper); overflow-y:auto; display:none}
   #onboard.show{display:block}
-  #onboard .inner{max-width:560px; margin:0 auto; padding:calc(30px + env(safe-area-inset-top)) 22px 40px}
-  #onboard h1{font-size:30px; margin:14px 0 6px; letter-spacing:-0.3px}
-  #onboard .lead{color:var(--ink2); font-size:15.5px; margin-bottom:22px}
-  #onboard .lead b{color:var(--sky2)}
+  #onboard .inner{max-width:560px; margin:0 auto; padding:calc(34px + env(safe-area-inset-top)) 22px 40px}
+  #onboard h1{font-family:var(--serif); font-size:36px; margin:10px 0 8px; letter-spacing:-0.02em}
+  #onboard .lead{color:var(--ink2); font-size:15.5px; margin-bottom:22px; max-width:44ch}
+  #onboard .lead b{color:var(--ink); font-weight:600}
   .ava-pick{display:flex; flex-wrap:wrap; gap:8px; margin-top:8px}
-  .ava-pick button{font-size:22px; padding:8px 10px; border-radius:12px; background:var(--card); border:1px solid var(--line)}
-  .ava-pick button.on{border-color:var(--sky); background:rgba(77,195,255,0.14)}
+  .ava-pick button{font-size:21px; padding:8px 10px; border-radius:10px; background:var(--card); border:1px solid var(--line)}
+  .ava-pick button.on{border-color:var(--accent); background:#fff}
 
   /* ---------- toast ---------- */
   #toast{position:fixed; left:50%; bottom:calc(86px + env(safe-area-inset-bottom)); transform:translateX(-50%) translateY(20px);
-    background:var(--card2); border:1px solid var(--line2); color:var(--ink); font-size:14px;
-    border-radius:14px; padding:11px 16px; z-index:90; opacity:0; pointer-events:none;
-    transition:all .25s ease; max-width:86vw; text-align:center; box-shadow:var(--shadow)}
+    background:var(--ink); color:var(--paper); font-size:14px;
+    border-radius:10px; padding:11px 16px; z-index:90; opacity:0; pointer-events:none;
+    transition:all .22s ease; max-width:86vw; text-align:center}
   #toast.show{opacity:1; transform:translateX(-50%) translateY(0)}
-  .empty{color:var(--ink3); text-align:center; padding:34px 20px; font-size:14.5px; line-height:1.7}
-  .empty .big{font-size:38px; display:block; margin-bottom:8px}
+  .empty{color:var(--ink2); text-align:center; padding:34px 24px; font-size:14.5px; line-height:1.7}
+  .empty .big{font-family:var(--serif); font-size:17px; font-weight:700; color:var(--ink); display:block; margin-bottom:6px}
 </style>
 </head>
 <body>
 
 <div id="onboard">
   <div class="inner">
-    <div style="font-size:52px">🔭</div>
+    <img src="icon.svg" alt="" style="width:54px;height:54px;border-radius:12px;border:1px solid #e7dfd0">
     <h1>Glimpse</h1>
-    <p class="lead">Right now, somewhere, it’s <b>dawn over a harbour</b> and <b>midnight in a market</b>.
-      Glimpse is one thing: <b>share what you’re seeing</b> — and look through everyone else’s window.
-      No filters culture, no follower counts. Just eyes, everywhere.</p>
+    <p class="lead">Somewhere it’s dawn over a harbour. Somewhere it’s midnight in a market.
+      Glimpse does one thing: you share what’s in front of you, and see what’s in front of everyone else.</p>
 
     <div class="card">
-      <div class="lbl" style="font-size:12.5px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">Who’s looking?</div>
+      <div class="lbl" style="font-size:12.5px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">Your details</div>
       <input id="ob-name" placeholder="Your name" maxlength="30" autocomplete="off">
       <div style="height:8px"></div>
       <input id="ob-handle" placeholder="handle (letters, numbers, _)" maxlength="20" autocomplete="off" autocapitalize="off">
@@ -231,15 +231,15 @@
     </div>
 
     <div class="card">
-      <div class="lbl" style="font-size:12.5px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">Where’s your window? 🪟</div>
-      <div style="margin-bottom:10px"><button class="btn ghost" data-action="ob-geo">📍 Use my location</button>
+      <div class="lbl" style="font-size:12.5px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">Where are you looking from?</div>
+      <div style="margin-bottom:10px"><button class="btn ghost" data-action="ob-geo">Use my location</button>
         <span id="ob-geo-note" style="font-size:12.5px;color:var(--ink3);margin-left:8px"></span></div>
       <div class="place-grid" id="ob-places"></div>
     </div>
 
-    <button class="btn" style="width:100%;justify-content:center;font-size:16px;padding:14px" data-action="ob-done">Open the window 🌍</button>
-    <p style="font-size:12.5px;color:var(--ink3);margin-top:14px">Works fully on this device, no account needed — the demo world is alive out of the box.
-      Create a free account later to go live and share with the real world.</p>
+    <button class="btn" style="width:100%;justify-content:center;font-size:16px;padding:14px" data-action="ob-done">Start looking</button>
+    <p style="font-size:12.5px;color:var(--ink3);margin-top:14px">Everything stays on this device until you say otherwise.
+      Create a free account to post to the live world.</p>
   </div>
 </div>
 
@@ -247,8 +247,8 @@
   <header class="top">
     <div class="logo"><img src="icon.svg" alt=""> Glimpse</div>
     <div class="spacer"></div>
-    <button class="chip" data-action="open-search" title="Find people">🔍</button>
-    <button class="chip" id="chip-place" data-action="open-place" title="Your window">🪟</button>
+    <button class="chip" data-action="open-search">Search</button>
+    <button class="chip" id="chip-place" data-action="open-place">Set place</button>
   </header>
 
   <main>
@@ -271,8 +271,8 @@
       <div class="card">
         <div class="sunstrip" id="sunstrip"></div>
         <div id="worldmap"></div>
-        <div class="maplegend">Each tile is a slice of the planet — the freshest glimpse there, dimmed where it’s night.
-          The strip above is the sun: where it’s 🌅 dawn, ☀️ day, 🌆 evening, 🌙 night at this exact moment.</div>
+        <div class="maplegend">Each tile is a slice of the planet — the freshest post there, dimmed where
+          it’s night. The strip above tracks the sun around the world right now.</div>
       </div>
       <div class="section-title">Skies right now</div>
       <div id="sky-row"></div>
@@ -287,7 +287,7 @@
             <div style="font-weight:800" id="me-name">—</div>
             <div style="font-size:13px;color:var(--ink3)" id="me-sub">—</div>
           </div>
-          <button class="chip" data-action="open-place">Move 🪟</button>
+          <button class="chip" data-action="open-place">Move</button>
         </div>
       </div>
 
@@ -307,7 +307,7 @@
       <div class="card" id="cloud-card">
         <div class="kv"><span class="k">Live account</span><span id="cloud-status">off — on-device only</span></div>
         <div id="cloud-actions" style="margin-top:10px"></div>
-        <p style="font-size:12.5px;color:var(--ink3);margin:10px 0 0">Signed in, your glimpses reach every Glimpse user on Earth, live.
+        <p style="font-size:12.5px;color:var(--ink3);margin:10px 0 0">Signed in, your posts reach everyone on Glimpse, live.
           Without an account everything stays on this device.</p>
       </div>
 
@@ -315,8 +315,7 @@
       <div id="my-glimpses"></div>
 
       <div class="card">
-        <div class="kv"><span class="k">Export your data</span><button class="chip" data-action="export">JSON ⬇</button></div>
-        <div class="kv"><span class="k">Regenerate the demo world</span><button class="chip" data-action="reseed">🌱</button></div>
+        <div class="kv"><span class="k">Export your data</span><button class="chip" data-action="export">Download</button></div>
         <div class="kv"><span class="k">Start over</span><button class="chip" data-action="reset" style="color:var(--rose)">Erase</button></div>
       </div>
     </section>
@@ -325,11 +324,11 @@
 
 <nav class="tabs">
   <div class="row">
-    <button class="tabbtn on" data-action="tab" data-tab="world"><span class="ic">🌍</span>World</button>
-    <button class="tabbtn" data-action="tab" data-tab="near"><span class="ic">🧭</span>Near</button>
-    <button class="fab" data-action="open-capture" title="Share what you’re seeing">📷</button>
-    <button class="tabbtn" data-action="tab" data-tab="map"><span class="ic">🗺️</span>Map</button>
-    <button class="tabbtn" data-action="tab" data-tab="you"><span class="ic">🪟</span>You</button>
+    <button class="tabbtn on" data-action="tab" data-tab="world">World</button>
+    <button class="tabbtn" data-action="tab" data-tab="near">Near</button>
+    <button class="fab" data-action="open-capture" title="Post what you’re seeing">+</button>
+    <button class="tabbtn" data-action="tab" data-tab="map">Map</button>
+    <button class="tabbtn" data-action="tab" data-tab="you">You</button>
   </div>
 </nav>
 
@@ -338,14 +337,14 @@
   <div class="dim" data-action="close-sheets"></div>
   <div class="sheet">
     <div class="grab"></div>
-    <h3>What are you seeing? 👀</h3>
+    <h3>What are you seeing?</h3>
     <div class="kv" style="border-bottom:none;padding-top:0">
       <span class="k">Looking from</span>
-      <button class="chip" id="cap-place" data-action="open-place">📍 —</button>
+      <button class="chip" id="cap-place" data-action="open-place">—</button>
     </div>
 
     <label class="btn ghost" style="width:100%;justify-content:center">
-      📷 Point your camera at it
+      Take a photo
       <input type="file" id="cap-file" accept="image/*" capture="environment" style="display:none">
     </label>
     <div class="preview-wrap" id="cap-preview-wrap">
@@ -361,7 +360,7 @@
     <div class="cap-count" id="cap-count">0 / 280</div>
 
     <div class="err" id="cap-err"></div>
-    <button class="btn" style="width:100%;justify-content:center;font-size:15.5px;padding:13px" data-action="cap-submit">Share it with the world 🌍</button>
+    <button class="btn" style="width:100%;justify-content:center;font-size:15.5px;padding:13px" data-action="cap-submit">Post it</button>
   </div>
 </div>
 
@@ -370,8 +369,8 @@
   <div class="dim" data-action="close-sheets"></div>
   <div class="sheet">
     <div class="grab"></div>
-    <h3>Where’s your window? 🪟</h3>
-    <div style="margin-bottom:10px"><button class="btn ghost" data-action="use-geo">📍 Use my location</button>
+    <h3>Where are you looking from?</h3>
+    <div style="margin-bottom:10px"><button class="btn ghost" data-action="use-geo">Use my location</button>
       <span id="geo-note" style="font-size:12.5px;color:var(--ink3);margin-left:8px"></span></div>
     <div class="place-grid" id="place-grid"></div>
   </div>
@@ -382,7 +381,7 @@
   <div class="dim" data-action="close-sheets"></div>
   <div class="sheet">
     <div class="grab"></div>
-    <h3>Find people 🔍</h3>
+    <h3>Find people</h3>
     <input id="search-q" placeholder="Name or @handle…" autocomplete="off" autocapitalize="off">
     <div id="search-results" style="margin-top:12px"></div>
   </div>
@@ -403,7 +402,7 @@
   <div class="dim" data-action="close-sheets"></div>
   <div class="sheet">
     <div class="grab"></div>
-    <h3>Why this window? 🔎</h3>
+    <h3>Why this one?</h3>
     <p style="font-size:13.5px;color:var(--ink2);margin:0 0 10px">The world feed is built to hop the globe —
       recency times diversity, and a window from a country this scroll hasn’t visited jumps the queue. Receipts:</p>
     <ul class="why-list" id="why-list"></ul>
@@ -415,7 +414,7 @@
   <div class="dim" data-action="close-sheets"></div>
   <div class="sheet">
     <div class="grab"></div>
-    <h3 id="ac-title">Go live 🌍</h3>
+    <h3 id="ac-title">Create your account</h3>
     <div class="seg" id="ac-mode">
       <button data-action="ac-mode" data-mode="signup" class="on">Create account</button>
       <button data-action="ac-mode" data-mode="signin">Sign in</button>
@@ -431,7 +430,7 @@
     <div class="lbl">Password</div>
     <input id="ac-password" type="password" autocomplete="new-password" placeholder="8+ characters">
     <div class="err" id="ac-error"></div>
-    <button class="btn" style="width:100%;justify-content:center;padding:13px" id="ac-submit" data-action="ac-submit">Create account 🌍</button>
+    <button class="btn" style="width:100%;justify-content:center;padding:13px" id="ac-submit" data-action="ac-submit">Create account</button>
     <button class="chip" id="ac-forgot" data-action="ac-forgot" style="margin-top:10px;display:none">Forgot password?</button>
     <p style="font-size:12px;color:var(--ink3);margin-top:12px">Registered users only — no anonymous posting. See SETUP.md to point Glimpse at your own Firebase project.</p>
   </div>
@@ -455,9 +454,8 @@ function defaultState() {
   return {
     onboarded: false,
     me: { id: 'me', name: '', handle: '', avatar: '🙂', place: null },
-    glimpses: [],          // demo + mine (cloud ones are merged in at render)
+    glimpses: [],          // yours (cloud ones are merged in at render)
     passportCC: {},        // cc -> {flag, country} — windows genuinely looked through
-    seed: '',
     cloud: { enabled: false, uid: '', status: 'off', email: '' }
   };
 }
@@ -528,7 +526,7 @@ function stampPassport(place) {
   save();
   var n = E.passport(S.passportCC).length;
   var st = E.horizonStage(n);
-  if (st.min === n && n > 0) toast(st.emoji + ' ' + st.name + ' — ' + n + (n === 1 ? ' country' : ' countries') + ' seen');
+  if (st.min === n && n > 0) toast(st.name + ' — ' + n + (n === 1 ? ' country' : ' countries') + ' seen');
 }
 
 var seenObserver = null;
@@ -565,13 +563,11 @@ function findGlimpse(id) {
 }
 
 var REACTS = ['❤️', '😮', '🌍', '👋'];
-// Demo glimpses arrive with believable, deterministic reaction counts.
 function reactCount(g, emoji) {
   var others = 0;
   for (var k in (g.reactions || {})) {
     if (k !== 'me' && g.reactions[k] === emoji) others++;
   }
-  if (g.demo) others += Math.floor(E.rand01('rx:' + g.id + ':' + emoji) * 9);
   return others + (g.reactions && g.reactions.me === emoji ? 1 : 0);
 }
 
@@ -641,9 +637,9 @@ function renderWorld() {
   var iso = new Date(now).toISOString().slice(0, 10);
   var p = E.dailyPrompt(iso);
   $('prompt-slot').innerHTML =
-    '<div class="card prompt-card"><div class="tag-line">👁 Today, everywhere</div>' +
+    '<div class="card prompt-card"><div class="tag-line">Today, everywhere</div>' +
     '<div class="q">' + esc(p.prompt) + '</div>' +
-    '<button class="btn warm" data-action="open-capture">Show yours 📷</button></div>';
+    '<button class="btn warm" data-action="open-capture">Show yours</button></div>';
 
   var list = applyFilter(allGlimpses());
   // Your own freshly shared glimpse leads while it's still warm — after that
@@ -655,17 +651,17 @@ function renderWorld() {
   var hops = E.feedHops(items);
   var h = '';
   for (var pi = 0; pi < pinned.length; pi++) {
-    h += '<div class="hop"><span>📌</span><span class="txt">just shared — the world can see this</span><span class="ln"></span></div>';
+    h += '<div class="hop"><span class="txt">just posted</span><span class="ln"></span></div>';
     h += glimpseCard(pinned[pi], {});
   }
   for (var i = 0; i < items.length; i++) {
-    if (hops[i]) h += '<div class="hop"><span>✈️</span><span class="txt">' + esc(hops[i].label) + '</span><span class="ln"></span></div>';
+    if (hops[i]) h += '<div class="hop"><span class="txt">' + esc(hops[i].label) + '</span><span class="ln"></span></div>';
     h += glimpseCard(items[i].glimpse, { why: true });
   }
-  if (!items.length) {
-    h = '<div class="empty"><span class="big">🌫️</span>Nothing through this window yet.<br>Open the filter, or share the first glimpse.</div>';
+  if (!items.length && !pinned.length) {
+    h = '<div class="empty"><span class="big">Nothing here yet</span>' + (FILTER ? 'Nothing matches this filter.' : 'Post what you’re seeing — or create an account in the You tab to see the live world.') + '</div>';
   } else {
-    h += '<div class="empty"><span class="big">🌍</span>That’s the whole world for now.<br>Someone, somewhere, is about to see something.</div>';
+    h += '<div class="empty"><span class="big">That’s everything for now</span>Someone, somewhere, is about to see something.</div>';
   }
   var feedEl = $('feed-world');
   feedEl.innerHTML = h;
@@ -680,7 +676,7 @@ function renderNear() {
   for (var i = 0; i < items.length && i < 40; i++) {
     h += glimpseCard(items[i].glimpse, { distanceLabel: items[i].distanceLabel });
   }
-  if (!h) h = '<div class="empty"><span class="big">🧭</span>No windows nearby yet — be the first pair of eyes here.</div>';
+  if (!h) h = '<div class="empty"><span class="big">Nothing nearby yet</span>Be the first to post from where you are.</div>';
   var el = $('feed-near');
   el.innerHTML = h;
   observeCards(el);
@@ -728,7 +724,7 @@ function renderMap() {
       '<span style="flex:1;font-weight:600">' + esc(pl.name) + '</span>' +
       '<span class="chip">' + t.emoji + ' ' + esc(t.label) + '</span></div>';
   }
-  $('sky-row').innerHTML = rows;
+  $('sky-row').innerHTML = rows || '<div class="empty">Skies appear here as posts come in.</div>';
 }
 
 function renderYou() {
@@ -736,7 +732,7 @@ function renderYou() {
   $('me-name').textContent = S.me.name || 'You';
   var pl = S.me.place;
   $('me-sub').textContent = '@' + (S.me.handle || 'you') + (pl ? ' · ' + (pl.flag ? pl.flag + ' ' : '') + pl.name : '');
-  $('chip-place').textContent = pl ? '🪟 ' + (pl.flag ? pl.flag + ' ' : '') + pl.name : '🪟';
+  $('chip-place').textContent = pl ? (pl.flag ? pl.flag + ' ' : '') + pl.name : 'Set place';
 
   var countries = E.passport(S.passportCC);
   var st = E.horizonStage(countries.length);
@@ -755,10 +751,10 @@ function renderYou() {
 
   // cloud card
   var on = S.cloud && S.cloud.enabled;
-  $('cloud-status').textContent = on ? '🟢 live as @' + (S.me.handle || '') : 'off — on-device only';
+  $('cloud-status').textContent = on ? 'Live as @' + (S.me.handle || '') : 'off — on-device only';
   $('cloud-actions').innerHTML = on
     ? '<button class="btn danger" data-action="cloud-signout">Sign out</button>'
-    : '<button class="btn" data-action="open-account" data-mode="signup">Go live — create account 🌍</button> ' +
+    : '<button class="btn" data-action="open-account" data-mode="signup">Create account</button> ' +
       '<button class="btn ghost" data-action="open-account" data-mode="signin">Sign in</button>';
 
   // my glimpses
@@ -766,7 +762,7 @@ function renderYou() {
   var mh = '';
   for (var m = 0; m < mine.length; m++) mh += glimpseCard(mine[m], {});
   $('my-glimpses').innerHTML = mh ||
-    '<div class="empty"><span class="big">📷</span>You haven’t shown the world anything yet.<br>What can you see right now?</div>';
+    '<div class="empty"><span class="big">No posts yet</span>What can you see right now?</div>';
 }
 
 function render() {
@@ -776,7 +772,7 @@ function render() {
   else if (TAB === 'map') renderMap();
   else if (TAB === 'you') renderYou();
   var plc = S.me.place;
-  $('chip-place').textContent = plc ? '🪟 ' + (plc.flag ? plc.flag + ' ' : '') + plc.name : '🪟';
+  $('chip-place').textContent = plc ? (plc.flag ? plc.flag + ' ' : '') + plc.name : 'Set place';
 }
 
 /* ============================ capture ============================ */
@@ -791,7 +787,7 @@ function openCapture() {
   $('cap-count').textContent = '0 / ' + E.MAX_CAPTION;
   renderCaptureScenes();
   var pl = S.me.place;
-  $('cap-place').textContent = pl ? '📍 ' + (pl.flag ? pl.flag + ' ' : '') + pl.name : '📍 pick a place';
+  $('cap-place').textContent = pl ? (pl.flag ? pl.flag + ' ' : '') + pl.name : 'Pick a place';
   openSheet('sheet-capture');
 }
 
@@ -822,12 +818,12 @@ function handlePhotoFile(file) {
           CAPTURE.photo = canvas.toDataURL('image/jpeg', 0.72);
           $('cap-preview').src = CAPTURE.photo;
           $('cap-preview-wrap').style.display = 'block';
-        } catch (e) { toast('Couldn’t read that photo 😕'); }
+        } catch (e) { toast('Couldn’t read that photo.'); }
       };
       img.src = reader.result;
     };
     reader.readAsDataURL(file);
-  } catch (e) { toast('Couldn’t read that photo 😕'); }
+  } catch (e) { toast('Couldn’t read that photo.'); }
 }
 
 function submitCapture() {
@@ -850,7 +846,7 @@ function submitCapture() {
   if (S.cloud && S.cloud.enabled) cloudPublish(g);
   closeSheets();
   setTab('world');
-  toast('The world can see it now 🌍');
+  toast('Posted — the world can see it.');
 }
 
 /* ============================ place picking ============================ */
@@ -870,9 +866,9 @@ function setMyPlace(place, note) {
   S.me.place = place;
   save();
   var lbl = (place.flag ? place.flag + ' ' : '') + place.name;
-  $('cap-place').textContent = '📍 ' + lbl;
+  $('cap-place').textContent = lbl;
   render();
-  if (note !== false) toast('Your window now looks out from ' + lbl);
+  if (note !== false) toast('Now looking from ' + lbl + '.');
 }
 
 function nearestPlace(lat, lon) {
@@ -927,14 +923,14 @@ function toggleReact(gid, emoji) {
 function shareGlimpse(gid) {
   var g = findGlimpse(gid);
   if (!g) return;
-  var text = '👀 ' + (g.authorName || 'Someone') + ' in ' + (g.place.flag ? g.place.flag + ' ' : '') + g.place.name +
+  var text = (g.authorName || 'Someone') + ' in ' + (g.place.flag ? g.place.flag + ' ' : '') + g.place.name +
              (g.caption ? ': “' + g.caption + '”' : '') + ' — seen on Glimpse';
   try {
     if (navigator.share) { navigator.share({ text: text }).catch(function () {}); return; }
   } catch (e) {}
   try {
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(function () { toast('Copied — paste it anywhere 📋'); });
+      navigator.clipboard.writeText(text).then(function () { toast('Copied.'); });
       return;
     }
   } catch (e) {}
@@ -951,10 +947,6 @@ var searchDebounce = null;
 
 function userDirectory() {
   var out = [{ id: 'me', name: S.me.name || 'You', handle: S.me.handle || 'you', avatar: S.me.avatar }];
-  for (var i = 0; i < E.PERSONAS.length; i++) {
-    var p = E.PERSONAS[i];
-    out.push({ id: p.id, name: p.name, handle: p.handle, avatar: p.avatar, place: E.placeByName(p.city) });
-  }
   return out.concat(CLOUD_USERS);
 }
 
@@ -989,8 +981,8 @@ function lookupExactHandle(q) {
 function openSearch() {
   $('search-q').value = '';
   $('search-results').innerHTML =
-    '<div class="empty" style="padding:20px"><span class="big">🌍</span>Type a name or @handle.<br>' +
-    (S.cloud && S.cloud.enabled ? 'Searching everyone live on Glimpse.' : 'Searching this device’s world — go live to find real people.') + '</div>';
+    '<div class="empty" style="padding:20px">Type a name or @handle.<br>' +
+    (S.cloud && S.cloud.enabled ? 'Searching everyone on Glimpse.' : 'Sign in to search everyone on Glimpse.') + '</div>';
   openSheet('sheet-search');
   fetchCloudUsers();
   try { $('search-q').focus(); } catch (e) {}
@@ -1012,7 +1004,7 @@ function runSearch() {
       '<br><span style="font-size:12.5px;color:var(--ink3)">@' + esc(u.handle) +
       (u.place ? ' · ' + esc(u.place.flag || '') + ' ' + esc(u.place.name) : '') + '</span></span></button>';
   }
-  box.innerHTML = h || '<div class="empty" style="padding:20px"><span class="big">🌫️</span>Nobody by that name yet.</div>';
+  box.innerHTML = h || '<div class="empty" style="padding:20px"><span class="big">No one found</span>Try a different name or handle.</div>';
 }
 
 function personById(uid) {
@@ -1033,11 +1025,11 @@ function openPerson(uid) {
     (u.cloud ? ' <span class="chip" style="font-size:10px;padding:2px 7px">LIVE</span>' : '') + '</div>' +
     '<div style="font-size:13px;color:var(--ink3)">@' + esc(u.handle) +
     (place ? ' · ' + esc(place.flag || '') + ' ' + esc(place.name) : '') + '</div></div>' +
-    '<button class="chip" data-action="person-filter" data-uid="' + esc(u.id) + '" data-handle="' + esc(u.handle) + '">their windows 🌍</button></div>';
+    '<button class="chip" data-action="person-filter" data-uid="' + esc(u.id) + '" data-handle="' + esc(u.handle) + '">See their posts</button></div>';
   var h = '';
   for (var i = 0; i < theirs.length && i < 12; i++) h += glimpseCard(theirs[i], {});
   $('person-glimpses').innerHTML = h ||
-    '<div class="empty" style="padding:20px"><span class="big">🪟</span>No windows from them on this device yet.</div>';
+    '<div class="empty" style="padding:20px"><span class="big">Nothing yet</span>No posts from them on this device.</div>';
   openSheet('sheet-person');
 }
 
@@ -1071,18 +1063,8 @@ function exportData() {
     document.body.appendChild(a);
     a.click();
     setTimeout(function () { try { URL.revokeObjectURL(a.href); a.remove(); } catch (e) {} }, 800);
-    toast('Everything you’ve seen and shared — yours 📦');
-  } catch (e) { toast('Export needs a modern browser 😕'); }
-}
-
-function reseedDemo() {
-  var seed = 'glimpse-' + Date.now().toString(36);
-  S.seed = seed;
-  var mine = S.glimpses.filter(function (g) { return g.mine; });
-  S.glimpses = mine.concat(E.seedWorld(seed, Date.now()));
-  save();
-  render();
-  toast('A fresh world outside every window 🌱');
+    toast('Exported.');
+  } catch (e) { toast('Export failed in this browser.'); }
 }
 
 function resetAll() {
@@ -1132,9 +1114,9 @@ function openAccount(mode) {
 }
 function renderAccountMode() {
   var up = ACCOUNT.mode === 'signup';
-  $('ac-title').textContent = up ? 'Go live 🌍' : 'Welcome back';
+  $('ac-title').textContent = up ? 'Create your account' : 'Welcome back';
   $('ac-signup-fields').style.display = up ? 'block' : 'none';
-  $('ac-submit').textContent = up ? 'Create account 🌍' : 'Sign in';
+  $('ac-submit').textContent = up ? 'Create account' : 'Sign in';
   $('ac-forgot').style.display = up ? 'none' : 'inline-flex';
   var segs = document.querySelectorAll('#ac-mode button');
   for (var i = 0; i < segs.length; i++) {
@@ -1164,7 +1146,7 @@ function submitAccount() {
   if (ACCOUNT.mode === 'signup') {
     var v = E.validateAccount({ name: $('ac-name').value, handle: $('ac-handle').value, email: email, password: password });
     if (!v.ok) { errEl.textContent = v.errors.join(' '); return; }
-    ACCOUNT.busy = true; $('ac-submit').textContent = 'Opening the window…';
+    ACCOUNT.busy = true; $('ac-submit').textContent = 'Creating…';
     ensureFirebase()
       .then(function () { return FB.db.collection('glimpse_handles').doc(v.handle).get(); })
       .then(function (doc) {
@@ -1182,7 +1164,7 @@ function submitAccount() {
           .then(function () {
             S.me.name = v.name; S.me.handle = v.handle;
             accountReady(u, v.email);
-            toast('You’re live, ' + v.name + ' — the world is watching 🌍');
+            toast('You’re live, ' + v.name + '.');
           });
       })
       .catch(function (err) {
@@ -1203,7 +1185,7 @@ function submitAccount() {
           if (d.handle) S.me.handle = d.handle;
           if (d.avatar) S.me.avatar = d.avatar;
           accountReady(u, email);
-          toast('Welcome back — the world kept moving 🌍');
+          toast('Welcome back.');
         });
       })
       .catch(function (err) { errEl.textContent = authErrorMsg(err); })
@@ -1222,7 +1204,7 @@ function forgotPassword() {
   if (!email) { $('ac-error').textContent = 'Type your email above first, then tap forgot.'; return; }
   ensureFirebase()
     .then(function () { return FB.auth.sendPasswordResetEmail(email); })
-    .then(function () { toast('Reset link sent to ' + email + ' 📬'); })
+    .then(function () { toast('Reset link sent to ' + email + '.'); })
     .catch(function (err) { $('ac-error').textContent = authErrorMsg(err); });
 }
 function signOutCloud() {
@@ -1232,7 +1214,7 @@ function signOutCloud() {
   CLOUD_GLIMPSES = [];
   CLOUD_USERS = []; CLOUD_USERS_FETCHED = false;
   save(); render();
-  toast('Signed out — your window stays yours 🔒');
+  toast('Signed out.');
 }
 function resumeCloud() {
   ensureFirebase().then(function () {
@@ -1292,7 +1274,7 @@ function cloudPublish(g) {
   if (g.photo && g.photo.length < 500000) doc.photo = g.photo;
   FB.db.collection('glimpse_moments').add(doc)
     .then(function (ref) { g.cloudId = ref.id; save(); })
-    .catch(function () { toast('Shared on this device — the live world didn’t hear it 📴'); });
+    .catch(function () { toast('Posted on this device — couldn’t reach the live world.'); });
 }
 function cloudReact(g) {
   if (!FB.db || !g.cloudId) return;
@@ -1320,16 +1302,15 @@ function renderOnboardBits() {
 function finishOnboard() {
   var name = String($('ob-name').value || '').trim() || 'Someone';
   var handle = String($('ob-handle').value || '').trim().toLowerCase().replace(/[^a-z0-9_]/g, '') || 'someone';
-  if (!OB.place) { toast('Pick where your window is first 🪟'); return; }
+  if (!OB.place) { toast('Pick where you’re looking from first.'); return; }
   S.me = { id: 'me', name: name, handle: handle, avatar: OB.avatar, place: OB.place };
   S.onboarded = true;
-  S.seed = 'glimpse-' + Date.now().toString(36);
-  S.glimpses = E.seedWorld(S.seed, Date.now());
+  S.glimpses = [];
   stampPassport(OB.place);
   save();
   $('onboard').className = '';
   setTab('world');
-  toast('Welcome, ' + name + ' — the world’s windows are open 🌍');
+  toast('Welcome to Glimpse, ' + name + '.');
 }
 
 /* ============================ event wiring (delegated) ============================ */
@@ -1386,7 +1367,6 @@ document.addEventListener('click', function (ev) {
     }
   }
   else if (a === 'export') exportData();
-  else if (a === 'reseed') reseedDemo();
   else if (a === 'reset') {
     if (typeof confirm !== 'function' || confirm('Erase everything on this device? Your live account (if any) is not deleted.')) resetAll();
   }

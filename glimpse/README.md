@@ -29,17 +29,18 @@ window — while you look through everyone else's.
   sky, exactly as it is right now").
 - **🔍 Find people** — search by name or @handle (exact handle beats prefix
   beats substring, deterministic order), open their profile and their recent
-  windows, or filter the world feed to just their glimpses. Signed in, search
-  covers everyone live on Glimpse, with an exact-handle lookup that resolves
+  posts, or filter the world feed to just their glimpses. Signed in, search
+  covers everyone on Glimpse, with an exact-handle lookup that resolves
   `@someone` even beyond the fetched directory page.
 - **📷 Camera-first capture** — photos are downscaled on-device; no photo? Set
   the scene with an emoji and the app paints the sky it was shot under.
 
-## Alive out of the box
+## Real people only
 
-No account, no server: onboarding seeds a deterministic **demo world** — eleven
-personas posting from Tokyo to Reykjavík — so the feed, map and passport work
-the moment the page opens. Offline-first, installable **PWA**.
+There are no demo accounts and no synthetic activity: every post in the live
+feed was made by a registered person. Without an account the app still works —
+your own posts, map and passport stay on-device, offline-first, as an
+installable **PWA**.
 
 ## Go live
 
@@ -52,6 +53,6 @@ security rules, reactions as the single shared surface. Setup in
 
 All product logic — geo distance/bearing, solar time, the globe-hopping feed
 ranker with receipts, the near feed, world-map cells, the passport, people
-search, prompts and the seeded demo world — is a pure, deterministic,
-clock-injected engine: [`engine.js`](./engine.js), tested by
-`npm run test:glimpse` (39 tests). `index.html` just renders it.
+search and daily prompts — is a pure, deterministic, clock-injected engine:
+[`engine.js`](./engine.js), tested by `npm run test:glimpse` (36 tests).
+`index.html` just renders it.
