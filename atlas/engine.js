@@ -1960,6 +1960,22 @@
   /* ====================== ambient traffic (game mode) ==================== */
 
 
+
+  /** How far the cockpit wheel should be turned right now: the signed bend
+   *  in the road just ahead (heading change over the next ~22 m), geared up
+   *  and clamped like a real wheel. Straight road → 0. */
+  function steeringAngle(route, alongM, lookM) {
+    if (!route || !(route.totalM > 0)) return 0;
+    var m0 = Math.max(0, Math.min(route.totalM, alongM || 0));
+    var m1 = Math.min(route.totalM, m0 + (lookM || 22));
+    if (m1 - m0 < 2) return 0;
+    var h0 = pointAtAlong(route, m0).heading;
+    var h1 = pointAtAlong(route, m1).heading;
+    if (h0 == null || h1 == null) return 0;
+    var d = angleDiff(h0, h1);
+    return Math.max(-120, Math.min(120, d * 3.2));
+  }
+
   /** How busy the game road should be, from the REAL traffic signal:
    *  the route's live/typical slowdown factor and incident count.
    *  → cars per km (1.1 quiet … 6 jammed). The fake cars are honest. */
@@ -2072,7 +2088,7 @@
     chatText: chatText, chatMsg: chatMsg, validChatMsg: validChatMsg, pruneChat: pruneChat, agoShort: agoShort,
     trackKey: trackKey, findLocalTrack: findLocalTrack, djTarget: djTarget, syncAdjust: syncAdjust,
     speechSafe: speechSafe,
-    trafficCars: trafficCars, trafficDensity: trafficDensity,
+    trafficCars: trafficCars, trafficDensity: trafficDensity, steeringAngle: steeringAngle,
     calmScore: calmScore, calmestRoute: calmestRoute, etaBand: etaBand,
     rankParking: rankParking, walkInfo: walkInfo,
     evUsableRangeM: evUsableRangeM, evChargePlan: evChargePlan, parseMetres: parseMetres, vehicleHazards: vehicleHazards,

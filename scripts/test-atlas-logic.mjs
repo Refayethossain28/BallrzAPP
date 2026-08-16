@@ -1111,6 +1111,32 @@ test('road reports: build, validate, snap to route, expire honestly', () => {
   assert.ok(nxt.distM > 300);
 });
 
+test('steering: the wheel follows the bend ahead, straight means centred', () => {
+  const mk = (pts) => {
+    const cum = [0];
+    for (let i = 1; i < pts.length; i++) cum.push(cum[i-1] + A.haversine(pts[i-1], pts[i]));
+    return { geometry: pts, cum, totalM: cum[cum.length-1], steps: [] };
+  };
+  // due-north straight road
+  const straight = mk(Array.from({ length: 20 }, (_, i) => ({ lat: 51 + i * 0.001, lon: 0 })));
+  near(A.steeringAngle(straight, 200), 0, 2);
+  // right-angle right turn ~30m ahead
+  const turnPts = [];
+  for (let i = 0; i <= 10; i++) turnPts.push({ lat: 51 + i * 0.0003, lon: 0 });          // north ~333m
+  for (let i = 1; i <= 10; i++) turnPts.push({ lat: 51.003, lon: i * 0.0003 });          // then east
+  const turn = mk(turnPts);
+  const before = turn.cum[10] - 12; // just before the corner
+  assert.ok(A.steeringAngle(turn, before) > 40, 'right turn → wheel right');
+  // mirrored left turn steers negative
+  const leftPts = turnPts.map((p) => ({ lat: p.lat, lon: -p.lon }));
+  const left = mk(leftPts);
+  assert.ok(A.steeringAngle(left, before) < -40, 'left turn → wheel left');
+  // clamped and junk-safe
+  assert.ok(Math.abs(A.steeringAngle(turn, before, 200)) <= 120);
+  assert.equal(A.steeringAngle(null, 0), 0);
+  assert.equal(A.steeringAngle(straight, straight.totalM), 0); // at the end
+});
+
 test('traffic density: the game road carries the real signal', () => {
   const quiet = A.trafficDensity(1.0, 0);
   const rush = A.trafficDensity(1.18, 0);
