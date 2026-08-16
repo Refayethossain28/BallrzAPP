@@ -1956,6 +1956,30 @@
     return null;
   }
 
+
+  /* ====================== ambient traffic (game mode) ==================== */
+
+  /** Procedural cars along a route for the ApexGP game skin — pure function
+   *  of (route length, clock), so every frame agrees without any state:
+   *  car i follows along = (start_i + v_i·t) mod length, half of them
+   *  oncoming. Purely cosmetic — never shown outside the game skin. */
+  function trafficCars(totalM, nowMs, density) {
+    if (!(totalM > 400)) return [];
+    var n = Math.max(10, Math.min(18, Math.round(totalM / 1000 * (density || 1.4))));
+    var out = [];
+    for (var i = 0; i < n; i++) {
+      var h = (((i + 3) * 2654435761) >>> 0) % 1000 / 1000;
+      var dir = i % 2 === 0 ? 1 : -1;
+      var kmh = 34 + h * 46;
+      var start = (((i * 761) % 97) / 97) * totalM;
+      var m = start + (kmh / 3.6) * (nowMs / 1000) * dir;
+      m = ((m % totalM) + totalM) % totalM;
+      out.push({ alongM: m, dir: dir, laneM: dir === 1 ? -1.2 : 3.2,
+                 kmh: Math.round(kmh), color: i % 6 });
+    }
+    return out;
+  }
+
   /* ================================ places ================================ */
 
   /**
@@ -2038,6 +2062,7 @@
     chatText: chatText, chatMsg: chatMsg, validChatMsg: validChatMsg, pruneChat: pruneChat, agoShort: agoShort,
     trackKey: trackKey, findLocalTrack: findLocalTrack, djTarget: djTarget, syncAdjust: syncAdjust,
     speechSafe: speechSafe,
+    trafficCars: trafficCars,
     calmScore: calmScore, calmestRoute: calmestRoute, etaBand: etaBand,
     rankParking: rankParking, walkInfo: walkInfo,
     evUsableRangeM: evUsableRangeM, evChargePlan: evChargePlan, parseMetres: parseMetres, vehicleHazards: vehicleHazards,

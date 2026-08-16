@@ -1404,6 +1404,7 @@ function drawFlatScene(night, withBuildings) {
   drawRoutes(night);
   drawCameras();
   drawTraffic();
+  drawAmbientCars();
   drawConvoy();
   drawTapPin();
 }
@@ -4382,6 +4383,50 @@ function renderConvoyMembers() {
     }
     box.appendChild(row);
   });
+}
+
+/* 🎮 ambient traffic — game-skin cosmetics only, never in the real
+   navigator: procedural cars (engine.trafficCars, pure function of the
+   clock) drive your route in both directions, oncoming in the other lane.
+   Drawn into the flat scene, so the perspective camera foreshortens them
+   like any proper racing game. */
+var AMBIENT_PALETTE = ['#ff5d5d', '#ffd23d', '#7dfff4', '#b78bff', '#5dff9e', '#ff9e5d'];
+function drawAmbientCars() {
+  if (!gameOn() || !nav.active || !nav.route) return;
+  var cars = A.trafficCars(nav.route.totalM, Date.now(), 2.2);
+  if (!cars.length) return;
+  var mpp = A.metresPerPixel(view.lat, view.zoom);
+  var lenPx = Math.max(9, 4.6 / mpp * 1.6);
+  var widPx = lenPx * 0.52;
+  for (var i = 0; i < cars.length; i++) {
+    var car = cars[i];
+    var p = A.pointAtAlong(nav.route, car.alongM);
+    var hdg = (p.heading || 0) + (car.dir === -1 ? 180 : 0);
+    var pos = car.laneM ? A.destinationPoint(p, (p.heading || 0) + 90, car.laneM) : p;
+    var sc = toScreen(pos);
+    if (sc.x < -40 || sc.x > W + 40 || sc.y < -40 || sc.y > H + 40) continue;
+    var rad = hdg * Math.PI / 180 + view.rot;
+    ctx.save();
+    ctx.translate(sc.x, sc.y);
+    ctx.rotate(rad);
+    ctx.shadowColor = 'rgba(0,0,0,0.45)'; ctx.shadowBlur = 4; ctx.shadowOffsetY = 2;
+    rrect(-widPx / 2, -lenPx / 2, widPx, lenPx, widPx * 0.32);
+    ctx.fillStyle = AMBIENT_PALETTE[car.color];
+    ctx.fill();
+    ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+    // glass
+    rrect(-widPx * 0.32, -lenPx * 0.26, widPx * 0.64, lenPx * 0.24, widPx * 0.16);
+    ctx.fillStyle = 'rgba(10,14,26,0.75)';
+    ctx.fill();
+    // headlights forward, tail lamps behind
+    ctx.fillStyle = 'rgba(255,244,200,0.95)';
+    ctx.beginPath(); ctx.arc(-widPx * 0.26, -lenPx / 2 + 1, 1.4, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(widPx * 0.26, -lenPx / 2 + 1, 1.4, 0, 7); ctx.fill();
+    ctx.fillStyle = 'rgba(255,60,80,0.95)';
+    ctx.beginPath(); ctx.arc(-widPx * 0.26, lenPx / 2 - 1, 1.2, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(widPx * 0.26, lenPx / 2 - 1, 1.2, 0, 7); ctx.fill();
+    ctx.restore();
+  }
 }
 
 /* draw convoy members on the map (any mode) */
