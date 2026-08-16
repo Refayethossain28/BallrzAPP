@@ -1990,6 +1990,61 @@
     return Math.max(-120, Math.min(120, d * 3.2));
   }
 
+  /* ===================== 🛡 Guardian crash detection ====================== */
+
+  /** Does this accelerometer trace look like a crash? Pure function over
+   *  samples [{t: ms, a: total m/s² incl. gravity}] — the caller feeds a
+   *  rolling buffer. The signature is a violent spike (≥ ~4g total) followed
+   *  by relative stillness: after impact the phone stops being thrown
+   *  around. A pothole spikes but driving carries on; a dropped phone
+   *  bounces (several spikes) then usually keeps moving with its owner.
+   *  Returns {t, peakA} of the impact, or null. Never throws on junk. */
+  function crashSignature(samples) {
+    if (!samples || !samples.length) return null;
+    var SPIKE = 39;           // ≈4g total — far beyond braking or potholes
+    var CALM_A = 3.5;         // stillness: |a - 1g| under this…
+    var CALM_FOR = 1500;      // …for at least this long
+    var WITHIN = 2500;        // …starting within this window after impact
+    var peak = null;
+    for (var i = 0; i < samples.length; i++) {
+      var s = samples[i];
+      if (!s || typeof s.t !== 'number' || typeof s.a !== 'number' || !isFinite(s.a)) continue;
+      if (s.a >= SPIKE && (!peak || s.a > peak.a)) peak = s;
+    }
+    if (!peak) return null;
+    var calmStart = null, lastT = null;
+    for (var j = 0; j < samples.length; j++) {
+      var q = samples[j];
+      if (!q || typeof q.t !== 'number' || typeof q.a !== 'number') continue;
+      if (q.t <= peak.t || q.t > peak.t + WITHIN + CALM_FOR + 500) continue;
+      var calm = Math.abs(q.a - 9.81) <= CALM_A;
+      if (calm) {
+        if (calmStart === null) calmStart = q.t;
+        lastT = q.t;
+        if (calmStart - peak.t <= WITHIN && lastT - calmStart >= CALM_FOR) {
+          return { t: peak.t, peakA: Math.round(peak.a * 10) / 10 };
+        }
+      } else { calmStart = null; lastT = null; }
+    }
+    return null;
+  }
+
+  /** The alert a Guardian escalation sends — deterministic, injected clock.
+   *  opts = {name, nowMs, lat, lon, watchUrl?} */
+  function guardianMessage(opts) {
+    var o = opts || {};
+    var who = o.name ? String(o.name).slice(0, 40) : 'An Atlas driver';
+    var when = etaClock(o.nowMs || 0, 0);
+    var txt = '⚠️ ' + who + ' may have been in a crash at ' + when +
+      ' and did not respond to their satnav’s check-in.';
+    if (typeof o.lat === 'number' && typeof o.lon === 'number' && isFinite(o.lat) && isFinite(o.lon)) {
+      txt += ' Last position: ' + o.lat.toFixed(5) + ', ' + o.lon.toFixed(5) + '.';
+    }
+    if (o.watchUrl) txt += ' Follow live: ' + o.watchUrl;
+    txt += ' — Atlas Guardian';
+    return { subject: '⚠️ Atlas Guardian — ' + who + ' may need help', text: txt };
+  }
+
   /* ==================== share ETA + trip impact ========================== */
 
   /** A ready-to-send "on my way" message — the modern text you'd otherwise
@@ -2163,6 +2218,7 @@
     speechSafe: speechSafe,
     trafficCars: trafficCars, trafficDensity: trafficDensity, steeringAngle: steeringAngle,
     carHeading: carHeading, shareEtaText: shareEtaText, tripImpact: tripImpact,
+    crashSignature: crashSignature, guardianMessage: guardianMessage,
     calmScore: calmScore, calmestRoute: calmestRoute, etaBand: etaBand,
     rankParking: rankParking, walkInfo: walkInfo,
     evUsableRangeM: evUsableRangeM, evChargePlan: evChargePlan, parseMetres: parseMetres, vehicleHazards: vehicleHazards,

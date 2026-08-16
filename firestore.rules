@@ -521,6 +521,24 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // 🛡 Guardian crash alerts — write-only from clients. A doc is created
+    // only when a driver failed to respond to the crash countdown; a Cloud
+    // Function emails the driver's own chosen contact and nobody can read
+    // the collection back (not even the author — there is nothing to browse).
+    match /atlas_guardian/{alertId} {
+      allow read: if false;
+      allow create: if request.auth != null
+        && request.resource.data.from == request.auth.uid
+        && request.resource.data.keys().hasOnly(['from', 'email', 'name', 'lat', 'lon', 'watch', 't'])
+        && request.resource.data.email is string && request.resource.data.email.size() <= 80
+        && request.resource.data.email.matches('.*@.*')
+        && request.resource.data.name is string && request.resource.data.name.size() <= 40
+        && request.resource.data.lat is number && request.resource.data.lon is number
+        && request.resource.data.watch is string && request.resource.data.watch.size() <= 120
+        && request.resource.data.t is number;
+      allow update, delete: if false;
+    }
+
     // Convoy chat: text + short voice notes to everyone on the code. Create
     // only, as yourself, capped fields (voice notes are small data-URLs);
     // messages can never be edited or deleted by other members, and the

@@ -14,6 +14,7 @@
  * SENDGRID_API_KEY, optional ATLAS_FROM_EMAIL env).
  */
 import { onRequest } from 'firebase-functions/v2/https';
+import { onDocumentCreated } from 'firebase-functions/v2/firestore';
 import { defineSecret } from 'firebase-functions/params';
 import * as logger from 'firebase-functions/logger';
 import * as admin from 'firebase-admin';
@@ -21,7 +22,7 @@ import { randomBytes } from 'node:crypto';
 import type Stripe from 'stripe';
 import { STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, stripeClient } from './stripe.js';
 import { SENDGRID_API_KEY } from './email.js';
-import { makeProCode, validProCode, atlasProEmail, ytClipMeta, validateClipSubmission as logicValidateClip } from './logic.js';
+import { makeProCode, validProCode, atlasProEmail, guardianEmail, ytClipMeta, validateClipSubmission as logicValidateClip } from './logic.js';
 
 const REGION = 'us-central1';
 const ATLAS_FROM_EMAIL = process.env.ATLAS_FROM_EMAIL || 'atlas@apexvip.uk';
@@ -216,5 +217,46 @@ export const atlasClipPublish = onRequest(
       logger.error('atlas clip publish', (err as Error).message);
       res.status(500).json({ error: 'something went wrong — the clip is still on your phone' });
     }
+  }
+);
+
+/**
+ * 🛡 Guardian crash alerts — the automatic half of Atlas's crash detection.
+ *
+ * The app only writes an atlas_guardian doc when a driver failed to answer
+ * the 30-second crash countdown (rules validate every field and the
+ * collection is write-only for clients). This trigger emails the driver's
+ * chosen emergency contact with the position and the live watch link, then
+ * stamps the doc so retries never double-send. If SendGrid isn't
+ * configured the doc still records the attempt for manual follow-up.
+ */
+export const atlasGuardianAlert = onDocumentCreated(
+  { document: 'atlas_guardian/{alertId}', region: REGION, secrets: [SENDGRID_API_KEY] },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const d = snap.data() as { email?: string; name?: string; lat?: number; lon?: number; watch?: string; t?: number; sent?: boolean };
+    if (d.sent) return; // replayed event — already handled
+    const to = String(d.email || '').trim();
+    if (!to || !to.includes('@')) return;
+    const key = SENDGRID_API_KEY.value();
+    if (!key) { logger.warn('guardian alert: SENDGRID_API_KEY not set — alert NOT emailed', { id: snap.id }); return; }
+    const msg = guardianEmail(d);
+    const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        personalizations: [{ to: [{ email: to }] }],
+        from: { email: ATLAS_FROM_EMAIL, name: 'Atlas Guardian' },
+        subject: msg.subject,
+        content: [{ type: 'text/plain', value: msg.text }],
+      }),
+    });
+    if (!res.ok) {
+      logger.error('guardian alert email failed', res.status, await res.text().catch(() => ''));
+      return;
+    }
+    await snap.ref.set({ sent: true, sentAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    logger.info('guardian alert emailed', { id: snap.id });
   }
 );
