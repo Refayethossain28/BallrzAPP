@@ -97,6 +97,22 @@ export const atlasProWebhook = onRequest(
             logger.info('atlas pro sale fulfilled', { session: session.id, emailed: sent });
           }
         }
+        // 📣 sponsored-place sales land in a ledger for the owner to action:
+        // create the pin doc in atlas_sponsored (fields: SPONSORED.md). The
+        // doc id = session id, so Stripe retries never double-record.
+        if (product === 'atlas-sponsored' && session.payment_status === 'paid') {
+          const email = (session.customer_details && session.customer_details.email) ||
+                        session.customer_email || '';
+          await admin.firestore().collection('atlas_sponsored_sales').doc(session.id).set({
+            email,
+            amount: session.amount_total,
+            currency: session.currency,
+            fields: (session as unknown as { custom_fields?: unknown }).custom_fields || [],
+            status: 'awaiting-pin',
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          }, { merge: true });
+          logger.info('sponsored place sale recorded', { session: session.id });
+        }
       }
       res.json({ received: true });
     } catch (err) {

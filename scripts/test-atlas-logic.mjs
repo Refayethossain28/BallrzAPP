@@ -1227,6 +1227,35 @@ test('watch links: shareable live view, never a membership', () => {
   assert.equal(A.watchLink('https://x.test/', 'nope'), null);
 });
 
+test('sponsored places: labelled, capped, relevant — never spam', () => {
+  const now = Date.now();
+  const items = [
+    { id: 'a', name: 'Beanhouse', tagline: 'Flat whites', lat: 51.501, lon: -0.121, kind: 'cafe', active: true, paidUntil: now + 86400000 },
+    { id: 'b', name: 'ChargeFast', tagline: '150 kW', lat: 51.503, lon: -0.118, kind: 'ev', active: true },
+    { id: 'c', name: 'Expired Pies', lat: 51.502, lon: -0.12, kind: 'food', active: true, paidUntil: now - 1 },
+    { id: 'd', name: 'Switched Off', lat: 51.502, lon: -0.12, kind: 'food', active: false },
+    { id: 'e', name: 'Far Kebabs', lat: 53.9, lon: -1.1, kind: 'food', active: true },
+    { name: '', lat: 51.5, lon: -0.12 },              // junk
+    { name: 'BadCoords', lat: 999, lon: 0 },           // junk
+  ];
+  const me = { lat: 51.5, lon: -0.12 };
+  const near = A.sponsoredNearby(items, me, 10, now, 8);
+  same(near.map((n) => n.place.id), ['a', 'b']); // expired/off/far/junk gone
+  assert.ok(near[0].distM < near[1].distM);
+  // hard cap
+  assert.equal(A.sponsoredNearby(items, me, 10, now, 1).length, 1);
+  // search: kind keywords and name both match, at most one, must be relevant
+  assert.equal(A.sponsoredForSearch(items, 'coffee', me, now).place.id, 'a');
+  assert.equal(A.sponsoredForSearch(items, 'charging point', me, now).place.id, 'b');
+  assert.equal(A.sponsoredForSearch(items, 'beanhouse', me, now).place.id, 'a');
+  assert.equal(A.sponsoredForSearch(items, 'plumber', me, now), null); // unrelated → no ad
+  assert.equal(A.sponsoredForSearch(items, 'co', me, now), null);      // too short
+  // validator clamps runaway text
+  const v = A.validSponsored({ name: 'x'.repeat(99), tagline: 'y'.repeat(99), lat: 1, lon: 1 }, now);
+  assert.ok(v.name.length === 40 && v.tagline.length === 60);
+  assert.equal(A.validSponsored(null, now), null);
+});
+
 test('guardian: crash = violent spike then stillness, potholes are not crashes', () => {
   const g = 9.81;
   const cruise = (t0, ms, jitter = 1.2) =>
