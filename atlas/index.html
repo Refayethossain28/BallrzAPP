@@ -1011,18 +1011,21 @@
 
   <div id="convoyLiveBox" style="display:none">
     <div class="convoyBig" id="convoyCodeBig">——————</div>
-    <div class="convoyHint">share this code — anyone who joins it rides with you</div>
+    <div class="convoyHint" id="convoyHint">share this code — anyone who joins it rides with you</div>
     <div style="display:flex;gap:10px">
       <button class="convoyBtn" id="btnConvoyShare" style="flex:1;background:linear-gradient(135deg,#2563ff,#00c2ff);color:#fff">📤 Invite</button>
+      <button class="convoyBtn" id="btnWatchShare" style="flex:1;background:rgba(255,255,255,0.07);border:1px solid var(--line)">👀 Live link</button>
       <button class="convoyBtn" id="btnConvoyLeave" style="background:rgba(248,113,113,0.14);border:1px solid rgba(248,113,113,0.4)">Leave</button>
     </div>
     <div id="convoyMembers"></div>
-    <div class="sectionTitle" style="margin-top:8px">Convoy chat</div>
-    <div id="chatList"></div>
-    <div id="chatRow">
-      <button id="btnChatVoice" aria-label="Record a voice message">🎤</button>
-      <input id="chatInput" class="convoyInput" style="flex:1;height:44px" placeholder="Message the convoy" maxlength="400" autocomplete="off">
-      <button id="btnChatSend" aria-label="Send">➤</button>
+    <div id="chatBlock">
+      <div class="sectionTitle" style="margin-top:8px">Convoy chat</div>
+      <div id="chatList"></div>
+      <div id="chatRow">
+        <button id="btnChatVoice" aria-label="Record a voice message">🎤</button>
+        <input id="chatInput" class="convoyInput" style="flex:1;height:44px" placeholder="Message the convoy" maxlength="400" autocomplete="off">
+        <button id="btnChatSend" aria-label="Send">➤</button>
+      </div>
     </div>
   </div>
 </div>
@@ -4234,14 +4237,64 @@ function leaveConvoy(silent) {
   stopFollow(null); music.dj = false; djSeen = {};
   $('btnDjShare').classList.remove('on');
   $('btnDjShare').textContent = '🎶 Share with the convoy';
-  if (convoy.fbCol && convoy.fbUid) { try { convoy.fbCol.doc(convoy.fbUid).delete(); } catch (e) {} }
+  if (convoy.fbCol && convoy.fbUid && !convoy.watch) { try { convoy.fbCol.doc(convoy.fbUid).delete(); } catch (e) {} }
   convoy.fbCol = null;
-  convoy.code = null; convoy.members = {};
+  convoy.code = null; convoy.members = {}; convoy.watch = false;
   $('convoyJoinBox').style.display = '';
   $('convoyLiveBox').style.display = 'none';
+  $('chatBlock').style.display = '';
+  $('btnConvoyShare').style.display = '';
+  $('convoyHint').textContent = 'share this code — anyone who joins it rides with you';
   $('btnConvoy').style.background = '';
   needsDraw = true;
   if (!silent) toast('Left the convoy');
+}
+
+/* 👀 watch-only live view: the link is the capability. Whoever opens it sees
+   the convoy move — members, speeds, ETAs — but never joins: no beacon, no
+   name, no chat, nothing broadcast back. */
+function watchConvoy(code) {
+  code = A.validConvoyCode(code);
+  if (!code) { toast('That live link looks broken'); return; }
+  leaveConvoy(true);
+  convoy.code = code; convoy.watch = true; convoy.members = {};
+  convoy.chat = []; convoy.unread = 0; updateChatBadge();
+  if (window.BroadcastChannel) {
+    convoy.bc = new BroadcastChannel('atlas-convoy-' + code);
+    convoy.bc.onmessage = function (e) {
+      if (e.data && e.data.kind === 'chat') return; // watchers don't see chat
+      receiveBeacon(e.data);
+    };
+  }
+  fbWatch(code);
+  convoy.timer = setInterval(convoyTick, 3000);
+  convoyTick();
+  $('convoyJoinBox').style.display = 'none';
+  $('convoyLiveBox').style.display = '';
+  $('convoyCodeBig').textContent = code;
+  $('convoyHint').textContent = "watching live — you're not sharing anything";
+  $('btnConvoyShare').style.display = 'none';
+  $('chatBlock').style.display = 'none';
+  $('btnConvoy').style.background = 'rgba(0,194,255,0.25)';
+  renderConvoyMembers();
+  toast('👀 Watching convoy ' + code + ' live');
+}
+
+/* read-only Firestore subscription: beacons in, nothing out */
+function fbWatch(code) {
+  var cfg = window.ATLAS_FIREBASE_CONFIG;
+  if (!cfg) return;
+  loadFirebaseSdk(['app', 'auth', 'firestore']).then(function () {
+    var app = firebase.apps && firebase.apps.length ? firebase.app() : firebase.initializeApp(cfg);
+    return firebase.auth(app).signInAnonymously().then(function () {
+      if (convoy.code !== code || !convoy.watch) return; // left already
+      convoy.fb = firebase.firestore(app);
+      convoy.fbUnsub = convoy.fb.collection('atlas_convoys').doc(code).collection('members')
+        .onSnapshot(function (snap) {
+          snap.forEach(function (d) { receiveBeacon(d.data()); });
+        }, function () {});
+    });
+  }).catch(function () { /* BroadcastChannel still carries same-device watching */ });
 }
 
 function convoyPos() {
@@ -4253,7 +4306,7 @@ function convoyTick() {
   var now = Date.now();
   convoy.members = A.pruneMembers(convoy.members, now);
   var pos = convoyPos();
-  if (pos) {
+  if (pos && !convoy.watch) {
     var b = { id: convoy.selfId, name: convoyName(), lat: pos.lat, lon: pos.lon,
       heading: typeof pos.heading === 'number' ? pos.heading : null,
       speed: (nav.active && nav.guide && nav.guide.speed) || pos.speed || null,
@@ -4488,16 +4541,18 @@ function renderConvoyMembers() {
   var self = convoyPos();
   var stats = A.convoyStats(alive, self, now);
   box.innerHTML = '';
-  var me = document.createElement('div');
-  me.className = 'memberRow';
-  var myAv = A.convoyAvatar(convoy.selfId);
-  me.innerHTML = '<div class="av"></div><div style="flex:1;min-width:0"><div class="mn"></div>' +
-    '<div class="mm">' + (self ? 'broadcasting your position' : 'waiting for a GPS fix (or start a drive)') + '</div></div>';
-  me.querySelector('.av').style.background = myAv.color + '33';
-  me.querySelector('.av').style.borderColor = myAv.color;
-  me.querySelector('.av').textContent = myAv.emoji;
-  me.querySelector('.mn').textContent = convoyName() + ' (you)';
-  box.appendChild(me);
+  if (!convoy.watch) { // watchers aren't members — no self row, nothing shared
+    var me = document.createElement('div');
+    me.className = 'memberRow';
+    var myAv = A.convoyAvatar(convoy.selfId);
+    me.innerHTML = '<div class="av"></div><div style="flex:1;min-width:0"><div class="mn"></div>' +
+      '<div class="mm">' + (self ? 'broadcasting your position' : 'waiting for a GPS fix (or start a drive)') + '</div></div>';
+    me.querySelector('.av').style.background = myAv.color + '33';
+    me.querySelector('.av').style.borderColor = myAv.color;
+    me.querySelector('.av').textContent = myAv.emoji;
+    me.querySelector('.mn').textContent = convoyName() + ' (you)';
+    box.appendChild(me);
+  }
   stats.forEach(function (s) {
     var m = s.member, av = A.convoyAvatar(m.id);
     var row = document.createElement('div');
@@ -4838,6 +4893,25 @@ $('btnConvoyShare').addEventListener('click', function () {
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(text).then(function () { toast('Invite copied'); }, function () { toast('Code: ' + convoy.code); });
   } else toast('Code: ' + convoy.code);
+});
+
+/* 👀 the live-location link: family follows the drive without joining */
+$('btnWatchShare').addEventListener('click', function () {
+  if (!convoy.code) return;
+  var base = 'https://apexvip.uk/atlas/';
+  try {
+    if (window.location && window.location.href && String(window.location.href).indexOf('http') === 0) {
+      base = String(window.location.href).split('#')[0];
+    }
+  } catch (e) {}
+  var url = A.watchLink(base, convoy.code);
+  if (!url) return;
+  var text = 'Follow our drive live — ' + url;
+  if (navigator.share) { navigator.share({ text: text }).catch(function () {}); return; }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function () { toast('👀 Live link copied — anyone with it can watch'); },
+                                             function () { toast(url); });
+  } else toast(url);
 });
 
 /* ------------------------------- 📹 dashcam ------------------------------ */
@@ -5491,10 +5565,19 @@ if (!load('atlas.welcomed', false)) $('welcome').classList.add('show');
 // native App Store build: scrub external pricing from the settings row at boot
 if (typeof window !== 'undefined' && window.ATLAS_NATIVE) refreshProUI();
 
-// convoy deep link: atlas/#convoy=CODE opens the join sheet prefilled
+// convoy deep links: #watch=CODE starts the read-only live view straight
+// away; #convoy=CODE opens the join sheet prefilled
 (function () {
-  var code = null;
-  try { code = A.parseConvoyLink(String((window.location && window.location.hash) || '')); } catch (e) {}
+  var hash = '';
+  try { hash = String((window.location && window.location.hash) || ''); } catch (e) {}
+  var wcode = null, code = null;
+  try { wcode = A.parseWatchLink(hash); } catch (e) {}
+  if (wcode) {
+    watchConvoy(wcode);
+    openSheet('convoySheet');
+    return;
+  }
+  try { code = A.parseConvoyLink(hash); } catch (e) {}
   if (code) {
     $('convoyCode').value = code;
     $('convoyName').value = load('atlas.convoy.name', '') || '';

@@ -1519,6 +1519,20 @@
     return validConvoyCode(s.replace(/^#/, ''));
   }
 
+  /** Watch-only live-location links: anyone with the link sees the convoy
+   *  move on the map but never joins, broadcasts, or chats. The code stays
+   *  the capability — no accounts, nothing new stored. */
+  function watchLink(baseUrl, code) {
+    var c = validConvoyCode(code);
+    if (!c || typeof baseUrl !== 'string' || !baseUrl) return null;
+    return baseUrl.split('#')[0] + '#watch=' + c;
+  }
+  function parseWatchLink(s) {
+    if (typeof s !== 'string') return null;
+    var m = /watch=([A-Za-z0-9-]{4,12})/.exec(s);
+    return m ? validConvoyCode(m[1]) : null;
+  }
+
   var CONVOY_CARS = ['🚗', '🚙', '🛻', '🚐', '🏎', '🚕', '🚓', '🚌'];
   var CONVOY_COLORS = ['#38bdf8', '#34d399', '#f472b6', '#fbbf24', '#a78bfa', '#fb7185', '#4ade80', '#f97316'];
 
@@ -2142,6 +2156,7 @@
     typicalTrafficFactor: typicalTrafficFactor, trafficAdjust: trafficAdjust,
     remainingWithTraffic: remainingWithTraffic, nextIncident: nextIncident,
     makeConvoyCode: makeConvoyCode, validConvoyCode: validConvoyCode, parseConvoyLink: parseConvoyLink,
+    watchLink: watchLink, parseWatchLink: parseWatchLink,
     convoyAvatar: convoyAvatar, applyBeacon: applyBeacon, pruneMembers: pruneMembers, convoyStats: convoyStats,
     chatText: chatText, chatMsg: chatMsg, validChatMsg: validChatMsg, pruneChat: pruneChat, agoShort: agoShort,
     trackKey: trackKey, findLocalTrack: findLocalTrack, djTarget: djTarget, syncAdjust: syncAdjust,

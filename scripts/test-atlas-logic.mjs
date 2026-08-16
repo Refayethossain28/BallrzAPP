@@ -1209,6 +1209,24 @@ test('tripImpact: honest estimates per mode, EV uses its own Wh/km', () => {
   assert.equal(A.tripImpact(-5, 'ev').kwh, 0);
 });
 
+test('watch links: shareable live view, never a membership', () => {
+  const url = A.watchLink('https://apexvip.uk/atlas/', 'ab 23-cd');
+  assert.equal(url, 'https://apexvip.uk/atlas/#watch=AB23CD');
+  // an old hash on the base is replaced, not stacked
+  assert.equal(A.watchLink('https://x.test/atlas/#convoy=ZZZZ99', 'AB23CD'),
+               'https://x.test/atlas/#watch=AB23CD');
+  assert.equal(A.parseWatchLink(url), 'AB23CD');
+  assert.equal(A.parseWatchLink('#watch=ab23cd'), 'AB23CD');
+  // the two link kinds never bleed into each other
+  assert.equal(A.parseWatchLink('#convoy=AB23CD'), null);
+  assert.equal(A.parseConvoyLink('#watch=AB23CD'), null);
+  // junk-safe
+  assert.equal(A.parseWatchLink('#watch=!!'), null);
+  assert.equal(A.parseWatchLink(null), null);
+  assert.equal(A.watchLink('', 'AB23CD'), null);
+  assert.equal(A.watchLink('https://x.test/', 'nope'), null);
+});
+
 test('traffic density: the game road carries the real signal', () => {
   const quiet = A.trafficDensity(1.0, 0);
   const rush = A.trafficDensity(1.18, 0);
