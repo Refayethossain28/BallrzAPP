@@ -527,7 +527,7 @@
     TIME: {
       name: 'TimeCoin', ticker: 'TIME', icon: '🪙', coin: 100000,
       basePence: 120, driftPct: 0.03, volPct: 4.5, app: '../coin/',
-      chainLS: 'ballrzcoin.chain.v2', walletsLS: 'ballrzcoin.wallets.v2',
+      chainLS: 'ballrzcoin.chain.v3', walletsLS: 'ballrzcoin.wallets.v2',
       blurb: 'A Bitcoin built from raw bytes up — mine real blocks in your browser.'
     },
     NEURA: {
