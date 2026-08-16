@@ -29,13 +29,17 @@ scoreboard impossible to fudge.
 
 ## The supply is already set for you
 
-TIME is hard-capped at **21,000,000,000 TIME, fixed forever** — sized so the same
-currency works for ten friends today and a worldwide community later, and
-divisible to 5 decimal places so a coffee can cost a fraction of a coin. You
-don't need to change anything: a small group just uses a small slice of the
-supply, priced in time (see the ⏳ time-rate control in the app — 1 TIME = one
-hour of a favour, by default). Scarcity here isn't about the number being small;
-it's that the ceiling **never moves**, which is exactly what makes it sound.
+TIME is minted **no faster than time itself**: the whole network earns one hour
+of TIME per real hour (0.01 TIME per 36-second block), halving every ~3 months
+toward a hard cap of **4,200 TIME per circle** — about two working years of
+favours — and divisible to 5 decimal places so a small favour can cost a
+fraction of a coin. You don't need to change anything: mining seeds the circle
+with liquidity and favours carry it from there, priced in time (see the ⏳
+time-rate control in the app — 1 TIME = one hour of a favour, by default; the
+mutual-credit ledger is the elastic channel when the circle needs more money
+than has been mined). Scarcity here isn't a big number; it's that the mint runs
+at the speed of the clock and the ceiling **never moves** — which is exactly
+what makes it sound.
 
 ---
 

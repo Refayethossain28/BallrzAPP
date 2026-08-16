@@ -48,8 +48,8 @@ compares to banks and cash).
 - **A currency for time and favours (a time bank):** price favours in hours; a
   barter board with categories, search and circles; a "Top helpers" reputation
   board.
-- **Two money models in one app:** the mined, hard-capped chain (**21 billion
-  TIME, fixed forever**) *and* an optional **mutual-credit** ledger (LETS-style:
+- **Two money models in one app:** the mined, hard-capped chain (**minted no
+  faster than time itself — one hour of TIME per hour**) *and* an optional **mutual-credit** ledger (LETS-style:
   no mining, everyone starts at zero, balances always sum to zero, capped by a
   shared credit limit).
 - **Real usability:** installable PWA (offline), encrypted keys behind a
@@ -146,8 +146,8 @@ skip it, it's the wrong crowd anyway.)*
   barter board, point-of-sale charging, invites that seed a starting balance,
   encrypted keys, an installable app and 9 languages — plus an optional
   mutual-credit mode. Not an investment: no ICO, no price, no token. You earn it
-  and spend it on favours; the mined supply is hard-capped at 21 billion, fixed
-  forever.
+  and spend it on favours; the mined supply grows no faster than
+  time itself and is hard-capped forever.
 
 ### X / Twitter (thread)
 > 1/ I built a Bitcoin from scratch to understand it — then turned it into a real

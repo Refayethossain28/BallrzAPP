@@ -22,7 +22,7 @@ against published test vectors in [`../scripts/test-coin-logic.mjs`](../scripts/
 | Ledger | UTXO model: coins are unspent outputs; transactions consume them with signed inputs |
 | Blocks | Merkle root over transaction ids; header hashed with double-SHA-256 |
 | Mining | Proof of work against a 256-bit target; difficulty retargets every 10 blocks, clamped to ×4 per step like Bitcoin |
-| Money supply | 50,000 TIME subsidy halving every 210,000 blocks — **21,000,000,000 TIME will ever exist**, hard-capped and fixed forever, sized for a worldwide community — with fees paid to the miner |
+| Money supply | Time-anchored issuance: 0.01 TIME per 36-second block — **the network mints one hour of TIME per real hour**, however much hashpower joins — halving every 210,000 blocks (~3 months) toward a hard cap of **4,200 TIME per circle**, with fees paid to the miner |
 | Consensus | Fork choice by **cumulative work** (`replaceChain`), so independent nodes converge |
 
 Open `index.html` in two browser tabs: each tab is a node with its own copy of the
@@ -68,7 +68,7 @@ The Send form has a **📷 Scan a friend’s QR** button: where the browser supp
 in-app; elsewhere (e.g. iOS Safari) it explains that the phone’s own Camera app
 scans the same QR, since it’s a payment link.
 The page also shows a live **leaderboard** (top holders by share of supply) and
-a **halving countdown** toward the 21-billion-TIME issuance limit.
+a **halving countdown** toward the 4,200-TIME issuance limit.
 
 **Barter — offers board (a time bank):** TIME buys **time and favours, never
 cash**. Post something you'll do or give (“🎂 Bake a cake”) priced in **hours or

@@ -183,12 +183,17 @@ test('amount formatting and parsing', () => {
   assert.throws(() => C.parseAmount('1.123456'), /bad amount/); // more than 5 decimals
   assert.throws(() => C.parseAmount('nope'), /bad amount/);
 });
-test('default monetary policy: exactly 21,000,000,000 TIME will ever exist', () => {
+test('default monetary policy: TIME is minted no faster than time itself', () => {
   const chain = new C.Blockchain(); // real params, not the test net
-  const CAP = 21000000000 * C.COIN;
-  assert.equal(chain.subsidyAt(1), 50000 * C.COIN, '50,000 TIME at height 1');
+  const p = chain.params;
+  const CAP = 4200 * C.COIN;
+  assert.equal(chain.subsidyAt(1), C.COIN / 100, '0.01 TIME at height 1');
+  // The hour standard: 0.01 TIME per 36s block ⇒ the network mints exactly
+  // one TIME (one hour, at the default anchor) per real hour.
+  assert.equal(p.initialSubsidy * 3600000, C.COIN * p.targetBlockTimeMs,
+    'issuance rate is one TIME per hour');
   assert.equal(chain.stats().maxSupply, CAP);
-  // Sum the whole halving series: 50,000 TIME halving every 210,000 blocks, forever.
+  // Sum the whole halving series: 0.01 TIME halving every 210,000 blocks, forever.
   let total = 0;
   for (let h = 0; ; h++) {
     const s = chain.subsidyAt(h * chain.params.halvingInterval);

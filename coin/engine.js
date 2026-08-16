@@ -16,9 +16,9 @@
  *   • merkle trees committing every block to its transactions
  *   • proof-of-work mining against a 256-bit target, with Bitcoin-style
  *     difficulty retargeting (clamped ×4 either way each window)
- *   • a halving block-subsidy schedule and a hard supply cap — 21,000,000,000
- *     TIME, fixed forever and enforced by consensus, sized for a worldwide
- *     community that trades it for time and services
+ *   • a halving block-subsidy schedule and a hard supply cap — issuance is
+ *     anchored to time itself (the network mints one hour of TIME per real
+ *     hour, halving toward 4,200 TIME per circle), enforced by consensus
  *   • fork choice by *cumulative work* (not length), so `replaceChain` lets
  *     independent nodes converge — the UI syncs tabs over BroadcastChannel
  *
@@ -48,27 +48,31 @@
    * ==================================================================== */
   var COIN = 100000;                       // 1 TIME = 100,000 blazes (5 decimal places)
   var DECIMALS = 5;                        // COIN === 10 ** DECIMALS
-  // 21,000,000,000 TIME is the hard cap and the per-output sanity bound. In base
-  // units that is 2.1e15 — the same magnitude as Bitcoin's 2.1e15 satoshis, and
-  // comfortably below 2^53, so every balance and sum stays an exact integer.
-  var MAX_MONEY = 21000000000 * COIN;
+  // 4,200 TIME is the hard cap and the per-output sanity bound — the halving
+  // series' limit (0.01 TIME × 210,000 blocks × 2). In base units that is
+  // 4.2e8, comfortably below 2^53, so every sum stays an exact integer.
+  var MAX_MONEY = 4200 * COIN;
 
   var DEFAULT_PARAMS = {
     name: 'TimeCoin',
     ticker: 'TIME',
-    // A fixed, un-inflatable supply is the bedrock of sound money. TimeCoin
-    // issues 21,000,000,000 TIME and never one more — a ceiling sized for a
-    // worldwide community of savers and traders, enforced by consensus rather
-    // than by any central bank. Like Bitcoin, coins enter circulation through a
-    // halving block subsidy: 50,000 TIME at height 1, halving every 210,000
-    // blocks, whose geometric series sums to the 21-billion cap.
-    initialSubsidy: 50000 * 100000,        // 50,000 TIME block reward at height 1
-    halvingInterval: 210000,               // reward halves every N blocks (Bitcoin: 210,000)
+    // The hour standard: a currency anchored to time must not mint time
+    // faster than time itself passes. At the default anchor (1 TIME = one
+    // hour of a favour) a block pays 0.01 TIME — exactly the 36 seconds it
+    // takes to mine — so the whole network issues ONE HOUR OF TIME PER REAL
+    // HOUR no matter how much hashpower joins (difficulty absorbs the rest).
+    // The reward halves every 210,000 blocks (~3 months) and the geometric
+    // series sums to a hard cap of 4,200 TIME per circle — about two working
+    // years of favours, scarce the way time actually is. Mining seeds a
+    // circle with liquidity; the mutual-credit ledger (mutual.js) is the
+    // elastic money channel beyond it.
+    initialSubsidy: 1000,                  // 0.01 TIME block reward at height 1 (= 36s of time)
+    halvingInterval: 210000,               // reward halves every N blocks (~3 months of 36s blocks)
     retargetInterval: 10,                  // difficulty adjusts every N blocks (Bitcoin: 2,016)
-    targetBlockTimeMs: 15000,              // aim for one block per 15s (Bitcoin: 10 min)
+    targetBlockTimeMs: 36000,              // one block per 36s, so 0.01 TIME/block = 1 TIME/hour
     genesisTarget: '000' + repeatChar('f', 61), // proof-of-work limit: 12 leading zero bits
-    genesisTimestamp: 1783123200000,       // 2026-07-04T00:00Z, fixed so every node derives the identical genesis
-    genesisMessage: '04/Jul/2026 BallrzAPP declares monetary independence',
+    genesisTimestamp: 1786838400000,       // 2026-08-16T00:00Z, fixed so every node derives the identical genesis
+    genesisMessage: '16/Aug/2026 TimeCoin mints no faster than time itself',
     maxBlockTxs: 100                       // transfers per block, excluding the coinbase
   };
 

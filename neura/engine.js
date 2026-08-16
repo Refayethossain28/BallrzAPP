@@ -21,7 +21,7 @@
  * matter how much work it carries.
  *
  * Monetary policy — deliberately scarcer than everything around it:
- *   · Hard cap:   21,000,000 NEURA. Ever. (1000× scarcer than TimeCoin.)
+ *   · Hard cap:   21,000,000 NEURA. Ever. (Bitcoin's exact cap.)
  *   · Issuance:   50 NEURA block subsidy, halving every 210,000 blocks —
  *                 Bitcoin's exact emission curve.
  *   · No premine: the genesis coinbase pays nobody. Every coin that will

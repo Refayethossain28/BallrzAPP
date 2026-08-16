@@ -20,8 +20,9 @@ the app.
 
 **Short (texts, group chats):**
 > I built my own community currency for time and favours. Real mining, real
-> cryptography, same rules as Bitcoin — with a supply **hard-capped at 21
-> billion TIME, fixed forever**. Earn it by mining or doing favours, spend it on
+> cryptography, same rules as Bitcoin — minted **no faster than time
+> itself — one hour of TIME per hour, hard-capped forever**. Earn it by mining
+> or doing favours, spend it on
 > favours. Mine one in your browser:
 > https://refayethossain28.github.io/BallrzAPP/coin/
 
@@ -30,8 +31,8 @@ the app.
 > your people. ⛏
 > TimeCoin runs the real thing — proof-of-work mining, halving rewards,
 > Bitcoin's own secp256k1 cryptography — as a community currency for time and
-> favours. The supply is **hard-capped at 21 billion TIME, fixed forever** and
-> enforced by consensus: a permanent ceiling sized for a worldwide community.
+> favours. It mints **no faster than time itself — one hour of TIME per real
+> hour**, halving toward a hard, permanent cap enforced by consensus.
 > No ICO. No price. No promises. Earn it, spend it on favours.
 > Mine yours in the browser 👉 refayethossain28.github.io/BallrzAPP/coin
 
@@ -41,10 +42,9 @@ the app.
 > UTXO ledger, merkle trees, difficulty retargeting, halving block rewards and
 > fork choice by cumulative work — zero dependencies, 47 unit tests against
 > published vectors.
-> Then I turned it into a real community currency for time and favours: the
-> supply is hard-capped at 21 billion TIME, fixed forever and enforced by
-> consensus — a permanent, un-inflatable ceiling sized for a worldwide
-> community. You can mine it in your browser right now, and two tabs behave like
+> Then I turned it into a real community currency for time and favours: issuance
+> is anchored to time itself — the network mints one hour of TIME per real
+> hour, halving toward a hard, un-inflatable cap enforced by consensus. You can mine it in your browser right now, and two tabs behave like
 > two nodes converging on the heaviest chain.
 > It's a real currency, not an investment — no ICO, no price, no promises,
 > nothing to buy; you earn it and spend it on favours. Building it taught me
@@ -52,8 +52,8 @@ the app.
 > ⛏ https://refayethossain28.github.io/BallrzAPP/coin/
 
 **One-liner for the bio/footer:**
-> Creator of TimeCoin — a community currency for time and favours (21 billion
-> hard cap, no price, not for sale).
+> Creator of TimeCoin — a community currency for time and favours (minted no
+> faster than time itself, no price, not for sale).
 
 ## Regenerating the cards
 
