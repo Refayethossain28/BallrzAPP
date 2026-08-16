@@ -4,7 +4,7 @@
  * opportunistically in their own bounded cache so areas you've seen keep
  * working offline; routing/search requests are never cached (live answers
  * or an honest failure). Bump CACHE to force a clean reinstall. */
-const CACHE = 'atlas-v36';
+const CACHE = 'atlas-v37';
 const TILE_CACHE = 'atlas-tiles-v1';
 const OFFLINE_CACHE = 'atlas-offline-v1'; // downloaded route packs — never trimmed
 const TILE_LIMIT = 600;

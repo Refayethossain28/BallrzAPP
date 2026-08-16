@@ -1194,6 +1194,8 @@ function persistRecents() { save('atlas.recents', recents.slice(0, 12)); }
 
 var canvas = $('map'), ctx = canvas.getContext('2d');
 var DPR = Math.min(2.5, window.devicePixelRatio || 1);
+var RDPR = DPR;        // render DPR — 1 while painting the perspective ground
+var groundA = null;    // anchor override while painting the perspective ground
 var view = {
   lat: 51.5074, lon: -0.1278, zoom: 15.2,   // London until we know better
   rot: 0,                                    // radians, 0 = north-up
@@ -1276,7 +1278,10 @@ function nightMode() {
 /* screen anchor: where the camera centre sits (lower in nav mode) */
 function isFpv() { return settings.view3d === 'fpv'; }
 function navZoom() { return isFpv() ? 17.3 : 16.5; }
-function anchor() { return { x: W / 2, y: view.navMode ? H * (isFpv() ? 0.93 : 0.72) : H / 2 }; }
+function anchor() {
+  if (groundA) return groundA;
+  return { x: W / 2, y: view.navMode ? H * (isFpv() ? 0.93 : 0.72) : H / 2 };
+}
 
 function worldOf(p) { return A.lonLatToWorld(p, view.zoom); }
 function toScreen(p) {
@@ -1304,12 +1309,24 @@ var FILTER_OK = (function () {
   } catch (e) { return false; }
 })();
 
+function perspActive() {
+  return isFpv() && view.navMode && view.follow && nav.active;
+}
 function draw() {
   var night = nightMode();
+  if (perspActive()) { drawPerspective(night); maybeFetchBuildings(); return; }
+  drawFlatScene(night, true);
+  drawGpsDot();
+  maybeFetchBuildings();
+}
+/** The world drawn flat (top-down): tiles, washes and every route/feature
+ *  overlay. Both renderers use it — the classic map directly, the
+ *  perspective view as the ground texture it warps to the horizon. */
+function drawFlatScene(night, withBuildings) {
   var layer = settings.baseLayer === 'sat' ? 'sat'
             : night ? 'dark'
             : settings.baseLayer === 'positron' ? 'pos' : 'voy';
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.setTransform(RDPR, 0, 0, RDPR, 0, 0);
   ctx.fillStyle = layer === 'sat' ? '#090d12' : night ? '#161b26' : layer === 'pos' ? '#f4f4f2' : '#f2f0eb';
   ctx.fillRect(0, 0, W, H);
 
@@ -1383,14 +1400,235 @@ function draw() {
     ctx.fillRect(0, 0, W, H);
     ctx.globalCompositeOperation = 'source-over';
   }
-  drawBuildings(night);
+  if (withBuildings) drawBuildings(night);
   drawRoutes(night);
   drawCameras();
   drawTraffic();
   drawConvoy();
   drawTapPin();
-  drawGpsDot();
-  maybeFetchBuildings();
+}
+
+
+/* --------------- 🌅 true-perspective Driver view (Mode 7) ---------------- */
+/* The flat world becomes the ground texture: each screen row below the
+   horizon samples a strip of it at the right distance (the SNES racing-game
+   trick), giving a real vanishing point with sky above. Buildings are then
+   projected through the same camera as genuine 3D extrusions. */
+var persp = { ground: null, gctx: null, stars: null };
+var PK_LOG = 0.45;   // ground supersample (log2) — sharper near field
+var P_HORIZON = 0.36, P_FOCAL = 1.02, P_CAMH = 52;
+
+function perspCam() {
+  var sw = Math.round(W * DPR), sh = Math.round(H * DPR);
+  return { sw: sw, sh: sh, yh: Math.round(sh * P_HORIZON),
+           f: sh * P_FOCAL, camH: P_CAMH * DPR };
+}
+
+function drawPerspective(night) {
+  var GW = Math.min(1100, Math.round(W * 2.1));
+  var GH = Math.min(1700, Math.round(H * 2.1));
+  if (!persp.ground || persp.ground.width !== GW || persp.ground.height !== GH) {
+    persp.ground = document.createElement('canvas');
+    persp.ground.width = GW; persp.ground.height = GH;
+    persp.gctx = persp.ground.getContext('2d');
+  }
+  // 1. paint the flat world into the ground canvas, car low-centre,
+  //    supersampled so the near field stays sharp after the warp
+  var mainCtx = ctx, mW = W, mH = H;
+  ctx = persp.gctx; W = GW; H = GH; RDPR = 1;
+  groundA = { x: GW / 2, y: GH * 0.86 };
+  view.zoom += PK_LOG;
+  drawFlatScene(night, false);
+  view.zoom -= PK_LOG;
+  var ga = groundA;
+  groundA = null;
+  ctx = mainCtx; W = mW; H = mH; RDPR = DPR;
+
+  // 2. the camera
+  var cam = perspCam();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  drawSky(night, cam);
+
+  // 3. warp the ground: one strip per device row, nearer rows sample
+  //    closer, wider slices — the road narrows to the vanishing point
+  var dyMax = ga.y - 4;
+  var yStart = Math.max(cam.yh + 1, Math.ceil(cam.yh + cam.f * cam.camH / dyMax));
+  for (var Y = yStart; Y < cam.sh; Y += 1) {
+    var d0 = cam.f * cam.camH / (Y - cam.yh);
+    var d1 = cam.f * cam.camH / (Y + 1 - cam.yh);
+    var srcW = Math.min(GW, cam.sw * d0 / cam.f);
+    var srcH = Math.max(0.6, d0 - d1);
+    ctx.drawImage(persp.ground, ga.x - srcW / 2, ga.y - d0, srcW, srcH, 0, Y, cam.sw, 1);
+  }
+  // distance haze melts the far ground into the sky
+  var fog = ctx.createLinearGradient(0, cam.yh, 0, yStart + cam.sh * 0.1);
+  var hazeC = gameOn() ? 'rgba(58,8,84,' : night ? 'rgba(12,17,34,' : 'rgba(200,214,235,';
+  fog.addColorStop(0, hazeC + '0.95)');
+  fog.addColorStop(0.55, hazeC + '0.45)');
+  fog.addColorStop(1, hazeC + '0)');
+  ctx.fillStyle = fog;
+  ctx.fillRect(0, cam.yh, cam.sw, yStart + cam.sh * 0.1 - cam.yh);
+
+  drawBuildingsPersp(night, ga, cam);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+
+function drawSky(night, cam) {
+  var g = ctx.createLinearGradient(0, 0, 0, cam.yh);
+  if (gameOn()) {
+    g.addColorStop(0, '#0b0118'); g.addColorStop(0.62, '#2a0a4e'); g.addColorStop(1, '#7a1266');
+  } else if (night) {
+    g.addColorStop(0, '#04060f'); g.addColorStop(0.7, '#0b1122'); g.addColorStop(1, '#1a2340');
+  } else {
+    g.addColorStop(0, '#79b4f0'); g.addColorStop(0.75, '#b8d7f7'); g.addColorStop(1, '#e8f1fb');
+  }
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, cam.sw, cam.yh);
+  if (gameOn()) {
+    // the synthwave sun, sliced by the horizon glow
+    var r = cam.sh * 0.16;
+    var sg = ctx.createLinearGradient(0, cam.yh - r, 0, cam.yh);
+    sg.addColorStop(0, '#ffd23d'); sg.addColorStop(1, '#ff2fa0');
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, 0, cam.sw, cam.yh); ctx.clip();
+    ctx.beginPath(); ctx.arc(cam.sw / 2, cam.yh, r, 0, 7);
+    ctx.fillStyle = sg; ctx.fill();
+    ctx.fillStyle = 'rgba(42,10,78,0.9)';
+    for (var b = 0; b < 5; b++) {
+      ctx.fillRect(0, cam.yh - r * (0.16 + b * 0.17), cam.sw, r * 0.05 + b * 1.5);
+    }
+    ctx.restore();
+  } else if (night) {
+    if (!persp.stars) {
+      persp.stars = [];
+      var sd = 9973;
+      for (var i = 0; i < 130; i++) {
+        sd = (sd * 16807) % 2147483647;
+        var x = (sd % 1000) / 1000;
+        sd = (sd * 16807) % 2147483647;
+        var y = (sd % 1000) / 1000;
+        sd = (sd * 16807) % 2147483647;
+        persp.stars.push({ x: x, y: y * 0.9, r: 0.5 + (sd % 100) / 100, p: (sd % 628) / 100 });
+      }
+    }
+    var tw = Date.now() / 900;
+    for (var si = 0; si < persp.stars.length; si++) {
+      var st = persp.stars[si];
+      ctx.beginPath();
+      ctx.arc(st.x * cam.sw, st.y * cam.yh, st.r * DPR * 0.8, 0, 7);
+      ctx.fillStyle = 'rgba(210,225,255,' + (0.35 + 0.3 * Math.sin(tw + st.p)).toFixed(2) + ')';
+      ctx.fill();
+    }
+  } else {
+    // day: a soft sun glow low in the sky
+    var dg = ctx.createRadialGradient(cam.sw * 0.72, cam.yh * 0.9, 0, cam.sw * 0.72, cam.yh * 0.9, cam.sh * 0.2);
+    dg.addColorStop(0, 'rgba(255,250,230,0.8)'); dg.addColorStop(1, 'rgba(255,250,230,0)');
+    ctx.fillStyle = dg;
+    ctx.fillRect(0, 0, cam.sw, cam.yh);
+  }
+}
+
+/** Buildings through the real camera: ground position → screen via the same
+ *  maths as the warp, height lifts the roof toward (or past) the horizon. */
+function drawBuildingsPersp(night, ga, cam) {
+  if (settings.buildings !== 'on' || settings.baseLayer === 'sat' || !bld.items.length) return;
+  var bz = view.zoom + PK_LOG;
+  var c = A.lonLatToWorld(view, bz);
+  var cos = Math.cos(view.rot), sin = Math.sin(view.rot);
+  var mppG = A.metresPerPixel(view.lat, bz);
+  function gPos(p) {
+    var w = A.lonLatToWorld(p, bz);
+    var dx = w.x - c.x, dy = w.y - c.y;
+    return { x: ga.x + dx * cos - dy * sin, y: ga.y + dx * sin + dy * cos };
+  }
+  function proj(g, hM) {
+    var dx = g.x - ga.x, dyG = ga.y - g.y;
+    if (dyG < 10) return null;
+    var k = cam.f / dyG;
+    return { x: cam.sw / 2 + dx * k,
+             yB: cam.yh + cam.camH * k,
+             yT: cam.yh + (cam.camH - hM / mppG) * k,
+             d: dyG };
+  }
+  var list = [];
+  for (var bi = 0; bi < bld.items.length; bi++) {
+    var b = bld.items[bi];
+    var ps = [], nearD = Infinity, vis = false;
+    for (var i = 0; i < b.pts.length; i++) {
+      var pr = proj(gPos(b.pts[i]), b.h);
+      if (!pr) { ps = null; break; }
+      ps.push(pr);
+      nearD = Math.min(nearD, pr.d);
+      if (pr.x > -cam.sw * 0.3 && pr.x < cam.sw * 1.3 && pr.yB > cam.yh - 8) vis = true;
+    }
+    if (!ps || !vis) continue;
+    list.push({ ps: ps, b: b, d: nearD });
+    if (list.length >= BLD_DRAW_CAP) break;
+  }
+  list.sort(function (p, q) { return q.d - p.d; });
+  var winBudget = 1200;
+  for (var li = 0; li < list.length; li++) {
+    var ps2 = list[li].ps, bref = list[li].b;
+    if (bref.seed == null) {
+      bref.seed = Math.abs(Math.round(bref.pts[0].lat * 1e5) * 31 + Math.round(bref.pts[0].lon * 1e5)) >>> 0;
+    }
+    function seedHash(n) { n = (n ^ (n >>> 15)) * 2246822519; n = (n ^ (n >>> 13)) * 3266489917; return ((n ^ (n >>> 16)) >>> 0) / 4294967296; }
+    for (var e = 0; e < ps2.length - 1; e++) {
+      var p0 = ps2[e], p1 = ps2[e + 1];
+      var sh2 = A.wallShade(p0.x, p0.yB, p1.x, p1.yB);
+      ctx.beginPath();
+      ctx.moveTo(p0.x, p0.yB); ctx.lineTo(p1.x, p1.yB);
+      ctx.lineTo(p1.x, p1.yT); ctx.lineTo(p0.x, p0.yT);
+      ctx.closePath();
+      ctx.fillStyle = gameOn()
+        ? 'rgb(' + Math.round(16 + 18 * sh2) + ',' + Math.round(6 + 12 * sh2) + ',' + Math.round(40 + 34 * sh2) + ')'
+        : night
+        ? 'rgb(' + Math.round(18 + 30 * sh2) + ',' + Math.round(24 + 36 * sh2) + ',' + Math.round(38 + 48 * sh2) + ')'
+        : 'rgb(' + Math.round(150 + 62 * sh2) + ',' + Math.round(154 + 62 * sh2) + ',' + Math.round(162 + 62 * sh2) + ')';
+      ctx.fill();
+      var wallPx = Math.abs(p1.x - p0.x);
+      var wallHPx = Math.abs(p0.yB - p0.yT);
+      if (winBudget > 0 && wallPx > 20 * DPR && wallHPx > 10 * DPR && bref.h > 5) {
+        var floors = Math.min(22, Math.max(1, Math.round(bref.h / 3.2)));
+        var cols = Math.min(18, Math.floor(wallPx / (8 * DPR)));
+        if (cols >= 1 && floors * cols <= winBudget) {
+          winBudget -= floors * cols;
+          for (var fl = 0; fl < floors; fl++) {
+            var v0 = (fl + 0.3) / floors, v1 = (fl + 0.72) / floors;
+            for (var cc = 0; cc < cols; cc++) {
+              var t0 = (cc + 0.28) / cols, t1 = (cc + 0.74) / cols;
+              var lit = (night || gameOn()) && seedHash(bref.seed + e * 131 + fl * 17 + cc * 7) < 0.34;
+              var bx0 = p0.x + (p1.x - p0.x) * t0, bx1 = p0.x + (p1.x - p0.x) * t1;
+              var by0 = p0.yB + (p1.yB - p0.yB) * t0, by1 = p0.yB + (p1.yB - p0.yB) * t1;
+              var ty0 = p0.yT + (p1.yT - p0.yT) * t0, ty1 = p0.yT + (p1.yT - p0.yT) * t1;
+              ctx.beginPath();
+              ctx.moveTo(bx0, by0 + (ty0 - by0) * v0);
+              ctx.lineTo(bx1, by1 + (ty1 - by1) * v0);
+              ctx.lineTo(bx1, by1 + (ty1 - by1) * v1);
+              ctx.lineTo(bx0, by0 + (ty0 - by0) * v1);
+              ctx.closePath();
+              ctx.fillStyle = gameOn()
+                ? (lit ? 'rgba(0,229,255,0.9)' : 'rgba(4,0,18,0.6)')
+                : night
+                ? (lit ? 'rgba(255,214,140,0.85)' : 'rgba(8,12,24,0.55)')
+                : 'rgba(58,68,92,0.16)';
+              ctx.fill();
+            }
+          }
+        }
+      }
+    }
+    ctx.beginPath();
+    ctx.moveTo(ps2[0].x, ps2[0].yT);
+    for (var rv = 1; rv < ps2.length; rv++) ctx.lineTo(ps2[rv].x, ps2[rv].yT);
+    ctx.closePath();
+    ctx.fillStyle = gameOn() ? '#1c0f44' : night ? '#2a3654' : '#e6e9ee';
+    ctx.fill();
+    ctx.lineWidth = gameOn() ? 1.3 * DPR : 0.8 * DPR;
+    ctx.strokeStyle = gameOn() ? 'rgba(255,47,170,0.75)'
+      : night ? 'rgba(140,170,230,0.35)' : 'rgba(90,100,120,0.3)';
+    ctx.stroke();
+  }
 }
 
 /* ------------------------- 🏙 3D extruded buildings ----------------------- */
@@ -1883,7 +2121,6 @@ $('btnLayers').addEventListener('click', function () {
 function apply3d() {
   var driving = view.navMode && view.follow;
   canvas.classList.toggle('threeD', settings.view3d === 'on' && driving);
-  canvas.classList.toggle('fpv', settings.view3d === 'fpv' && driving);
   $('cockpit').classList.toggle('show', settings.view3d === 'fpv' && driving && nav.active);
 }
 
