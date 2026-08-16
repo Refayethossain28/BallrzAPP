@@ -1976,6 +1976,21 @@
     return Math.max(-120, Math.min(120, d * 3.2));
   }
 
+  /** The direction a car at `alongM` is actually pointing: the bearing of
+   *  the chord under its own wheelbase (± spanM/2) rather than the raw
+   *  segment heading, so a car rotates progressively through a corner —
+   *  steering round it — instead of snap-pivoting at each route vertex. */
+  function carHeading(route, alongM, spanM) {
+    if (!route || !(route.totalM > 0)) return 0;
+    var s = (spanM || 4) / 2;
+    var m = Math.max(0, Math.min(route.totalM, alongM || 0));
+    var a = pointAtAlong(route, Math.max(0, m - s));
+    var b = pointAtAlong(route, Math.min(route.totalM, m + s));
+    var chord = haversine(a, b);
+    if (chord < 0.5) return pointAtAlong(route, m).heading || 0;
+    return bearing(a, b);
+  }
+
   /** How busy the game road should be, from the REAL traffic signal:
    *  the route's live/typical slowdown factor and incident count.
    *  → cars per km (1.1 quiet … 6 jammed). The fake cars are honest. */
@@ -2089,6 +2104,7 @@
     trackKey: trackKey, findLocalTrack: findLocalTrack, djTarget: djTarget, syncAdjust: syncAdjust,
     speechSafe: speechSafe,
     trafficCars: trafficCars, trafficDensity: trafficDensity, steeringAngle: steeringAngle,
+    carHeading: carHeading,
     calmScore: calmScore, calmestRoute: calmestRoute, etaBand: etaBand,
     rankParking: rankParking, walkInfo: walkInfo,
     evUsableRangeM: evUsableRangeM, evChargePlan: evChargePlan, parseMetres: parseMetres, vehicleHazards: vehicleHazards,

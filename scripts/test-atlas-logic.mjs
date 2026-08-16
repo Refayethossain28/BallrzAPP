@@ -1137,6 +1137,39 @@ test('steering: the wheel follows the bend ahead, straight means centred', () =>
   assert.equal(A.steeringAngle(straight, straight.totalM), 0); // at the end
 });
 
+test('carHeading: cars steer smoothly round corners, no snap-pivot', () => {
+  const mk = (pts) => {
+    const cum = [0];
+    for (let i = 1; i < pts.length; i++) cum.push(cum[i-1] + A.haversine(pts[i-1], pts[i]));
+    return { geometry: pts, cum, totalM: cum[cum.length-1], steps: [] };
+  };
+  // straight north road: chord heading equals the segment heading
+  const straight = mk(Array.from({ length: 20 }, (_, i) => ({ lat: 51 + i * 0.001, lon: 0 })));
+  near(A.carHeading(straight, 500), 0, 1);
+  // north-then-east right-angle corner
+  const pts = [];
+  for (let i = 0; i <= 10; i++) pts.push({ lat: 51 + i * 0.0003, lon: 0 });
+  for (let i = 1; i <= 10; i++) pts.push({ lat: 51.003, lon: i * 0.0003 });
+  const turn = mk(pts);
+  const cornerM = turn.cum[10];
+  // well before / after the corner: aligned with each leg
+  near(A.carHeading(turn, cornerM - 50), 0, 2);
+  near(A.carHeading(turn, cornerM + 50), 90, 2);
+  // ON the corner the chord splits the difference — mid-turn, not snapped
+  const mid = A.carHeading(turn, cornerM, 6);
+  assert.ok(mid > 25 && mid < 65, `mid-corner heading ${mid.toFixed(1)} should be between the legs`);
+  // and it rotates monotonically through the bend — that's the steering
+  let prev = -1;
+  for (let m = cornerM - 3; m <= cornerM + 3; m += 1) {
+    const h = A.carHeading(turn, m, 6);
+    assert.ok(h >= prev - 0.01, `heading should only wind on through the corner (${h} after ${prev})`);
+    prev = h;
+  }
+  // junk-safe: no route, and route ends
+  assert.equal(A.carHeading(null, 10), 0);
+  assert.ok(isFinite(A.carHeading(turn, 0)) && isFinite(A.carHeading(turn, turn.totalM)));
+});
+
 test('traffic density: the game road carries the real signal', () => {
   const quiet = A.trafficDensity(1.0, 0);
   const rush = A.trafficDensity(1.18, 0);

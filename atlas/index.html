@@ -4476,8 +4476,9 @@ function drawAmbientCars() {
   for (var i = 0; i < cars.length; i++) {
     var car = cars[i];
     var p = A.pointAtAlong(nav.route, car.alongM);
-    var hdg = (p.heading || 0) + (car.dir === -1 ? 180 : 0);
-    var pos = car.laneM ? A.destinationPoint(p, (p.heading || 0) + 90, car.laneM) : p;
+    var road = A.carHeading(nav.route, car.alongM, 4.6); // chord under the car — steers round corners
+    var hdg = road + (car.dir === -1 ? 180 : 0);
+    var pos = car.laneM ? A.destinationPoint(p, road + 90, car.laneM) : p;
     var sc = toScreen(pos);
     if (sc.x < -40 || sc.x > W + 40 || sc.y < -40 || sc.y > H + 40) continue;
     var rad = hdg * Math.PI / 180 + view.rot;
@@ -4573,16 +4574,17 @@ function drawCars3D(night, ga, cam) {
   for (var i = 0; i < cars.length; i++) {
     var car = cars[i];
     var p = A.pointAtAlong(nav.route, car.alongM);
-    var pos = car.laneM ? A.destinationPoint(p, (p.heading || 0) + 90, car.laneM) : p;
+    var road = A.carHeading(nav.route, car.alongM, 4.6); // chord under the car — steers round corners
+    var pos = car.laneM ? A.destinationPoint(p, road + 90, car.laneM) : p;
     var g = gPos(pos);
     var dyG = ga.y - g.y;
     if (dyG < 14 || dyG > ga.y - 4) continue;
-    list.push({ car: car, p: p, g: g, d: dyG });
+    list.push({ car: car, road: road, g: g, d: dyG });
   }
   list.sort(function (a, b) { return b.d - a.d; });
   for (var li = 0; li < list.length; li++) {
     var it = list[li], car2 = it.car;
-    var hdg = ((it.p.heading || 0) + (car2.dir === -1 ? 180 : 0)) * Math.PI / 180 + view.rot;
+    var hdg = (it.road + (car2.dir === -1 ? 180 : 0)) * Math.PI / 180 + view.rot;
     var fw = { x: Math.sin(hdg), y: -Math.cos(hdg) };
     var rt = { x: Math.cos(hdg), y: Math.sin(hdg) };
     var L = 2.3 / mppG, Wd = 0.95 / mppG;
