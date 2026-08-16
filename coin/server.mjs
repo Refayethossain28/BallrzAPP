@@ -235,6 +235,8 @@ if (isMain) {
     console.log(`🪙 TimeCoin node+relay listening on http://localhost:${PORT}`);
     console.log('   Open that URL — it serves the coin app already connected to this relay.');
   });
-  startKeepAlive(process.env.SELF_URL);
+  // On Render, RENDER_EXTERNAL_URL is injected automatically, so the
+  // keep-warm works with zero configuration; SELF_URL still wins elsewhere.
+  startKeepAlive(process.env.SELF_URL || process.env.RENDER_EXTERNAL_URL);
   process.on('SIGTERM', () => { console.log('SIGTERM — shutting down'); server.close(() => process.exit(0)); });
 }

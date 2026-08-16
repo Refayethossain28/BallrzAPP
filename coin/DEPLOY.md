@@ -18,6 +18,11 @@ friends on the other side of the world — all mining and paying on one chain.
 
 That's it — the server has zero dependencies, so there is nothing to build.
 
+Even quicker: **New → Blueprint** and pick the repo — the root
+[`render.yaml`](../render.yaml) already defines a `timecoin-relay` service
+with these exact settings (health-checked on `/status`, keep-warm on), so
+Render provisions it without any form-filling.
+
 ## Use it
 
 - Your service gets a URL like `https://ballrzcoin.onrender.com`. **Open it on
@@ -50,10 +55,12 @@ messages, bytes, connected clients, posts, rate-limited rejections, uptime).
 
 Optional tuning via environment variables (Render → your service → Environment):
 
-- **`SELF_URL`** — set this to your own service URL (e.g.
-  `https://your-relay.onrender.com`). The relay then pings itself every ~10
-  minutes so the free tier doesn't fall asleep between visitors. (This uses your
-  free monthly hours; one service stays comfortably under the limit.)
+- **`SELF_URL`** — the relay pings itself every ~10 minutes so the free tier
+  doesn't fall asleep between visitors. **On Render this is automatic** (the
+  server falls back to Render's injected `RENDER_EXTERNAL_URL`); on other
+  hosts, set `SELF_URL` to your own service URL (e.g.
+  `https://your-relay.example.com`). (This uses your free monthly hours; one
+  service stays comfortably under the limit.)
 - **`RELAY_MAX_HELD`** / **`RELAY_MAX_BYTES`** — how many recent messages / how
   many bytes to keep buffered (defaults 3000 / 64 MB).
 - **`RELAY_RATE_CAP`** / **`RELAY_RATE_REFILL`** — per-client burst size and

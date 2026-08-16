@@ -82,6 +82,29 @@ services:
       # PORT is injected by Render; server.mjs honours it. Leave
       # VOYAGER_ALLOW_PRIVATE unset in production (keeps the SSRF guard on).
 
+  # TimeCoin relay — one deploy IS a shared TimeCoin network: the service
+  # serves the coin app itself, pre-connected to this relay, so anyone who
+  # opens the URL is a node on one chain. Zero dependencies, nothing to
+  # build; the relay holds no power (it can't mint, forge or read keys —
+  # every browser re-validates everything). Full guide: coin/DEPLOY.md.
+  - type: web
+    name: timecoin-relay
+    runtime: node
+    rootDir: coin
+    plan: free
+    buildCommand: echo "zero-dependency — nothing to build"
+    startCommand: node server.mjs
+    healthCheckPath: /status
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22.11.0"
+      # Keep-warm is automatic: server.mjs falls back to Render's injected
+      # RENDER_EXTERNAL_URL, so the free tier doesn't sleep between visitors.
+      # Optional tuning (defaults are fine for a small circle):
+      #   RELAY_MAX_HELD / RELAY_MAX_BYTES   — message buffer bounds
+      #   RELAY_RATE_CAP / RELAY_RATE_REFILL — per-client POST rate limit
+
 databases:
   - name: fixr-db
     plan: free
