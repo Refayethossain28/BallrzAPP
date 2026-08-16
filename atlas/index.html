@@ -1491,6 +1491,36 @@ function drawPerspective(night) {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
 }
 
+/** One horizon ridge layer: a fixed function of the heading so it pans as
+ *  you turn; far layers pan slower than near ones, which is the parallax
+ *  that makes the horizon feel deep. Rolling profile — no flat valleys. */
+function skyRidge(cam, o) {
+  var ridgeH = cam.sh * o.h, step = cam.sw / 56, mx, ang, hgt;
+  ctx.beginPath();
+  ctx.moveTo(-2, cam.yh + 1);
+  for (mx = 0; mx <= cam.sw + step; mx += step) {
+    ang = mx / cam.sw * o.freq - view.rot * o.pan + o.ph;
+    hgt = Math.sin(ang * 7.3) * 0.5 + Math.sin(ang * 13.7 + 2) * 0.3 + Math.sin(ang * 3.1 + 5) * 0.2;
+    ctx.lineTo(mx, cam.yh + 1 - (0.5 + 0.5 * hgt) * ridgeH - ridgeH * 0.15);
+  }
+  ctx.lineTo(cam.sw + 2, cam.yh + 1);
+  ctx.closePath();
+  ctx.fillStyle = o.fill;
+  ctx.fill();
+  if (o.rim) { // neon rim light along the crest only — not the base line
+    ctx.beginPath();
+    for (mx = 0; mx <= cam.sw + step; mx += step) {
+      ang = mx / cam.sw * o.freq - view.rot * o.pan + o.ph;
+      hgt = Math.sin(ang * 7.3) * 0.5 + Math.sin(ang * 13.7 + 2) * 0.3 + Math.sin(ang * 3.1 + 5) * 0.2;
+      var y = cam.yh + 1 - (0.5 + 0.5 * hgt) * ridgeH - ridgeH * 0.15;
+      if (mx === 0) ctx.moveTo(mx, y); else ctx.lineTo(mx, y);
+    }
+    ctx.strokeStyle = o.rim;
+    ctx.lineWidth = Math.max(1.5, cam.sh * 0.0022);
+    ctx.stroke();
+  }
+}
+
 function drawSky(night, cam) {
   var g = ctx.createLinearGradient(0, 0, 0, cam.yh);
   if (gameOn()) {
@@ -1502,30 +1532,18 @@ function drawSky(night, cam) {
   }
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, cam.sw, cam.yh);
-  // a jagged mountain silhouette gives the horizon depth (world-stable:
-  // the ridge is a fixed function of the heading, so it pans as you turn)
-  if (gameOn() || night) {
-    var ridgeH = cam.sh * 0.05;
-    ctx.beginPath();
-    ctx.moveTo(0, cam.yh);
-    var rot = view.rot;
-    for (var mx = 0; mx <= cam.sw; mx += cam.sw / 44) {
-      var ang = mx / cam.sw * 1.5 - rot;
-      var hgt = (Math.sin(ang * 7.3) * 0.5 + Math.sin(ang * 13.7 + 2) * 0.3 + Math.sin(ang * 3.1 + 5) * 0.2);
-      ctx.lineTo(mx, cam.yh - Math.max(0, hgt) * ridgeH - ridgeH * 0.25);
-    }
-    ctx.lineTo(cam.sw, cam.yh);
-    ctx.closePath();
-    ctx.fillStyle = gameOn() ? 'rgba(30,6,56,0.95)' : 'rgba(8,11,22,0.95)';
-    ctx.fill();
-  }
   if (gameOn()) {
-    // the synthwave sun, sliced by the horizon glow
+    // the synthwave sun rises BEHIND the mountains, sliced by glow bands
     var r = cam.sh * 0.16;
     var sg = ctx.createLinearGradient(0, cam.yh - r, 0, cam.yh);
     sg.addColorStop(0, '#ffd23d'); sg.addColorStop(1, '#ff2fa0');
     ctx.save();
     ctx.beginPath(); ctx.rect(0, 0, cam.sw, cam.yh); ctx.clip();
+    // bloom around the sun so it lights the sky, not just its own disc
+    var bloom = ctx.createRadialGradient(cam.sw / 2, cam.yh, r * 0.4, cam.sw / 2, cam.yh, r * 2.6);
+    bloom.addColorStop(0, 'rgba(255,90,170,0.4)'); bloom.addColorStop(1, 'rgba(255,90,170,0)');
+    ctx.fillStyle = bloom;
+    ctx.fillRect(0, 0, cam.sw, cam.yh);
     ctx.beginPath(); ctx.arc(cam.sw / 2, cam.yh, r, 0, 7);
     ctx.fillStyle = sg; ctx.fill();
     ctx.fillStyle = 'rgba(42,10,78,0.9)';
@@ -1533,6 +1551,15 @@ function drawSky(night, cam) {
       ctx.fillRect(0, cam.yh - r * (0.16 + b * 0.17), cam.sw, r * 0.05 + b * 1.5);
     }
     ctx.restore();
+    // two mountain layers in front of the sun, the near one rim-lit neon
+    skyRidge(cam, { h: 0.085, freq: 1.1, pan: 0.55, ph: 1.7, fill: 'rgba(64,18,96,0.85)' });
+    skyRidge(cam, { h: 0.055, freq: 1.5, pan: 1.0, ph: 0,
+                    fill: 'rgba(24,5,48,0.97)', rim: 'rgba(255,63,158,0.75)' });
+    // a hot line right on the horizon crisps the seam
+    ctx.fillStyle = 'rgba(255,63,158,0.2)';
+    ctx.fillRect(0, cam.yh - cam.sh * 0.008, cam.sw, cam.sh * 0.008);
+    ctx.fillStyle = 'rgba(255,140,200,0.55)';
+    ctx.fillRect(0, cam.yh - Math.max(1, cam.sh * 0.0022), cam.sw, Math.max(1, cam.sh * 0.0022));
   } else if (night) {
     if (!persp.stars) {
       persp.stars = [];
@@ -1554,12 +1581,23 @@ function drawSky(night, cam) {
       ctx.fillStyle = 'rgba(210,225,255,' + (0.35 + 0.3 * Math.sin(tw + st.p)).toFixed(2) + ')';
       ctx.fill();
     }
+    // the warm smudge of city light on the horizon, then hills in front
+    var cg = ctx.createLinearGradient(0, cam.yh - cam.sh * 0.08, 0, cam.yh);
+    cg.addColorStop(0, 'rgba(255,175,90,0)'); cg.addColorStop(1, 'rgba(255,175,90,0.16)');
+    ctx.fillStyle = cg;
+    ctx.fillRect(0, cam.yh - cam.sh * 0.08, cam.sw, cam.sh * 0.08);
+    skyRidge(cam, { h: 0.075, freq: 1.1, pan: 0.55, ph: 1.7, fill: 'rgba(22,30,54,0.85)' });
+    skyRidge(cam, { h: 0.05, freq: 1.5, pan: 1.0, ph: 0,
+                    fill: 'rgba(7,10,20,0.97)', rim: 'rgba(120,150,220,0.28)' });
   } else {
     // day: a soft sun glow low in the sky
     var dg = ctx.createRadialGradient(cam.sw * 0.72, cam.yh * 0.9, 0, cam.sw * 0.72, cam.yh * 0.9, cam.sh * 0.2);
     dg.addColorStop(0, 'rgba(255,250,230,0.8)'); dg.addColorStop(1, 'rgba(255,250,230,0)');
     ctx.fillStyle = dg;
     ctx.fillRect(0, 0, cam.sw, cam.yh);
+    // distant hills in atmospheric blues — the day horizon was a bare seam
+    skyRidge(cam, { h: 0.06, freq: 1.1, pan: 0.55, ph: 1.7, fill: 'rgba(148,170,205,0.4)' });
+    skyRidge(cam, { h: 0.038, freq: 1.5, pan: 1.0, ph: 0, fill: 'rgba(118,142,180,0.5)' });
   }
 }
 
