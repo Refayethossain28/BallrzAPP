@@ -1111,11 +1111,25 @@ test('road reports: build, validate, snap to route, expire honestly', () => {
   assert.ok(nxt.distM > 300);
 });
 
+test('traffic density: the game road carries the real signal', () => {
+  const quiet = A.trafficDensity(1.0, 0);
+  const rush = A.trafficDensity(1.18, 0);
+  const jam = A.trafficDensity(1.35, 3);
+  assert.ok(quiet < rush && rush < jam);
+  near(quiet, 1.1, 0.01);
+  assert.ok(A.trafficDensity(2.5, 9) <= 6);            // capped
+  near(A.trafficDensity(NaN, 'x'), 1.1, 0.01);         // junk-safe
+  // and the count follows: same 10km road, quiet vs jammed
+  const qCars = A.trafficCars(10000, 0, quiet).length;
+  const jCars = A.trafficCars(10000, 0, jam).length;
+  assert.ok(jCars > qCars, `jam ${jCars} should beat quiet ${qCars}`);
+});
+
 test('ambient traffic: deterministic, moving, bounded, game-only cosmetics', () => {
   const a = A.trafficCars(5000, 60000);
   const b = A.trafficCars(5000, 60000);
   same(a.map((c) => c.alongM.toFixed(2)), b.map((c) => c.alongM.toFixed(2))); // same clock ⇒ same world
-  assert.ok(a.length >= 10 && a.length <= 18);
+  assert.ok(a.length >= 2 && a.length <= 18);
   assert.ok(a.every((c) => c.alongM >= 0 && c.alongM <= 5000));
   assert.ok(a.some((c) => c.dir === 1) && a.some((c) => c.dir === -1));
   // ten seconds later every car has moved the right way

@@ -1959,13 +1959,23 @@
 
   /* ====================== ambient traffic (game mode) ==================== */
 
+
+  /** How busy the game road should be, from the REAL traffic signal:
+   *  the route's live/typical slowdown factor and incident count.
+   *  → cars per km (1.1 quiet … 6 jammed). The fake cars are honest. */
+  function trafficDensity(factor, incidents) {
+    var f = (typeof factor === 'number' && isFinite(factor) && factor > 0) ? factor : 1;
+    var inc = (typeof incidents === 'number' && isFinite(incidents) && incidents > 0) ? incidents : 0;
+    return Math.min(6, 1.1 + Math.max(0, f - 1) * 12 + Math.min(3, inc) * 0.8);
+  }
+
   /** Procedural cars along a route for the ApexGP game skin — pure function
    *  of (route length, clock), so every frame agrees without any state:
    *  car i follows along = (start_i + v_i·t) mod length, half of them
    *  oncoming. Purely cosmetic — never shown outside the game skin. */
   function trafficCars(totalM, nowMs, density) {
     if (!(totalM > 400)) return [];
-    var n = Math.max(10, Math.min(18, Math.round(totalM / 1000 * (density || 1.4))));
+    var n = Math.max(2, Math.min(18, Math.round(totalM / 1000 * (density || 1.4))));
     var out = [];
     for (var i = 0; i < n; i++) {
       var h = (((i + 3) * 2654435761) >>> 0) % 1000 / 1000;
@@ -2062,7 +2072,7 @@
     chatText: chatText, chatMsg: chatMsg, validChatMsg: validChatMsg, pruneChat: pruneChat, agoShort: agoShort,
     trackKey: trackKey, findLocalTrack: findLocalTrack, djTarget: djTarget, syncAdjust: syncAdjust,
     speechSafe: speechSafe,
-    trafficCars: trafficCars,
+    trafficCars: trafficCars, trafficDensity: trafficDensity,
     calmScore: calmScore, calmestRoute: calmestRoute, etaBand: etaBand,
     rankParking: rankParking, walkInfo: walkInfo,
     evUsableRangeM: evUsableRangeM, evChargePlan: evChargePlan, parseMetres: parseMetres, vehicleHazards: vehicleHazards,
