@@ -1429,7 +1429,7 @@ function drawFlatScene(night, withBuildings) {
    projected through the same camera as genuine 3D extrusions. */
 var persp = { ground: null, gctx: null, stars: null };
 var PK_LOG = 0.45;   // ground supersample (log2) — sharper near field
-var P_HORIZON = 0.36, P_FOCAL = 1.02, P_CAMH = 52;
+var P_HORIZON = 0.32, P_FOCAL = 1.02, P_CAMH = 30;
 
 function perspCam() {
   var sw = Math.round(W * DPR), sh = Math.round(H * DPR);
@@ -1924,12 +1924,18 @@ function drawRoutes(night) {
     // centre line — through the perspective camera it reads like a track
     if (nav.active) {
       var mppR = A.metresPerPixel(view.lat, view.zoom);
-      var roadW = Math.max(10, 8.5 / mppR);
+      // the cockpit road is stylised wide, racing-game style; flat views
+      // stay honest to real road width
+      var roadM = perspActive() ? 13 : 8.5;
+      var roadW = Math.max(10, roadM / mppR);
       var game = gameOn();
-      drawPolyline(main.geometry, game ? '#ff2fa0' : (night ? '#8fb7e8' : '#e8edf5'), roadW);
-      drawPolyline(main.geometry, game ? '#12041f' : (night ? '#1a2130' : '#3a4150'), roadW - 3.2);
-      drawPolyline(main.geometry, game ? 'rgba(0,229,255,0.9)' : 'rgba(255,255,255,0.75)',
-                   Math.max(1.4, roadW * 0.045), [roadW * 0.9, roadW * 1.1]);
+      // striped kerbs: white base, red dashes, then the asphalt covers the
+      // middle — leaving classic red/white rails on both edges
+      drawPolyline(main.geometry, '#f2f4f8', roadW);
+      drawPolyline(main.geometry, game ? '#ff2456' : '#e03131', roadW, [roadW * 0.85, roadW * 0.85]);
+      drawPolyline(main.geometry, game ? '#12041f' : (night ? '#1a2130' : '#3a4150'), roadW - Math.max(4, roadW * 0.14));
+      drawPolyline(main.geometry, game ? 'rgba(0,229,255,0.9)' : 'rgba(255,255,255,0.8)',
+                   Math.max(1.4, roadW * 0.04), [roadW * 0.9, roadW * 1.1]);
     }
     ctx.save();
     ctx.shadowColor = gameOn() ? 'rgba(255,47,160,0.95)' : 'rgba(0,194,255,0.9)';
