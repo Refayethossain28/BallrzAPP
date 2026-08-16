@@ -16,6 +16,7 @@ import assert from 'node:assert/strict';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const sandbox = { module: { exports: {} } };
 sandbox.self = sandbox;
+sandbox.crypto = crypto; // the engine refuses weak randomness — hand it the real CSPRNG
 vm.createContext(sandbox);
 vm.runInContext(readFileSync(join(ROOT, 'coin', 'engine.js'), 'utf8'), sandbox, { filename: 'coin/engine.js' });
 const C = sandbox.module.exports;
@@ -85,6 +86,8 @@ const TEST_PARAMS = {
   halvingInterval: 4,
   maxBlockTxs: 25,
   initialSubsidy: 50 * C.COIN, // 50 TIME block reward on the test net
+  coinbaseMaturity: 0,         // most tests spend fresh subsidy; maturity has dedicated tests
+  maxReorgDepth: 1000,         // ditto for the finality window
 };
 const newChain = (over = {}) => new C.Blockchain({ ...TEST_PARAMS, ...over });
 
@@ -540,6 +543,79 @@ test('multisig transactions survive JSON serialisation and re-validation', () =>
 });
 
 /* ---------- runner ---------- */
+/* ---------- security hardening: entropy, maturity, finality, DoS ---------- */
+test('wallet entropy requires a real CSPRNG — no Math.random fallback', () => {
+  const bare = { module: { exports: {} } };
+  bare.self = bare; // deliberately NO crypto in this sandbox
+  vm.createContext(bare);
+  vm.runInContext(readFileSync(join(ROOT, 'coin', 'engine.js'), 'utf8'), bare, { filename: 'coin/engine.js' });
+  const weak = bare.module.exports;
+  assert.throws(() => weak.generateWallet(), /secure random/, 'refuses without crypto.getRandomValues');
+  assert.equal(weak.generateWallet('aa'.repeat(32)).address, C.generateWallet('aa'.repeat(32)).address,
+    'injected entropy still works, and matches the CSPRNG build');
+});
+
+test('coinbase maturity: mined coins must age before they can be spent', () => {
+  const chain = newChain({ coinbaseMaturity: 2 });
+  mineTo(chain, alice); // height 1 — subsidy locked until height 3
+  assert.equal(chain.getBalance(alice.address), 50 * C.COIN, 'balance shows the coins');
+  assert.equal(chain.spendableUtxos(alice.address).length, 0, 'but none are spendable yet');
+  const utxo = { txId: chain.tip.transactions[0].id, outIndex: 0, address: alice.address, amount: 50 * C.COIN };
+  const early = C.buildTransaction({ utxos: [utxo], wallet: alice, to: bob.address, amount: 1 * C.COIN, fee: 0, timestamp: tick() });
+  assert.throws(() => chain.submitTransaction(early), /immature/, 'mempool refuses an immature spend');
+  // A miner forcing it into a block is refused by consensus, not just policy.
+  const tmpl = chain.prepareBlock(alice.address, { timestamp: tick() });
+  tmpl.transactions.push(early);
+  tmpl.merkleRoot = C.merkleRoot(tmpl.transactions.map((t) => t.id));
+  assert.throws(() => chain.addBlock(C.mine(tmpl)), /immature/, 'a block spending immature coinbase is invalid');
+  mineTo(chain, bob); // height 2 — next spend height 3 = 1 + maturity 2
+  chain.send(alice, bob.address, 1 * C.COIN, 0, { timestamp: tick() });
+  mineTo(chain, bob);
+  assert.equal(chain.getBalance(bob.address), 101 * C.COIN, 'matured coins spend normally');
+});
+
+test('finality window: a fork deeper than maxReorgDepth is refused, shallow ones adopted', () => {
+  const mk = () => newChain({ coinbaseMaturity: 0, maxReorgDepth: 3, retargetInterval: 1000 });
+  let t = GENESIS_TIME;
+  const a = mk();
+  for (let i = 0; i < 6; i++) a.minePendingTransactions(alice.address, { timestamp: (t += 1000) });
+  // Deep fork: same genesis, splits at height 0, out-works us — still refused.
+  const deep = mk();
+  let td = GENESIS_TIME;
+  for (let i = 0; i < 9; i++) deep.minePendingTransactions(bob.address, { timestamp: (td += 1000) });
+  assert.ok(deep.workTotal > a.workTotal, 'the deep fork genuinely carries more work');
+  assert.equal(a.replaceChain(deep.blocks), false, 'reorg deeper than 3 blocks refused');
+  // A fresh node bootstrapping from genesis is not a reorg — sync works.
+  const shallow = mk();
+  assert.equal(shallow.replaceChain(a.blocks), true, 'bootstrap sync unaffected by the window');
+  assert.equal(shallow.tip.height, 6);
+  // Shallow fork: shares history to height 4, replaces only the last 2 blocks.
+  const c = mk();
+  c.replaceChain(a.blocks.slice(0, 5)); // shares up to height 4
+  let tc = t;
+  for (let i = 0; i < 4; i++) c.minePendingTransactions(carol.address, { timestamp: (tc += 1000) });
+  assert.ok(c.workTotal > a.workTotal);
+  assert.equal(a.replaceChain(c.blocks), true, 'a 2-block-deep reorg inside the window is adopted');
+});
+
+test('replaceChain rejects junk chains on the cheap header pass', () => {
+  const chain = newChain();
+  mineTo(chain, alice);
+  // Fabricated "heavier" chain with made-up hashes: no real proof of work.
+  const junk = chain.blocks.concat([...Array(50)].map((_, i) => ({
+    height: chain.tip.height + 1 + i,
+    prevHash: 'ff'.repeat(32),
+    merkleRoot: 'aa'.repeat(32),
+    timestamp: GENESIS_TIME + i,
+    target: '00'.repeat(4) + 'ff'.repeat(28), // claims high difficulty…
+    nonce: 0,
+    transactions: [],
+    hash: '00'.repeat(32), // …with a fake hash that never met it
+  })));
+  assert.equal(chain.replaceChain(junk), false, 'junk refused');
+  assert.equal(chain.tip.height, 1, 'chain untouched');
+});
+
 for (const [name, fn] of tests) {
   try {
     fn();

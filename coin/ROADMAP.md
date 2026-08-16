@@ -1,7 +1,7 @@
 # The road for a real community currency — honestly
 
 TimeCoin now has the three things software alone can give a cryptocurrency:
-correct consensus code ([`engine.js`](engine.js) + [`mutual.js`](mutual.js), 47 tests), real cross-device
+correct consensus code ([`engine.js`](engine.js) + [`mutual.js`](mutual.js), 53 tests), real cross-device
 networking ([`server.mjs`](server.mjs) + [`config.js`](config.js)), and a
 written security audit ([`SECURITY.md`](SECURITY.md)). This document is about
 everything else — the parts that are *not* software, so nobody reading this
@@ -21,9 +21,10 @@ things no codebase contains:
 
 1. **Security budget** — thousands of independent miners burning real
    electricity make rewriting Bitcoin's history cost billions. TimeCoin's
-   history is far cheaper to rewrite (SECURITY.md #3), so a TIME community has to
-   be one of people who already trust each other — a barter circle, not a market
-   of strangers.
+   settled history is now final (nodes refuse reorgs deeper than ~1 hour), but
+   shallow rewrites stay cheap (SECURITY.md #3), so a TIME community still has
+   to be one of people who already trust each other — a barter circle, not a
+   market of strangers.
 2. **A community that accepts it** — a currency for time and favours is only as
    real as the circle of people willing to earn and spend it. That circle is
    built person by person, not shipped in a release.

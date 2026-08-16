@@ -21,10 +21,12 @@
  *     hour, halving toward 4,200 TIME per circle), enforced by consensus
  *   • fork choice by *cumulative work* (not length), so `replaceChain` lets
  *     independent nodes converge — the UI syncs tabs over BroadcastChannel
+ *   • coinbase maturity (mined coins age before they spend) and a bounded
+ *     reorg window (`maxReorgDepth`), so settled history is final
  *
  * Where TimeCoin's implementation differs from Bitcoin's — documented in the
  * open with severities in SECURITY.md: no script language (outputs pay a
- * public-key hash directly), no coinbase maturity delay, JSON serialisation
+ * public-key hash directly), JSON serialisation
  * instead of the wire format, hash160 is double-SHA-256 truncated to 20 bytes
  * (no RIPEMD-160), and networking is left to the caller (same-origin tabs sync
  * in index.html, cross-device nodes meet at the relay in server.mjs).
@@ -73,7 +75,9 @@
     genesisTarget: '000' + repeatChar('f', 61), // proof-of-work limit: 12 leading zero bits
     genesisTimestamp: 1786838400000,       // 2026-08-16T00:00Z, fixed so every node derives the identical genesis
     genesisMessage: '16/Aug/2026 TimeCoin mints no faster than time itself',
-    maxBlockTxs: 100                       // transfers per block, excluding the coinbase
+    maxBlockTxs: 100,                      // transfers per block, excluding the coinbase
+    coinbaseMaturity: 10,                  // mined coins spendable after N blocks (~6 min; Bitcoin: 100)
+    maxReorgDepth: 100                     // refuse forks deeper than N blocks (~1 h): settled history is final
   };
 
   function repeatChar(c, n) { var s = ''; while (n-- > 0) s += c; return s; }
@@ -469,14 +473,16 @@
    * Wallets
    * ==================================================================== */
   function randomBytes32() {
+    var g = typeof globalThis !== 'undefined' ? globalThis : null;
+    if (!(g && g.crypto && g.crypto.getRandomValues)) {
+      // A guessable key is worse than no key: refuse to generate one from
+      // weak randomness rather than degrade to Math.random. Every modern
+      // browser and Node expose a CSPRNG; anything without one is not a
+      // safe place to hold money.
+      throw new Error('no secure random number generator (crypto.getRandomValues) available');
+    }
     var b = new Uint8Array(32);
-    try {
-      var g = typeof globalThis !== 'undefined' ? globalThis : null;
-      if (g && g.crypto && g.crypto.getRandomValues) g.crypto.getRandomValues(b);
-    } catch (err) { /* fall through to the mix-in below */ }
-    // Always mix in Math.random so a stubbed/broken CSPRNG still yields a
-    // usable key. Demo-grade randomness for a demo-grade coin.
-    for (var i = 0; i < 32; i++) b[i] ^= Math.floor(Math.random() * 256);
+    g.crypto.getRandomValues(b);
     return b;
   }
 
@@ -687,8 +693,21 @@
   }
 
   // Validate a transfer against `view` (a Map) and apply its effects to it.
-  function applyTransfer(tx, view) {
+  // Coinbase maturity: freshly mined coins must age `maturity` blocks before
+  // they may be spent, so a shallow reorg can't invalidate a chain of spends
+  // built on a subsidy that the losing fork never paid.
+  function assertMatureInputs(tx, get, spendHeight, maturity) {
+    tx.inputs.forEach(function (inp) {
+      var entry = get(inp.txId + ':' + inp.outIndex);
+      if (entry && entry.coinbaseHeight !== undefined && spendHeight - entry.coinbaseHeight < maturity) {
+        throw new Error('immature coinbase: spendable from height ' + (entry.coinbaseHeight + maturity));
+      }
+    });
+  }
+
+  function applyTransfer(tx, view, spendHeight, maturity) {
     var fee = verifyTransaction(tx, function (k) { return view.get(k); }).fee;
+    assertMatureInputs(tx, function (k) { return view.get(k); }, spendHeight, maturity);
     tx.inputs.forEach(function (inp) { view.delete(inp.txId + ':' + inp.outIndex); });
     tx.outputs.forEach(function (o, idx) { view.set(tx.id + ':' + idx, { address: o.address, amount: o.amount }); });
     return fee;
@@ -760,7 +779,7 @@
     var p = {};
     for (var k in DEFAULT_PARAMS) p[k] = (opts && opts[k] !== undefined) ? opts[k] : DEFAULT_PARAMS[k];
     if (!/^[0-9a-f]{64}$/.test(p.genesisTarget)) throw new Error('genesisTarget must be 64 hex chars');
-    ['initialSubsidy', 'halvingInterval', 'retargetInterval', 'targetBlockTimeMs', 'genesisTimestamp', 'maxBlockTxs'].forEach(function (key) {
+    ['initialSubsidy', 'halvingInterval', 'retargetInterval', 'targetBlockTimeMs', 'genesisTimestamp', 'maxBlockTxs', 'coinbaseMaturity', 'maxReorgDepth'].forEach(function (key) {
       if (!Number.isInteger(p[key]) || p[key] < 0) throw new Error(key + ' must be a non-negative integer');
     });
     if (p.retargetInterval < 2) throw new Error('retargetInterval must be at least 2');
@@ -852,13 +871,13 @@
     var view = new Map(this.utxo), fees = 0, i;
     for (i = 1; i < txs.length; i++) {
       if (txs[i].type !== 'transfer') throw new Error('only one coinbase allowed');
-      fees += applyTransfer(txs[i], view);
+      fees += applyTransfer(txs[i], view, block.height, p.coinbaseMaturity);
     }
 
     var cbOut = 0;
     cb.outputs.forEach(function (o) { checkOutput(o); cbOut += o.amount; });
     if (cbOut > this.subsidyAt(block.height) + fees) throw new Error('coinbase pays more than subsidy + fees');
-    cb.outputs.forEach(function (o, idx) { view.set(cb.id + ':' + idx, { address: o.address, amount: o.amount }); });
+    cb.outputs.forEach(function (o, idx) { view.set(cb.id + ':' + idx, { address: o.address, amount: o.amount, coinbaseHeight: block.height }); });
 
     // Commit.
     this.utxo = view;
@@ -882,6 +901,7 @@
     var fee = verifyTransaction(tx, function (k) {
       return locked[k] ? undefined : self.utxo.get(k); // no double-spends against pending txs
     }).fee;
+    assertMatureInputs(tx, function (k) { return self.utxo.get(k); }, this.tip.height + 1, this.params.coinbaseMaturity);
     this.mempool.push({ tx: tx, fee: fee });
     return fee;
   };
@@ -893,7 +913,7 @@
     var view = new Map(this.utxo), chosen = [], fees = 0;
     for (var i = 0; i < sorted.length && chosen.length < this.params.maxBlockTxs; i++) {
       try {
-        fees += applyTransfer(sorted[i].tx, view);
+        fees += applyTransfer(sorted[i].tx, view, this.tip.height + 1, this.params.coinbaseMaturity);
         chosen.push(sorted[i].tx);
       } catch (err) { /* conflicts with an already-chosen tx — leave it for the next block */ }
     }
@@ -947,8 +967,10 @@
       e.tx.inputs.forEach(function (inp) { locked[inp.txId + ':' + inp.outIndex] = true; });
     });
     var out = [];
+    var nextH = this.tip.height + 1, maturity = this.params.coinbaseMaturity;
     this.utxo.forEach(function (o, key) {
       if (o.address !== address || locked[key]) return;
+      if (o.coinbaseHeight !== undefined && nextH - o.coinbaseHeight < maturity) return; // still maturing
       var sep = key.lastIndexOf(':');
       out.push({ txId: key.slice(0, sep), outIndex: Number(key.slice(sep + 1)), address: o.address, amount: o.amount });
     });
@@ -1050,6 +1072,31 @@
    * our genesis with strictly more cumulative work. Returns true if adopted.
    */
   Blockchain.prototype.replaceChain = function (blocks) {
+    if (!Array.isArray(blocks) || blocks.length < 1) return false;
+    // Cheap header pass first: linkage, hash integrity and real proof of
+    // work. A junk chain is rejected here for the cost of hashing its
+    // headers — the expensive full transaction validation below only runs
+    // for chains that already carry more genuine work than ours, and faking
+    // that work would itself require doing the proof-of-work.
+    var work = ZERO;
+    try {
+      for (var j = 0; j < blocks.length; j++) {
+        var b = blocks[j];
+        if (!b || b.height !== j) return false;
+        if (j > 0 && b.prevHash !== blocks[j - 1].hash) return false;
+        if (blockHashOf(b) !== b.hash) return false;
+        if (j > 0 && !meetsTarget(b.hash, b.target)) return false;
+        work += workOf(b.target);
+      }
+    } catch (err) { return false; }
+    if (work <= this.workTotal) return false;
+    // Finality window: refuse forks deeper than maxReorgDepth blocks below
+    // our tip. Once a block has that many confirmations every node treats it
+    // as final, so rewriting settled history takes more than briefly
+    // out-mining the circle — an attacker is limited to shallow reorgs.
+    var shared = Math.min(this.tip.height, blocks.length - 1);
+    while (shared > 0 && this.blocks[shared].hash !== blocks[shared].hash) shared--;
+    if (this.tip.height - shared > this.params.maxReorgDepth) return false;
     var candidate;
     try {
       candidate = Blockchain.fromJSON({ params: this.params, blocks: blocks });

@@ -29,7 +29,7 @@ const Brain = loadUMD('neura/brain.js');
 const N = loadUMD('neura/engine.js')(C, Brain); // Node path exports the factory
 
 // Easy PoW for tests: 8 leading zero bits (~256 hashes per block).
-const EASY = { genesisTarget: '00' + 'f'.repeat(62) };
+const EASY = { genesisTarget: '00' + 'f'.repeat(62), coinbaseMaturity: 0 }; // tests spend fresh subsidy; maturity is covered in test-coin-logic
 const newChain = () => new N.Chain(EASY);
 
 // Deterministic clock: strictly increasing timestamps.

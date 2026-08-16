@@ -881,6 +881,23 @@
     toast('🔓 Passphrase removed — keys are no longer encrypted at rest.');
   });
 
+  // First-run key protection (SECURITY.md #1): plaintext keys in browser
+  // storage are the biggest real risk in any browser wallet, so encryption is
+  // offered up front instead of hoping the user finds the button later.
+  // Declining is allowed (a circle trying the app shouldn't hit a wall) and
+  // the 🔓 "not protected" badge stays visible until keys are encrypted.
+  var LS_ENCOFFER = 'ballrzcoin.encoffer.v1';
+  try {
+    if (canEncrypt && !sessionPass && !locked && !localStorage.getItem(LS_WALLETS_ENC) && !localStorage.getItem(LS_ENCOFFER)) {
+      localStorage.setItem(LS_ENCOFFER, '1');
+      setTimeout(function () {
+        if (confirm('🔒 Protect your keys?\n\nEncrypt this device’s wallet keys behind a passphrase (AES-GCM) so they can’t be read from browser storage. You’ll unlock once per visit.\n\nYou can also do this any time under 🔒 Key security.')) {
+          $('setPassBtn').click();
+        }
+      }, 900);
+    }
+  } catch (err) { /* storage unavailable — nothing to protect there either */ }
+
   /* ---------- backup: encrypted file + loss-prevention nagging ----------
    * The single biggest way to lose coins in a browser wallet is a cleared
    * browser or a lost device with no backup. These tools make a portable,

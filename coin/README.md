@@ -34,10 +34,13 @@ watch the other adopt the heavier chain.
 TimeCoin is real, but it is **early**, and honesty about its limits matters more
 now that people trade real time and services for it. Where it currently differs
 from Bitcoin's battle-hardened implementation: no Script language (outputs pay a
-pubkey hash directly), no coinbase maturity delay, JSON instead of the wire
-format, double-SHA-256-truncated instead of RIPEMD-160 for address hashing,
-**browser-grade key storage (localStorage — keys are not yet encrypted at rest)**,
-and the network is a polling relay rather than true p2p gossip. The full list —
+pubkey hash directly), JSON instead of the wire format, double-SHA-256-truncated
+instead of RIPEMD-160 for address hashing, **browser key storage** (AES-GCM
+encryption at rest is offered on first run but can be declined; keys live in
+memory while unlocked), and the network is a polling relay rather than true p2p
+gossip. On the other side of the ledger: coinbase maturity, a finality window
+(`maxReorgDepth`) and CSPRNG-only wallet generation are now enforced in
+consensus/code. The full list —
 with severities, as a real auditor would write them, and none of them hidden — is
 in [`SECURITY.md`](SECURITY.md), and [`ROADMAP.md`](ROADMAP.md) lays out the path
 from here to a hardened currency. Treat these as the risk disclosures any serious
@@ -131,5 +134,5 @@ a paper wallet protects against loss, not against someone reading your screen.)
 ## Run the tests
 
 ```sh
-npm run test:coin        # 39 tests: crypto vectors, consensus rules, fork choice, multisig
+npm run test:coin        # 46 tests: crypto vectors, consensus rules, fork choice, multisig, maturity, finality
 ```
