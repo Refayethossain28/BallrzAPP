@@ -4902,6 +4902,102 @@ function rollDashcamSegment() {
   toast('📹 30 min segment saved — still recording (part ' + dashcam.part + ')');
 }
 
+/** 🗺 overview map burned into the recording, top-right: the whole route
+ *  with a live position marker while navigating, or a close overview of
+ *  where you are when just recording. Reuses the app's CORS-clean tile
+ *  cache, so the compositing canvas never taints and captureStream keeps
+ *  working. Tiles that haven't arrived yet leave a dark panel — they pop
+ *  in within a frame or two. */
+function drawDashMap(c, cw, ch) {
+  var pos = (nav.active && nav.demo && nav.simPos) ? nav.simPos : (gps.fix || null);
+  if (!pos) return;
+  var mw = 232, mh = 232, pad = 20, x0 = cw - mw - pad, y0 = pad, rr = 14;
+  var cen, z;
+  if (nav.active && nav.route && nav.route.geometry.length > 1) {
+    var g = nav.route.geometry;
+    var minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
+    for (var i = 0; i < g.length; i++) {
+      minLat = Math.min(minLat, g[i].lat); maxLat = Math.max(maxLat, g[i].lat);
+      minLon = Math.min(minLon, g[i].lon); maxLon = Math.max(maxLon, g[i].lon);
+    }
+    cen = { lat: (minLat + maxLat) / 2, lon: (minLon + maxLon) / 2 };
+    for (z = 16; z > 3; z -= 0.25) {
+      var a = A.lonLatToWorld({ lat: maxLat, lon: minLon }, z);
+      var b = A.lonLatToWorld({ lat: minLat, lon: maxLon }, z);
+      if (Math.abs(b.x - a.x) < mw - 44 && Math.abs(b.y - a.y) < mh - 44) break;
+    }
+  } else { cen = pos; z = 15; }
+  var zi = Math.max(3, Math.min(19, Math.floor(z)));
+  var sc = Math.pow(2, z - zi); // fractional zoom: scale the integer-zoom tiles
+  var w0 = A.lonLatToWorld(cen, zi);
+  var px = function (p) {
+    var w = A.lonLatToWorld(p, zi);
+    return { x: x0 + mw / 2 + (w.x - w0.x) * sc, y: y0 + mh / 2 + (w.y - w0.y) * sc };
+  };
+  c.save();
+  c.beginPath();
+  c.moveTo(x0 + rr, y0);
+  c.arcTo(x0 + mw, y0, x0 + mw, y0 + mh, rr);
+  c.arcTo(x0 + mw, y0 + mh, x0, y0 + mh, rr);
+  c.arcTo(x0, y0 + mh, x0, y0, rr);
+  c.arcTo(x0, y0, x0 + mw, y0, rr);
+  c.closePath();
+  c.clip();
+  c.fillStyle = '#10131c';
+  c.fillRect(x0, y0, mw, mh);
+  var layer = settings.baseLayer === 'sat' ? 'sat' : nightMode() ? 'dark' : 'voy';
+  var ts = 256 * sc;
+  var tx0 = Math.floor((w0.x - (mw / 2) / sc) / 256), tx1 = Math.floor((w0.x + (mw / 2) / sc) / 256);
+  var ty0 = Math.floor((w0.y - (mh / 2) / sc) / 256), ty1 = Math.floor((w0.y + (mh / 2) / sc) / 256);
+  for (var tx = tx0; tx <= tx1; tx++) {
+    for (var ty = ty0; ty <= ty1; ty++) {
+      var t = getTile(layer, zi, tx, ty);
+      if (t && t.ok) {
+        c.drawImage(t.img, x0 + mw / 2 + (tx * 256 - w0.x) * sc,
+                    y0 + mh / 2 + (ty * 256 - w0.y) * sc, ts, ts);
+      }
+    }
+  }
+  if (nav.active && nav.route) {
+    var geo = nav.route.geometry;
+    c.beginPath();
+    for (var gi = 0; gi < geo.length; gi++) {
+      var q = px(geo[gi]);
+      if (gi === 0) c.moveTo(q.x, q.y); else c.lineTo(q.x, q.y);
+    }
+    c.lineCap = 'round'; c.lineJoin = 'round';
+    c.strokeStyle = 'rgba(10,30,60,0.85)'; c.lineWidth = 7; c.stroke();
+    c.strokeStyle = 'rgba(61,214,255,0.95)'; c.lineWidth = 4; c.stroke();
+    var dst = px(geo[geo.length - 1]); // destination pin
+    c.beginPath(); c.arc(dst.x, dst.y, 6, 0, 7); c.fillStyle = '#fff'; c.fill();
+    c.beginPath(); c.arc(dst.x, dst.y, 3.5, 0, 7); c.fillStyle = '#f43f5e'; c.fill();
+  }
+  var me = px(pos);
+  var hdg = (pos.heading != null) ? pos.heading : null;
+  c.beginPath(); c.arc(me.x, me.y, 9, 0, 7); c.fillStyle = '#fff'; c.fill();
+  if (hdg == null) {
+    c.beginPath(); c.arc(me.x, me.y, 5.5, 0, 7); c.fillStyle = '#0a84ff'; c.fill();
+  } else {
+    var ra = hdg * Math.PI / 180;
+    c.save();
+    c.translate(me.x, me.y); c.rotate(ra);
+    c.beginPath(); c.moveTo(0, -6.5); c.lineTo(4.6, 4.8); c.lineTo(0, 2.2); c.lineTo(-4.6, 4.8);
+    c.closePath(); c.fillStyle = '#0a84ff'; c.fill();
+    c.restore();
+  }
+  c.restore();
+  c.beginPath();
+  c.moveTo(x0 + rr, y0);
+  c.arcTo(x0 + mw, y0, x0 + mw, y0 + mh, rr);
+  c.arcTo(x0 + mw, y0 + mh, x0, y0 + mh, rr);
+  c.arcTo(x0, y0 + mh, x0, y0, rr);
+  c.arcTo(x0, y0, x0 + mw, y0, rr);
+  c.closePath();
+  c.strokeStyle = 'rgba(255,255,255,0.55)';
+  c.lineWidth = 2.5;
+  c.stroke();
+}
+
 /** Draw camera + telemetry into the recorded canvas, ~30 fps while active. */
 function composeDashcamFrame() {
   if (!dashcam.active) return;
@@ -4936,6 +5032,7 @@ function composeDashcamFrame() {
     c.textAlign = 'right';
     c.fillText('◮ ATLAS', cw - 24, ch - barH + 18);
     c.textAlign = 'left';
+    drawDashMap(c, cw, ch);
   } catch (e) {}
   // live badge shows total time across segments; the roll check uses the
   // current segment's own clock
