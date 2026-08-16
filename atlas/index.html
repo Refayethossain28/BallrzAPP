@@ -1483,6 +1483,7 @@ function drawPerspective(night) {
   ctx.fillRect(0, cam.yh, cam.sw, yStart + cam.sh * 0.1 - cam.yh);
 
   drawBuildingsPersp(night, ga, cam);
+  drawCars3D(night, ga, cam);
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
 }
 
@@ -4436,9 +4437,18 @@ function renderConvoyMembers() {
    Drawn into the flat scene, so the perspective camera foreshortens them
    like any proper racing game. */
 var AMBIENT_PALETTE = ['#ff5d5d', '#ffd23d', '#7dfff4', '#b78bff', '#5dff9e', '#ff9e5d'];
+function ambientCarsNow() {
+  if (!gameOn() || !nav.active || !nav.route) return [];
+  var tr = nav.route.traffic;
+  var t = new Date();
+  var factor = tr && tr.factor ? tr.factor
+    : A.typicalTrafficFactor(t.getHours() + t.getMinutes() / 60, t.getDay());
+  var incidents = tr && tr.mapped ? tr.mapped.length : 0;
+  return A.trafficCars(nav.route.totalM, Date.now(), A.trafficDensity(factor, incidents));
+}
 function drawAmbientCars() {
-  if (!gameOn() || !nav.active || !nav.route) return;
-  var cars = A.trafficCars(nav.route.totalM, Date.now(), 2.2);
+  if (perspActive()) return; // the cockpit gets true 3D cars instead
+  var cars = ambientCarsNow();
   if (!cars.length) return;
   var mpp = A.metresPerPixel(view.lat, view.zoom);
   var lenPx = Math.max(9, 4.6 / mpp * 1.6);
@@ -4472,6 +4482,124 @@ function drawAmbientCars() {
     ctx.beginPath(); ctx.arc(-widPx * 0.26, lenPx / 2 - 1, 1.2, 0, 7); ctx.fill();
     ctx.beginPath(); ctx.arc(widPx * 0.26, lenPx / 2 - 1, 1.2, 0, 7); ctx.fill();
     ctx.restore();
+  }
+}
+
+
+/** 🚗 ambient traffic with real bodies: each car is two projected boxes
+ *  (body + cabin) through the same camera as the buildings — sides, roof,
+ *  head- and tail-lamps, shrinking honestly toward the vanishing point. */
+function drawCars3D(night, ga, cam) {
+  var cars = ambientCarsNow();
+  if (!cars.length) return;
+  var bz = view.zoom + PK_LOG;
+  var c = A.lonLatToWorld(view, bz);
+  var cos = Math.cos(view.rot), sin = Math.sin(view.rot);
+  var mppG = A.metresPerPixel(view.lat, bz);
+  function gPos(p) {
+    var w = A.lonLatToWorld(p, bz);
+    var dx = w.x - c.x, dy = w.y - c.y;
+    return { x: ga.x + dx * cos - dy * sin, y: ga.y + dx * sin + dy * cos };
+  }
+  function proj(gx, gy, hM) {
+    var dx = gx - ga.x, dyG = ga.y - gy;
+    if (dyG < 10) return null;
+    var k = cam.f / dyG;
+    return { x: cam.sw / 2 + dx * k, y: cam.yh + (cam.camH - hM / mppG) * k, d: dyG };
+  }
+  function shade(hex, mul) {
+    var n = parseInt(hex.slice(1), 16);
+    var r = Math.min(255, Math.round(((n >> 16) & 255) * mul));
+    var g2 = Math.min(255, Math.round(((n >> 8) & 255) * mul));
+    var b = Math.min(255, Math.round((n & 255) * mul));
+    return 'rgb(' + r + ',' + g2 + ',' + b + ')';
+  }
+  function box(corners, z0, z1, color, topMul) {
+    // corners: 4 ground points in order; draw side faces far-first, then top
+    var faces = [];
+    for (var i = 0; i < 4; i++) {
+      var a = corners[i], b = corners[(i + 1) % 4];
+      var pa0 = proj(a.x, a.y, z0), pb0 = proj(b.x, b.y, z0);
+      var pa1 = proj(a.x, a.y, z1), pb1 = proj(b.x, b.y, z1);
+      if (!pa0 || !pb0) return;
+      faces.push({ q: [pa0, pb0, pb1, pa1], d: (pa0.d + pb0.d) / 2,
+                   mul: 0.55 + 0.35 * ((i + 1) % 4 > 1 ? 1 : 0.3) });
+    }
+    faces.sort(function (p, q) { return q.d - p.d; });
+    for (var fi = 0; fi < faces.length; fi++) {
+      var f2 = faces[fi];
+      ctx.beginPath();
+      ctx.moveTo(f2.q[0].x, f2.q[0].y);
+      for (var v = 1; v < 4; v++) ctx.lineTo(f2.q[v].x, f2.q[v].y);
+      ctx.closePath();
+      ctx.fillStyle = shade(color, f2.mul);
+      ctx.fill();
+    }
+    var tops = [];
+    for (var ti = 0; ti < 4; ti++) {
+      var tp = proj(corners[ti].x, corners[ti].y, z1);
+      if (!tp) return;
+      tops.push(tp);
+    }
+    ctx.beginPath();
+    ctx.moveTo(tops[0].x, tops[0].y);
+    for (var tv = 1; tv < 4; tv++) ctx.lineTo(tops[tv].x, tops[tv].y);
+    ctx.closePath();
+    ctx.fillStyle = shade(color, topMul);
+    ctx.fill();
+  }
+  // far first so near cars paint over
+  var list = [];
+  for (var i = 0; i < cars.length; i++) {
+    var car = cars[i];
+    var p = A.pointAtAlong(nav.route, car.alongM);
+    var pos = car.laneM ? A.destinationPoint(p, (p.heading || 0) + 90, car.laneM) : p;
+    var g = gPos(pos);
+    var dyG = ga.y - g.y;
+    if (dyG < 14 || dyG > ga.y - 4) continue;
+    list.push({ car: car, p: p, g: g, d: dyG });
+  }
+  list.sort(function (a, b) { return b.d - a.d; });
+  for (var li = 0; li < list.length; li++) {
+    var it = list[li], car2 = it.car;
+    var hdg = ((it.p.heading || 0) + (car2.dir === -1 ? 180 : 0)) * Math.PI / 180 + view.rot;
+    var fw = { x: Math.sin(hdg), y: -Math.cos(hdg) };
+    var rt = { x: Math.cos(hdg), y: Math.sin(hdg) };
+    var L = 2.3 / mppG, Wd = 0.95 / mppG;
+    var g2 = it.g;
+    var body = [
+      { x: g2.x + fw.x * L + rt.x * Wd, y: g2.y + fw.y * L + rt.y * Wd },
+      { x: g2.x + fw.x * L - rt.x * Wd, y: g2.y + fw.y * L - rt.y * Wd },
+      { x: g2.x - fw.x * L - rt.x * Wd, y: g2.y - fw.y * L - rt.y * Wd },
+      { x: g2.x - fw.x * L + rt.x * Wd, y: g2.y - fw.y * L + rt.y * Wd },
+    ];
+    var colr = AMBIENT_PALETTE[car2.color];
+    if (gameOn()) { ctx.shadowColor = colr; ctx.shadowBlur = 8; }
+    box(body, 0, 0.95, colr, 1.15);
+    ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
+    var cL = L * 0.55, cW = Wd * 0.86, cOff = -L * 0.12;
+    var cabin = [
+      { x: g2.x + fw.x * (cOff + cL) + rt.x * cW, y: g2.y + fw.y * (cOff + cL) + rt.y * cW },
+      { x: g2.x + fw.x * (cOff + cL) - rt.x * cW, y: g2.y + fw.y * (cOff + cL) - rt.y * cW },
+      { x: g2.x + fw.x * (cOff - cL) - rt.x * cW, y: g2.y + fw.y * (cOff - cL) - rt.y * cW },
+      { x: g2.x + fw.x * (cOff - cL) + rt.x * cW, y: g2.y + fw.y * (cOff - cL) + rt.y * cW },
+    ];
+    box(cabin, 0.95, 1.5, '#141a26', 0.6);
+    // lamps: warm ahead, red behind — on the right faces of the box
+    var frontMid = { x: g2.x + fw.x * L, y: g2.y + fw.y * L };
+    var rearMid = { x: g2.x - fw.x * L, y: g2.y - fw.y * L };
+    var pf = proj(frontMid.x, frontMid.y, 0.55), pr = proj(rearMid.x, rearMid.y, 0.55);
+    var lampR = Math.max(1, cam.f / it.d * 0.012 / mppG * 3);
+    if (pf) {
+      ctx.fillStyle = 'rgba(255,244,200,0.95)';
+      ctx.beginPath(); ctx.arc(pf.x - lampR * 2, pf.y, lampR, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(pf.x + lampR * 2, pf.y, lampR, 0, 7); ctx.fill();
+    }
+    if (pr) {
+      ctx.fillStyle = 'rgba(255,60,80,0.95)';
+      ctx.beginPath(); ctx.arc(pr.x - lampR * 2, pr.y, lampR, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(pr.x + lampR * 2, pr.y, lampR, 0, 7); ctx.fill();
+    }
   }
 }
 
