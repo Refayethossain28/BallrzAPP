@@ -1170,6 +1170,45 @@ test('carHeading: cars steer smoothly round corners, no snap-pivot', () => {
   assert.ok(isFinite(A.carHeading(turn, 0)) && isFinite(A.carHeading(turn, turn.totalM)));
 });
 
+test('shareEtaText: the on-my-way message writes itself', () => {
+  const noon = new Date(2026, 7, 16, 12, 0, 0).getTime();
+  const m = A.shareEtaText({ destName: 'Trafalgar Square', nowMs: noon, remainS: 600,
+    remainM: 5200, sigmaS: 150, units: 'metric' });
+  assert.equal(m.title, 'On my way — ETA 12:10');
+  assert.ok(m.text.includes("I'm on my way to Trafalgar Square"));
+  assert.ok(m.text.includes('arriving about 12:10'));
+  assert.ok(m.text.includes('(±3 min)') || m.text.includes('(±2 min)'), m.text);
+  assert.ok(m.text.includes('5.2 km to go'));
+  assert.ok(m.text.includes('Shared live from Atlas'));
+  // small sigma stays quiet; imperial units carry through; junk-safe
+  const q = A.shareEtaText({ destName: 'Home', nowMs: noon, remainS: 60, remainM: 800,
+    sigmaS: 30, units: 'imperial' });
+  assert.ok(!q.text.includes('±'));
+  assert.ok(/mi|yd/.test(q.text));
+  const j = A.shareEtaText(null);
+  assert.ok(j.title.includes('ETA') && j.text.includes('my destination'));
+});
+
+test('tripImpact: honest estimates per mode, EV uses its own Wh/km', () => {
+  const car = A.tripImpact(10000, 'car');
+  near(car.co2Kg, 1.7, 0.01); near(car.litres, 0.65, 0.01);
+  const van = A.tripImpact(10000, 'van');
+  near(van.co2Kg, 2.5, 0.01); near(van.litres, 0.85, 0.01);
+  const ev = A.tripImpact(10000, 'ev');           // default 170 Wh/km
+  near(ev.kwh, 1.7, 0.01); near(ev.co2Kg, 0.2, 0.01);
+  assert.ok(ev.savedVsCarKg > 1.4, 'EV saves most of the petrol CO2');
+  const evCustom = A.tripImpact(10000, 'ev', 250); // heavy EV set in vehicle sheet
+  near(evCustom.kwh, 2.5, 0.01);
+  const bike = A.tripImpact(10000, 'bike');
+  assert.equal(bike.co2Kg, 0); assert.equal(bike.kcal, 280); near(bike.savedVsCarKg, 1.7, 0.01);
+  const foot = A.tripImpact(2000, 'foot');
+  assert.equal(foot.kcal, 120);
+  // junk-safe
+  const j = A.tripImpact(NaN, 'car');
+  assert.equal(j.co2Kg, 0);
+  assert.equal(A.tripImpact(-5, 'ev').kwh, 0);
+});
+
 test('traffic density: the game road carries the real signal', () => {
   const quiet = A.trafficDensity(1.0, 0);
   const rush = A.trafficDensity(1.18, 0);

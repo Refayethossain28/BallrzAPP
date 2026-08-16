@@ -1976,6 +1976,49 @@
     return Math.max(-120, Math.min(120, d * 3.2));
   }
 
+  /* ==================== share ETA + trip impact ========================== */
+
+  /** A ready-to-send "on my way" message — the modern text you'd otherwise
+   *  type at the wheel. Deterministic: the clock is injected.
+   *  opts = {destName, nowMs, remainS, remainM, sigmaS?, units} */
+  function shareEtaText(opts) {
+    var o = opts || {};
+    var name = o.destName ? String(o.destName).slice(0, 80) : 'my destination';
+    var remS = (typeof o.remainS === 'number' && isFinite(o.remainS) && o.remainS > 0) ? o.remainS : 0;
+    var eta = etaClock(o.nowMs || 0, remS);
+    var txt = "I'm on my way to " + name + ' — arriving about ' + eta;
+    if (typeof o.sigmaS === 'number' && o.sigmaS >= 90) {
+      txt += ' (±' + Math.max(1, Math.round(o.sigmaS / 60)) + ' min)';
+    }
+    if (typeof o.remainM === 'number' && isFinite(o.remainM) && o.remainM > 0) {
+      txt += ' · ' + fmtDist(o.remainM, o.units || 'metric') + ' to go';
+    }
+    txt += '. Shared live from Atlas.';
+    return { title: 'On my way — ETA ' + eta, text: txt };
+  }
+
+  /** Honest per-trip impact ESTIMATES from distance + how you travelled.
+   *  Typical figures, not measurements — the UI labels them "est":
+   *  petrol car ~170 g CO2/km and 6.5 L/100 km; diesel van ~250 g/km and
+   *  8.5 L/100 km; an EV uses its own Wh/km (default 170) on a ~120 g/kWh
+   *  grid; cycling ~28 kcal/km, walking ~60 kcal/km. savedVsCarKg is what
+   *  the trip avoided compared to driving a petrol car. */
+  function tripImpact(distM, mode, evWpk) {
+    var km = (typeof distM === 'number' && isFinite(distM) && distM > 0) ? distM / 1000 : 0;
+    var carKg = km * 0.17;
+    var r2 = function (x) { return Math.round(x * 100) / 100; };
+    if (mode === 'bike') return { mode: 'bike', co2Kg: 0, kcal: Math.round(km * 28), savedVsCarKg: r2(carKg) };
+    if (mode === 'foot') return { mode: 'foot', co2Kg: 0, kcal: Math.round(km * 60), savedVsCarKg: r2(carKg) };
+    if (mode === 'ev') {
+      var wpk = (typeof evWpk === 'number' && isFinite(evWpk) && evWpk > 40) ? evWpk : 170;
+      var kwh = km * wpk / 1000;
+      var kg = kwh * 0.12;
+      return { mode: 'ev', co2Kg: r2(kg), kwh: r2(kwh), savedVsCarKg: r2(Math.max(0, carKg - kg)) };
+    }
+    if (mode === 'van') return { mode: 'van', co2Kg: r2(km * 0.25), litres: r2(km * 0.085), savedVsCarKg: 0 };
+    return { mode: 'car', co2Kg: r2(carKg), litres: r2(km * 0.065), savedVsCarKg: 0 };
+  }
+
   /** The direction a car at `alongM` is actually pointing: the bearing of
    *  the chord under its own wheelbase (± spanM/2) rather than the raw
    *  segment heading, so a car rotates progressively through a corner —
@@ -2104,7 +2147,7 @@
     trackKey: trackKey, findLocalTrack: findLocalTrack, djTarget: djTarget, syncAdjust: syncAdjust,
     speechSafe: speechSafe,
     trafficCars: trafficCars, trafficDensity: trafficDensity, steeringAngle: steeringAngle,
-    carHeading: carHeading,
+    carHeading: carHeading, shareEtaText: shareEtaText, tripImpact: tripImpact,
     calmScore: calmScore, calmestRoute: calmestRoute, etaBand: etaBand,
     rankParking: rankParking, walkInfo: walkInfo,
     evUsableRangeM: evUsableRangeM, evChargePlan: evChargePlan, parseMetres: parseMetres, vehicleHazards: vehicleHazards,
