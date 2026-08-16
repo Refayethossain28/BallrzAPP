@@ -1111,6 +1111,29 @@ test('road reports: build, validate, snap to route, expire honestly', () => {
   assert.ok(nxt.distM > 300);
 });
 
+test('ambient traffic: deterministic, moving, bounded, game-only cosmetics', () => {
+  const a = A.trafficCars(5000, 60000);
+  const b = A.trafficCars(5000, 60000);
+  same(a.map((c) => c.alongM.toFixed(2)), b.map((c) => c.alongM.toFixed(2))); // same clock ⇒ same world
+  assert.ok(a.length >= 10 && a.length <= 18);
+  assert.ok(a.every((c) => c.alongM >= 0 && c.alongM <= 5000));
+  assert.ok(a.some((c) => c.dir === 1) && a.some((c) => c.dir === -1));
+  // ten seconds later every car has moved the right way
+  const later = A.trafficCars(5000, 70000);
+  for (let i = 0; i < a.length; i++) {
+    const want = a[i].dir * (a[i].kmh / 3.6) * 10;
+    let dm = later[i].alongM - a[i].alongM;
+    if (dm > 2500) dm -= 5000; if (dm < -2500) dm += 5000; // wrap
+    near(dm, want, 2);
+  }
+  // oncoming cars sit in the other lane; short routes have no traffic
+  assert.ok(a.filter((c) => c.dir === -1).every((c) => c.laneM > 3));
+  assert.equal(A.trafficCars(300, 60000).length, 0);
+  // longer roads carry more cars, capped
+  assert.ok(A.trafficCars(20000, 0).length >= A.trafficCars(5000, 0).length);
+  assert.ok(A.trafficCars(900000, 0).length <= 18);
+});
+
 test('calm routes: motorway cruise beats junction soup, guard caps the cost', () => {
   const cruise = { totalM: 20000, totalS: 900, steps: [
     { type: 'depart' }, { type: 'on ramp', modifier: 'right' },

@@ -1369,6 +1369,18 @@ function drawFlatScene(night, withBuildings) {
     }
   }
   if (FILTER_OK) ctx.filter = 'none';
+  // 🎮 the synthwave ground grid — world-fixed lines, so they stream past
+  if (gameOn()) {
+    var gsp = A.TILE / 4;
+    var gx0 = Math.floor((c.x - radius) / gsp) * gsp, gx1 = c.x + radius;
+    var gy0 = Math.floor((c.y - radius) / gsp) * gsp, gy1 = c.y + radius;
+    ctx.strokeStyle = 'rgba(0,229,255,0.15)';
+    ctx.lineWidth = 1 / scale;
+    ctx.beginPath();
+    for (var glx = gx0; glx <= gx1; glx += gsp) { ctx.moveTo(glx, gy0); ctx.lineTo(glx, gy1); }
+    for (var gly = gy0; gly <= gy1; gly += gsp) { ctx.moveTo(gx0, gly); ctx.lineTo(gx1, gly); }
+    ctx.stroke();
+  }
   ctx.restore();
 
   // Safari (no canvas filter): brighten the night map with a screen-composite
@@ -1389,7 +1401,7 @@ function drawFlatScene(night, withBuildings) {
   // cyan below — the synthwave stage the neon paints onto
   if (gameOn()) {
     ctx.globalCompositeOperation = 'multiply';
-    ctx.fillStyle = 'rgba(64,24,128,0.55)';
+    ctx.fillStyle = 'rgba(64,24,128,0.45)';
     ctx.fillRect(0, 0, W, H);
     ctx.globalCompositeOperation = 'screen';
     var gg = ctx.createLinearGradient(0, 0, 0, H);
@@ -1404,6 +1416,7 @@ function drawFlatScene(night, withBuildings) {
   drawRoutes(night);
   drawCameras();
   drawTraffic();
+  drawAmbientCars();
   drawConvoy();
   drawTapPin();
 }
@@ -1416,7 +1429,7 @@ function drawFlatScene(night, withBuildings) {
    projected through the same camera as genuine 3D extrusions. */
 var persp = { ground: null, gctx: null, stars: null };
 var PK_LOG = 0.45;   // ground supersample (log2) — sharper near field
-var P_HORIZON = 0.36, P_FOCAL = 1.02, P_CAMH = 52;
+var P_HORIZON = 0.32, P_FOCAL = 1.02, P_CAMH = 30;
 
 function perspCam() {
   var sw = Math.round(W * DPR), sh = Math.round(H * DPR);
@@ -1484,6 +1497,23 @@ function drawSky(night, cam) {
   }
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, cam.sw, cam.yh);
+  // a jagged mountain silhouette gives the horizon depth (world-stable:
+  // the ridge is a fixed function of the heading, so it pans as you turn)
+  if (gameOn() || night) {
+    var ridgeH = cam.sh * 0.05;
+    ctx.beginPath();
+    ctx.moveTo(0, cam.yh);
+    var rot = view.rot;
+    for (var mx = 0; mx <= cam.sw; mx += cam.sw / 44) {
+      var ang = mx / cam.sw * 1.5 - rot;
+      var hgt = (Math.sin(ang * 7.3) * 0.5 + Math.sin(ang * 13.7 + 2) * 0.3 + Math.sin(ang * 3.1 + 5) * 0.2);
+      ctx.lineTo(mx, cam.yh - Math.max(0, hgt) * ridgeH - ridgeH * 0.25);
+    }
+    ctx.lineTo(cam.sw, cam.yh);
+    ctx.closePath();
+    ctx.fillStyle = gameOn() ? 'rgba(30,6,56,0.95)' : 'rgba(8,11,22,0.95)';
+    ctx.fill();
+  }
   if (gameOn()) {
     // the synthwave sun, sliced by the horizon glow
     var r = cam.sh * 0.16;
@@ -1890,7 +1920,23 @@ function drawRoutes(night) {
   var main = trip.routes[trip.selected];
   if (main) {
     var sat = settings.baseLayer === 'sat';
-    drawPolyline(main.geometry, sat ? 'rgba(255,255,255,0.85)' : (night ? 'rgba(15,40,90,0.9)' : 'rgba(20,60,140,0.35)'), 11);
+    // while navigating, the route becomes a ROAD: kerb rails, asphalt and a
+    // centre line — through the perspective camera it reads like a track
+    if (nav.active) {
+      var mppR = A.metresPerPixel(view.lat, view.zoom);
+      // the cockpit road is stylised wide, racing-game style; flat views
+      // stay honest to real road width
+      var roadM = perspActive() ? 13 : 8.5;
+      var roadW = Math.max(10, roadM / mppR);
+      var game = gameOn();
+      // striped kerbs: white base, red dashes, then the asphalt covers the
+      // middle — leaving classic red/white rails on both edges
+      drawPolyline(main.geometry, '#f2f4f8', roadW);
+      drawPolyline(main.geometry, game ? '#ff2456' : '#e03131', roadW, [roadW * 0.85, roadW * 0.85]);
+      drawPolyline(main.geometry, game ? '#12041f' : (night ? '#1a2130' : '#3a4150'), roadW - Math.max(4, roadW * 0.14));
+      drawPolyline(main.geometry, game ? 'rgba(0,229,255,0.9)' : 'rgba(255,255,255,0.8)',
+                   Math.max(1.4, roadW * 0.04), [roadW * 0.9, roadW * 1.1]);
+    }
     ctx.save();
     ctx.shadowColor = gameOn() ? 'rgba(255,47,160,0.95)' : 'rgba(0,194,255,0.9)';
     ctx.shadowBlur = gameOn() ? 18 : 15;
@@ -4382,6 +4428,51 @@ function renderConvoyMembers() {
     }
     box.appendChild(row);
   });
+}
+
+/* 🎮 ambient traffic — game-skin cosmetics only, never in the real
+   navigator: procedural cars (engine.trafficCars, pure function of the
+   clock) drive your route in both directions, oncoming in the other lane.
+   Drawn into the flat scene, so the perspective camera foreshortens them
+   like any proper racing game. */
+var AMBIENT_PALETTE = ['#ff5d5d', '#ffd23d', '#7dfff4', '#b78bff', '#5dff9e', '#ff9e5d'];
+function drawAmbientCars() {
+  if (!gameOn() || !nav.active || !nav.route) return;
+  var cars = A.trafficCars(nav.route.totalM, Date.now(), 2.2);
+  if (!cars.length) return;
+  var mpp = A.metresPerPixel(view.lat, view.zoom);
+  var lenPx = Math.max(9, 4.6 / mpp * 1.6);
+  var widPx = lenPx * 0.52;
+  for (var i = 0; i < cars.length; i++) {
+    var car = cars[i];
+    var p = A.pointAtAlong(nav.route, car.alongM);
+    var hdg = (p.heading || 0) + (car.dir === -1 ? 180 : 0);
+    var pos = car.laneM ? A.destinationPoint(p, (p.heading || 0) + 90, car.laneM) : p;
+    var sc = toScreen(pos);
+    if (sc.x < -40 || sc.x > W + 40 || sc.y < -40 || sc.y > H + 40) continue;
+    var rad = hdg * Math.PI / 180 + view.rot;
+    ctx.save();
+    ctx.translate(sc.x, sc.y);
+    ctx.rotate(rad);
+    ctx.shadowColor = gameOn() ? AMBIENT_PALETTE[car.color] : 'rgba(0,0,0,0.45)';
+    ctx.shadowBlur = gameOn() ? 7 : 4; ctx.shadowOffsetY = gameOn() ? 0 : 2;
+    rrect(-widPx / 2, -lenPx / 2, widPx, lenPx, widPx * 0.32);
+    ctx.fillStyle = AMBIENT_PALETTE[car.color];
+    ctx.fill();
+    ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+    // glass
+    rrect(-widPx * 0.32, -lenPx * 0.26, widPx * 0.64, lenPx * 0.24, widPx * 0.16);
+    ctx.fillStyle = 'rgba(10,14,26,0.75)';
+    ctx.fill();
+    // headlights forward, tail lamps behind
+    ctx.fillStyle = 'rgba(255,244,200,0.95)';
+    ctx.beginPath(); ctx.arc(-widPx * 0.26, -lenPx / 2 + 1, 1.4, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(widPx * 0.26, -lenPx / 2 + 1, 1.4, 0, 7); ctx.fill();
+    ctx.fillStyle = 'rgba(255,60,80,0.95)';
+    ctx.beginPath(); ctx.arc(-widPx * 0.26, lenPx / 2 - 1, 1.2, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(widPx * 0.26, lenPx / 2 - 1, 1.2, 0, 7); ctx.fill();
+    ctx.restore();
+  }
 }
 
 /* draw convoy members on the map (any mode) */
