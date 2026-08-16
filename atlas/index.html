@@ -1281,7 +1281,10 @@ function nightMode() {
 
 /* screen anchor: where the camera centre sits (lower in nav mode) */
 function isFpv() { return settings.view3d === 'fpv'; }
-function navZoom() { return isFpv() ? 17.3 : 16.5; }
+function navZoom() {
+  if (gameOn()) return 19.4; // game mode drives fully zoomed in — arcade close-up
+  return isFpv() ? 17.3 : 16.5;
+}
 function anchor() {
   if (groundA) return groundA;
   return { x: W / 2, y: view.navMode ? H * (isFpv() ? 0.93 : 0.72) : H / 2 };
@@ -5289,6 +5292,7 @@ segWire('segLayer', 'baseLayer', function () { updateAttribution(); needsDraw = 
 function gameOn() { return settings.game === 'on'; }
 segWire('segGame', 'game', function () {
   document.body.classList.toggle('game', gameOn());
+  if (view.navMode && view.follow) { view.zoom = navZoom(); glueCamera(); }
   needsDraw = true;
   toast(gameOn() ? '🎮 ApexGP mode — drive the neon' : 'Back to the real world');
 });
