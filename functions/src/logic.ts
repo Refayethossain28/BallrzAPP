@@ -283,6 +283,32 @@ export function atlasProEmail(code: string): { subject: string; text: string } {
   };
 }
 
+/** 🛡 The Guardian alert email — sent when a driver misses the crash
+ *  countdown. Deterministic and plain: a scared parent should understand
+ *  it in one read. Mirrors the app's guardianMessage (atlas/engine.js). */
+export function guardianEmail(f: { name?: string; lat?: number; lon?: number; watch?: string; t?: number }):
+    { subject: string; text: string } {
+  const who = (f.name || '').trim().slice(0, 40) || 'An Atlas driver';
+  const when = typeof f.t === 'number' && isFinite(f.t) ? new Date(f.t).toUTCString() : 'just now';
+  const lines = [
+    `${who} may have been in a crash and did not respond to their satnav's check-in.`,
+    '',
+    `Time: ${when}`,
+  ];
+  if (typeof f.lat === 'number' && typeof f.lon === 'number' && isFinite(f.lat) && isFinite(f.lon) && (f.lat !== 0 || f.lon !== 0)) {
+    lines.push(`Last known position: ${f.lat.toFixed(5)}, ${f.lon.toFixed(5)}`);
+    lines.push(`Map: https://www.openstreetmap.org/?mlat=${f.lat.toFixed(5)}&mlon=${f.lon.toFixed(5)}#map=16/${f.lat.toFixed(5)}/${f.lon.toFixed(5)}`);
+  }
+  if (f.watch) {
+    lines.push('');
+    lines.push(`Follow them live here: ${f.watch}`);
+  }
+  lines.push('');
+  lines.push('If you cannot reach them, consider calling emergency services with the position above.');
+  lines.push('— Atlas Guardian (automatic crash detection)');
+  return { subject: `⚠️ ${who} may need help — Atlas Guardian alert`, text: lines.join('\n') };
+}
+
 /* --------------------- Atlas community clip channel ---------------------- */
 
 /** Caps for community dashcam submissions — enforced server-side. */

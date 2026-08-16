@@ -1227,6 +1227,36 @@ test('watch links: shareable live view, never a membership', () => {
   assert.equal(A.watchLink('https://x.test/', 'nope'), null);
 });
 
+test('guardian: crash = violent spike then stillness, potholes are not crashes', () => {
+  const g = 9.81;
+  const cruise = (t0, ms, jitter = 1.2) =>
+    Array.from({ length: Math.floor(ms / 100) }, (_, i) => ({ t: t0 + i * 100, a: g + Math.sin(i) * jitter }));
+  // a real crash: cruising, 6g impact, then the phone lies still
+  const crash = [...cruise(0, 3000), { t: 3000, a: 59 }, { t: 3100, a: 22 }, ...cruise(3200, 3000, 0.8)];
+  const hit = A.crashSignature(crash);
+  assert.ok(hit && hit.t === 3000 && hit.peakA === 59, JSON.stringify(hit));
+  // a pothole: same spike but the drive carries on rough — no stillness
+  const pothole = [...cruise(0, 3000), { t: 3000, a: 45 },
+    ...Array.from({ length: 30 }, (_, i) => ({ t: 3100 + i * 100, a: g + (i % 2 ? 6 : -6) }))];
+  assert.equal(A.crashSignature(pothole), null);
+  // smooth driving never triggers
+  assert.equal(A.crashSignature(cruise(0, 8000)), null);
+  // junk-safe
+  assert.equal(A.crashSignature(null), null);
+  assert.equal(A.crashSignature([{ t: NaN, a: 99 }, { x: 1 }]), null);
+
+  // the escalation message
+  const noon = new Date(2026, 7, 16, 12, 0, 0).getTime();
+  const m = A.guardianMessage({ name: 'Rafa', nowMs: noon, lat: 51.5, lon: -0.12,
+    watchUrl: 'https://apexvip.uk/atlas/#watch=AB23CD' });
+  assert.ok(m.subject.includes('Rafa may need help'));
+  assert.ok(m.text.includes('crash at 12:00'));
+  assert.ok(m.text.includes('51.50000, -0.12000'));
+  assert.ok(m.text.includes('#watch=AB23CD'));
+  const j = A.guardianMessage(null);
+  assert.ok(j.text.includes('An Atlas driver'));
+});
+
 test('traffic density: the game road carries the real signal', () => {
   const quiet = A.trafficDensity(1.0, 0);
   const rush = A.trafficDensity(1.18, 0);

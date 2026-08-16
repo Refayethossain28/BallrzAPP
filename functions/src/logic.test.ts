@@ -13,7 +13,7 @@ import {
   normalizeCommissionPct, clientCoinsEarned, driverCoinsEarned,
   clampCoinRedemption, round2, coinEarnRates, apexTierForBalance,
   bonusMonthKey, monthlyBonusForBalance, qualifiesForRatingBonus, milestoneBonusAt,
-  makeProCode, validProCode, atlasProEmail, validateClipSubmission, ytClipMeta,
+  makeProCode, validProCode, atlasProEmail, guardianEmail, validateClipSubmission, ytClipMeta,
 } from './logic.ts';
 
 test('ApexCoin earn rates: tiered % for clients, flat % at 2dp for drivers', () => {
@@ -219,4 +219,20 @@ test('community clips: submission caps and unlisted YouTube metadata', () => {
   assert.ok(meta.snippet.description.includes('2:05'));
   assert.equal(meta.status.privacyStatus, 'unlisted'); // never public unseen
   assert.equal(meta.snippet.categoryId, '2');
+});
+
+test('guardianEmail: plain, complete, junk-safe', () => {
+  const m = guardianEmail({ name: 'Rafa', lat: 51.5, lon: -0.12,
+    watch: 'https://apexvip.uk/atlas/#watch=AB23CD', t: Date.UTC(2026, 7, 16, 12, 0) });
+  assert.match(m.subject, /Rafa may need help/);
+  assert.ok(m.text.includes('did not respond'));
+  assert.ok(m.text.includes('51.50000, -0.12000'));
+  assert.ok(m.text.includes('openstreetmap.org/?mlat=51.50000'));
+  assert.ok(m.text.includes('#watch=AB23CD'));
+  assert.ok(m.text.includes('emergency services'));
+  // no name, no position (0,0 sentinel), no link — still a sane email
+  const bare = guardianEmail({});
+  assert.match(bare.subject, /An Atlas driver/);
+  assert.ok(!bare.text.includes('undefined'));
+  assert.ok(!guardianEmail({ lat: 0, lon: 0 }).text.includes('0.00000'));
 });
