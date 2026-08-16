@@ -521,6 +521,15 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // 📣 Sponsored places — Atlas's only advertising. Owner-managed data:
+    // clients read active pins and can never write; pins go live via the
+    // sales flow in atlas/SPONSORED.md (Stripe → ledger → owner creates
+    // the pin). No user data is involved at all.
+    match /atlas_sponsored/{pinId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
     // 🛡 Guardian crash alerts — write-only from clients. A doc is created
     // only when a driver failed to respond to the crash countdown; a Cloud
     // Function emails the driver's own chosen contact and nobody can read

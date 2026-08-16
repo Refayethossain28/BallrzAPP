@@ -1990,6 +1990,74 @@
     return Math.max(-120, Math.min(120, d * 3.2));
   }
 
+  /* ===================== 📣 sponsored places (ads) ======================== */
+  /* The only advertising Atlas shows: local businesses as labelled map pins
+   * and at most ONE labelled search suggestion — never overlays, never
+   * while driving, no tracking (relevance is location + query, nothing
+   * about the user). Selection is pure and testable. */
+
+  /** Validate a sponsored-place doc from the wire — expired, inactive or
+   *  malformed entries vanish. */
+  function validSponsored(s, nowMs) {
+    if (!s || typeof s !== 'object') return null;
+    if (typeof s.name !== 'string' || !s.name.trim()) return null;
+    if (typeof s.lat !== 'number' || typeof s.lon !== 'number' ||
+        !isFinite(s.lat) || !isFinite(s.lon) ||
+        Math.abs(s.lat) > 90 || Math.abs(s.lon) > 180) return null;
+    if (s.active === false) return null;
+    if (typeof s.paidUntil === 'number' && s.paidUntil < nowMs) return null;
+    return {
+      name: s.name.trim().slice(0, 40),
+      tagline: typeof s.tagline === 'string' ? s.tagline.trim().slice(0, 60) : '',
+      lat: s.lat, lon: s.lon,
+      kind: typeof s.kind === 'string' ? s.kind.slice(0, 16) : 'place',
+      id: typeof s.id === 'string' ? s.id : null,
+    };
+  }
+
+  /** Nearby sponsored pins: valid, within maxKm of pos, nearest first,
+   *  hard-capped so the map never fills with ads. */
+  function sponsoredNearby(items, pos, maxKm, nowMs, cap) {
+    if (!items || !items.length || !pos) return [];
+    var out = [];
+    for (var i = 0; i < items.length; i++) {
+      var v = validSponsored(items[i], nowMs);
+      if (!v) continue;
+      var d = haversine(pos, v);
+      if (d <= (maxKm || 10) * 1000) out.push({ place: v, distM: Math.round(d) });
+    }
+    out.sort(function (a, b) { return a.distM - b.distM; });
+    return out.slice(0, cap || 3);
+  }
+
+  var SPONSOR_KIND_WORDS = {
+    cafe: ['coffee', 'cafe', 'café', 'breakfast'],
+    food: ['food', 'restaurant', 'lunch', 'dinner', 'takeaway', 'pizza', 'burger'],
+    fuel: ['fuel', 'petrol', 'gas', 'diesel'],
+    ev: ['charge', 'charger', 'charging', 'ev'],
+    parking: ['parking', 'car park'],
+    shop: ['shop', 'store'],
+  };
+
+  /** The one sponsored result a search may surface: the query must actually
+   *  relate (name match or the kind's keywords) and the place must be near.
+   *  At most one — ads never crowd real results — and the UI labels it. */
+  function sponsoredForSearch(items, query, pos, nowMs) {
+    var q = (query || '').trim().toLowerCase();
+    if (q.length < 3) return null;
+    var near = sponsoredNearby(items, pos, 12, nowMs, 99);
+    for (var i = 0; i < near.length; i++) {
+      var p = near[i].place;
+      var hit = p.name.toLowerCase().indexOf(q) >= 0;
+      var words = SPONSOR_KIND_WORDS[p.kind] || [];
+      for (var w = 0; w < words.length && !hit; w++) {
+        if (words[w].indexOf(q) === 0 || q.indexOf(words[w]) >= 0) hit = true;
+      }
+      if (hit) return { place: p, distM: near[i].distM };
+    }
+    return null;
+  }
+
   /* ===================== 🛡 Guardian crash detection ====================== */
 
   /** Does this accelerometer trace look like a crash? Pure function over
@@ -2219,6 +2287,7 @@
     trafficCars: trafficCars, trafficDensity: trafficDensity, steeringAngle: steeringAngle,
     carHeading: carHeading, shareEtaText: shareEtaText, tripImpact: tripImpact,
     crashSignature: crashSignature, guardianMessage: guardianMessage,
+    validSponsored: validSponsored, sponsoredNearby: sponsoredNearby, sponsoredForSearch: sponsoredForSearch,
     calmScore: calmScore, calmestRoute: calmestRoute, etaBand: etaBand,
     rankParking: rankParking, walkInfo: walkInfo,
     evUsableRangeM: evUsableRangeM, evChargePlan: evChargePlan, parseMetres: parseMetres, vehicleHazards: vehicleHazards,

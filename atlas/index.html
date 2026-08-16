@@ -1487,6 +1487,7 @@ function drawFlatScene(night, withBuildings) {
   drawTraffic();
   drawAmbientCars();
   drawConvoy();
+  drawSponsoredPins();
   drawTapPin();
 }
 
@@ -2114,6 +2115,47 @@ function drawTapPin() {
   ctx.fillText('📍', s.x, s.y + 4);
 }
 
+/* 📣 sponsored pins: amber-ringed, emoji'd, ALWAYS labelled "Ad" — and
+   never drawn while you're actually driving (following in navigation). */
+var SPONSOR_EMOJI = { cafe: '☕', food: '🍔', fuel: '⛽', ev: '⚡', parking: '🅿️', shop: '🛍' };
+function sponsoredOnScreen() {
+  if (!sponsored.items.length) return [];
+  if (nav.active && view.follow) return [];
+  if (view.zoom < 12.5) return [];
+  var pins = A.sponsoredNearby(sponsored.items, gps.fix || view, 30, Date.now(), 8);
+  var out = [];
+  for (var i = 0; i < pins.length; i++) {
+    var s = toScreen(pins[i].place);
+    if (s.x < -30 || s.x > W + 30 || s.y < -30 || s.y > H + 30) continue;
+    out.push({ place: pins[i].place, x: s.x, y: s.y });
+  }
+  return out;
+}
+function drawSponsoredPins() {
+  var pins = sponsoredOnScreen();
+  for (var i = 0; i < pins.length; i++) {
+    var p = pins[i];
+    ctx.beginPath(); ctx.arc(p.x, p.y, 12, 0, 7);
+    ctx.fillStyle = 'rgba(15,23,42,0.88)'; ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(251,191,36,0.95)'; ctx.stroke();
+    ctx.font = '13px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(SPONSOR_EMOJI[p.place.kind] || '📣', p.x, p.y + 4.5);
+    if (view.zoom >= 14) {
+      ctx.font = '600 11px -apple-system, Segoe UI, Roboto, sans-serif';
+      var label = p.place.name;
+      var lw = ctx.measureText(label).width;
+      ctx.fillStyle = 'rgba(15,23,42,0.8)';
+      rrect(p.x - lw / 2 - 6, p.y + 15, lw + 34, 16, 8);
+      ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.textAlign = 'left';
+      ctx.fillText(label, p.x - lw / 2, p.y + 27);
+      ctx.fillStyle = 'rgba(251,191,36,0.95)';
+      ctx.fillText(' Ad', p.x + lw / 2 + 2, p.y + 27);
+      ctx.textAlign = 'center';
+    }
+  }
+}
+
 function rrect(x, y, w, h, r) {
   ctx.beginPath();
   ctx.moveTo(x + r, y);
@@ -2690,6 +2732,10 @@ function renderResults(list, q, loading) {
     }
     return;
   }
+  // 📣 at most one sponsored suggestion, only when genuinely relevant,
+  // always badged — it never displaces the real results below it
+  var sp = A.sponsoredForSearch(sponsored.items, q, gps.fix || view, Date.now());
+  if (sp) box.appendChild(sponsoredRow(sp));
   list.slice(0, 14).forEach(function (p) { box.appendChild(resultRow(p)); });
   if (loading && q.trim().length >= 3) {
     var ld = document.createElement('div');
@@ -2703,6 +2749,23 @@ function addTitle(box, t) {
   el.className = 'sectionTitle'; el.textContent = t;
   box.appendChild(el);
 }
+function sponsoredRow(sp) {
+  var p = sp.place;
+  var b = document.createElement('button');
+  b.className = 'result';
+  b.style.border = '1px solid rgba(251,191,36,0.4)';
+  b.style.background = 'rgba(251,191,36,0.06)';
+  b.innerHTML = '<div class="ic">' + (SPONSOR_EMOJI[p.kind] || '📣') + '</div>' +
+    '<div style="flex:1;min-width:0"><div class="nm"></div><div class="ad"></div></div>' +
+    '<span style="flex:none;font-size:10px;font-weight:800;letter-spacing:0.6px;color:#fbbf24;border:1px solid rgba(251,191,36,0.5);border-radius:6px;padding:2px 6px">SPONSORED</span>';
+  b.querySelector('.nm').textContent = p.name;
+  b.querySelector('.ad').textContent = (p.tagline ? p.tagline + ' · ' : '') + A.fmtDist(sp.distM, settings.units) + ' away';
+  b.addEventListener('click', function () {
+    chooseDestination({ name: p.name, addr: p.tagline || 'Sponsored place', lat: p.lat, lon: p.lon });
+  });
+  return b;
+}
+
 function resultRow(p) {
   var b = document.createElement('button');
   b.className = 'result';
@@ -2758,6 +2821,19 @@ $('chipDemo').addEventListener('click', function () { startDemoTrip(); });
 /* ------------------------------ tap-to-pin ------------------------------ */
 
 function tapMap(sx, sy) {
+  // sponsored pins are tappable — the card says plainly that it's an ad
+  var pins = sponsoredOnScreen();
+  for (var si = 0; si < pins.length; si++) {
+    if (Math.hypot(pins[si].x - sx, pins[si].y - sy) < 24) {
+      var sp = pins[si].place;
+      tapPoint = { lat: sp.lat, lon: sp.lon };
+      $('tapName').textContent = (SPONSOR_EMOJI[sp.kind] || '📣') + ' ' + sp.name;
+      $('tapCoord').textContent = (sp.tagline ? sp.tagline + ' · ' : '') + 'Sponsored';
+      $('tapCard').classList.add('show');
+      needsDraw = true;
+      return;
+    }
+  }
   var p = fromScreen({ x: sx, y: sy });
   tapPoint = { lat: p.lat, lon: p.lon };
   $('tapName').textContent = 'Dropped pin';
@@ -4973,6 +5049,31 @@ $('btnWatchShare').addEventListener('click', function () {
   } else toast(url);
 });
 
+/* ------------------- 📣 sponsored places (paid pins) ---------------------
+   Atlas's only advertising: local businesses pay for a labelled pin and at
+   most one labelled search suggestion. Read-only data from Firestore
+   (owner-managed — clients can never write), no tracking of any kind, and
+   nothing renders while actively driving. No sponsors → the feature is
+   invisible. Selling flow: atlas/SPONSORED.md. */
+var sponsored = { items: [], fetched: false };
+function fetchSponsored() {
+  if (sponsored.fetched || !window.ATLAS_FIREBASE_CONFIG) return;
+  sponsored.fetched = true;
+  reportsFbInit().then(function () {
+    if (!reports.fb) return;
+    return reports.fb.collection('atlas_sponsored').where('active', '==', true).limit(50).get()
+      .then(function (snap) {
+        var items = [];
+        snap.forEach(function (d) {
+          var v = A.validSponsored(Object.assign({ id: d.id }, d.data()), Date.now());
+          if (v) items.push(v);
+        });
+        sponsored.items = items;
+        if (items.length) needsDraw = true;
+      });
+  }).catch(function () {});
+}
+
 /* ------------------------- 🛡 Guardian ----------------------------------
    Crash detection with automatic help. The engine's crashSignature reads a
    rolling buffer of accelerometer magnitudes; on a hit Atlas asks out loud
@@ -5781,6 +5882,9 @@ if (typeof window !== 'undefined' && window.ATLAS_NATIVE) refreshProUI();
     toast('Invited to convoy ' + code + ' — tap Join');
   }
 })();
+
+// 📣 sponsored pins load lazily after boot — invisible if there are none
+setTimeout(fetchSponsored, 1500);
 
 // 🚀 app-shortcut launches: long-press the installed icon → jump straight in
 // (?go=home|work routes to the saved place, ?cam=1 starts the dashcam,
