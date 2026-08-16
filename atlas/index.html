@@ -1069,6 +1069,7 @@
     <div id="navMeta">— · —</div>
   </div>
   <div class="grow"></div>
+  <button class="navCtl" id="btnShare" aria-label="Share arrival time">📤</button>
   <button class="navCtl" id="btnReport" aria-label="Report something on the road">⚠️</button>
   <button class="navCtl" id="btnDashcam" aria-label="Dashcam">📹</button>
   <button class="navCtl" id="btnMute" aria-label="Mute voice">🔊</button>
@@ -1131,6 +1132,7 @@
   <h2>You have arrived</h2>
   <p id="arrivedSub">Enjoy!</p>
   <p id="arrivedStats" style="margin-top:6px;font-size:13px;color:var(--accent2)"></p>
+  <p id="arrivedEco" style="margin-top:4px;font-size:13px;color:#34d399"></p>
   <div style="display:flex;gap:10px">
     <button id="btnDashSave" style="background:rgba(248,113,113,0.12);border:1px solid rgba(248,113,113,0.4);display:none">📹 Video</button>
     <button id="btnGpx" style="background:rgba(255,255,255,0.06);border:1px solid var(--line)">📼 GPX</button>
@@ -1164,7 +1166,7 @@
   <button class="musicBtn" id="msNext" aria-label="Next">⏭</button>
 </div>
 
-<div id="toast"></div>
+<div id="toast" role="status" aria-live="polite"></div>
 
 <script src="config.js"></script>
 <script src="engine.js"></script>
@@ -3022,14 +3024,22 @@ $('btnProActivate').addEventListener('click', function () {
   toast('⭐ Atlas Pro activated — enjoy!');
 });
 
-function logDrive(stats) {
+function logDrive(stats, mode) {
   var drives = load('atlas.drives', []);
-  drives.push({ t: Date.now(), distM: Math.round(stats.distM), movingS: Math.round(stats.movingS) });
+  drives.push({ t: Date.now(), distM: Math.round(stats.distM), movingS: Math.round(stats.movingS),
+                mode: mode || 'car' });
   save('atlas.drives', drives.slice(-300));
 }
 function renderStats() {
-  var s = A.driveStatsSummary(load('atlas.drives', []), Date.now());
+  var drives = load('atlas.drives', []);
+  var s = A.driveStatsSummary(drives, Date.now());
   var spd = settings.units === 'imperial' ? Math.round(s.avgKmh / 1.609344) + ' mph' : Math.round(s.avgKmh) + ' km/h';
+  // 🌱 estimated footprint across the log — old entries without a mode count as car
+  var co2 = 0, saved = 0;
+  for (var di = 0; di < drives.length; di++) {
+    var im = A.tripImpact(drives[di].distM, drives[di].mode || 'car', parseFloat(settings.evWpk));
+    co2 += im.co2Kg; saved += im.savedVsCarKg || 0;
+  }
   var cells = [
     [s.count, 'drives'],
     [A.fmtDist(s.distM, settings.units), 'total distance'],
@@ -3037,6 +3047,8 @@ function renderStats() {
     [s.count ? spd : '—', 'average speed'],
     [s.longestM ? A.fmtDist(s.longestM, settings.units) : '—', 'longest drive'],
     [s.weekCount + ' · ' + A.fmtDist(s.weekDistM, settings.units), 'this week'],
+    [s.count ? '~' + (Math.round(co2 * 10) / 10) + ' kg' : '—', '🌱 est CO₂ (all trips)'],
+    [saved > 0.05 ? '~' + (Math.round(saved * 10) / 10) + ' kg' : '—', '🌱 CO₂ saved vs car'],
   ];
   $('statGrid').innerHTML = cells.map(function (c) {
     return '<div class="statCard"><div class="sv"></div><div class="sl"></div></div>';
@@ -3721,14 +3733,25 @@ var lastTrack = null; // the just-finished drive, for 📼 GPX export
 function finishNav() {
   var wasDemo = nav.demo, track = nav.track, profile = trip.profile;
   // 📼 flight recorder: stats + keep the track for GPX / 🍞 trail-back
-  var statsLine = '';
+  var statsLine = '', ecoLine = '';
   if (track && track.points.length >= 5) {
     var st = A.trackStats(track, Date.now());
     statsLine = A.fmtDist(st.distM, settings.units) + ' · ' + A.fmtDur(st.movingS) +
       ' moving · avg ' + Math.round(settings.units === 'imperial' ? st.avgKmh / 1.609344 : st.avgKmh) +
       (settings.units === 'imperial' ? ' mph' : ' km/h');
     lastTrack = track;
-    if (!wasDemo) { save('atlas.lastTrack', track); logDrive(st); }
+    // 🌱 what this trip cost the planet — honest estimates, labelled as such
+    var ecoMode = profile === 'car'
+      ? (settings.vehType === 'ev' ? 'ev' : settings.vehType === 'van' ? 'van' : 'car') : profile;
+    var imp = A.tripImpact(st.distM, ecoMode, parseFloat(settings.evWpk));
+    if (imp.mode === 'bike' || imp.mode === 'foot') {
+      ecoLine = '🌱 Zero emissions · ~' + imp.kcal + ' kcal · saved ~' + imp.savedVsCarKg + ' kg CO₂ vs driving';
+    } else if (imp.mode === 'ev') {
+      ecoLine = '🌱 ~' + imp.kwh + ' kWh · ~' + imp.co2Kg + ' kg CO₂ (est) · ~' + imp.savedVsCarKg + ' kg less than petrol';
+    } else {
+      ecoLine = '🌱 ~' + imp.co2Kg + ' kg CO₂ · ~' + imp.litres + ' L fuel (est)';
+    }
+    if (!wasDemo) { save('atlas.lastTrack', track); logDrive(st, ecoMode); }
   }
   // ⏱ personal pace: learn how you actually drive vs the prediction
   if (!wasDemo && nav.startTs && nav.predictedS > 60) {
@@ -3754,9 +3777,26 @@ function finishNav() {
   }
   $('arrivedSub').textContent = (trip.dest ? trip.dest.name : 'Destination') + (wasDemo ? ' · demo complete' : '');
   $('arrivedStats').textContent = statsLine + walkLine;
+  $('arrivedEco').textContent = ecoLine;
   $('btnGpx').style.display = lastTrack ? '' : 'none';
   $('arrivedCard').classList.add('show');
 }
+
+/* 📤 share your ETA — the "on my way" text nobody should type while driving.
+   Native share sheet where the platform has one, clipboard otherwise. */
+$('btnShare').addEventListener('click', function () {
+  if (!nav.active || !nav.route || !nav.lastR) { toast('Start navigating first'); return; }
+  var pacedRemS = A.remainingWithTraffic(nav.route, nav.lastR.alongM, nav.trafMapped, nav.trafFactor) * paceOf();
+  var msg = A.shareEtaText({ destName: trip.dest ? trip.dest.name : null, nowMs: Date.now(),
+    remainS: pacedRemS, remainM: nav.lastR.remainingM,
+    sigmaS: nav.route.band ? nav.route.band.sigmaS : 0, units: settings.units });
+  if (navigator.share) {
+    navigator.share({ title: msg.title, text: msg.text }).catch(function () {});
+  } else if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(msg.text).then(function () { toast('📤 ETA copied — paste it anywhere'); })
+      .catch(function () { toast(msg.text); });
+  } else toast(msg.text);
+});
 
 $('btnGpx').addEventListener('click', function () {
   if (!lastTrack) return;
@@ -5461,6 +5501,28 @@ if (typeof window !== 'undefined' && window.ATLAS_NATIVE) refreshProUI();
     openSheet('convoySheet');
     toast('Invited to convoy ' + code + ' — tap Join');
   }
+})();
+
+// 🚀 app-shortcut launches: long-press the installed icon → jump straight in
+// (?go=home|work routes to the saved place, ?cam=1 starts the dashcam,
+// ?demo=1 plays the demo drive). The param is stripped so reloads stay clean.
+(function () {
+  var qp;
+  try { qp = new URLSearchParams(window.location.search); } catch (e) { return; }
+  var go = qp.get('go'), cam = qp.get('cam'), demo = qp.get('demo');
+  if (!go && cam !== '1' && demo !== '1') return;
+  try { history.replaceState(null, '', window.location.pathname); } catch (e) {}
+  setTimeout(function () {
+    if (demo === '1') startDemoTrip(true);
+    else if (go === 'home' || go === 'work') {
+      var p = null;
+      for (var i = 0; i < places.length; i++) if (places[i].kind === go) p = places[i];
+      if (p) chooseDestination(p);
+      else toast(go === 'home' ? 'Save your 🏠 Home first — search it, then tap 🏠'
+                               : 'Save your 💼 Work first — search it, then tap 💼');
+    }
+    if (cam === '1') startDashcam();
+  }, 600);
 })();
 
 if (navigator.serviceWorker && navigator.serviceWorker.register) {
