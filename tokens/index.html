@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tokens — the AI token meter</title>
+<meta name="description" content="An LLM token counter, cost estimator and usage budgeter — paste text, see roughly what it costs on every current Claude model, what prompt caching saves, and how your month's AI spend tracks against a budget. Offline-first, everything on your device.">
+<meta name="theme-color" content="#0a0d16">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Tokens">
+<style>
+  :root {
+    --bg: #0a0d16; --bg2: #0d1220; --card: #101627; --card2: #141c33;
+    --line: #1e2947; --text: #e9edf9; --dim: #92a1c4; --faint: #5e6d8f;
+    --brand: #4dd8ff; --brand2: #8f7cf7; --gold: #e8b34c; --green: #3ecf8e;
+    --red: #ff6b6b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    background: radial-gradient(1200px 700px at 50% -10%, #121b36 0%, var(--bg) 55%) fixed, var(--bg);
+    color: var(--text);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    min-height: 100dvh;
+  }
+  a { color: var(--brand); text-decoration: none; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 16px calc(44px + env(safe-area-inset-bottom)); }
+
+  header { display: flex; align-items: center; gap: 12px; padding: 22px 0 8px; flex-wrap: wrap; }
+  .logo { font-size: 30px; font-weight: 800; letter-spacing: -1px; user-select: none; }
+  .logo .g { background: linear-gradient(92deg, var(--brand) 5%, var(--brand2) 55%, var(--gold) 95%);
+             -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .tagline { color: var(--dim); font-size: 13px; flex: 1 1 100%; margin-top: -6px; }
+  .pill { margin-left: auto; font-size: 12px; color: var(--dim); border: 1px solid var(--line);
+          border-radius: 999px; padding: 4px 12px; background: var(--card); white-space: nowrap; }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px; margin: 14px 0; }
+  .card h2 { font-size: 15px; margin-bottom: 4px; }
+  .card h2 .em { color: var(--brand); }
+  .sub { color: var(--faint); font-size: 12.5px; margin-bottom: 12px; }
+
+  textarea {
+    width: 100%; min-height: 130px; resize: vertical;
+    background: var(--bg2); border: 1px solid var(--line); border-radius: 12px;
+    padding: 12px 14px; color: var(--text); font: 13.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    outline: none;
+  }
+  textarea:focus { border-color: var(--brand); }
+  textarea::placeholder { color: var(--faint); font-family: inherit; }
+
+  .stats { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .stat { background: var(--card2); border: 1px solid var(--line); border-radius: 12px;
+          padding: 8px 14px; text-align: center; flex: 1 1 100px; }
+  .stat b { display: block; font-size: 19px; font-weight: 700; }
+  .stat.hero b { background: linear-gradient(92deg, var(--brand), var(--brand2));
+                 -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .stat span { color: var(--faint); font-size: 11.5px; }
+
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 10px 0 2px; }
+  .row label { color: var(--dim); font-size: 13px; }
+  input[type="number"] {
+    background: var(--bg2); border: 1px solid var(--line); border-radius: 10px;
+    padding: 8px 12px; color: var(--text); font-size: 14px; width: 110px; outline: none;
+  }
+  input[type="number"]:focus { border-color: var(--brand); }
+  select {
+    background: var(--bg2); border: 1px solid var(--line); border-radius: 10px;
+    padding: 8px 12px; color: var(--text); font-size: 14px; outline: none;
+  }
+  button { background: var(--card2); color: var(--text); border: 1px solid var(--line);
+           border-radius: 10px; padding: 9px 15px; font-size: 13.5px; cursor: pointer; font-family: inherit; }
+  button:hover { border-color: var(--brand); }
+  button.primary { background: linear-gradient(92deg, #14405c, #33306b); border-color: #2b5f87; font-weight: 600; }
+  button.small { padding: 4px 10px; font-size: 12px; border-radius: 8px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th { text-align: left; color: var(--faint); font-size: 11.5px; font-weight: 600;
+       text-transform: uppercase; letter-spacing: .4px; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  td { padding: 8px; border-bottom: 1px solid rgba(30,41,71,.55); vertical-align: middle; }
+  tr:last-child td { border-bottom: 0; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .mname { font-weight: 600; white-space: nowrap; }
+  .mtier { color: var(--faint); font-size: 11.5px; }
+  .total { font-weight: 700; }
+  .cheapest .total { color: var(--green); }
+  .badge { display: inline-block; font-size: 10.5px; border-radius: 999px; padding: 1px 8px; margin-left: 6px;
+           background: rgba(62,207,142,.12); color: var(--green); border: 1px solid rgba(62,207,142,.35); }
+  .badge.warn { background: rgba(255,107,107,.1); color: var(--red); border-color: rgba(255,107,107,.35); }
+
+  .meter { height: 6px; border-radius: 999px; background: var(--bg2); overflow: hidden; margin-top: 8px; }
+  .meter i { display: block; height: 100%; border-radius: 999px;
+             background: linear-gradient(92deg, var(--brand), var(--brand2)); }
+  .meter i.warn { background: linear-gradient(92deg, var(--gold), var(--red)); }
+  .meter i.over { background: var(--red); }
+  .meter .mark { display: none; }
+
+  .cache-line { display: flex; justify-content: space-between; gap: 10px; font-size: 13.5px; padding: 5px 0;
+                border-bottom: 1px solid rgba(30,41,71,.55); }
+  .cache-line:last-child { border-bottom: 0; }
+  .cache-line .k { color: var(--dim); }
+  .save { color: var(--green); font-weight: 700; }
+  .nosave { color: var(--gold); font-weight: 700; }
+
+  .entry { display: flex; justify-content: space-between; gap: 10px; align-items: baseline;
+           padding: 7px 0; border-bottom: 1px solid rgba(30,41,71,.55); font-size: 13.5px; }
+  .entry:last-child { border-bottom: 0; }
+  .entry .what b { font-weight: 600; }
+  .entry .what span { color: var(--faint); font-size: 12px; }
+  .entry .cost { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .entry .del { color: var(--faint); cursor: pointer; border: 0; background: none; padding: 0 0 0 8px; font-size: 13px; }
+  .entry .del:hover { color: var(--red); }
+  .empty { color: var(--faint); font-size: 13px; padding: 8px 0; }
+
+  .budget-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .budget-top .big { font-size: 24px; font-weight: 800; }
+  .status-ok { color: var(--green); } .status-warn { color: var(--gold); } .status-over { color: var(--red); }
+
+  footer { color: var(--faint); font-size: 12px; text-align: center; padding: 24px 0 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo"><span class="g">Tokens</span></div>
+    <span class="pill" id="pill">list prices · Jun 2026</span>
+    <div class="tagline">The AI token meter — count a prompt, price it on every current Claude model, budget your month. Everything stays on your device.</div>
+  </header>
+
+  <section class="card">
+    <h2>Count <span class="em">≈</span> a prompt</h2>
+    <div class="sub">Rough estimate (~4 chars per token, code runs denser). Exact numbers come from the provider's <code>count_tokens</code> API.</div>
+    <textarea id="text" placeholder="Paste a prompt, a document, a source file…"></textarea>
+    <div class="stats">
+      <div class="stat hero"><b id="s-tokens">0</b><span>≈ tokens</span></div>
+      <div class="stat"><b id="s-chars">0</b><span>characters</span></div>
+      <div class="stat"><b id="s-words">0</b><span>words</span></div>
+      <div class="stat"><b id="s-lines">0</b><span>lines</span></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Price it <span class="em">everywhere</span></h2>
+    <div class="sub">The counted text as input, plus the output you expect back — every current Claude model, cheapest first.</div>
+    <div class="row">
+      <label>Expected output</label>
+      <input type="number" id="out-tokens" value="500" min="0" step="100"> <label>tokens</label>
+      <label style="margin-left:auto">× requests</label>
+      <input type="number" id="requests" value="1" min="1" step="1" style="width:80px">
+    </div>
+    <table id="price-table">
+      <thead><tr><th>Model</th><th class="num">Input</th><th class="num">Output</th><th class="num">Total</th></tr></thead>
+      <tbody id="price-body"></tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>Would <span class="em">caching</span> pay?</h2>
+    <div class="sub">One cached prefix (the counted text) reused across your requests: 1 write + cheap reads vs full price every time.</div>
+    <div class="row">
+      <label>Model</label>
+      <select id="cache-model"></select>
+      <label>TTL</label>
+      <select id="cache-ttl">
+        <option value="5m">5 minutes (write 1.25×)</option>
+        <option value="1h">1 hour (write 2×)</option>
+      </select>
+    </div>
+    <div id="cache-out"></div>
+  </section>
+
+  <section class="card">
+    <h2>Your month, <span class="em">budgeted</span></h2>
+    <div class="sub">Log what you actually used; Tokens prices each entry at its own date and projects the month from your burn rate. Stored only in this browser.</div>
+    <div class="budget-top">
+      <div><span class="big" id="b-spend">$0</span> <span class="mtier" id="b-month"></span></div>
+      <div class="row" style="margin:0">
+        <label>Budget</label>
+        <input type="number" id="b-budget" min="0" step="5" placeholder="none">
+        <label>USD</label>
+      </div>
+    </div>
+    <div class="meter"><i id="b-bar" style="width:0%"></i></div>
+    <div class="sub" id="b-note" style="margin-top:8px"></div>
+    <div class="row">
+      <select id="l-model"></select>
+      <input type="number" id="l-in" min="0" step="1000" placeholder="input tok">
+      <input type="number" id="l-out" min="0" step="1000" placeholder="output tok">
+      <button class="primary" id="l-add">Log it</button>
+      <button class="small" id="l-from-text" title="Use the counted text + expected output">from counter</button>
+    </div>
+    <div id="l-list"></div>
+  </section>
+
+  <footer>Tokens is a concept prototype — list prices cached from public docs (Jun 2026), token counts approximate. Not billing advice.</footer>
+</div>
+
+<script src="engine.js"></script>
+<script>
+(function () {
+  'use strict';
+  var E = TokensEngine;
+  var $ = function (id) { return document.getElementById(id); };
+
+  var LS_ENTRIES = 'tokens.entries.v1';
+  var LS_BUDGET = 'tokens.budget.v1';
+  var LS_TEXT = 'tokens.text.v1';
+
+  function loadJSON(key, fallback) {
+    try {
+      var raw = localStorage.getItem(key);
+      if (!raw) return fallback;
+      var v = JSON.parse(raw);
+      return v == null ? fallback : v;
+    } catch (e) { return fallback; }
+  }
+  function saveJSON(key, v) {
+    try { localStorage.setItem(key, JSON.stringify(v)); } catch (e) {}
+  }
+
+  var entries = loadJSON(LS_ENTRIES, []);
+  if (!Array.isArray(entries)) entries = [];
+
+  /* ---------- model selects ---------- */
+  function fillModelSelect(sel, preferred) {
+    var html = '';
+    for (var i = 0; i < E.MODELS.length; i++) {
+      var m = E.MODELS[i];
+      html += '<option value="' + m.id + '"' + (m.id === preferred ? ' selected' : '') + '>' + E.escapeHTML(m.name) + '</option>';
+    }
+    sel.innerHTML = html;
+  }
+  fillModelSelect($('cache-model'), 'claude-opus-5');
+  fillModelSelect($('l-model'), 'claude-opus-5');
+
+  /* ---------- counter ---------- */
+  function currentStats() { return E.textStats($('text').value); }
+
+  function renderCounter() {
+    var s = currentStats();
+    $('s-tokens').textContent = E.formatTokens(s.tokens);
+    $('s-chars').textContent = s.chars.toLocaleString('en-US');
+    $('s-words').textContent = s.words.toLocaleString('en-US');
+    $('s-lines').textContent = String(s.lines);
+  }
+
+  /* ---------- price table ---------- */
+  function renderPrices() {
+    var now = Date.now();
+    var inTok = currentStats().tokens;
+    var outTok = Math.max(0, Number($('out-tokens').value) || 0);
+    var reqs = Math.max(1, Math.floor(Number($('requests').value) || 1));
+    var rows = E.compareModels(inTok, outTok, now);
+    var html = '';
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      var badge = '';
+      if (r.cost.price.intro) badge = '<span class="badge">intro to ' + r.cost.price.untilISO.slice(5) + '</span>';
+      if (!r.fit.fits) badge += '<span class="badge warn">over ' + E.formatTokens(r.fit.context) + ' ctx</span>';
+      html += '<tr' + (i === 0 ? ' class="cheapest"' : '') + '><td><span class="mname">' + E.escapeHTML(r.model.name) + '</span>' + badge +
+        '<div class="mtier">' + E.escapeHTML(r.model.tier) + ' · $' + r.cost.price.inPerM + ' / $' + r.cost.price.outPerM + ' per M</div></td>' +
+        '<td class="num">' + E.formatUSD(r.cost.input * reqs) + '</td>' +
+        '<td class="num">' + E.formatUSD(r.cost.output * reqs) + '</td>' +
+        '<td class="num total">' + E.formatUSD(r.cost.total * reqs) + '</td></tr>';
+    }
+    $('price-body').innerHTML = html;
+  }
+
+  /* ---------- cache card ---------- */
+  function renderCache() {
+    var now = Date.now();
+    var inTok = currentStats().tokens;
+    var reqs = Math.max(1, Math.floor(Number($('requests').value) || 1));
+    var plan = E.cachePlan($('cache-model').value, inTok, reqs, $('cache-ttl').value, now);
+    if (!plan) { $('cache-out').innerHTML = ''; return; }
+    var verdict = plan.worthIt
+      ? '<span class="save">saves ' + E.formatUSD(plan.saving) + ' (' + Math.round(plan.savingPct * 100) + '%)</span>'
+      : '<span class="nosave">costs ' + E.formatUSD(-plan.saving) + ' extra — needs more reuse</span>';
+    $('cache-out').innerHTML =
+      '<div class="cache-line"><span class="k">' + plan.requests + ' request(s), no cache</span><span>' + E.formatUSD(plan.uncached) + '</span></div>' +
+      '<div class="cache-line"><span class="k">1 cache write + ' + (plan.requests - 1) + ' read(s), ' + plan.ttl + ' TTL</span><span>' + E.formatUSD(plan.cached) + '</span></div>' +
+      '<div class="cache-line"><span class="k">Verdict</span>' + verdict + '</div>';
+  }
+
+  /* ---------- budget & ledger ---------- */
+  function renderLedger() {
+    var now = Date.now();
+    var report = E.monthReport(entries, now);
+    $('b-spend').textContent = E.formatUSD(report.spend);
+    $('b-month').textContent = report.monthKey + ' · ' + report.count + ' call' + (report.count === 1 ? '' : 's') +
+      ' · ' + E.formatTokens(report.inTokens) + ' in / ' + E.formatTokens(report.outTokens) + ' out';
+
+    var budget = Number($('b-budget').value);
+    var st = E.budgetStatus(report, budget);
+    var bar = $('b-bar');
+    if (st.hasBudget) {
+      bar.style.width = Math.round(st.pct * 100) + '%';
+      bar.className = st.status === 'over' ? 'over' : st.status === 'warn' ? 'warn' : '';
+      var cls = 'status-' + st.status;
+      var msg = st.status === 'over'
+        ? 'Over budget by ' + E.formatUSD(report.spend - st.budget) + '.'
+        : st.status === 'warn'
+          ? E.formatUSD(st.left) + ' left, but this pace projects ' + E.formatUSD(report.projected) + ' by month end.'
+          : E.formatUSD(st.left) + ' left · projecting ' + E.formatUSD(report.projected) + ' by month end.';
+      $('b-note').innerHTML = '<span class="' + cls + '">' + msg + '</span>';
+    } else {
+      bar.style.width = report.spend > 0 ? '100%' : '0%';
+      bar.className = '';
+      $('b-note').textContent = report.spend > 0
+        ? 'No budget set — projecting ' + E.formatUSD(report.projected) + ' by month end at this pace.'
+        : 'Set a monthly budget and log calls to see your burn rate.';
+    }
+
+    var sorted = entries.slice().sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); });
+    var html = '';
+    for (var i = 0; i < sorted.length && i < 30; i++) {
+      var e = sorted[i];
+      var m = E.modelById(e.model);
+      var d = new Date(e.ts || 0);
+      var when = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate());
+      html += '<div class="entry"><div class="what"><b>' + E.escapeHTML(m ? m.name : e.model) + '</b> ' +
+        '<span>' + when + ' · ' + E.formatTokens(e.inTokens) + ' in / ' + E.formatTokens(e.outTokens) + ' out' +
+        (e.note ? ' · ' + E.escapeHTML(e.note) : '') + '</span></div>' +
+        '<div><span class="cost">' + E.formatUSD(E.entryCost(e)) + '</span>' +
+        '<button class="del" data-ts="' + (e.ts || 0) + '" title="remove">✕</button></div></div>';
+    }
+    $('l-list').innerHTML = html || '<div class="empty">Nothing logged yet.</div>';
+  }
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+
+  function addEntry(model, inTok, outTok) {
+    var v = E.validateEntry({ model: model, inTokens: inTok, outTokens: outTok }, Date.now());
+    if (!v.ok) { $('b-note').innerHTML = '<span class="status-warn">' + E.escapeHTML(v.reason) + '</span>'; return; }
+    while (entries.some(function (e) { return e.ts === v.entry.ts; })) v.entry.ts += 1; // delete is keyed by ts
+    entries.push(v.entry);
+    saveJSON(LS_ENTRIES, entries);
+    $('l-in').value = ''; $('l-out').value = '';
+    renderLedger();
+  }
+
+  /* ---------- wiring ---------- */
+  function renderAll() { renderCounter(); renderPrices(); renderCache(); renderLedger(); }
+
+  $('text').addEventListener('input', function () {
+    saveJSON(LS_TEXT, $('text').value);
+    renderCounter(); renderPrices(); renderCache();
+  });
+  $('out-tokens').addEventListener('input', renderPrices);
+  $('requests').addEventListener('input', function () { renderPrices(); renderCache(); });
+  $('cache-model').addEventListener('change', renderCache);
+  $('cache-ttl').addEventListener('change', renderCache);
+  $('b-budget').addEventListener('input', function () {
+    saveJSON(LS_BUDGET, Number($('b-budget').value) || 0);
+    renderLedger();
+  });
+  $('l-add').addEventListener('click', function () {
+    addEntry($('l-model').value, $('l-in').value, $('l-out').value);
+  });
+  $('l-from-text').addEventListener('click', function () {
+    addEntry($('l-model').value, currentStats().tokens, Number($('out-tokens').value) || 0);
+  });
+  $('l-list').addEventListener('click', function (ev) {
+    var t = ev.target;
+    if (!t || !t.getAttribute) return;
+    var ts = t.getAttribute('data-ts');
+    if (ts == null) return;
+    entries = entries.filter(function (e) { return String(e.ts || 0) !== String(ts); });
+    saveJSON(LS_ENTRIES, entries);
+    renderLedger();
+  });
+
+  /* ---------- restore & first paint ---------- */
+  var savedText = loadJSON(LS_TEXT, '');
+  if (savedText && typeof savedText === 'string') $('text').value = savedText;
+  var savedBudget = loadJSON(LS_BUDGET, 0);
+  if (savedBudget > 0) $('b-budget').value = savedBudget;
+  renderAll();
+
+  /* ---------- offline ---------- */
+  if (typeof navigator !== 'undefined' && navigator.serviceWorker && navigator.serviceWorker.register) {
+    try { navigator.serviceWorker.register('sw.js'); } catch (e) {}
+  }
+})();
+</script>
+</body>
+</html>

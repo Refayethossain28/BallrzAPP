@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Synapse — the AI cryptocurrency</title>
+<meta name="description" content="An AI cryptocurrency where money is minted by answering — asking is a transaction, answering is mining, and every answer is consensus-verified by re-running the model: Proof of Inference. Runs entirely in your browser, offline-first.">
+<meta name="theme-color" content="#0a0d16">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Synapse">
+<style>
+  :root {
+    --bg: #0a0d16; --bg2: #0d1220; --card: #101627; --card2: #141c33;
+    --line: #1e2947; --text: #e9edf9; --dim: #92a1c4; --faint: #5e6d8f;
+    --brand: #8f7cf7; --brand2: #4dd8ff; --gold: #e8b34c; --green: #3ecf8e;
+    --red: #ff6b6b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    background: radial-gradient(1200px 700px at 50% -10%, #171236 0%, var(--bg) 55%) fixed, var(--bg);
+    color: var(--text);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    min-height: 100dvh;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 16px calc(44px + env(safe-area-inset-bottom)); }
+
+  header { display: flex; align-items: center; gap: 12px; padding: 22px 0 8px; flex-wrap: wrap; }
+  .logo { font-size: 30px; font-weight: 800; letter-spacing: -1px; user-select: none; }
+  .logo .g { background: linear-gradient(92deg, var(--brand) 5%, var(--brand2) 60%, var(--gold) 95%);
+             -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .tagline { color: var(--dim); font-size: 13px; flex: 1 1 100%; margin-top: -6px; }
+  .pill { margin-left: auto; font-size: 12px; color: var(--dim); border: 1px solid var(--line);
+          border-radius: 999px; padding: 4px 12px; background: var(--card); white-space: nowrap; }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px; margin: 14px 0; }
+  .card h2 { font-size: 15px; margin-bottom: 4px; }
+  .card h2 .em { color: var(--brand2); }
+  .sub { color: var(--faint); font-size: 12.5px; margin-bottom: 12px; }
+
+  textarea, input[type="text"] {
+    width: 100%; background: var(--bg2); border: 1px solid var(--line); border-radius: 12px;
+    padding: 11px 14px; color: var(--text); font-size: 14px; outline: none; font-family: inherit;
+  }
+  textarea { min-height: 74px; resize: vertical; }
+  textarea:focus, input:focus { border-color: var(--brand); }
+  ::placeholder { color: var(--faint); }
+  input[type="number"] {
+    background: var(--bg2); border: 1px solid var(--line); border-radius: 10px;
+    padding: 8px 12px; color: var(--text); font-size: 14px; width: 110px; outline: none;
+  }
+  button { background: var(--card2); color: var(--text); border: 1px solid var(--line);
+           border-radius: 10px; padding: 9px 15px; font-size: 13.5px; cursor: pointer; font-family: inherit; }
+  button:hover { border-color: var(--brand); }
+  button.primary { background: linear-gradient(92deg, #33306b, #14405c); border-color: #4c46a8; font-weight: 600; }
+  button.small { padding: 4px 10px; font-size: 12px; border-radius: 8px; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 10px 0 2px; }
+  .row label { color: var(--dim); font-size: 13px; }
+
+  .addr { font: 12.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--dim);
+          word-break: break-all; }
+  .balance { font-size: 26px; font-weight: 800; }
+  .balance .g { background: linear-gradient(92deg, var(--brand), var(--brand2));
+                -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .warn { color: var(--gold); font-size: 12.5px; }
+  .err { color: var(--red); font-size: 12.5px; }
+  .ok { color: var(--green); font-size: 12.5px; }
+
+  .mem { border-top: 1px solid rgba(30,41,71,.55); padding: 8px 0; font-size: 13.5px;
+         display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+  .mem .q { flex: 1; }
+  .mem .fee { color: var(--gold); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .empty { color: var(--faint); font-size: 13px; padding: 6px 0; }
+
+  .block { background: var(--card2); border: 1px solid var(--line); border-radius: 12px;
+           padding: 12px 14px; margin: 10px 0; }
+  .block .head { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+                 font-size: 12.5px; color: var(--dim); }
+  .block .head b { color: var(--text); }
+  .block .hash { font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--faint);
+                 word-break: break-all; margin-top: 3px; }
+  .qa { margin-top: 9px; border-left: 3px solid var(--brand); padding-left: 10px; }
+  .qa .q { color: var(--dim); font-size: 13px; }
+  .qa .a { font-size: 13.5px; margin-top: 3px; }
+  .qa .a::before { content: '🧠 '; }
+
+  .meter { height: 6px; border-radius: 999px; background: var(--bg2); overflow: hidden; margin-top: 8px; }
+  .meter i { display: block; height: 100%; border-radius: 999px;
+             background: linear-gradient(92deg, var(--brand), var(--brand2)); }
+  .stats { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .stat { background: var(--card2); border: 1px solid var(--line); border-radius: 12px;
+          padding: 8px 14px; text-align: center; flex: 1 1 100px; }
+  .stat b { display: block; font-size: 17px; font-weight: 700; }
+  .stat span { color: var(--faint); font-size: 11.5px; }
+
+  footer { color: var(--faint); font-size: 12px; text-align: center; padding: 24px 0 8px; }
+  footer a { color: var(--brand2); text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo"><span class="g">Synapse</span></div>
+    <span class="pill" id="pill">block 0</span>
+    <div class="tagline">The AI cryptocurrency — asking is a transaction, answering is mining, and every answer is re-checked by consensus: <b>Proof of Inference</b>. All on this device.</div>
+  </header>
+
+  <section class="card">
+    <h2>Your <span class="em">wallet</span></h2>
+    <div class="sub">The address is the digest of your secret phrase. Keep the phrase; it IS the wallet.</div>
+    <div class="row">
+      <input type="text" id="w-secret" placeholder="secret phrase (6+ characters)" autocomplete="off" style="flex:1;min-width:200px">
+      <button id="w-new" class="small">new phrase</button>
+      <button id="w-use" class="primary">Use</button>
+    </div>
+    <div class="sub" id="w-msg" style="margin:8px 0 0"></div>
+    <div id="w-info" style="display:none">
+      <div class="balance"><span class="g" id="w-balance">0 SYN</span></div>
+      <div class="addr" id="w-addr"></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Ask the <span class="em">chain</span></h2>
+    <div class="sub">Attach a fee in SYN — it goes to whoever mines your answer. No coins yet? Mine a block first: answering is how money is born here.</div>
+    <textarea id="a-prompt" placeholder="Ask anything — the chain will answer when the next block is mined…"></textarea>
+    <div class="row">
+      <label>Fee</label>
+      <input type="number" id="a-fee" value="1" min="0" step="0.5"> <label>SYN</label>
+      <button class="primary" id="a-send" style="margin-left:auto">Submit ask</button>
+    </div>
+    <div class="sub" id="a-msg" style="margin:8px 0 0"></div>
+    <div id="mempool"></div>
+  </section>
+
+  <section class="card">
+    <h2>Mine — <span class="em">answer to earn</span></h2>
+    <div class="sub">One tap: your device runs the model on every pending ask, seals the answers into a block, grinds the proof-of-work, and collects subsidy + fees.</div>
+    <div class="row">
+      <button class="primary" id="m-mine">⛏️ Answer &amp; mine a block</button>
+      <span class="sub" id="m-msg" style="margin:0"></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>The <span class="em">ledger</span></h2>
+    <div class="sub">Every block, every answer — and the button that makes the money honest: re-run every inference on this device.</div>
+    <div class="row" style="margin-top:0">
+      <button class="small" id="c-verify">✓ Re-verify the whole chain</button>
+      <button class="small" id="c-reset">reset chain</button>
+      <span class="sub" id="c-msg" style="margin:0"></span>
+    </div>
+    <div class="stats">
+      <div class="stat"><b id="s-height">0</b><span>blocks</span></div>
+      <div class="stat"><b id="s-supply">0</b><span>SYN minted</span></div>
+      <div class="stat"><b id="s-asks">0</b><span>answers served</span></div>
+      <div class="stat"><b id="s-halving">1000</b><span>blocks to halving</span></div>
+    </div>
+    <div class="meter"><i id="s-bar" style="width:0%"></i></div>
+    <div class="sub" style="margin-top:6px" id="s-cap"></div>
+    <div id="blocks"></div>
+  </section>
+
+  <footer>Synapse is a concept prototype — a toy seeded oracle stands in for the model, and hashes/signatures are demo-grade (see <a href="../coin/">TimeCoin</a> for the real cryptography, <a href="../neura/">Neura</a> for the chain that trains a mind). Not an investment. Obviously.</footer>
+</div>
+
+<script src="engine.js"></script>
+<script>
+(function () {
+  'use strict';
+  var E = SynapseEngine;
+  var $ = function (id) { return document.getElementById(id); };
+
+  var LS_CHAIN = 'synapse.chain.v1';
+  var LS_SECRET = 'synapse.secret.v1';
+  var LS_MEMPOOL = 'synapse.mempool.v1';
+
+  function loadJSON(key, fallback) {
+    try {
+      var raw = localStorage.getItem(key);
+      if (!raw) return fallback;
+      var v = JSON.parse(raw);
+      return v == null ? fallback : v;
+    } catch (e) { return fallback; }
+  }
+  function saveJSON(key, v) {
+    try { localStorage.setItem(key, JSON.stringify(v)); } catch (e) {}
+  }
+
+  var chain = loadJSON(LS_CHAIN, null);
+  if (!chain || !E.validateChain(chain).ok) chain = E.newChain();
+  var mempool = loadJSON(LS_MEMPOOL, []);
+  if (!Array.isArray(mempool)) mempool = [];
+  var wallet = null;
+
+  /* ---------- wallet ---------- */
+  var WORDS = ['ember', 'quartz', 'meadow', 'cinder', 'harbor', 'sable', 'lumen', 'drift',
+               'onyx', 'fable', 'ripple', 'vector', 'aurora', 'basalt', 'nectar', 'zephyr',
+               'cobalt', 'willow', 'signal', 'marrow', 'tundra', 'velvet', 'orbit', 'prism'];
+  function randomPhrase() {
+    var out = [];
+    for (var i = 0; i < 4; i++) out.push(WORDS[Math.floor(Math.random() * WORDS.length)]);
+    return out.join('-');
+  }
+
+  function useSecret(secret, say) {
+    var w = E.walletFromSecret(secret);
+    if (!w.ok) { $('w-msg').innerHTML = '<span class="err">' + E.escapeHTML(w.reason) + '</span>'; return; }
+    wallet = w;
+    saveJSON(LS_SECRET, w.secret);
+    $('w-secret').value = w.secret;
+    if (say) $('w-msg').innerHTML = '<span class="ok">Wallet ready.</span>';
+    renderAll();
+  }
+
+  /* ---------- rendering ---------- */
+  function renderWallet() {
+    if (!wallet) { $('w-info').style.display = 'none'; return; }
+    $('w-info').style.display = 'block';
+    var bal = E.balancesOf(chain)[wallet.address] || 0;
+    $('w-balance').textContent = E.formatSYN(bal);
+    $('w-addr').textContent = wallet.address;
+  }
+
+  function renderMempool() {
+    var html = '';
+    for (var i = 0; i < mempool.length; i++) {
+      var t = mempool[i];
+      html += '<div class="mem"><span class="q">' + E.escapeHTML(t.prompt) + '</span>' +
+        '<span class="fee">' + E.formatSYN(t.fee) + '</span></div>';
+    }
+    $('mempool').innerHTML = html || '<div class="empty">No pending asks — the next block will be answers-free (subsidy only).</div>';
+  }
+
+  function renderChain() {
+    var s = E.chainStats(chain);
+    $('pill').textContent = 'block ' + s.height + ' · ' + E.formatSYN(s.supply);
+    $('s-height').textContent = String(s.height);
+    $('s-supply').textContent = E.formatSYN(s.supply).replace(' SYN', '');
+    $('s-asks').textContent = String(s.asks);
+    $('s-halving').textContent = String(s.blocksToHalving);
+    $('s-bar').style.width = Math.max(0.5, s.minedPct * 100) + '%';
+    $('s-cap').textContent = E.formatSYN(s.supply) + ' of the ' + E.formatSYN(s.cap) +
+      ' that will ever exist · next block pays ' + E.formatSYN(s.nextSubsidy) + ' + fees';
+
+    var html = '';
+    for (var i = chain.length - 1; i >= 1 && i > chain.length - 13; i--) {
+      var b = chain[i];
+      html += '<div class="block"><div class="head"><span><b>#' + b.height + '</b> · ' +
+        b.txs.length + ' answer' + (b.txs.length === 1 ? '' : 's') + ' · pays ' +
+        E.formatSYN(b.subsidy + b.txs.reduce(function (a, t) { return a + t.fee; }, 0)) + '</span>' +
+        '<span>miner ' + E.escapeHTML(b.miner.slice(0, 10)) + '…</span></div>' +
+        '<div class="hash">' + b.hash + '</div>';
+      for (var j = 0; j < b.txs.length; j++) {
+        html += '<div class="qa"><div class="q">' + E.escapeHTML(b.txs[j].prompt) + '</div>' +
+          '<div class="a">' + E.escapeHTML(b.answers[j].text) + '</div></div>';
+      }
+      html += '</div>';
+    }
+    $('blocks').innerHTML = html || '<div class="empty">Only the genesis so far. Mine the first block.</div>';
+  }
+
+  function renderAll() { renderWallet(); renderMempool(); renderChain(); }
+
+  /* ---------- actions ---------- */
+  $('w-new').addEventListener('click', function () {
+    $('w-secret').value = randomPhrase();
+    $('w-msg').innerHTML = '<span class="warn">Write this phrase down, then press Use.</span>';
+  });
+  $('w-use').addEventListener('click', function () { useSecret($('w-secret').value, true); });
+
+  $('a-send').addEventListener('click', function () {
+    if (!wallet) { $('a-msg').innerHTML = '<span class="err">Set up your wallet first.</span>'; return; }
+    var feeMills = Math.round((Number($('a-fee').value) || 0) * E.MILL);
+    var v = E.makeAsk(wallet.secret, $('a-prompt').value, feeMills, Date.now());
+    if (!v.ok) { $('a-msg').innerHTML = '<span class="err">' + E.escapeHTML(v.reason) + '</span>'; return; }
+    var bal = E.balancesOf(chain)[wallet.address] || 0;
+    var pendingFees = mempool.filter(function (t) { return t.from === wallet.address; })
+      .reduce(function (a, t) { return a + t.fee; }, 0);
+    if (v.tx.fee > bal - pendingFees) {
+      $('a-msg').innerHTML = '<span class="err">That fee needs ' + E.formatSYN(v.tx.fee) +
+        ' — you can spend ' + E.formatSYN(Math.max(0, bal - pendingFees)) + '. Mine a block to earn.</span>';
+      return;
+    }
+    mempool.push(v.tx);
+    saveJSON(LS_MEMPOOL, mempool);
+    $('a-prompt').value = '';
+    $('a-msg').innerHTML = '<span class="ok">Queued. It will be answered in the next mined block.</span>';
+    renderMempool();
+  });
+
+  $('m-mine').addEventListener('click', function () {
+    if (!wallet) { $('m-msg').innerHTML = '<span class="err">Set up your wallet first.</span>'; return; }
+    $('m-msg').textContent = 'thinking + grinding…';
+    var served = E.affordableAsks(chain, mempool);
+    var block = E.mineBlock(chain, mempool, wallet.address, Date.now(), 400000);
+    if (!block) { $('m-msg').innerHTML = '<span class="err">No valid nonce found — try again.</span>'; return; }
+    var check = E.validateBlock(chain, block);
+    if (!check.ok) { $('m-msg').innerHTML = '<span class="err">Self-check failed: ' + E.escapeHTML(check.reason) + '</span>'; return; }
+    chain.push(block);
+    var servedIds = {};
+    for (var i = 0; i < served.length; i++) servedIds[served[i].id] = 1;
+    mempool = mempool.filter(function (t) { return !servedIds[t.id]; });
+    saveJSON(LS_CHAIN, chain);
+    saveJSON(LS_MEMPOOL, mempool);
+    var earned = block.subsidy + block.txs.reduce(function (a, t) { return a + t.fee; }, 0);
+    $('m-msg').innerHTML = '<span class="ok">Block #' + block.height + ' mined — ' +
+      block.txs.length + ' answer(s) served, ' + E.formatSYN(earned) + ' earned.</span>';
+    renderAll();
+  });
+
+  $('c-verify').addEventListener('click', function () {
+    var v = E.validateChain(chain);
+    $('c-msg').innerHTML = v.ok
+      ? '<span class="ok">Every hash, every proof-of-work, every inference re-checks. The money is honest.</span>'
+      : '<span class="err">INVALID: ' + E.escapeHTML(v.reason) + '</span>';
+  });
+  $('c-reset').addEventListener('click', function () {
+    if (!confirm('Wipe this chain and start from genesis?')) return;
+    chain = E.newChain();
+    mempool = [];
+    saveJSON(LS_CHAIN, chain);
+    saveJSON(LS_MEMPOOL, mempool);
+    $('c-msg').textContent = '';
+    renderAll();
+  });
+
+  /* ---------- restore & first paint ---------- */
+  var savedSecret = loadJSON(LS_SECRET, '');
+  if (savedSecret && typeof savedSecret === 'string') useSecret(savedSecret, false);
+  renderAll();
+
+  /* ---------- offline ---------- */
+  if (typeof navigator !== 'undefined' && navigator.serviceWorker && navigator.serviceWorker.register) {
+    try { navigator.serviceWorker.register('sw.js'); } catch (e) {}
+  }
+})();
+</script>
+</body>
+</html>
