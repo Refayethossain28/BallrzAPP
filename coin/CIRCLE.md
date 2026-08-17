@@ -30,9 +30,10 @@ scoreboard impossible to fudge.
 ## The supply is already set for you
 
 TIME is minted **no faster than time itself**: the whole network earns one hour
-of TIME per real hour (0.01 TIME per 36-second block), halving every ~3 months
-toward a hard cap of **4,200 TIME per circle** — about two working years of
-favours — and divisible to 5 decimal places so a small favour can cost a
+of TIME per real hour (0.01 TIME per 36-second block), toward a hard cap
+of **21,000,000 TIME — 21 million hours, Bitcoin's number** (at one hour per
+hour that horizon is ~2,400 years, so within any human lifetime the mint is
+simply one hour per hour) — and divisible to 5 decimal places so a small favour can cost a
 fraction of a coin. You don't need to change anything: mining seeds the circle
 with liquidity and favours carry it from there, priced in time (see the ⏳
 time-rate control in the app — 1 TIME = one hour of a favour, by default; the

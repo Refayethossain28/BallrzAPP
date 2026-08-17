@@ -22,7 +22,7 @@ against published test vectors in [`../scripts/test-coin-logic.mjs`](../scripts/
 | Ledger | UTXO model: coins are unspent outputs; transactions consume them with signed inputs |
 | Blocks | Merkle root over transaction ids; header hashed with double-SHA-256 |
 | Mining | Proof of work against a 256-bit target; difficulty retargets every 10 blocks, clamped to ×4 per step like Bitcoin |
-| Money supply | Time-anchored issuance: 0.01 TIME per 36-second block — **the network mints one hour of TIME per real hour**, however much hashpower joins — halving every 210,000 blocks (~3 months) toward a hard cap of **4,200 TIME per circle**, with fees paid to the miner |
+| Money supply | Time-anchored issuance: 0.01 TIME per 36-second block — **the network mints one hour of TIME per real hour**, however much hashpower joins — toward a hard cap of **21,000,000 TIME — Bitcoin's number, measured in hours** (halvings sit ~1,200 years apart, so within any human lifetime the policy is simply one hour per hour), with fees paid to the miner |
 | Consensus | Fork choice by **cumulative work** (`replaceChain`), so independent nodes converge |
 
 Open `index.html` in two browser tabs: each tab is a node with its own copy of the
@@ -71,7 +71,7 @@ The Send form has a **📷 Scan a friend’s QR** button: where the browser supp
 in-app; elsewhere (e.g. iOS Safari) it explains that the phone’s own Camera app
 scans the same QR, since it’s a payment link.
 The page also shows a live **leaderboard** (top holders by share of supply) and
-a **halving countdown** toward the 4,200-TIME issuance limit.
+a **halving countdown** toward the 21,000,000-TIME issuance limit.
 
 **💎 The Vitrine — every block you mine is a jewel.** Like jewellery, a mined
 block has beauty, rarity, provenance and an inscription — all from data the
@@ -81,7 +81,7 @@ proof-of-work hash beat the difficulty target: each extra leading zero bit is
 twice as rare, so Polished 💠 (0–1 extra bits), Fine ✨ (2–3), Flawless 💎 (4–5)
 and Legendary 🌟 (6+) are genuine, verifiable scarcity — no one can forge a
 better cut without redoing the work. Its **vintage** is the halving era
-(era-one jewels can never be minted again), and the miner can set an
+(no two blocks will ever share a gem), and the miner can set an
 **engraving** (up to 64 characters) inscribed into the coinbase and sealed
 under the proof-of-work — editing it would break the coinbase id, the merkle
 root, the block hash and the work all at once. The pure module is

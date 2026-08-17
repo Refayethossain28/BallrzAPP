@@ -11,8 +11,8 @@ repo is misled about where a community currency's worth actually comes from.
 
 **Scarcity does not create value; a community agreeing to accept something
 does.** TIME is minted no faster than time itself — the whole network issues
-one hour of TIME per real hour, halving toward a hard cap of 4,200 TIME per
-circle, enforced by consensus — a ceiling nobody can inflate away. But that cap is not what makes TIME worth
+one hour of TIME per real hour, toward a hard cap of 21,000,000 TIME,
+enforced by consensus — a ceiling nobody can inflate away. But that cap is not what makes TIME worth
 anything: value comes from people agreeing to accept it for time and favours,
 the way a time bank or LETS scheme works. TIME has no price and nothing to buy;
 its worth is measured in the favours and goods a community will trade for it,

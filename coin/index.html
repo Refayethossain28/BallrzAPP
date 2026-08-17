@@ -414,7 +414,7 @@
   A real proof-of-work cryptocurrency built like Bitcoin: secp256k1 wallets, UTXO transactions,
   merkle trees, difficulty retargeting and halving rewards — a community currency you
   earn by doing favours and spend on time and favours. <b style="color:var(--gold)">TIME is minted no faster
-  than time itself</b> — one hour per hour, halving to a hard cap of 4,200 a circle. This is your <b>wallet</b> — it holds and spends but
+  than time itself</b> — one hour per hour, toward a hard cap of 21 million hours. This is your <b>wallet</b> — it holds and spends but
   can’t mint; issuing coins is a separate <a href="mine.html" style="color:var(--gold)">⛏ miner</a>’s job.
   Open this page in a second tab — each tab is a node, and they sync on the heaviest chain.
 </div>
@@ -2218,16 +2218,13 @@ miner is sealed under the proof-of-work forever. Beauty, rarity, provenance — 
     showSelectedBlock();
   }
 
-  // A live "why play now" hook: half of all coins are only mineable in era one.
+  // A live "why mine" hook: the network mints one hour per hour — collect yours.
   function renderChallenge() {
     var el = $('challenge'); if (!el) return;
-    var s = chain.stats(), interval = chain.params.halvingInterval;
-    if (s.height < interval) {
-      var left = interval - s.height;
-      el.innerHTML = '<div><div class="ct">⚡ The Era-One Race</div>' +
-        '<div class="cd">Half of all TIME that will ever exist can only be issued in the first ' + interval + ' blocks — then the reward halves, forever. Run a <a href="mine.html" target="_blank" rel="noopener" style="color:inherit">miner</a> early, before your circle does.</div></div>' +
-        '<div class="cn">' + left + ' left</div>';
-    } else { el.innerHTML = ''; }
+    var s = chain.stats();
+    el.innerHTML = '<div><div class="ct">⏳ The Hour Mint</div>' +
+      '<div class="cd">The network mints <b>one hour of TIME per real hour</b> — every hour nobody mines is an hour your circle never collects. Keep a <a href="mine.html" target="_blank" rel="noopener" style="color:inherit">miner</a> open and the hours are yours.</div></div>' +
+      '<div class="cn">' + fmt(s.supply) + ' minted</div>';
   }
 
   // TIME is a time bank: coins buy time and favours, never cash. The group agrees
@@ -3658,7 +3655,7 @@ miner is sealed under the proof-of-work forever. Beauty, rarity, provenance — 
     ctx.textAlign = 'left'; ctx.font = '700 150px Georgia, serif'; ctx.fillText(bt, bstart, 640);
     ctx.font = '700 64px Georgia, serif'; ctx.fillText(btl, bstart + bw, 640); ctx.textAlign = 'center';
     ctx.fillStyle = '#9a9aab'; ctx.font = '500 34px -apple-system, Helvetica, Arial, sans-serif';
-    ctx.fillText('of 4,200 TIME a circle — fixed forever', cx, 700);
+    ctx.fillText('of 21,000,000 TIME — fixed forever', cx, 700);
 
     drawCardStats(ctx, cx, 780);
 
@@ -3796,10 +3793,10 @@ miner is sealed under the proof-of-work forever. Beauty, rarity, provenance — 
   var TOUR = [
     { sel: null, title: 'This is a real cryptocurrency', body: 'Not a simulation — every coin here is genuinely mined and every payment cryptographically signed, using the exact building blocks of Bitcoin. In about a minute, you’ll understand how Bitcoin actually works. Tap Next.' },
     { sel: '#stats', title: 'The blockchain', body: 'A blockchain is just a shared list of <b>blocks</b>, each holding transactions. <b>Block height</b> is how many exist so far. No company stores this — every device keeps its own copy and they agree.' },
-    { sel: '.halvwrap', title: 'Digital scarcity', body: '<b>TIME is minted no faster than time itself</b> — the whole network earns one hour of TIME per real hour (0.01 TIME per 36-second block, however much hashpower joins), and the reward <b>halves</b> every 210,000 blocks toward a hard cap of 4,200 TIME per circle — scarcity enforced by math, not by a central bank. Bitcoin halves the same way (toward 21 million); a fixed, un-inflatable ceiling is what makes money sound.' },
+    { sel: '.halvwrap', title: 'Digital scarcity', body: '<b>TIME is minted no faster than time itself</b> — the whole network earns one hour of TIME per real hour (0.01 TIME per 36-second block, however much hashpower joins), toward a hard cap of <b>21,000,000 TIME — Bitcoin’s number, measured in hours</b>. At one hour per hour the cap sits ~2,400 years out, so the halving schedule is a promise to generations after us; within any lifetime the policy is simply one hour per hour — scarcity enforced by math, not by a central bank.' },
     { sel: '#wallets .card', title: 'A wallet is a pair of keys', body: 'Your <b>address</b> (the B… string) is public — share it to get paid, like an account number. Behind it is a secret <b>private key</b> that proves ownership. Whoever holds the key owns the coins. Tap <b>🔑 Keys</b> later to see yours.' },
     { sel: '#minerLink', title: 'Mining is a separate job', body: 'A wallet holds and spends — it deliberately <b>can’t mint</b>. Issuing coins and confirming payments is <b>proof of work</b>: a miner’s device guesses <b>hashes</b> until one starts with enough zeros — hard to do, instant to check, and the winner earns the new coins. That runs in a separate <b>⛏ miner</b> page so nobody just prints money; keep one running for your circle. (Favours paid with <b>mutual credit</b> need no miner at all.)' },
-    { sel: '#vitrine', title: 'The Vitrine', body: 'Every block you mine is a <b>jewel</b>: a unique gem drawn from its hash, <b>graded</b> by how far the proof-of-work beat the target (each extra bit is twice as rare), <b>vintaged</b> by halving era, and <b>engraveable</b> in the miner — the inscription is sealed under the proof-of-work forever. Era-one jewels can never be minted again.' },
+    { sel: '#vitrine', title: 'The Vitrine', body: 'Every block you mine is a <b>jewel</b>: a unique gem drawn from its hash, <b>graded</b> by how far the proof-of-work beat the target (each extra bit is twice as rare), <b>vintaged</b> by halving era, and <b>engraveable</b> in the miner — the inscription is sealed under the proof-of-work forever. No two blocks will ever share a gem.' },
     { sel: '#stats', title: 'Self-adjusting difficulty', body: 'The <b>difficulty</b> automatically rises as more miners join, so a block is still found roughly every 36 seconds no matter how much power is on the network. Bitcoin does this too (aiming for 10 minutes).' },
     { sel: '#sendForm', title: 'Payments without a bank', body: 'To pay someone, you <b>sign</b> the transaction with your private key. The network verifies the signature mathematically — no bank, no approval, no permission needed. That’s the whole point.' },
     { sel: '#mempool', title: 'Confirmation', body: 'A new payment waits here in the <b>mempool</b> until a miner seals it into the next block. Once it’s in a block, it’s <b>confirmed</b> — permanent and irreversible. That pending gap is what everyone waits for when they send crypto.' },

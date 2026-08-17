@@ -18,7 +18,7 @@
  *     difficulty retargeting (clamped ×4 either way each window)
  *   • a halving block-subsidy schedule and a hard supply cap — issuance is
  *     anchored to time itself (the network mints one hour of TIME per real
- *     hour, halving toward 4,200 TIME per circle), enforced by consensus
+ *     hour, toward a 21,000,000-TIME hard cap), enforced by consensus
  *   • fork choice by *cumulative work* (not length), so `replaceChain` lets
  *     independent nodes converge — the UI syncs tabs over BroadcastChannel
  *   • coinbase maturity (mined coins age before they spend) and a bounded
@@ -50,10 +50,11 @@
    * ==================================================================== */
   var COIN = 100000;                       // 1 TIME = 100,000 blazes (5 decimal places)
   var DECIMALS = 5;                        // COIN === 10 ** DECIMALS
-  // 4,200 TIME is the hard cap and the per-output sanity bound — the halving
-  // series' limit (0.01 TIME × 210,000 blocks × 2). In base units that is
-  // 4.2e8, comfortably below 2^53, so every sum stays an exact integer.
-  var MAX_MONEY = 4200 * COIN;
+  // 21,000,000 TIME — Bitcoin's cap, measured in hours — is the hard cap and
+  // the per-output sanity bound: the halving series' limit (0.01 TIME ×
+  // 1,050,000,000 blocks × 2). In base units that is 2.1e12, comfortably
+  // below 2^53, so every sum stays an exact integer.
+  var MAX_MONEY = 21000000 * COIN;
 
   var DEFAULT_PARAMS = {
     name: 'TimeCoin',
@@ -63,13 +64,15 @@
     // hour of a favour) a block pays 0.01 TIME — exactly the 36 seconds it
     // takes to mine — so the whole network issues ONE HOUR OF TIME PER REAL
     // HOUR no matter how much hashpower joins (difficulty absorbs the rest).
-    // The reward halves every 210,000 blocks (~3 months) and the geometric
-    // series sums to a hard cap of 4,200 TIME per circle — about two working
-    // years of favours, scarce the way time actually is. Mining seeds a
-    // circle with liquidity; the mutual-credit ledger (mutual.js) is the
-    // elastic money channel beyond it.
+    // The hard cap is Bitcoin's number measured in hours: 21,000,000 TIME.
+    // At one hour per hour that is ~2,400 years of issuance, so the halving
+    // (every 1,050,000,000 blocks, ~1,200 years) is a promise to generations
+    // that will outlive every founder — within any human lifetime the policy
+    // is simply ONE HOUR PER HOUR, FOREVER. Mining seeds a circle with
+    // liquidity; the mutual-credit ledger (mutual.js) is the elastic money
+    // channel beyond it.
     initialSubsidy: 1000,                  // 0.01 TIME block reward at height 1 (= 36s of time)
-    halvingInterval: 210000,               // reward halves every N blocks (~3 months of 36s blocks)
+    halvingInterval: 1050000000,           // reward halves every N blocks (~1,200 years of 36s blocks)
     retargetInterval: 10,                  // difficulty adjusts every N blocks (Bitcoin: 2,016)
     targetBlockTimeMs: 36000,              // one block per 36s, so 0.01 TIME/block = 1 TIME/hour
     genesisTarget: '000' + repeatChar('f', 61), // proof-of-work limit: 12 leading zero bits

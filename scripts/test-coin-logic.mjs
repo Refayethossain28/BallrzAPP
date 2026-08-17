@@ -189,7 +189,7 @@ test('amount formatting and parsing', () => {
 test('default monetary policy: TIME is minted no faster than time itself', () => {
   const chain = new C.Blockchain(); // real params, not the test net
   const p = chain.params;
-  const CAP = 4200 * C.COIN;
+  const CAP = 21000000 * C.COIN;
   assert.equal(chain.subsidyAt(1), C.COIN / 100, '0.01 TIME at height 1');
   // The hour standard: 0.01 TIME per 36s block ⇒ the network mints exactly
   // one TIME (one hour, at the default anchor) per real hour.
