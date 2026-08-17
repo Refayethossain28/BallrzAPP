@@ -73,6 +73,21 @@ scans the same QR, since it’s a payment link.
 The page also shows a live **leaderboard** (top holders by share of supply) and
 a **halving countdown** toward the 4,200-TIME issuance limit.
 
+**💎 The Vitrine — every block you mine is a jewel.** Like jewellery, a mined
+block has beauty, rarity, provenance and an inscription — all from data the
+consensus already verifies. Its gem is drawn deterministically from the block
+hash (same hash, same jewel, on every device). Its **grade** is how far the
+proof-of-work hash beat the difficulty target: each extra leading zero bit is
+twice as rare, so Polished 💠 (0–1 extra bits), Fine ✨ (2–3), Flawless 💎 (4–5)
+and Legendary 🌟 (6+) are genuine, verifiable scarcity — no one can forge a
+better cut without redoing the work. Its **vintage** is the halving era
+(era-one jewels can never be minted again), and the miner can set an
+**engraving** (up to 64 characters) inscribed into the coinbase and sealed
+under the proof-of-work — editing it would break the coinbase id, the merkle
+root, the block hash and the work all at once. The pure module is
+[`jewel.js`](jewel.js); the wallet displays the collection, the miner
+engraves.
+
 **Barter — offers board (a time bank):** TIME buys **time and favours, never
 cash**. Post something you'll do or give (“🎂 Bake a cake”) priced in **hours or
 minutes**, and pay others for theirs. The offers board is a
@@ -134,5 +149,5 @@ a paper wallet protects against loss, not against someone reading your screen.)
 ## Run the tests
 
 ```sh
-npm run test:coin        # 46 tests: crypto vectors, consensus rules, fork choice, multisig, maturity, finality
+npm run test:coin        # 49 tests: crypto vectors, consensus rules, fork choice, multisig, maturity, finality, jewels
 ```

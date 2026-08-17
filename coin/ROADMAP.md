@@ -1,7 +1,7 @@
 # The road for a real community currency — honestly
 
 TimeCoin now has the three things software alone can give a cryptocurrency:
-correct consensus code ([`engine.js`](engine.js) + [`mutual.js`](mutual.js), 53 tests), real cross-device
+correct consensus code ([`engine.js`](engine.js) + [`mutual.js`](mutual.js), 56 tests), real cross-device
 networking ([`server.mjs`](server.mjs) + [`config.js`](config.js)), and a
 written security audit ([`SECURITY.md`](SECURITY.md)). This document is about
 everything else — the parts that are *not* software, so nobody reading this

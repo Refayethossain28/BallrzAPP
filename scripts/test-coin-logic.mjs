@@ -616,6 +616,58 @@ test('replaceChain rejects junk chains on the cheap header pass', () => {
   assert.equal(chain.tip.height, 1, 'chain untouched');
 });
 
+/* ---------- jewels: every mined block is a graded, engraveable gem ---------- */
+const jwBox = { module: { exports: {} } }; jwBox.self = jwBox;
+vm.createContext(jwBox);
+vm.runInContext(readFileSync(join(ROOT, 'coin', 'jewel.js'), 'utf8'), jwBox, { filename: 'coin/jewel.js' });
+const J = jwBox.module.exports;
+
+test('jewel rarity: extra zero bits beyond the target, graded in tiers', () => {
+  const target = '00' + 'f'.repeat(62); // 8 zero bits demanded
+  assert.equal(J.zeroBits(target), 8);
+  assert.equal(J.extraBits('00' + 'f'.repeat(62), target), 0, 'exactly on target');
+  assert.equal(J.extraBits('003' + 'f'.repeat(61), target), 2, '00 3… = 10 zero bits');
+  assert.equal(J.extraBits('000' + 'f'.repeat(61), target), 4, 'one extra nibble');
+  assert.equal(J.gradeOf(0).name, 'Polished');
+  assert.equal(J.gradeOf(2).name, 'Fine');
+  assert.equal(J.gradeOf(4).name, 'Flawless');
+  assert.equal(J.gradeOf(6).name, 'Legendary');
+  assert.equal(J.gradeOf(11).name, 'Legendary', 'grades cap at the top tier');
+  assert.equal(J.eraOf(0, 4).label, 'Era I');
+  assert.equal(J.eraOf(9, 4).label, 'Era III');
+});
+
+test('jewel gems are deterministic, unique per hash, and valid SVG', () => {
+  const t = '00' + 'f'.repeat(62);
+  const h1 = C.sha256('gem one'), h2 = C.sha256('gem two');
+  assert.equal(J.gemSVG(h1, t, 56), J.gemSVG(h1, t, 56), 'same hash → identical jewel on every device');
+  assert.notEqual(J.gemSVG(h1, t, 56), J.gemSVG(h2, t, 56), 'different hash → different jewel');
+  assert.match(J.gemSVG(h1, t, 56), /^<svg /, 'renders an inline SVG');
+  const s1 = J.gemSpec(h1);
+  assert.ok(s1.hue >= 0 && s1.hue < 360 && s1.facets >= 5 && s1.facets <= 9);
+});
+
+test('jewelsOf collects my mined blocks with engraving sealed by consensus', () => {
+  const chain = newChain();
+  chain.minePendingTransactions(alice.address, { timestamp: tick(), extra: 'For Amara — every hour is yours' });
+  mineTo(chain, bob);
+  chain.minePendingTransactions(alice.address, { timestamp: tick() });
+  const mine = J.jewelsOf(chain.blocks, { [alice.address]: true }, chain.params.halvingInterval);
+  assert.equal(mine.length, 2, 'two of the three blocks are alice’s');
+  assert.equal(mine[0].height, 3, 'newest first');
+  assert.equal(mine[1].engraving, 'For Amara — every hour is yours');
+  assert.equal(mine[1].amount, 50 * C.COIN);
+  assert.ok(mine[0].grade.tier >= 0 && mine[0].era.n === 1);
+  // The engraving is consensus-sealed: editing it breaks the coinbase id,
+  // the merkle root, the block hash and the proof of work all at once.
+  const forged = JSON.parse(JSON.stringify(chain.toJSON()));
+  forged.blocks[1].transactions[0].extra = 'For someone else';
+  assert.throws(() => C.Blockchain.fromJSON(forged), /./, 'tampered engraving rejected');
+  // Set + array address forms work too.
+  assert.equal(J.jewelsOf(chain.blocks, [alice.address], chain.params.halvingInterval).length, 2);
+  assert.equal(J.jewelsOf(chain.blocks, new Set([bob.address]), chain.params.halvingInterval).length, 1);
+});
+
 for (const [name, fn] of tests) {
   try {
     fn();

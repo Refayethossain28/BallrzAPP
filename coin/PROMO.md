@@ -40,7 +40,7 @@ the app.
 > I wanted to understand Bitcoin properly, so I built one from raw bytes up:
 > SHA-256 from the FIPS spec, ECDSA on secp256k1 with RFC 6979 signatures, a
 > UTXO ledger, merkle trees, difficulty retargeting, halving block rewards and
-> fork choice by cumulative work — zero dependencies, 53 unit tests against
+> fork choice by cumulative work — zero dependencies, 56 unit tests against
 > published vectors.
 > Then I turned it into a real community currency for time and favours: issuance
 > is anchored to time itself — the network mints one hour of TIME per real

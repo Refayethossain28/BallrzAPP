@@ -66,6 +66,8 @@
     <input id="payout" placeholder="Paste your B… wallet address from the app" autocomplete="off" spellcheck="false">
     <label for="relay">Relay URL (the shared network your circle uses)</label>
     <input id="relay" placeholder="https://your-relay.example.com  (or leave blank for this origin)" autocomplete="off" spellcheck="false">
+    <label for="engrave">💎 Engraving (optional — inscribed into every block you mine, sealed under the proof-of-work forever)</label>
+    <input id="engrave" placeholder="e.g.  For Amara — every hour is yours" maxlength="64" autocomplete="off">
     <button class="btn" id="toggle">Start mining</button>
     <div class="status off" id="status">Idle — set a payout address and press start.</div>
   </div>
@@ -89,6 +91,7 @@
 
 <script src="config.js"></script>
 <script src="engine.js"></script>
+<script src="jewel.js"></script>
 <script>
 (function () {
   var Coin = (typeof self !== 'undefined' ? self : window).BallrzCoin;
@@ -99,6 +102,7 @@
 
   var LS_PAYOUT = 'ballrzcoin.miner.payout.v1';
   var LS_RELAY = 'ballrzcoin.miner.relay.v1';
+  var LS_ENGRAVE = 'ballrzcoin.miner.engrave.v1';
   // The miner keeps a fresh chain and syncs the network's heaviest via gossip.
   var chain = new Coin.Blockchain();
   var running = false, found = 0, reward = 0, candidate = null, t0 = 0, tried = 0;
@@ -173,8 +177,10 @@
     var payout = $('payout').value.trim();
     if (!Coin.isValidAddress(payout)) { setStatus('Enter a valid payout address (B…) to mine.', 'err'); running = false; $('toggle').textContent = 'Start mining'; $('toggle').className = 'btn'; return; }
     // (re)build the candidate block if stale (new tip or new mempool tx)
-    if (!candidate || candidate.height !== chain.tip.height + 1 || candidate._mp !== chain.mempool.length) {
-      candidate = chain.prepareBlock(payout); candidate._mp = chain.mempool.length; t0 = Date.now(); tried = 0;
+    var engraving = $('engrave') ? $('engrave').value.trim().slice(0, 64) : '';
+    if (!candidate || candidate.height !== chain.tip.height + 1 || candidate._mp !== chain.mempool.length || candidate._eng !== engraving) {
+      candidate = chain.prepareBlock(payout, { extra: engraving });
+      candidate._mp = chain.mempool.length; candidate._eng = engraving; t0 = Date.now(); tried = 0;
     }
     var SLICE = 25000;
     var hit = Coin.mine(candidate, { startNonce: candidate.nonce, maxIterations: SLICE });
@@ -185,6 +191,10 @@
         found++; reward += hit.transactions[0].outputs.reduce(function (a, o) { return a + o.amount; }, 0);
         announceChain();
         log('⚡ mined block #' + hit.height + ' — ' + fmt(hit.transactions[0].outputs.reduce(function (a, o) { return a + o.amount; }, 0)) + ' TIME to ' + payout.slice(0, 8) + '…');
+        if (typeof BallrzJewel !== 'undefined') {
+          var jg = BallrzJewel.gradeOf(BallrzJewel.extraBits(hit.hash, hit.target));
+          log(jg.icon + ' a ' + jg.name + ' jewel' + (jg.extraBits ? ' — the hash beat the target by ' + jg.extraBits + ' bit' + (jg.extraBits === 1 ? '' : 's') : '') + (hit.transactions[0].extra ? ', engraved “' + hit.transactions[0].extra + '”' : '') + ' — see it in the app’s 💎 Vitrine');
+        }
         candidate = null; refreshStats();
       } catch (e) { log('block orphaned (a peer was faster)'); candidate = null; }
     } else {
@@ -201,6 +211,7 @@
     try { localStorage.setItem(LS_PAYOUT, payout); } catch (e) {}
     relayUrl = normalizeRelay($('relay').value) || defaultRelay();
     try { localStorage.setItem(LS_RELAY, $('relay').value.trim()); } catch (e) {}
+    try { localStorage.setItem(LS_ENGRAVE, $('engrave').value.trim().slice(0, 64)); } catch (e) {}
     if (relayUrl) { seq = 0; if (!pollTimer) pollTimer = setInterval(poll, 1500); send({ type: 'hello' }); log('🔌 connecting to relay ' + relayUrl); }
     else { log('⚠ no relay set — mining locally; same-browser tabs still sync'); }
     running = true; candidate = null;
@@ -217,6 +228,7 @@
   $('toggle').addEventListener('click', function () { running ? stop() : start(); });
   try { $('payout').value = localStorage.getItem(LS_PAYOUT) || ''; } catch (e) {}
   try { $('relay').value = localStorage.getItem(LS_RELAY) || ''; } catch (e) {}
+  try { $('engrave').value = localStorage.getItem(LS_ENGRAVE) || ''; } catch (e) {}
   if (!$('relay').value) { var dr = defaultRelay(); if (dr && !/^https?:\/\/(localhost|127\.)/.test(dr) === false) $('relay').placeholder = dr; }
   refreshStats();
   // keep pulling the network's chain even before mining starts, if a relay is known

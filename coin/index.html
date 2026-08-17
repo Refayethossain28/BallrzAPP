@@ -190,6 +190,13 @@
   @media (prefers-reduced-motion: reduce) { .halvbar::after { animation: none; } }
   .halvcap { color: var(--dim); font-size: 12px; margin-top: 7px; }
   .rich { display: flex; align-items: baseline; gap: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 9px 14px; }
+  .jewel { display: flex; align-items: center; gap: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 9px 14px; }
+  .jewel svg { flex: none; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.45)); }
+  .jewel .jmeta { min-width: 0; }
+  .jewel .jgrade { font-weight: 700; }
+  .jewel .jprov { font-size: 12px; color: #9a9aab; }
+  .jewel .jeng { font-style: italic; font-size: 13px; overflow-wrap: anywhere; }
+  .jsummary { font-size: 13px; color: #9a9aab; margin: 4px 0 8px; }
   .rich .pct { margin-left: auto; color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; }
   .qrbox { margin-top: 10px; text-align: center; }
   .qrbox svg { border-radius: 8px; max-width: 100%; height: auto; }
@@ -629,6 +636,14 @@
 <h2 data-i18n="h_leaderboard">Leaderboard</h2>
 <div class="list" id="richlist"></div>
 
+<h2>💎 The Vitrine</h2>
+<div class="sub">Every block you mine is a one-of-a-kind jewel: its gem is drawn from the block hash, its
+<b>grade</b> is how far the proof-of-work beat the target (each extra bit is twice as rare — Polished 💠,
+Fine ✨, Flawless 💎, Legendary 🌟), its <b>vintage</b> is the halving era, and an <b>engraving</b> set in the
+miner is sealed under the proof-of-work forever. Beauty, rarity, provenance — verifiable by every node.</div>
+<div class="jsummary" id="vitrineSummary"></div>
+<div class="list" id="vitrine"></div>
+
 <h2><span data-i18n="h_mempool">Mempool</span> <span id="mempoolCount"></span></h2>
 <div class="list" id="mempool"></div>
 
@@ -701,6 +716,7 @@
 <script src="reputation.js"></script>
 <script src="bridge.js"></script>
 <script src="wordlist.js"></script>
+<script src="jewel.js"></script>
 <script src="i18n.js"></script>
 <script>
 (function () {
@@ -2103,8 +2119,35 @@
     renderDeals();
     renderThreads();
     renderChallenge();
+    renderVitrine();
     renderBackupBanner();
     evaluateAchievements();
+  }
+
+  // 💎 The Vitrine — the jewels this device's wallets have mined.
+  function renderVitrine() {
+    var el = $('vitrine'), sum = $('vitrineSummary');
+    if (!el || typeof BallrzJewel === 'undefined') return;
+    var jewels = BallrzJewel.jewelsOf(chain.blocks, myAddresses(), chain.params.halvingInterval);
+    if (!jewels.length) {
+      sum.textContent = '';
+      el.innerHTML = '<div class="note">No jewels yet — run a <a href="mine.html" target="_blank" rel="noopener">⛏ miner</a> with one of your wallet addresses as payout. The block you find becomes a gem no one else can ever mine.</div>';
+      return;
+    }
+    var counts = {};
+    jewels.forEach(function (j) { counts[j.grade.name] = (counts[j.grade.name] || 0) + 1; });
+    sum.textContent = jewels.length + ' jewel' + (jewels.length === 1 ? '' : 's') + ' — ' +
+      BallrzJewel.GRADES.slice().reverse().filter(function (g) { return counts[g.name]; })
+        .map(function (g) { return counts[g.name] + ' ' + g.icon + ' ' + g.name; }).join(' · ');
+    var MAX = 24;
+    el.innerHTML = jewels.slice(0, MAX).map(function (j) {
+      return '<div class="jewel">' + BallrzJewel.gemSVG(j.hash, j.target, 56) +
+        '<div class="jmeta"><div class="jgrade">' + j.grade.icon + ' ' + j.grade.name +
+        (j.grade.extraBits ? ' <span class="jprov">(target beaten by ' + j.grade.extraBits + ' bit' + (j.grade.extraBits === 1 ? '' : 's') + ')</span>' : '') + '</div>' +
+        '<div class="jprov">Block #' + j.height + ' · ' + j.era.label + ' · ' + fmt(j.amount) + ' · ' + new Date(j.timestamp).toLocaleDateString() + '</div>' +
+        (j.engraving ? '<div class="jeng">“' + esc(j.engraving) + '”</div>' : '') +
+        '</div></div>';
+    }).join('') + (jewels.length > MAX ? '<div class="note">…and ' + (jewels.length - MAX) + ' more in the case.</div>' : '');
   }
 
   function myAddresses() {
@@ -3662,6 +3705,7 @@
     { sel: '.halvwrap', title: 'Digital scarcity', body: '<b>TIME is minted no faster than time itself</b> — the whole network earns one hour of TIME per real hour (0.01 TIME per 36-second block, however much hashpower joins), and the reward <b>halves</b> every 210,000 blocks toward a hard cap of 4,200 TIME per circle — scarcity enforced by math, not by a central bank. Bitcoin halves the same way (toward 21 million); a fixed, un-inflatable ceiling is what makes money sound.' },
     { sel: '#wallets .card', title: 'A wallet is a pair of keys', body: 'Your <b>address</b> (the B… string) is public — share it to get paid, like an account number. Behind it is a secret <b>private key</b> that proves ownership. Whoever holds the key owns the coins. Tap <b>🔑 Keys</b> later to see yours.' },
     { sel: '#minerLink', title: 'Mining is a separate job', body: 'A wallet holds and spends — it deliberately <b>can’t mint</b>. Issuing coins and confirming payments is <b>proof of work</b>: a miner’s device guesses <b>hashes</b> until one starts with enough zeros — hard to do, instant to check, and the winner earns the new coins. That runs in a separate <b>⛏ miner</b> page so nobody just prints money; keep one running for your circle. (Favours paid with <b>mutual credit</b> need no miner at all.)' },
+    { sel: '#vitrine', title: 'The Vitrine', body: 'Every block you mine is a <b>jewel</b>: a unique gem drawn from its hash, <b>graded</b> by how far the proof-of-work beat the target (each extra bit is twice as rare), <b>vintaged</b> by halving era, and <b>engraveable</b> in the miner — the inscription is sealed under the proof-of-work forever. Era-one jewels can never be minted again.' },
     { sel: '#stats', title: 'Self-adjusting difficulty', body: 'The <b>difficulty</b> automatically rises as more miners join, so a block is still found roughly every 36 seconds no matter how much power is on the network. Bitcoin does this too (aiming for 10 minutes).' },
     { sel: '#sendForm', title: 'Payments without a bank', body: 'To pay someone, you <b>sign</b> the transaction with your private key. The network verifies the signature mathematically — no bank, no approval, no permission needed. That’s the whole point.' },
     { sel: '#mempool', title: 'Confirmation', body: 'A new payment waits here in the <b>mempool</b> until a miner seals it into the next block. Once it’s in a block, it’s <b>confirmed</b> — permanent and irreversible. That pending gap is what everyone waits for when they send crypto.' },
