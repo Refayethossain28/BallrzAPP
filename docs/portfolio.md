@@ -64,6 +64,7 @@ payments, deploy workflows, iOS wrappers.
 |---|---|---|---|---|
 | TimeCoin | Complete Bitcoin-style PoW cryptocurrency from raw bytes (SHA-256, secp256k1, UTXO, halving) | `coin/` | None | `test:coin` (39) + e2e |
 | Neura | AI-native chain: Proof-of-Intelligence consensus, bit-deterministic training per block | `neura/` | None | `test:neura` (17) |
+| Synapse | AI cryptocurrency as an inference economy: asking is a transaction, answering is mining, every answer consensus-verified by re-inference | `synapse/` | None | `test:synapse` (19) |
 | Vault | The digital bank | `vault/` | None | `test:vault` |
 | Charter | Mint preferred convertible stock: term sheets, exit waterfalls, anti-dilution lab | `charter/` | None | `test:charter` (20) |
 | Drip | Passive-income engine: compounding simulator, freedom date | `drip/` | None | `test:drip` (23) |
@@ -84,6 +85,7 @@ payments, deploy workflows, iOS wrappers.
 | TravelDeals | Flights & hotels: forecasts, deal scores, seat maps, booking wallet | `deals-app/` | Optional Amadeus keys | `test:deals` (31) |
 | Lingua | Learn any language: SRS, CEFR course, pronunciation scoring, Qur'an studio | `lingua/` | Optional Anthropic | smoke |
 | Lifeline | Offline-first emergency first aid + medical ID | `lifeline/` | None | in-folder |
+| Tokens | AI token meter: heuristic counter, request costs across current Claude models, cache break-even, monthly budget ledger | `tokens/` | None | `test:tokens` (20) |
 | Apex (lettings) | UK lettings marketplace: list → enquire → view → sign AST | `rentmatch.html`, `rentmatch/`, `apex-site/` | None | smoke |
 
 ## AI / ML
