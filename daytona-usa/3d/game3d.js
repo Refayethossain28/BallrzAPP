@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R99 — all circuits on real roads';
+const BUILD = 'BUILD R100 — perfect mobile controls';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -1368,6 +1368,7 @@ function placeCar(mesh, dist, offset){
 // ----------------------------------------------------------------------------
 let sceneryGroup=null, _scnInfo='';
 try{ Object.defineProperty(window,'_scnInfo',{get:()=>_scnInfo}); }catch(e){}
+try{ Object.defineProperty(window,'_spd',{get:()=>Math.round(G.speed)}); }catch(e){}
 function disposeTree(obj){ obj.traverse(o=>{ if(o.geometry)o.geometry.dispose(); const m=o.material; if(m){ (Array.isArray(m)?m:[m]).forEach(mt=>{ if(mt.map)mt.map.dispose(); mt.dispose(); }); } }); }
 
 const _detailCache={};
@@ -2349,7 +2350,8 @@ function racingUpdate(dt){
   // longitudinal — low gears pull hard, top gear stretches (GT power band).
   // Controller triggers are ANALOG: partial throttle / trail braking work.
   const gearPull=[1.42,1.26,1.12,1.0,0.88][G.gear-1]||1;
-  const throttle = _padGasV>0.06 ? _padGasV : (keys.gas?1:0);
+  const autoGasOn = MOBILE && _autoGas && !keys.brake;     // mobile auto-accelerate
+  const throttle = _padGasV>0.06 ? _padGasV : ((keys.gas||autoGasOn)?1:0);
   const brakeIn  = _padBrakeV>0.06 ? _padBrakeV : (keys.brake?1:0);
   if (throttle>0)      G.speed += 84 * v.accelMul * gearPull * (G.shiftCut>0?0.15:1) * throttle * dt;
   else                 G.speed -= 22 * dt;                 // coast
@@ -2383,6 +2385,7 @@ function racingUpdate(dt){
   // steering -> lateral offset (only meaningful when moving)
   let steer = (keys.right?1:0) - (keys.left?1:0);
   if (_padSteerAx!==0) steer = _padSteerAx;                // analog stick overrides
+  else if (_touchSteer!==0) steer = _touchSteer;           // then the touch zones
   G.steerVis += (steer - G.steerVis) * 0.2;
   const speedFrac = Math.min(1, Math.abs(G.speed)/maxSpeed);
   const grip = v.gripMul * (onGrass?0.7:1) * (G.rain?0.82:1);
@@ -3567,12 +3570,32 @@ function bindInput(){
   // touch buttons
   const hook=(id,k)=>{
     const el=document.getElementById(id); if(!el) return;
-    const on =e=>{ e.preventDefault(); set(k,true); };
+    const on =e=>{ e.preventDefault(); set(k,true); haptic(8); };
     const off=e=>{ e.preventDefault(); set(k,false); };
     el.addEventListener('pointerdown',on); el.addEventListener('pointerup',off);
     el.addEventListener('pointercancel',off); el.addEventListener('pointerleave',off);
   };
-  hook('tgas','gas'); hook('tbrake','brake'); hook('tleft','left'); hook('tright','right'); hook('tboost','boost');
+  hook('tgas','gas'); hook('tbrake','brake'); hook('tboost','boost');
+  // ---- analog steering zones: press = lean into that side; slide = fine control ----
+  const zoneState={};
+  const wid=document.getElementById('steerWidget'), knob=document.getElementById('steerKnob');
+  const showWidget=(x,y,val)=>{ if(!wid) return; wid.style.display='block';
+    wid.style.left=(x-75)+'px'; wid.style.top=(y-27)+'px';
+    if (knob) knob.style.transform=`translateX(${Math.max(-1,Math.min(1,val))*48}px)`; };
+  const zone=(id,sign)=>{
+    const el=document.getElementById(id); if(!el) return;
+    el.addEventListener('pointerdown',e=>{ e.preventDefault();
+      try{ el.setPointerCapture(e.pointerId); }catch(err){}
+      zoneState[e.pointerId]={x0:e.clientX, y0:e.clientY, sign};
+      _touchSteer=sign*0.55; haptic(6); showWidget(e.clientX,e.clientY,_touchSteer); });
+    el.addEventListener('pointermove',e=>{ const st=zoneState[e.pointerId]; if(!st) return;
+      _touchSteer=Math.max(-1,Math.min(1, st.sign*0.55 + (e.clientX-st.x0)/70));
+      showWidget(st.x0,st.y0,_touchSteer); });
+    const end=e=>{ if(!(e.pointerId in zoneState)) return; delete zoneState[e.pointerId];
+      if (!Object.keys(zoneState).length){ _touchSteer=0; if (wid) wid.style.display='none'; } };
+    el.addEventListener('pointerup',end); el.addEventListener('pointercancel',end);
+  };
+  zone('zoneL',-1); zone('zoneR',1);
 }
 
 // ---- Bluetooth / USB controller support (Gamepad API, standard mapping) ----
@@ -3581,6 +3604,9 @@ function bindInput(){
 // or RB nitro, Y/Triangle camera, Start pauses. Menus navigate with the
 // d-pad/stick, A selects, B goes back. Rumble fires with the game's haptics.
 let _padOn=false, _padSteerAx=0, _padGasV=0, _padBrakeV=0;
+let _touchSteer=0;                              // analog steering from the touch zones
+let _autoGas=true;                              // mobile auto-accelerate (toggle on pause menu)
+try{ _autoGas = (localStorage.getItem('apexgp_autogas')||'1')!=='0'; }catch(e){}
 const _padPrev={};
 let _padNavIdx=0;
 function pollGamepad(){
@@ -4177,7 +4203,8 @@ function hideOverlay(){
   const o=document.getElementById('overlay'); if(o) o.classList.add('hidden');
   const hud=document.getElementById('hud'); if(hud) hud.style.visibility='visible';
 }
-function showTouch(){ const t=document.getElementById('touch'); if(t && MOBILE) t.style.display='block'; }
+function showTouch(){ const t=document.getElementById('touch'); if(t && MOBILE) t.style.display='block';
+  const g=document.getElementById('tgas'); if (g) g.style.display=(MOBILE&&_autoGas)?'none':'flex'; }
 
 // ----------------------------------------------------------------------------
 //  Resize + loop
@@ -4214,8 +4241,15 @@ function togglePause(){
       <div class="menu-card">
         <button class="btn" id="resumeBtn">▶ RESUME</button>
         <div style="height:8px"></div>
+        <button class="btn ghost" id="agBtn">AUTO-GAS: ${_autoGas?'ON':'OFF'}</button>
+        <div style="height:8px"></div>
         <button class="btn ghost" id="quitBtn">✕ QUIT TO MENU</button>
       </div>`);
+    const ag=document.getElementById('agBtn'); if(ag) ag.onclick=()=>{
+      _autoGas=!_autoGas; try{ localStorage.setItem('apexgp_autogas', _autoGas?'1':'0'); }catch(e){}
+      ag.textContent='AUTO-GAS: '+(_autoGas?'ON':'OFF');
+      const g=document.getElementById('tgas'); if (g) g.style.display=(MOBILE&&_autoGas)?'none':'flex';
+    };
     const r=document.getElementById('resumeBtn'); if(r) r.onclick=togglePause;
     const q=document.getElementById('quitBtn'); if(q) q.onclick=()=>{
       hideBanner(); stopRaceMusic();
