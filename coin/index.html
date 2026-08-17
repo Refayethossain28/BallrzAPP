@@ -2106,6 +2106,7 @@ miner is sealed under the proof-of-work forever. Beauty, rarity, provenance — 
           ' → ' + who(o.address) + ' <span class="amt">' + fmt(o.amount) + '</span>';
       }).join('<br>') +
         ' <span class="fee">fee ' + fmt(e.fee) + '</span>' +
+        ' <button data-keepsake="' + esc(tx.id) + '" title="Strike this payment as a keepsake card">🎁</button>' +
         '<div class="hash">' + esc(short(tx.id, 16)) + '</div></div>';
     }).join('') : '<div class="note">' + (t('n_mempool_empty') || 'No pending transactions — send some coins above.') + '</div>';
 
@@ -2174,7 +2175,8 @@ miner is sealed under the proof-of-work forever. Beauty, rarity, provenance — 
       return '<div class="tx">' + whoFrom(tx.inputs[0]) + ' → ' + tx.outputs.map(function (o) {
         return who(o.address) + ' <span class="amt">' + fmt(o.amount) + '</span>' +
           (o.address === from ? ' <span class="fee">(change)</span>' : '');
-      }).join(' · ') + '<div class="hash">' + esc(short(tx.id, 16)) + '</div></div>';
+      }).join(' · ') + ' <button data-keepsake="' + esc(tx.id) + '" title="Strike this payment as a keepsake card">🎁</button>' +
+        '<div class="hash">' + esc(short(tx.id, 16)) + '</div></div>';
     }).join('');
     return '<div class="block"><div class="head">' +
       '<span class="h">#' + b.height + '</span>' +
@@ -3018,6 +3020,7 @@ miner is sealed under the proof-of-work forever. Beauty, rarity, provenance — 
       netSend({ type: 'tx', tx: tx });
       $('sendTo').value = ''; $('sendAmount').value = '';
       toast('📨 Broadcast: ' + fmt(amount) + ' → ' + short(to) + ' (fee ' + fmt(fee) + ')');
+      var isBarter = !!(pendingAction && pendingAction.payTo === to);
 
       // Complete a pending barter action if this payment matches it.
       if (pendingAction && pendingAction.payTo === to) {
@@ -3038,6 +3041,8 @@ miner is sealed under the proof-of-work forever. Beauty, rarity, provenance — 
         pendingAction = null;
       }
       render();
+      // A personal payment is a gift of time — hand the sender its keepsake.
+      if (!isBarter) openKeepsake(tx.id);
     } catch (err) {
       toast('✖ ' + err.message);
     }
@@ -3673,6 +3678,8 @@ miner is sealed under the proof-of-work forever. Beauty, rarity, provenance — 
       var cv = makeCollectibleCanvas();
       $('cardImg').src = cv.toDataURL('image/png');
       $('cardModal')._canvas = cv;
+      $('cardModal')._shareText = null; // default mint text
+      $('cardModal')._shareName = null;
       $('cardModal').className = 'show';
     } catch (err) { toast('✖ Couldn’t make the card: ' + err.message); }
   }
@@ -3680,22 +3687,109 @@ miner is sealed under the proof-of-work forever. Beauty, rarity, provenance — 
   $('cardClose').addEventListener('click', function () { $('cardModal').className = ''; });
   $('cardShare').addEventListener('click', function () {
     var cv = $('cardModal')._canvas; if (!cv) return;
-    var text = 'I minted a TimeCoin — a real community currency for time and favours, minted no faster than time itself. Mine some: ' + pageBase();
+    var text = $('cardModal')._shareText ||
+      ('I minted a TimeCoin — a real community currency for time and favours, minted no faster than time itself. Mine some: ' + pageBase());
+    var fname = $('cardModal')._shareName || 'ballrzcoin-card.png';
     if (cv.toBlob) {
       cv.toBlob(function (blob) {
         var file = null;
-        try { file = new File([blob], 'ballrzcoin-card.png', { type: 'image/png' }); } catch (e) {}
+        try { file = new File([blob], fname, { type: 'image/png' }); } catch (e) {}
         if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
           navigator.share({ files: [file], text: text }).catch(function () {});
         } else {
           try {
-            var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'ballrzcoin-card.png';
+            var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = fname;
             document.body.appendChild(a); a.click(); a.remove();
             toast('🖼 Card saved — post it anywhere');
           } catch (e2) { toast('Long-press the card to save it'); }
         }
       }, 'image/png');
     }
+  });
+
+  /* ---------- 🎁 keepsakes: any payment can be struck as a jewel card ----
+   * Gifting a balance is cold; gifting a jewel isn't. A transaction id is a
+   * 256-bit hash, so every payment already owns a one-of-a-kind gem
+   * (BallrzJewel draws it deterministically), with natural rarity: a txid
+   * that happens to start with n zero bits is a provable 1-in-2^n find.
+   * The card is drawn locally and shared as an image — nothing leaves the
+   * device otherwise. */
+  var KEEPSAKE_TARGET = 'f'.repeat(64); // txids aren't mined, so rarity = raw leading zero bits
+  function nameFor(address) {
+    if (!address) return '🔐 escrow';
+    var n = walletName(address);
+    if (n) return n;
+    try { if (directory[address] && directory[address].name) return directory[address].name; } catch (e) {}
+    return short(address, 10);
+  }
+  function makeKeepsakeCanvas(tx, blockHeight, done) {
+    var W = 1080, H = 1350, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    var ctx = cv.getContext('2d'), cx = W / 2;
+    ctx.fillStyle = '#08080c'; ctx.fillRect(0, 0, W, H);
+    var g1 = ctx.createRadialGradient(W * 0.2, H * 0.02, 0, W * 0.2, H * 0.02, 760);
+    g1.addColorStop(0, 'rgba(244,194,87,0.20)'); g1.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g1; ctx.fillRect(0, 0, W, H);
+    var g2 = ctx.createRadialGradient(W * 0.88, H, 0, W * 0.88, H, 820);
+    g2.addColorStop(0, 'rgba(244,194,87,0.13)'); g2.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g2; ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = 'rgba(212,175,90,0.5)'; ctx.lineWidth = 2.5; roundRectPath(ctx, 30, 30, W - 60, H - 60, 34); ctx.stroke();
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#f4c257'; ctx.font = '600 46px Georgia, "Times New Roman", serif';
+    ctx.fillText('A gift of time', cx, 132);
+
+    var gift = tx.outputs[0] || { address: '', amount: 0 };
+    var sender = fromAddr(tx.inputs[0]);
+    var grade = BallrzJewel.gradeOf(BallrzJewel.extraBits(tx.id, KEEPSAKE_TARGET));
+    var svg = BallrzJewel.gemSVG(tx.id, KEEPSAKE_TARGET, 460);
+    var img = new Image();
+    var finish = function (withGem) {
+      if (withGem) ctx.drawImage(img, cx - 230, 185, 460, 460);
+      ctx.fillStyle = '#f3efe4'; ctx.font = '600 40px Georgia, "Times New Roman", serif';
+      var odds = grade.extraBits ? '  ·  a 1-in-' + Math.pow(2, grade.extraBits) + ' gem' : '';
+      ctx.fillText(grade.icon + ' ' + grade.name + ' keepsake' + odds, cx, 716);
+
+      ctx.fillStyle = '#f4c257'; ctx.font = '700 110px Georgia, "Times New Roman", serif';
+      ctx.fillText(fmt(gift.amount), cx, 846);
+      ctx.fillStyle = '#9a9aab'; ctx.font = '500 40px -apple-system, Helvetica, Arial, sans-serif';
+      ctx.fillText('= ' + fmtTime(gift.amount) + ' of someone’s time', cx, 906);
+
+      ctx.fillStyle = '#f3efe4'; ctx.font = '500 44px Georgia, "Times New Roman", serif';
+      ctx.fillText(nameFor(sender) + '  →  ' + nameFor(gift.address), cx, 1006);
+
+      ctx.fillStyle = '#9a9aab'; ctx.font = '500 32px -apple-system, Helvetica, Arial, sans-serif';
+      ctx.fillText((blockHeight !== null ? 'Sealed in block #' + blockHeight : 'Awaiting its block') + ' · ' + new Date(tx.timestamp || Date.now()).toLocaleDateString(), cx, 1076);
+      ctx.font = '400 28px ui-monospace, Menlo, Consolas, monospace';
+      ctx.fillText('hallmark ' + tx.id.slice(0, 20) + '…', cx, 1126);
+
+      ctx.fillStyle = '#f3efe4'; ctx.font = 'italic 500 40px Georgia, "Times New Roman", serif';
+      ctx.fillText('“Every hour is one of a kind.”', cx, 1218);
+      ctx.fillStyle = '#f4c257'; ctx.font = '600 30px -apple-system, Helvetica, Arial, sans-serif';
+      ctx.fillText('TimeCoin — a currency for time & favours', cx, 1288);
+      done(cv);
+    };
+    img.onload = function () { finish(true); };
+    img.onerror = function () { finish(false); }; // card still works without the gem
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  }
+  function openKeepsake(txId) {
+    if (typeof BallrzJewel === 'undefined') return;
+    var tx = null, height = null;
+    var hit = chain.findTransaction(txId);
+    if (hit && hit.tx.type === 'transfer') { tx = hit.tx; height = hit.block.height; }
+    if (!tx) chain.mempool.forEach(function (e) { if (e.tx.id === txId) tx = e.tx; });
+    if (!tx) { toast('✖ Transaction not found on this chain'); return; }
+    makeKeepsakeCanvas(tx, height, function (cv) {
+      var m = $('cardModal');
+      $('cardImg').src = cv.toDataURL('image/png');
+      m._canvas = cv;
+      m._shareName = 'timecoin-keepsake.png';
+      m._shareText = 'A gift of time — ' + fmt((tx.outputs[0] || {}).amount || 0) +
+        ' sealed on the TimeCoin chain, with a one-of-a-kind gem struck from its hallmark. ' + pageBase();
+      m.className = 'show';
+    });
+  }
+  document.addEventListener('click', function (ev) {
+    var t = ev.target && ev.target.closest ? ev.target.closest('[data-keepsake]') : null;
+    if (t) openKeepsake(t.getAttribute('data-keepsake'));
   });
 
   /* ---------- guided "How it works" tour ---------- */

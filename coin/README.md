@@ -86,7 +86,12 @@ better cut without redoing the work. Its **vintage** is the halving era
 under the proof-of-work — editing it would break the coinbase id, the merkle
 root, the block hash and the work all at once. The pure module is
 [`jewel.js`](jewel.js); the wallet displays the collection, the miner
-engraves.
+engraves. **Payments are jewels too:** any transaction can be struck as a
+🎁 **keepsake card** — a shareable image whose gem is drawn from the
+transaction id (a txid that happens to open with *n* zero bits is a provable
+1-in-2ⁿ find), stamped with the amount in hours, giver → receiver, the block
+that sealed it and its hallmark. Sending TIME hands over a jewel, not just a
+balance.
 
 **Barter — offers board (a time bank):** TIME buys **time and favours, never
 cash**. Post something you'll do or give (“🎂 Bake a cake”) priced in **hours or
