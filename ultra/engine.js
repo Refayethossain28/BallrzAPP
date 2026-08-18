@@ -276,8 +276,23 @@
 
   // Identify a ROM dump by its first word and normalize to big-endian .z64.
   // z64 = native big-endian, v64 = 16-bit byteswapped, n64 = 32-bit little.
+  // A .7z/.zip/.rar/.gz holds a ROM, it isn't one — spot the container magic
+  // so we give a useful message instead of a cryptic "no ROM magic".
+  function detectArchive(bytes) {
+    function m(sig) { for (var i = 0; i < sig.length; i++) if (bytes[i] !== sig[i]) return false; return true; }
+    if (m([0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C])) return '.7z archive';
+    if (m([0x50, 0x4B, 0x03, 0x04]) || m([0x50, 0x4B, 0x05, 0x06])) return '.zip archive';
+    if (m([0x52, 0x61, 0x72, 0x21, 0x1A, 0x07])) return '.rar archive';
+    if (m([0x1F, 0x8B])) return '.gz archive';
+    if (m([0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00])) return '.xz archive';
+    if (m([0x42, 0x5A, 0x68])) return '.bz2 archive';
+    return null;
+  }
+
   function identifyRom(bytes) {
     if (!bytes || bytes.length < 0x40) return { ok: false, error: 'file too small to be an N64 ROM' };
+    var arc = detectArchive(bytes);
+    if (arc) return { ok: false, error: 'this is a ' + arc + ', not a ROM — extract the .z64/.v64/.n64 inside it and load that' };
     var b0 = bytes[0], b1 = bytes[1], b2 = bytes[2], b3 = bytes[3];
     var format = null;
     if (b0 === 0x80 && b1 === 0x37 && b2 === 0x12 && b3 === 0x40) format = 'z64';
