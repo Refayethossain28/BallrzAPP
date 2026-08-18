@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0b14">
+<title>Ultra — Nintendo 64 emulator</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>
+  :root {
+    --bg: #0b0b14; --panel: #14141f; --panel2: #1b1b29; --line: #262637;
+    --ink: #e8e8f2; --dim: #8a8aa3; --faint: #55556e;
+    --red: #e94b5a; --yellow: #f2b634; --green: #3ec46d; --blue: #4f7df9;
+    --gold: #f2b634;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { background: var(--bg); color: var(--ink); }
+  body {
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh; padding: 16px 16px calc(24px + env(safe-area-inset-bottom));
+    max-width: 760px; margin: 0 auto;
+  }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+
+  header { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .logo { display: grid; grid-template-columns: 12px 12px; grid-gap: 3px; transform: rotate(45deg); }
+  .logo i { width: 12px; height: 12px; border-radius: 3px; display: block; }
+  .logo i:nth-child(1) { background: var(--blue); } .logo i:nth-child(2) { background: var(--red); }
+  .logo i:nth-child(3) { background: var(--yellow); } .logo i:nth-child(4) { background: var(--green); }
+  h1 { font-size: 22px; letter-spacing: .12em; font-weight: 800; }
+  h1 small { display: block; font-size: 11px; letter-spacing: .18em; color: var(--dim); font-weight: 600; text-transform: uppercase; }
+
+  /* ---- the television ---- */
+  .tv { background: linear-gradient(180deg, #1d1d2c, #101019); border: 1px solid var(--line);
+        border-radius: 18px; padding: 14px; box-shadow: 0 18px 50px rgba(0,0,0,.5); }
+  .screen-wrap { position: relative; border-radius: 10px; overflow: hidden; background: #000;
+                 border: 1px solid #000; }
+  canvas#screen { display: block; width: 100%; aspect-ratio: 4 / 3; image-rendering: pixelated; background: #000; }
+  .scanlines { position: absolute; inset: 0; pointer-events: none; mix-blend-mode: overlay; opacity: .5;
+    background: repeating-linear-gradient(0deg, rgba(255,255,255,.06) 0 1px, transparent 1px 3px); }
+  .halt { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center;
+    gap: 8px; text-align: center; padding: 18px; background: rgba(5,5,12,.88); }
+  .halt.show { display: flex; }
+  .halt b { color: var(--red); letter-spacing: .08em; }
+  .halt p { color: var(--dim); font-size: 13px; max-width: 420px; }
+  .hud { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; color: var(--dim); font-size: 12px; }
+  .hud b { color: var(--ink); font-weight: 600; }
+  .hud .led { color: var(--green); }
+  .tv-btns { display: flex; gap: 8px; margin-top: 10px; }
+  button { font: inherit; color: var(--ink); background: var(--panel2); border: 1px solid var(--line);
+    border-radius: 10px; padding: 8px 14px; cursor: pointer; }
+  button:active { transform: translateY(1px); }
+  button.primary { background: var(--blue); border-color: var(--blue); font-weight: 700; }
+
+  /* ---- cartridge shelf ---- */
+  section { margin-top: 18px; }
+  h2 { font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: var(--dim); margin-bottom: 10px; }
+  .shelf { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+  .cart { text-align: left; padding: 12px 14px; border-radius: 12px 12px 8px 8px; position: relative;
+    background: linear-gradient(180deg, #232338, #191927); border: 1px solid var(--line); }
+  .cart::before { content: ""; position: absolute; left: 14px; right: 14px; top: 0; height: 4px;
+    border-radius: 0 0 4px 4px; background: linear-gradient(90deg, var(--blue), var(--red), var(--yellow), var(--green)); }
+  .cart b { display: block; letter-spacing: .06em; }
+  .cart span { color: var(--dim); font-size: 12px; }
+  .cart.active { outline: 2px solid var(--gold); }
+  .cart.slot { border-style: dashed; background: transparent; }
+  .rom-info { margin-top: 10px; padding: 12px 14px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; font-size: 13px; display: none; }
+  .rom-info.show { display: block; }
+  .rom-info .warn { color: var(--yellow); font-size: 12px; margin-top: 6px; }
+  .rom-info button { margin-top: 8px; }
+
+  /* ---- controller ---- */
+  .pad-row { display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
+  .dpad { display: grid; grid-template-columns: repeat(3, 46px); grid-template-rows: repeat(3, 46px); }
+  .dpad button { border-radius: 8px; font-size: 16px; padding: 0; background: #222233; }
+  .dpad .blank { background: transparent; border: 0; }
+  .face { display: flex; align-items: center; gap: 12px; }
+  .face .ab { width: 54px; height: 54px; border-radius: 50%; font-weight: 800; font-size: 16px; padding: 0; }
+  .face .a { background: #2246c9; border-color: #2246c9; }
+  .face .b { background: #1d8a4a; border-color: #1d8a4a; }
+  .face .start { width: 46px; height: 46px; border-radius: 50%; background: var(--red); border-color: var(--red); font-size: 10px; font-weight: 800; }
+  .keys { color: var(--faint); font-size: 12px; margin-top: 8px; }
+  .keys b { color: var(--dim); }
+
+  /* ---- debugger ---- */
+  details { margin-top: 18px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+  summary { padding: 12px 14px; cursor: pointer; color: var(--dim); font-size: 13px; letter-spacing: .08em; text-transform: uppercase; }
+  .debug { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 0 14px 14px; }
+  .regs, .dis { font-size: 12px; white-space: pre; overflow-x: auto; color: var(--dim); }
+  .regs b, .dis b { color: var(--gold); font-weight: 600; }
+  @media (max-width: 560px) { .debug { grid-template-columns: 1fr; } }
+
+  footer { margin-top: 20px; color: var(--faint); font-size: 12px; line-height: 1.6; }
+  footer b { color: var(--dim); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+  <h1>ULTRA<small>Nintendo 64 emulator</small></h1>
+</header>
+
+<div class="tv">
+  <div class="screen-wrap">
+    <canvas id="screen" width="320" height="240"></canvas>
+    <div class="scanlines"></div>
+    <div class="halt" id="halt">
+      <b>CPU HALTED</b>
+      <div class="mono" id="haltWhere"></div>
+      <p id="haltWhy"></p>
+    </div>
+  </div>
+  <div class="hud mono">
+    <span>CART <b id="hudRom">—</b></span>
+    <span>FPS <b id="hudFps">0</b></span>
+    <span>CPU <b id="hudMips">0</b> M instr/s</span>
+    <span>PC <b id="hudPc">—</b></span>
+    <span class="led" id="hudPower">● POWER</span>
+  </div>
+  <div class="tv-btns">
+    <button id="btnPause">Pause</button>
+    <button id="btnReset">Reset</button>
+  </div>
+</div>
+
+<section>
+  <h2>Cartridges</h2>
+  <div class="shelf" id="shelf">
+    <button class="cart" data-demo="gradient"><b>ULTRA GRADIENT</b><span>scrolling rainbow, pure MIPS</span></button>
+    <button class="cart" data-demo="pong"><b>ULTRA PONG</b><span>d-pad plays, JAL draws</span></button>
+    <button class="cart slot" id="slot"><b>ROM slot</b><span>load a .z64 / .v64 / .n64 file</span></button>
+  </div>
+  <input type="file" id="romFile" accept=".z64,.v64,.n64,.rom" hidden>
+  <div class="rom-info mono" id="romInfo"></div>
+</section>
+
+<section>
+  <h2>Controller</h2>
+  <div class="pad-row">
+    <div class="dpad">
+      <span class="blank"></span><button data-btn="D_UP">▲</button><span class="blank"></span>
+      <button data-btn="D_LEFT">◀</button><span class="blank"></span><button data-btn="D_RIGHT">▶</button>
+      <span class="blank"></span><button data-btn="D_DOWN">▼</button><span class="blank"></span>
+    </div>
+    <div class="face">
+      <button class="start" data-btn="START">START</button>
+      <button class="ab b" data-btn="B">B</button>
+      <button class="ab a" data-btn="A">A</button>
+    </div>
+  </div>
+  <div class="keys">Keyboard: <b>arrow keys</b> d-pad · <b>X</b> = A · <b>Z</b> = B · <b>Enter</b> = Start</div>
+</section>
+
+<details>
+  <summary>Debugger — R4300i state</summary>
+  <div class="debug">
+    <div class="regs mono" id="regs"></div>
+    <div class="dis mono" id="dis"></div>
+  </div>
+</details>
+
+<footer>
+  <b>What this is:</b> a real MIPS R4300i integer-ISA interpreter with branch delay
+  slots, HI/LO, big-endian RDRAM, an RGBA5551 framebuffer scanned out by a
+  simplified VI, and the genuine N64 controller button layout. The bundled
+  cartridges are homebrew MIPS programs assembled by the built-in assembler.
+  <b>What it isn't (yet):</b> there is no RSP, RDP (3D), FPU or TLB — commercial ROM
+  dumps are identified and loaded, but halt at the first instruction outside the
+  integer subset, and the debugger tells you which one.
+</footer>
+
+<script src="engine.js"></script>
+<script>
+'use strict';
+var E = UltraEngine;
+
+var canvas = document.getElementById('screen');
+var ctx = canvas.getContext('2d');
+var img = ctx.createImageData ? ctx.createImageData(320, 240) : { data: [] };
+
+var state = null;
+var running = true;
+var padMask = 0;
+var currentCart = null;   // 'gradient' | 'pong' | 'rom'
+var lastRomInfo = null;
+var fps = 0, mips = 0, frameCount = 0, stepCount = 0, lastRate = 0;
+
+function $(id) { return document.getElementById(id); }
+function hex8(v) { return '0x' + ('00000000' + (v >>> 0).toString(16)).slice(-8); }
+
+/* ---------------- boot / blit / hud ---------------- */
+
+function bootDemo(key) {
+  state = E.bootDemo(key);
+  currentCart = key;
+  afterBoot();
+}
+
+function bootRom(info) {
+  state = E.makeState();
+  E.bootRom(state, info);
+  currentCart = 'rom';
+  afterBoot();
+}
+
+function afterBoot() {
+  running = true;
+  $('btnPause').textContent = 'Pause';
+  $('halt').className = 'halt';
+  var carts = document.querySelectorAll('.cart');
+  for (var i = 0; i < carts.length; i++) {
+    var on = carts[i].getAttribute('data-demo') === currentCart || (currentCart === 'rom' && carts[i].id === 'slot');
+    carts[i].className = carts[i].className.replace(' active', '') + (on ? ' active' : '');
+  }
+  E.runFrame(state, 2000000); // paint the first frame immediately
+  blit();
+  updateHud();
+  updateDebugger();
+}
+
+function blit() {
+  if (!state || !img.data) return;
+  E.framebufferRGBA(state, img.data);
+  if (ctx.putImageData) ctx.putImageData(img, 0, 0);
+}
+
+function updateHud() {
+  $('hudRom').textContent = state ? (state.romName || 'unnamed') : '—';
+  $('hudFps').textContent = String(fps);
+  $('hudMips').textContent = mips.toFixed(1);
+  $('hudPc').textContent = state ? hex8(state.pc) : '—';
+  $('hudPower').textContent = state && !state.halted ? '● POWER' : '○ HALTED';
+  if (state && state.halted && state.stopReason && state.stopReason !== 'no program loaded') {
+    $('halt').className = 'halt show';
+    $('haltWhere').textContent = 'at ' + hex8(state.stopPc);
+    $('haltWhy').textContent = state.stopReason === 'break'
+      ? 'The program executed BREAK — a clean stop.'
+      : 'Reason: ' + state.stopReason + '. This core executes the R4300i integer subset; real games also need the RSP, RDP and FPU, which Ultra does not emulate yet.';
+  }
+}
+
+function updateDebugger() {
+  if (!state) return;
+  var out = '';
+  for (var i = 0; i < 32; i += 2) {
+    out += '$' + (E.REG_NAMES[i] + '  ').slice(0, 4) + ' ' + hex8(state.gpr[i]) +
+      '   $' + (E.REG_NAMES[i + 1] + '  ').slice(0, 4) + ' ' + hex8(state.gpr[i + 1]) + '\n';
+  }
+  out += '\nhi    ' + hex8(state.hi) + '   lo    ' + hex8(state.lo);
+  out += '\ncycles ' + state.cycles.toLocaleString() + '   frame ' + state.frame;
+  $('regs').textContent = out;
+
+  var dis = '', pc = state.pc >>> 0;
+  for (var a = pc - 12; a <= pc + 16; a += 4) {
+    var w = E.read32(state, a) >>> 0;
+    dis += (a === pc ? '▸ ' : '  ') + hex8(a) + '  ' + E.disasm(w, a) + '\n';
+  }
+  $('dis').innerHTML = dis.split('\n').map(function (l) {
+    return l.indexOf('▸') === 0 ? '<b>' + l + '</b>' : l;
+  }).join('\n');
+}
+
+/* ---------------- the main loop ---------------- */
+
+var lastRateTs = 0;
+function tick(ts) {
+  if (state && running && !state.halted) {
+    E.setButtons(state, padMask);
+    stepCount += E.runFrame(state, 1500000);
+    frameCount++;
+    blit();
+    if (state.halted) updateHud();
+  }
+  if (ts - lastRateTs >= 500) {
+    fps = Math.round(frameCount * 1000 / Math.max(1, ts - lastRateTs));
+    mips = (stepCount * 1000 / Math.max(1, ts - lastRateTs)) / 1e6;
+    frameCount = 0; stepCount = 0; lastRateTs = ts;
+    updateHud();
+    updateDebugger();
+  }
+  requestAnimationFrame(tick);
+}
+
+/* ---------------- cartridges ---------------- */
+
+var shelf = $('shelf');
+shelf.addEventListener('click', function (e) {
+  var el = e.target;
+  while (el && el !== shelf && !el.getAttribute('data-demo') && el.id !== 'slot') el = el.parentNode;
+  if (!el || el === shelf) return;
+  if (el.id === 'slot') { $('romFile').click(); return; }
+  bootDemo(el.getAttribute('data-demo'));
+});
+
+$('romFile').addEventListener('change', function () {
+  var f = this.files && this.files[0];
+  if (!f) return;
+  var reader = new FileReader();
+  reader.onload = function () {
+    var info = E.identifyRom(new Uint8Array(reader.result));
+    lastRomInfo = info.ok ? info : null;
+    var box = $('romInfo');
+    if (!info.ok) {
+      box.className = 'rom-info mono show';
+      box.textContent = 'Not an N64 ROM: ' + info.error;
+      return;
+    }
+    box.className = 'rom-info mono show';
+    box.innerHTML = 'Cartridge: <b>' + info.name.replace(/</g, '&lt;') + '</b>' +
+      '  ·  format .' + info.format +
+      '<br>entry ' + hex8(info.entry) + '  ·  CRC ' + hex8(info.crc1) + ' / ' + hex8(info.crc2) +
+      '<div class="warn">Header verified and byte order normalized. Booting runs the CPU for real, but commercial games will halt at their first RSP/RDP/FPU instruction.</div>' +
+      '<button id="bootRomBtn" class="primary">Boot this ROM</button>';
+    document.getElementById('bootRomBtn').addEventListener('click', function () {
+      if (lastRomInfo) bootRom(lastRomInfo);
+    });
+  };
+  reader.readAsArrayBuffer(f);
+});
+
+/* ---------------- controls ---------------- */
+
+$('btnPause').addEventListener('click', function () {
+  running = !running;
+  this.textContent = running ? 'Pause' : 'Resume';
+});
+$('btnReset').addEventListener('click', function () {
+  if (currentCart === 'rom' && lastRomInfo) bootRom(lastRomInfo);
+  else bootDemo(currentCart || 'gradient');
+});
+
+var KEYMAP = {
+  ArrowUp: 'D_UP', ArrowDown: 'D_DOWN', ArrowLeft: 'D_LEFT', ArrowRight: 'D_RIGHT',
+  x: 'A', X: 'A', z: 'B', Z: 'B', Enter: 'START',
+};
+window.addEventListener('keydown', function (e) {
+  var b = KEYMAP[e.key];
+  if (!b) return;
+  padMask |= E.BUTTONS[b];
+  e.preventDefault();
+});
+window.addEventListener('keyup', function (e) {
+  var b = KEYMAP[e.key];
+  if (!b) return;
+  padMask &= ~E.BUTTONS[b];
+});
+
+// on-screen pad: press & release, mouse and touch
+function bindPadButtons() {
+  var btns = document.querySelectorAll('[data-btn]');
+  for (var i = 0; i < btns.length; i++) {
+    (function (el) {
+      var bit = E.BUTTONS[el.getAttribute('data-btn')];
+      function down(e) { padMask |= bit; if (e.cancelable) e.preventDefault(); }
+      function up() { padMask &= ~bit; }
+      el.addEventListener('mousedown', down); el.addEventListener('mouseup', up);
+      el.addEventListener('mouseleave', up);
+      el.addEventListener('touchstart', down, { passive: false });
+      el.addEventListener('touchend', up); el.addEventListener('touchcancel', up);
+    })(btns[i]);
+  }
+}
+bindPadButtons();
+
+/* ---------------- go ---------------- */
+
+bootDemo('gradient');
+requestAnimationFrame(tick);
+
+if (navigator.serviceWorker && navigator.serviceWorker.register) {
+  navigator.serviceWorker.register('sw.js').catch(function () {});
+}
+</script>
+</body>
+</html>
