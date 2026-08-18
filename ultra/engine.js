@@ -778,10 +778,191 @@
     '  nop',
   ].join('\n');
 
+  var STARFIELD_SRC = [
+    '; ULTRA STARFIELD — warp through 48 stars with an xorshift RNG, pure MIPS.',
+    '; Star records live at RDRAM 0x2000: x,y,speed as three halfwords each.',
+    'start:',
+    '  lui   $t0, 0xA440',
+    '  lui   $t1, 0x0010',
+    '  sw    $t1, 4($t0)        ; VI_ORIGIN = 0x00100000',
+    '  li    $t2, 320',
+    '  sw    $t2, 8($t0)        ; VI_WIDTH = 320',
+    '  li    $s7, 0x1234567     ; RNG state (nonzero seed)',
+    '  li    $s0, 0x80002000    ; star table pointer',
+    '  li    $s1, 48            ; stars to place',
+    'init:',
+    '  jal   rng',
+    '  nop',
+    '  andi  $t2, $v0, 511      ; x candidate 0..511',
+    '  slti  $t3, $t2, 320',
+    '  bne   $t3, $zero, init_x',
+    '  nop',
+    '  addiu $t2, $t2, -192     ; fold high values back into 0..319',
+    'init_x:',
+    '  sh    $t2, 0($s0)',
+    '  jal   rng',
+    '  nop',
+    '  andi  $t3, $v0, 255      ; y candidate 0..255',
+    '  slti  $t4, $t3, 240',
+    '  bne   $t4, $zero, init_y',
+    '  nop',
+    '  addiu $t3, $t3, -16',
+    'init_y:',
+    '  sh    $t3, 2($s0)',
+    '  jal   rng',
+    '  nop',
+    '  andi  $t4, $v0, 3',
+    '  addiu $t4, $t4, 1        ; speed 1..4 (also the depth cue)',
+    '  sh    $t4, 4($s0)',
+    '  addiu $s0, $s0, 6',
+    '  addiu $s1, $s1, -1',
+    '  bne   $s1, $zero, init',
+    '  nop',
+    '',
+    'frame:',
+    '  lui   $t9, 0x8010        ; clear the framebuffer to deep space',
+    '  li    $t8, 0x0021',
+    '  li    $t7, 76800         ; 320*240 pixels',
+    'clr:',
+    '  sh    $t8, 0($t9)',
+    '  addiu $t7, $t7, -1',
+    '  bne   $t7, $zero, clr',
+    '  addiu $t9, $t9, 2        ; delay slot: advance dst',
+    '',
+    '  li    $s0, 0x80002000',
+    '  li    $s1, 48',
+    'star:',
+    '  lhu   $s2, 0($s0)        ; x',
+    '  lhu   $s3, 2($s0)        ; y',
+    '  lhu   $s4, 4($s0)        ; speed',
+    '  subu  $s2, $s2, $s4      ; drift left by speed',
+    '  bgez  $s2, moved',
+    '  nop',
+    '  li    $s2, 319           ; wrapped: respawn at the right edge',
+    '  jal   rng',
+    '  nop',
+    '  andi  $s3, $v0, 255',
+    '  slti  $t3, $s3, 240',
+    '  bne   $t3, $zero, moved',
+    '  nop',
+    '  addiu $s3, $s3, -16',
+    'moved:',
+    '  sh    $s2, 0($s0)',
+    '  sh    $s3, 2($s0)',
+    '  sll   $t5, $s4, 3        ; intensity = speed*7 + 6, clamped to 31',
+    '  subu  $t5, $t5, $s4',
+    '  addiu $t5, $t5, 6',
+    '  slti  $t3, $t5, 32',
+    '  bne   $t3, $zero, shade',
+    '  nop',
+    '  li    $t5, 31',
+    'shade:',
+    '  sll   $t6, $t5, 11       ; pack a grey star: i<<11 | i<<6 | i<<1 | 1',
+    '  sll   $t2, $t5, 6',
+    '  or    $t6, $t6, $t2',
+    '  sll   $t2, $t5, 1',
+    '  or    $t6, $t6, $t2',
+    '  ori   $t6, $t6, 1',
+    '  sll   $t2, $s3, 8        ; addr = fb + (y*320 + x)*2',
+    '  sll   $t3, $s3, 6',
+    '  addu  $t2, $t2, $t3',
+    '  addu  $t2, $t2, $s2',
+    '  sll   $t2, $t2, 1',
+    '  lui   $t3, 0x8010',
+    '  addu  $t2, $t2, $t3',
+    '  sh    $t6, 0($t2)        ; the star',
+    '  addiu $s2, $s2, 1        ; a dimmer trailing pixel makes the streak',
+    '  slti  $t3, $s2, 320',
+    '  beq   $t3, $zero, next',
+    '  nop',
+    '  addiu $t2, $t2, 2',
+    '  srl   $t4, $t5, 1',
+    '  sll   $t6, $t4, 11',
+    '  sll   $t3, $t4, 6',
+    '  or    $t6, $t6, $t3',
+    '  sll   $t3, $t4, 1',
+    '  or    $t6, $t6, $t3',
+    '  ori   $t6, $t6, 1',
+    '  sh    $t6, 0($t2)',
+    'next:',
+    '  addiu $s0, $s0, 6',
+    '  addiu $s1, $s1, -1',
+    '  bne   $s1, $zero, star',
+    '  nop',
+    '  lui   $t0, 0xA440',
+    '  sw    $zero, 16($t0)     ; vsync',
+    '  j     frame',
+    '  nop',
+    '',
+    '; rng: xorshift32 on $s7, result in $v0.',
+    'rng:',
+    '  sll   $t1, $s7, 13',
+    '  xor   $s7, $s7, $t1',
+    '  srl   $t1, $s7, 17',
+    '  xor   $s7, $s7, $t1',
+    '  sll   $t1, $s7, 5',
+    '  xor   $s7, $s7, $t1',
+    '  jr    $ra',
+    '  or    $v0, $s7, $zero    ; delay slot: hand back the new state',
+  ].join('\n');
+
   var DEMOS = {
     gradient: { name: 'ULTRA GRADIENT', tagline: 'scrolling rainbow, pure MIPS', source: GRADIENT_SRC },
     pong: { name: 'ULTRA PONG', tagline: 'd-pad plays, JAL draws', source: PONG_SRC },
+    starfield: { name: 'ULTRA STARFIELD', tagline: 'xorshift warp, 48 stars', source: STARFIELD_SRC },
   };
+
+  /* ================= homebrew ROM catalog + search ================= */
+  /* Ultra ships with a curated catalog of freely-distributable content so
+   * "search and play" never means hunting for pirated commercial ROMs. The
+   * built-in kind boots instantly (they ARE the demos above); the community
+   * kind points at the open homebrew scene — the search box opens a scoped
+   * web search for that title's official, rights-cleared release, which the
+   * user can then feed to Ultra's load-from-URL box. No commercial ROMs, no
+   * automatic downloads of anyone's copyrighted game. */
+
+  var HOMEBREW = [
+    { id: 'gradient', title: 'Ultra Gradient', author: 'Ultra', year: 2026, genre: 'demo effect',
+      license: 'MIT (bundled)', kind: 'builtin', demo: 'gradient',
+      desc: 'A scrolling rainbow plasma written in MIPS assembly and assembled in-engine.' },
+    { id: 'pong', title: 'Ultra Pong', author: 'Ultra', year: 2026, genre: 'arcade sports',
+      license: 'MIT (bundled)', kind: 'builtin', demo: 'pong',
+      desc: 'Playable Pong — the d-pad slides the paddle, walls bounce, the ball scores.' },
+    { id: 'starfield', title: 'Ultra Starfield', author: 'Ultra', year: 2026, genre: 'demo effect space',
+      license: 'MIT (bundled)', kind: 'builtin', demo: 'starfield',
+      desc: 'A 48-star warp field driven by an xorshift RNG, streaks and depth cues included.' },
+    { id: 'libdragon-examples', title: 'Libdragon Examples', author: 'Libdragon project', year: 2024,
+      genre: 'homebrew demo toolkit', license: 'Unlicense / public domain', kind: 'community',
+      query: 'libdragon n64 example roms release', desc: 'The open-source N64 SDK ships buildable example ROMs (public domain).' },
+    { id: 'n64brew-gamejam', title: 'N64brew Game Jam', author: 'N64brew community', year: 2023,
+      genre: 'homebrew games platformer puzzle racing', license: 'open source (per entry)', kind: 'community',
+      query: 'n64brew game jam homebrew rom download', desc: 'Community game jam — dozens of original, freely-distributable homebrew games.' },
+    { id: 'pom1-tetris', title: 'Open homebrew puzzle', author: 'homebrew scene', year: 2022,
+      genre: 'puzzle tetris blocks', license: 'open source', kind: 'community',
+      query: 'n64 homebrew tetris puzzle open source rom', desc: 'Open-source block/puzzle homebrew for the N64.' },
+  ];
+
+  // Pure, order-stable search: every whitespace token must match somewhere in
+  // the entry (title/author/genre/desc/license). Empty query returns all.
+  function searchHomebrew(query) {
+    var toks = String(query == null ? '' : query).toLowerCase().split(/\s+/).filter(Boolean);
+    return HOMEBREW.filter(function (r) {
+      if (!toks.length) return true;
+      var hay = (r.title + ' ' + r.author + ' ' + r.genre + ' ' + r.desc + ' ' + r.license + ' ' + r.year).toLowerCase();
+      for (var i = 0; i < toks.length; i++) if (hay.indexOf(toks[i]) === -1) return false;
+      return true;
+    }).map(function (r) {
+      return { id: r.id, title: r.title, author: r.author, year: r.year, genre: r.genre,
+        license: r.license, kind: r.kind, demo: r.demo || null, query: r.query || null, desc: r.desc };
+    });
+  }
+
+  // The scoped web-search URL for a community entry — a search for its OWN
+  // legal release, never a commercial ROM site.
+  function homebrewSearchUrl(entry) {
+    var q = (entry && entry.query) || (entry && entry.title) || 'n64 homebrew rom';
+    return 'https://duckduckgo.com/?q=' + encodeURIComponent(q);
+  }
 
   // Assemble a demo and hand back a booted console.
   function bootDemo(key) {
@@ -809,6 +990,7 @@
     identifyRom: identifyRom, normalizeRom: normalizeRom, bootRom: bootRom,
     loadProgram: loadProgram, assemble: assemble, disasm: disasm,
     DEMOS: DEMOS, bootDemo: bootDemo,
+    HOMEBREW: HOMEBREW, searchHomebrew: searchHomebrew, homebrewSearchUrl: homebrewSearchUrl,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.UltraEngine = api;

@@ -276,6 +276,59 @@ test('pong survives 120 frames without halting (walls bounce, misses reset)', ()
   const bx = E.read32(s, 0x80000200);
   assert.ok(bx >= 0 && bx <= 320, 'ball stayed on the court: ' + bx);
 });
+test('starfield demo: runs a frame, paints stars, is deterministic and animates', () => {
+  const a = E.bootDemo('starfield');
+  const steps = E.runFrame(a, 3000000);
+  assert.equal(a.frameDone, true, 'frame completed inside the budget (' + steps + ' steps)');
+  assert.equal(a.halted, false, a.stopReason);
+  const fb1 = E.framebufferRGBA(a, new Uint8Array(320 * 240 * 4));
+  // deep-space clear (0x0021) plus at least a few bright star pixels
+  let bright = 0;
+  for (let i = 0; i < fb1.length; i += 4) if (fb1[i] > 120 && fb1[i + 1] > 120) bright++;
+  assert.ok(bright >= 10, 'painted a star field (' + bright + ' bright pixels)');
+  const b = E.bootDemo('starfield');
+  E.runFrame(b, 3000000);
+  const fb2 = E.framebufferRGBA(b, new Uint8Array(320 * 240 * 4));
+  deepEq(Array.from(fb1), Array.from(fb2)); // same seed → identical first frame
+  for (let f = 0; f < 8; f++) E.runFrame(b, 3000000);
+  const fb3 = E.framebufferRGBA(b, new Uint8Array(320 * 240 * 4));
+  assert.notEqual(JSON.stringify(Array.from(fb1)), JSON.stringify(Array.from(fb3)), 'stars drifted');
+});
+test('starfield survives 90 frames without halting', () => {
+  const s = E.bootDemo('starfield');
+  for (let i = 0; i < 90; i++) E.runFrame(s, 3000000);
+  assert.equal(s.halted, false, s.stopReason);
+  assert.equal(s.frame, 90);
+});
+
+/* ---------- homebrew catalog + search ---------- */
+test('every catalog entry is legal (bundled builtin or a search-out community link)', () => {
+  for (const r of E.HOMEBREW) {
+    assert.ok(r.kind === 'builtin' || r.kind === 'community', r.id + ' has a known kind');
+    if (r.kind === 'builtin') assert.ok(E.DEMOS[r.demo], r.id + ' points at a real demo');
+    // no catalog entry may carry a direct download URL to a commercial ROM
+    assert.equal(r.url, undefined, r.id + ' must not hardcode a download URL');
+  }
+});
+test('searchHomebrew tokenises and matches across fields; empty returns all', () => {
+  deepEq(E.searchHomebrew('').map((r) => r.id).sort(),
+    E.HOMEBREW.map((r) => r.id).sort());
+  deepEq(E.searchHomebrew('pong').map((r) => r.id), ['pong']);
+  deepEq(E.searchHomebrew('SPACE').map((r) => r.id), ['starfield']); // case-insensitive, genre field
+  deepEq(E.searchHomebrew('tetris').map((r) => r.id), ['pom1-tetris']);
+  deepEq(E.searchHomebrew('puzzle').map((r) => r.id).sort(), ['n64brew-gamejam', 'pom1-tetris']);
+  // every token must hit — nonsense filters everything out
+  deepEq(E.searchHomebrew('pong zzzznope').map((r) => r.id), []);
+});
+test('community entries resolve to a scoped web search, never a ROM host', () => {
+  const community = E.HOMEBREW.filter((r) => r.kind === 'community');
+  assert.ok(community.length >= 1);
+  for (const r of community) {
+    const u = E.homebrewSearchUrl(r);
+    assert.ok(u.startsWith('https://duckduckgo.com/?q='), r.id + ' opens a search, not a download');
+  }
+});
+
 test('framebuffer decode expands RGBA5551 correctly', () => {
   const s = E.makeState();
   // one white pixel then one pure red pixel at the framebuffer origin

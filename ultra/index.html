@@ -72,6 +72,28 @@
   .rom-info .warn { color: var(--yellow); font-size: 12px; margin-top: 6px; }
   .rom-info button { margin-top: 8px; }
 
+  /* ---- loader + homebrew library ---- */
+  .loader { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+  .loader-row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+  .loader-hint { color: var(--dim); font-size: 12px; }
+  .loader-note { color: var(--faint); font-size: 12px; line-height: 1.5; margin-top: 4px; }
+  .urlbox { flex: 1 1 240px; min-width: 0; background: var(--panel2); border: 1px solid var(--line);
+    border-radius: 10px; padding: 9px 12px; color: var(--ink); font-size: 13px; }
+  .urlbox:focus { outline: none; border-color: var(--blue); }
+  #hbSearch { width: 100%; margin-bottom: 12px; }
+  .hb-results { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+  .hb { text-align: left; padding: 12px 14px; border-radius: 12px; background: var(--panel);
+    border: 1px solid var(--line); cursor: pointer; }
+  .hb:hover { border-color: var(--blue); }
+  .hb b { display: block; letter-spacing: .02em; }
+  .hb .meta { color: var(--dim); font-size: 12px; margin: 2px 0 6px; }
+  .hb .desc { color: var(--faint); font-size: 12px; line-height: 1.4; }
+  .hb .badge { display: inline-block; font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+    padding: 2px 7px; border-radius: 999px; font-weight: 700; }
+  .hb .badge.builtin { background: rgba(62,196,109,.15); color: var(--green); }
+  .hb .badge.community { background: rgba(79,125,249,.15); color: var(--blue); }
+  .hb-empty { color: var(--faint); font-size: 13px; padding: 6px 2px; }
+
   /* ---- controller ---- */
   .pad-row { display: flex; align-items: center; justify-content: space-between; gap: 16px;
     background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
@@ -133,10 +155,33 @@
   <div class="shelf" id="shelf">
     <button class="cart" data-demo="gradient"><b>ULTRA GRADIENT</b><span>scrolling rainbow, pure MIPS</span></button>
     <button class="cart" data-demo="pong"><b>ULTRA PONG</b><span>d-pad plays, JAL draws</span></button>
-    <button class="cart slot" id="slot"><b>ROM slot</b><span>load a .z64 / .v64 / .n64 file</span></button>
+    <button class="cart" data-demo="starfield"><b>ULTRA STARFIELD</b><span>xorshift warp, 48 stars</span></button>
+    <button class="cart slot" id="slot"><b>ROM slot</b><span>upload a .z64 / .v64 / .n64 file</span></button>
   </div>
   <input type="file" id="romFile" accept=".z64,.v64,.n64,.rom" hidden>
   <div class="rom-info mono" id="romInfo"></div>
+</section>
+
+<section>
+  <h2>Load a ROM</h2>
+  <div class="loader">
+    <div class="loader-row">
+      <button id="uploadBtn" class="primary">⬆ Upload file…</button>
+      <span class="loader-hint">a .z64, .v64 or .n64 dump from your device</span>
+    </div>
+    <div class="loader-row">
+      <input type="url" id="romUrl" class="urlbox mono" placeholder="https://…/homebrew.z64  — paste a direct ROM link" autocomplete="off" spellcheck="false">
+      <button id="urlBtn">Load URL</button>
+    </div>
+    <p class="loader-note">Loads any N64 ROM you have the right to use — your own dumps or freely-distributable homebrew. Ultra runs the R4300i integer core, so commercial titles boot but halt at their first RSP/RDP/FPU instruction.</p>
+  </div>
+</section>
+
+<section>
+  <h2>Homebrew library</h2>
+  <input type="search" id="hbSearch" class="urlbox mono" placeholder="Search demos &amp; homebrew — try “pong”, “space”, “puzzle”, “racing”…" autocomplete="off">
+  <div class="hb-results" id="hbResults"></div>
+  <p class="loader-note">This searches Ultra's bundled cartridges and a curated list of open-source homebrew. Ultra does not search for or download commercial game ROMs — those are copyrighted. Community entries open a web search for that title's own legal release, which you can then paste into “Load a ROM” above.</p>
 </section>
 
 <section>
@@ -297,31 +342,86 @@ shelf.addEventListener('click', function (e) {
   bootDemo(el.getAttribute('data-demo'));
 });
 
+function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+// Identify a loaded byte buffer, show the header card, and offer to boot it.
+function showRom(bytes, label, note) {
+  var info = E.identifyRom(bytes);
+  lastRomInfo = info.ok ? info : null;
+  var box = $('romInfo');
+  box.className = 'rom-info mono show';
+  if (!info.ok) {
+    box.innerHTML = (label ? esc(label) + ': ' : '') + 'not an N64 ROM — ' + esc(info.error);
+    return;
+  }
+  box.innerHTML = (label ? esc(label) + '<br>' : '') +
+    'Cartridge: <b>' + esc(info.name) + '</b>  ·  format .' + info.format +
+    '  ·  ' + (info.bytes.length >> 20) + ' MB' +
+    '<br>entry ' + hex8(info.entry) + '  ·  CRC ' + hex8(info.crc1) + ' / ' + hex8(info.crc2) +
+    '<div class="warn">' + (note || 'Header verified and byte order normalized.') +
+    ' Booting runs the CPU for real, but commercial games halt at their first RSP/RDP/FPU instruction.</div>' +
+    '<button id="bootRomBtn" class="primary">Boot this ROM</button>';
+  $('bootRomBtn').addEventListener('click', function () { if (lastRomInfo) bootRom(lastRomInfo); });
+}
+
 $('romFile').addEventListener('change', function () {
   var f = this.files && this.files[0];
   if (!f) return;
   var reader = new FileReader();
-  reader.onload = function () {
-    var info = E.identifyRom(new Uint8Array(reader.result));
-    lastRomInfo = info.ok ? info : null;
-    var box = $('romInfo');
-    if (!info.ok) {
-      box.className = 'rom-info mono show';
-      box.textContent = 'Not an N64 ROM: ' + info.error;
-      return;
-    }
-    box.className = 'rom-info mono show';
-    box.innerHTML = 'Cartridge: <b>' + info.name.replace(/</g, '&lt;') + '</b>' +
-      '  ·  format .' + info.format +
-      '<br>entry ' + hex8(info.entry) + '  ·  CRC ' + hex8(info.crc1) + ' / ' + hex8(info.crc2) +
-      '<div class="warn">Header verified and byte order normalized. Booting runs the CPU for real, but commercial games will halt at their first RSP/RDP/FPU instruction.</div>' +
-      '<button id="bootRomBtn" class="primary">Boot this ROM</button>';
-    document.getElementById('bootRomBtn').addEventListener('click', function () {
-      if (lastRomInfo) bootRom(lastRomInfo);
-    });
-  };
+  reader.onload = function () { showRom(new Uint8Array(reader.result), f.name); };
   reader.readAsArrayBuffer(f);
 });
+$('uploadBtn').addEventListener('click', function () { $('romFile').click(); });
+
+// Load-from-URL: fetch a ROM the user has the right to use, then identify it.
+function loadUrl(url) {
+  url = (url || '').trim();
+  if (!url) return;
+  var box = $('romInfo');
+  box.className = 'rom-info mono show';
+  box.textContent = 'Fetching ' + url + ' …';
+  fetch(url).then(function (res) {
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return res.arrayBuffer();
+  }).then(function (buf) {
+    showRom(new Uint8Array(buf), url.split('/').pop() || url, 'Fetched from URL.');
+  }).catch(function (err) {
+    box.className = 'rom-info mono show';
+    box.innerHTML = 'Could not fetch that URL: ' + esc(err.message) +
+      '.<div class="warn">The host may block cross-origin requests (CORS), or the link may be wrong. ' +
+      'Try downloading the ROM and using Upload file instead.</div>';
+  });
+}
+$('urlBtn').addEventListener('click', function () { loadUrl($('romUrl').value); });
+$('romUrl').addEventListener('keydown', function (e) { if (e.key === 'Enter') loadUrl(this.value); });
+
+/* ---------------- homebrew library search ---------------- */
+
+function renderHomebrew(query) {
+  var results = E.searchHomebrew(query);
+  var box = $('hbResults');
+  if (!results.length) { box.innerHTML = '<div class="hb-empty">No matches. Try “demo”, “arcade”, “space” — or clear the box to see everything.</div>'; return; }
+  box.innerHTML = results.map(function (r, i) {
+    var badge = r.kind === 'builtin'
+      ? '<span class="badge builtin">play now</span>'
+      : '<span class="badge community">find release</span>';
+    return '<button class="hb" data-i="' + i + '">' +
+      badge + '<b>' + esc(r.title) + '</b>' +
+      '<div class="meta">' + esc(r.genre) + ' · ' + esc(r.license) + '</div>' +
+      '<div class="desc">' + esc(r.desc) + '</div></button>';
+  }).join('');
+  var btns = box.querySelectorAll('.hb');
+  for (var i = 0; i < btns.length; i++) {
+    (function (el, r) {
+      el.addEventListener('click', function () {
+        if (r.kind === 'builtin' && r.demo) { bootDemo(r.demo); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+        else { window.open(E.homebrewSearchUrl(r), '_blank', 'noopener'); }
+      });
+    })(btns[i], results[i]);
+  }
+}
+$('hbSearch').addEventListener('input', function () { renderHomebrew(this.value); });
+renderHomebrew('');
 
 /* ---------------- controls ---------------- */
 
