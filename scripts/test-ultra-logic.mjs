@@ -224,6 +224,16 @@ test('junk bytes are rejected, not booted', () => {
   const junk = new Uint8Array(0x40).fill(0x55);
   assert.equal(E.identifyRom(junk).ok, false);
 });
+test('archives are rejected with a useful message, not run as code', () => {
+  const arc = (sig) => { const b = new Uint8Array(0x80); b.set(sig, 0); return E.identifyRom(b); };
+  const sevenz = arc([0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C]);
+  assert.equal(sevenz.ok, false);
+  assert.ok(/\.7z archive/.test(sevenz.error), sevenz.error);
+  assert.ok(/extract/.test(sevenz.error));
+  assert.equal(arc([0x50, 0x4B, 0x03, 0x04]).ok, false); // zip
+  assert.equal(arc([0x1F, 0x8B]).ok, false);             // gzip
+  assert.ok(/\.rar archive/.test(arc([0x52, 0x61, 0x72, 0x21, 0x1A, 0x07]).error));
+});
 test('bootRom copies code from ROM offset 0x1000 to the entry point and runs it', () => {
   const s = E.makeState();
   E.bootRom(s, E.identifyRom(fakeRomZ64()));
@@ -498,6 +508,15 @@ test('DC: identifyDisc parses an IP.BIN header, flags raw binaries', () => {
   const raw = D.identifyDisc(new Uint8Array(64).fill(9));
   assert.equal(raw.kind, 'binary');
   assert.equal(D.identifyDisc(new Uint8Array(4)).ok, false);
+});
+test('DC: an archive is rejected, not mislabeled a "raw SH-4 binary"', () => {
+  const b = new Uint8Array(0x80); b.set([0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C], 0); // .7z
+  const info = D.identifyDisc(b);
+  assert.equal(info.ok, false);
+  assert.ok(/\.7z archive/.test(info.error), info.error);
+  assert.ok(/extract/.test(info.error));
+  const zip = new Uint8Array(0x80); zip.set([0x50, 0x4B, 0x03, 0x04], 0);
+  assert.equal(D.identifyDisc(zip).ok, false);
 });
 test('DC: bootDisc runs the IP.BIN bootstrap entry at +0x300', () => {
   const ip = new Uint8Array(0x400);
