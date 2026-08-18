@@ -529,6 +529,14 @@ requestAnimationFrame(tick);
 
 if (navigator.serviceWorker && navigator.serviceWorker.register) {
   navigator.serviceWorker.register('sw.js').catch(function () {});
+  // When a freshly-deployed worker takes control, reload once so the page
+  // picks up the new engine/UI instead of showing stale cached code.
+  var reloadedForSW = false;
+  navigator.serviceWorker.addEventListener('controllerchange', function () {
+    if (reloadedForSW) return;
+    reloadedForSW = true;
+    window.location.reload();
+  });
 }
 </script>
 </body>

@@ -2,7 +2,7 @@
  * navigations are network-first (freshest build online, cached shell offline)
  * and static assets are cache-first for speed. Bump CACHE to force a clean
  * reinstall. */
-const CACHE = 'ultra-v4';
+const CACHE = 'ultra-v5';
 const ASSETS = ['./', './index.html', './engine.js', './dc-engine.js', './manifest.json', './icon.svg',
                 './icon-180.png', './icon-192.png', './icon-512.png'];
 
@@ -24,7 +24,11 @@ self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   const url = new URL(e.request.url);
   if (url.origin !== location.origin) return;
-  if (e.request.mode === 'navigate') {
+  // Navigations AND our own code (.js) go network-first, so a fresh deploy's
+  // engine/UI reaches the page on the next online load instead of waiting for
+  // the cache version to cascade; static assets stay cache-first for speed.
+  const networkFirst = e.request.mode === 'navigate' || /\.js(\?|$)/.test(url.pathname);
+  if (networkFirst) {
     e.respondWith(
       fetch(e.request)
         .then((res) => {
@@ -32,7 +36,7 @@ self.addEventListener('fetch', (e) => {
           caches.open(CACHE).then((c) => c.put(e.request, copy));
           return res;
         })
-        .catch(() => caches.match(e.request).then((r) => r || caches.match('./index.html')))
+        .catch(() => caches.match(e.request).then((r) => r || (e.request.mode === 'navigate' ? caches.match('./index.html') : undefined)))
     );
     return;
   }
