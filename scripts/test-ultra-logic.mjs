@@ -338,6 +338,214 @@ test('framebuffer decode expands RGBA5551 correctly', () => {
   deepEq(Array.from(out.slice(0, 8)), [255, 255, 255, 255, 255, 0, 0, 255]);
 });
 
+/* ================= Sega Dreamcast (SH-4) side ================= */
+const dcSandbox = { module: { exports: {} } };
+dcSandbox.self = dcSandbox;
+vm.createContext(dcSandbox);
+vm.runInContext(readFileSync(join(ROOT, 'ultra', 'dc-engine.js'), 'utf8'), dcSandbox, { filename: 'ultra/dc-engine.js' });
+const D = dcSandbox.module.exports;
+
+// Assemble one SH-4 program, boot a console with it, run N steps, return state.
+function runDc(src, steps = 200) {
+  const asm = D.assemble(src);
+  assert.equal(asm.ok, true, 'assembles clean: ' + asm.errors.join('; '));
+  const s = D.makeState();
+  D.loadProgram(s, asm.bytes, asm.base);
+  D.run(s, steps);
+  return s;
+}
+
+test('DC: SH-4 assembler emits canonical encodings', () => {
+  const words = (src) => {
+    const b = D.assemble(src).bytes;
+    return [b[0] | (b[1] << 8)];
+  };
+  deepEq(words('mov #5, r1'), [0xE105]);
+  deepEq(words('add #-1, r2'), [0x72FF]);
+  deepEq(words('mov r3, r4'), [0x6433]);
+  deepEq(words('mov.l @r1, r2'), [0x6212]);
+  deepEq(words('mov.w r0, @r4'), [0x2401]);
+  deepEq(words('dt r7'), [0x4710]);
+  deepEq(words('rts'), [0x000B]);
+  deepEq(words('nop'), [0x0009]);
+  deepEq(words('tst #0x40, r0'), [0xC840]);
+  deepEq(words('cmp/gt r0, r8'), [0x3807]);
+  deepEq(words('jsr @r2'), [0x420B]);
+  deepEq(words('start: bra start'), [0xAFFE]); // disp -2 in 12 bits
+});
+test('DC: literal pool loads a 32-bit constant PC-relative', () => {
+  const s = runDc('mov.l =0x12345678, r1\nspin: bra spin\nnop', 50);
+  assert.equal(s.r[1], 0x12345678);
+});
+test('DC: arithmetic, shifts, extends', () => {
+  const s = runDc([
+    'mov #10, r1',
+    'add #5, r1        ; 15',
+    'mov r1, r2',
+    'shll2 r2          ; 60',
+    'add r1, r2        ; 75',
+    'sub r1, r3        ; 0 - 15',
+    'neg r1, r4        ; -15',
+    'mov.l =0x8081, r5',
+    'exts.b r5, r6     ; 0x81 sign-extends',
+    'extu.w r5, r7',
+    'spin: bra spin',
+    'nop',
+  ].join('\n'), 60);
+  assert.equal(s.r[1], 15);
+  assert.equal(s.r[2], 75);
+  assert.equal(s.r[3], -15);
+  assert.equal(s.r[4], -15);
+  assert.equal(s.r[6], (0x81 << 24) >> 24);
+  assert.equal(s.r[7], 0x8081);
+});
+test('DC: bra has a delay slot; bt does not', () => {
+  const s = runDc([
+    'mov #0, r3',
+    'bra over',
+    'add #1, r3        ; delay slot — runs',
+    'add #8, r3        ; jumped over',
+    'over:',
+    'mov #1, r0',
+    'cmp/eq #1, r0',
+    'bt skip',
+    'add #16, r3       ; bt taken with NO delay slot — must not run',
+    'skip:',
+    'spin: bra spin',
+    'nop',
+  ].join('\n'), 60);
+  assert.equal(s.r[3], 1);
+  assert.equal(s.t, 1);
+});
+test('DC: bsr/rts round-trip through PR', () => {
+  const s = runDc([
+    'bsr sub',
+    'nop',
+    'add #1, r4        ; runs after return',
+    'spin: bra spin',
+    'nop',
+    'sub:',
+    'mov #42, r4',
+    'rts',
+    'nop',
+  ].join('\n'), 60);
+  assert.equal(s.r[4], 43);
+});
+test('DC: dt counts down and sets T at zero; mul.l fills MACL', () => {
+  const s = runDc([
+    'mov #5, r1',
+    'loop: dt r1',
+    'bf loop',
+    'mov.l =12345, r2',
+    'mov.l =-7, r3',
+    'mul.l r2, r3',
+    'sts macl, r4',
+    'spin: bra spin',
+    'nop',
+  ].join('\n'), 100);
+  assert.equal(s.r[1], 0);
+  assert.equal(s.r[4], 12345 * -7);
+});
+test('DC: RAM is little-endian (opposite of the N64)', () => {
+  const s = runDc([
+    'mov.l =0x8C000100, r1',
+    'mov.l =0x11223344, r2',
+    'mov.l r2, @r1',
+    'mov.b @r1, r3     ; LSB lives at the lowest address',
+    'spin: bra spin',
+    'nop',
+  ].join('\n'), 50);
+  assert.equal(s.r[3], 0x44);
+  assert.equal(D.read16(s, 0x8C000100), 0x3344);
+});
+test('DC: Maple pad is active-low with the real button bits', () => {
+  const s = D.makeState();
+  assert.equal(D.read32(s, 0xA05F9000), 0xFFFF, 'nothing pressed = all high');
+  D.setButtons(s, D.BUTTONS.A | D.BUTTONS.D_LEFT);
+  assert.equal(D.read32(s, 0xA05F9000), (~(0x0004 | 0x0040)) & 0xFFFF);
+  assert.equal(D.BUTTONS.START, 0x0008);
+});
+test('DC: PVR origin latch + vsync strobe', () => {
+  const s = D.makeState();
+  D.write32(s, 0xA05F8050, 0x1000);
+  assert.equal(s.fbOrigin, 0x1000);
+  assert.equal(s.frameDone, false);
+  D.write32(s, 0xA05F8060, 0);
+  assert.equal(s.frameDone, true);
+  assert.equal(s.frame, 1);
+});
+test('DC: an FPU instruction halts with its name', () => {
+  const s = D.makeState();
+  D.loadProgram(s, new Uint8Array([0x0C, 0xF0]), 0x8C010000); // 0xF00C little-endian
+  D.run(s, 5);
+  assert.equal(s.halted, true);
+  assert.ok(s.stopReason.includes('FPU'), s.stopReason);
+});
+test('DC: identifyDisc parses an IP.BIN header, flags raw binaries', () => {
+  const ip = new Uint8Array(0x100);
+  const put = (str, at) => { for (let i = 0; i < str.length; i++) ip[at + i] = str.charCodeAt(i); };
+  put('SEGA SEGAKATANA ', 0x00);
+  put('SEGA ENTERPRISES', 0x10);
+  put('HDR-0042  ', 0x40);
+  put('1ST_READ.BIN', 0x60);
+  put('ULTRA WAVE DEMO', 0x80);
+  const info = D.identifyDisc(ip);
+  assert.equal(info.ok, true);
+  assert.equal(info.kind, 'ip');
+  assert.equal(info.title, 'ULTRA WAVE DEMO');
+  assert.equal(info.bootFile, '1ST_READ.BIN');
+  assert.equal(info.product, 'HDR-0042');
+  const raw = D.identifyDisc(new Uint8Array(64).fill(9));
+  assert.equal(raw.kind, 'binary');
+  assert.equal(D.identifyDisc(new Uint8Array(4)).ok, false);
+});
+test('DC: bootDisc runs the IP.BIN bootstrap entry at +0x300', () => {
+  const ip = new Uint8Array(0x400);
+  const put = (str, at) => { for (let i = 0; i < str.length; i++) ip[at + i] = str.charCodeAt(i); };
+  put('SEGA SEGAKATANA ', 0x00);
+  // bootstrap at 0x300: mov #7, r1 ; then an FPU word to stop
+  ip[0x300] = 0x07; ip[0x301] = 0xE1;
+  ip[0x302] = 0x0C; ip[0x303] = 0xF0;
+  const s = D.makeState();
+  D.bootDisc(s, D.identifyDisc(ip));
+  assert.equal(s.pc >>> 0, 0x8C008300);
+  D.run(s, 10);
+  assert.equal(s.r[1], 7);
+  assert.equal(s.halted, true);
+});
+test('DC: waves demo paints a deterministic, animated RGB565 frame', () => {
+  const a = D.bootDemo('waves');
+  const steps = D.runFrame(a, 2500000);
+  assert.equal(a.frameDone, true, 'frame completed inside the budget (' + steps + ' steps)');
+  assert.equal(a.halted, false, a.stopReason);
+  const fb1 = D.framebufferRGBA(a, new Uint8Array(320 * 240 * 4));
+  assert.ok(fb1.some((v, i) => i % 4 === 1 && v > 100), 'green plasma present');
+  const b = D.bootDemo('waves');
+  D.runFrame(b, 2500000);
+  const fb2 = D.framebufferRGBA(b, new Uint8Array(320 * 240 * 4));
+  deepEq(Array.from(fb1.slice(0, 4000)), Array.from(fb2.slice(0, 4000)));
+  D.runFrame(b, 2500000);
+  const fb3 = D.framebufferRGBA(b, new Uint8Array(320 * 240 * 4));
+  assert.notEqual(JSON.stringify(Array.from(fb2.slice(0, 4000))), JSON.stringify(Array.from(fb3.slice(0, 4000))));
+});
+test('DC: pad demo steers the block with active-low Maple bits', () => {
+  const s = D.bootDemo('pad');
+  D.runFrame(s, 2500000);
+  assert.equal(s.frameDone, true);
+  assert.equal(D.read32(s, 0x8C000200), 152, 'block starts centered');
+  assert.equal(D.read32(s, 0x8C000204), 112);
+  D.setButtons(s, D.BUTTONS.D_RIGHT);
+  D.runFrame(s, 2500000);
+  assert.equal(D.read32(s, 0x8C000200), 155, 'block slid right by 3');
+  D.setButtons(s, D.BUTTONS.D_UP);
+  D.runFrame(s, 2500000);
+  assert.equal(D.read32(s, 0x8C000204), 109, 'block slid up by 3');
+  D.setButtons(s, 0);
+  for (let i = 0; i < 30; i++) D.runFrame(s, 2500000);
+  assert.equal(s.halted, false, s.stopReason);
+  assert.equal(s.frame, 33);
+});
+
 /* ---------- run ---------- */
 for (const [name, fn] of tests) {
   try { fn(); passed++; console.log(`  ✓ ${name}`); }

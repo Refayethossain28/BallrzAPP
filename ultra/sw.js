@@ -2,8 +2,8 @@
  * navigations are network-first (freshest build online, cached shell offline)
  * and static assets are cache-first for speed. Bump CACHE to force a clean
  * reinstall. */
-const CACHE = 'ultra-v2';
-const ASSETS = ['./', './index.html', './engine.js', './manifest.json', './icon.svg',
+const CACHE = 'ultra-v3';
+const ASSETS = ['./', './index.html', './engine.js', './dc-engine.js', './manifest.json', './icon.svg',
                 './icon-180.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => {
