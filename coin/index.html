@@ -681,6 +681,20 @@ miner is sealed under the proof-of-work forever. Beauty, rarity, provenance — 
   </div>
 </div>
 
+<div class="note" id="commonsNote" style="margin-top:12px">
+  <b>🌍 The World Commons</b>
+  <div class="sub" style="margin-top:3px">One well-known meeting relay for every circle on Earth. Join it and your
+  circle becomes discoverable worldwide — the world’s circles appear above as neighbours you can connect to, trade
+  favours with over bridges, and carry reputation between. The commons is <b>social-only under the same firewall as
+  any neighbour</b>: it can never see, merge or touch your coin chain. It’s a convention, not an authority — any
+  relay can serve as a commons, and you can join a different one at any time. How the worldwide network fits
+  together: <a href="WORLD.md" target="_blank" rel="noopener">WORLD.md</a>.</div>
+  <div class="row" style="margin-top:8px">
+    <input id="commonsUrl" placeholder="https://the-commons.onrender.com" autocomplete="off">
+    <button id="commonsJoin">🌍 Join the commons</button>
+  </div>
+</div>
+
 <div class="row" style="margin-top:18px">
   <button id="resetAll" class="danger">Reset node (wipe chain &amp; wallets)</button>
 </div>
@@ -3487,6 +3501,27 @@ miner is sealed under the proof-of-work forever. Beauty, rarity, provenance — 
       toast('◇ Neighbouring circle added — tap Connect to join it');
     }
   });
+
+  // 🌍 The World Commons — one well-known meeting relay where every circle
+  // announces itself, so discovery becomes worldwide. Joining adds it as a
+  // NEIGHBOUR relay (the PEER_BLOCK firewall applies: social layer only, the
+  // money and governance layers never cross), then announces this circle
+  // there. The commons is a convention, not an authority: any relay URL
+  // works, and leaving is just removing the relay.
+  var LS_COMMONS = 'ballrzcoin.commons.v1';
+  if ($('commonsJoin')) {
+    try { $('commonsUrl').value = localStorage.getItem(LS_COMMONS) || CFG.commonsUrl || ''; } catch (e) {}
+    $('commonsJoin').addEventListener('click', function () {
+      var url = validRelayUrl($('commonsUrl').value.trim());
+      if (!url) { toast('✖ Enter a valid https relay URL for the commons'); return; }
+      if (url === myOrigin()) { toast('That’s this circle’s own relay — the commons should be a separate deploy'); return; }
+      addRelay(url, true);
+      try { localStorage.setItem(LS_COMMONS, url); } catch (e) {}
+      announceMyCircleAsPeer();
+      renderNetStatus();
+      toast('🌍 Joined the commons — the world’s circles will appear under Neighbouring circles');
+    });
+  }
   $('relayClear').addEventListener('click', function () {
     relays = []; persistRelays();
     try { localStorage.removeItem(LS_RELAY); } catch (err) {}

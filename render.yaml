@@ -105,6 +105,22 @@ services:
       #   RELAY_MAX_HELD / RELAY_MAX_BYTES   — message buffer bounds
       #   RELAY_RATE_CAP / RELAY_RATE_REFILL — per-client POST rate limit
 
+  # The World Commons — a second instance of the TimeCoin relay serving as
+  # the worldwide meeting point where circles announce themselves (discovery
+  # only; it can never touch any circle's coin chain — see coin/WORLD.md).
+  - type: web
+    name: timecoin-commons
+    runtime: node
+    rootDir: coin
+    plan: free
+    buildCommand: echo "zero-dependency — nothing to build"
+    startCommand: node server.mjs
+    healthCheckPath: /status
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22.11.0"
+
 databases:
   - name: fixr-db
     plan: free

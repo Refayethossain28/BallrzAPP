@@ -46,6 +46,17 @@ in [`SECURITY.md`](SECURITY.md), and [`ROADMAP.md`](ROADMAP.md) lays out the pat
 from here to a hardened currency. Treat these as the risk disclosures any serious
 currency owes its users, not as fine print.
 
+## 🌍 Worldwide: a federation of circles
+
+TimeCoin scales to the world the way the internet did — not one global chain,
+but a **federation**: each circle keeps its own chain and its own trust, a
+shared **commons** relay makes circles discoverable to each other worldwide,
+offers and reputation federate across circles (never the money — a strict
+firewall keeps every coin chain at home), and cross-circle trade settles as
+net-zero bridged favour-credit, an hour for an hour with no exchange rate.
+The full architecture, the honest limits, and how to run a commons:
+[`WORLD.md`](WORLD.md).
+
 ## Run a real multi-device network
 
 Tabs in one browser sync automatically. To connect nodes on **different

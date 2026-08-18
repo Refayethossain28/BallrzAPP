@@ -12,5 +12,10 @@
  * can only call an https:// relay.
  */
 (typeof self !== 'undefined' ? self : this).BALLRZCOIN_CONFIG = {
-  relayUrl: ''
+  relayUrl: '',
+  // The World Commons: a well-known meeting relay every circle can join for
+  // worldwide discovery (social layer only — it can never touch coin chains).
+  // Deploy a second relay instance and put its URL here so every copy of the
+  // app offers one-tap "🌍 Join the commons". See WORLD.md.
+  commonsUrl: ''
 };

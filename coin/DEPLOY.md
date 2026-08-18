@@ -45,6 +45,16 @@ Render provisions it without any form-filling.
   message buffer; if it restarts, connected nodes simply re-announce their
   chains and everyone reconverges on the heaviest one.
 
+## Going worldwide: run a commons
+
+The same one-file relay can also serve as a **commons** — a well-known meeting
+point where circles from anywhere announce themselves so they can find each
+other (discovery only: a commons can never touch any circle's coins — the
+architecture is [`WORLD.md`](WORLD.md)). Deploy a second instance exactly as
+above (call it `the-commons`), share its URL, and anyone can join it from the
+app's Network panel (🌍 The World Commons). Set it as `commonsUrl` in
+[`config.js`](config.js) and every copy of your app offers one-tap joining.
+
 ## Keeping it healthy as your circle grows
 
 The relay is hardened for more than a handful of users out of the box — its
