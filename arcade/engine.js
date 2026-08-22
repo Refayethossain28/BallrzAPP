@@ -48,7 +48,12 @@
       controls: 'D-pad slides the whole board' },
     { id: 'breaker', name: 'Breaker', emoji: '🧱',
       tagline: 'One ball, three lives, a wall to demolish.',
-      controls: '◀ ▶ moves the paddle · A launches' }
+      controls: '◀ ▶ moves the paddle · A launches' },
+    // An external cartridge: not a built-in engine game but a whole other
+    // machine slotted into the rack — the shell boots it in-screen.
+    { id: 'ultra64', name: 'Ultra 64', emoji: '🎮', external: true,
+      tagline: 'Real N64 — the mupen64plus core. Bring a ROM you own.',
+      controls: 'Boots in-screen · B ejects the cartridge' }
   ];
 
   function gameById(id) {

@@ -48,6 +48,12 @@
   .note .warn { color: var(--yellow); }
   footer { margin-top: 18px; color: var(--faint); font-size: 12px; line-height: 1.6; }
   footer b { color: var(--dim); }
+
+  /* Embed mode (?embed=1): another app (e.g. the Arcade console) hosts this
+     page in-screen — just the stage, edge to edge, no chrome. */
+  html.embed body { padding: 0; max-width: none; }
+  html.embed header, html.embed .back, html.embed .note, html.embed footer { display: none; }
+  html.embed .stage { position: fixed; inset: 0; border: 0; border-radius: 0; aspect-ratio: auto; }
 </style>
 </head>
 <body>
@@ -90,6 +96,9 @@
 <script>
 'use strict';
 (function () {
+  if (String(location.search || '').indexOf('embed=1') !== -1) {
+    document.documentElement.className += ' embed';
+  }
   var input = document.getElementById('rom');
   var drop = document.getElementById('drop');
   var loaded = false;
