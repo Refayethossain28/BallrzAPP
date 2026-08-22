@@ -54,6 +54,9 @@
     { id: 'pong', name: 'Versus', emoji: '🏓', versus: true, badge: '2P VS',
       tagline: 'Neon pong — same couch, two pads, or across the internet.',
       controls: 'W/S vs ▲▼ · gamepads & touch · online invite codes' },
+    { id: 'quad', name: 'Quad', emoji: '⚔️', versus: true, badge: '4P VS',
+      tagline: 'Four walls, four phones — last paddle standing.',
+      controls: 'Drag or keys · host up to 4 phones with invite codes' },
     // External cartridges: not built-in engine games but whole other
     // machines slotted into the rack — the shell boots each in-screen.
     // `core` is the system the Ultra deck preselects ('' = show the picker).
@@ -540,6 +543,117 @@
   }
 
   /* ================================================================
+   * QUAD — up to four paddles, one per wall
+   * A square court: seat 0 guards the bottom wall, 1 the top, 2 the
+   * left, 3 the right, each with 3 lives. A ball past a live player's
+   * wall costs a life; a dead (or unfilled) seat's wall just bounces.
+   * Last paddle standing wins; alone, it's practice and the score is
+   * total returns. The step function takes ALL FOUR paddle inputs, so
+   * one pure engine drives solo play and the four-phone star network
+   * (the host feeds in every remote paddle and streams state back).
+   * ================================================================ */
+  var QUAD = {
+    paddleLen: 0.22, inset: 0.06, ballR: 0.018,
+    baseSpeed: 0.6, maxSpeed: 1.5, lives: 3
+  };
+
+  function quadAlive(state) {
+    var out = [];
+    for (var i = 0; i < 4; i++) if (state.lives[i] > 0) out.push(i);
+    return out;
+  }
+
+  // The nth serve of a seed always aims at the same (alive) wall with
+  // the same jitter — identical on every phone.
+  function quadServe(seed, serves, alive) {
+    if (!alive.length) alive = [0];
+    var t = alive[Math.floor(rand01('qtarget:' + seed + ':' + serves) * alive.length)];
+    var base = t === 0 ? Math.PI / 2 : t === 1 ? -Math.PI / 2 : t === 2 ? Math.PI : 0;
+    var a = base + (rand01('qjit:' + seed + ':' + serves) - 0.5) * 0.9;
+    return { x: 0.5, y: 0.5, vx: Math.cos(a) * QUAD.baseSpeed, vy: Math.sin(a) * QUAD.baseSpeed };
+  }
+
+  function newQuad(seed, players) {
+    seed = String(seed == null ? 'quad' : seed);
+    players = Math.max(1, Math.min(4, players | 0 || 1));
+    var lives = [0, 0, 0, 0];
+    for (var i = 0; i < players; i++) lives[i] = QUAD.lives;
+    var st = { seed: seed, players: players, pos: [0.5, 0.5, 0.5, 0.5], lives: lives,
+               ball: null, rally: 0, hits: 0, serves: 0, over: false, winner: null };
+    st.ball = quadServe(seed, 0, quadAlive(st));
+    return st;
+  }
+
+  function quadSpeed(hits) {
+    return Math.min(QUAD.maxSpeed, QUAD.baseSpeed + hits * 0.025);
+  }
+
+  function clampQuadPos(p) {
+    var h = QUAD.paddleLen / 2;
+    return Math.max(h, Math.min(1 - h, Number(p) || 0.5));
+  }
+
+  // One fixed physics step. `inputs` is where each seat wants its paddle
+  // along its wall (dead/unfilled seats are ignored); dt is seconds.
+  function stepQuad(state, inputs, dt) {
+    if (state.over) return state;
+    var r = QUAD.ballR, half = QUAD.paddleLen / 2, inset = QUAD.inset;
+    inputs = inputs || [];
+    var pos = state.pos.slice();
+    for (var i = 0; i < 4; i++) {
+      if (state.lives[i] > 0 && inputs[i] != null) pos[i] = clampQuadPos(inputs[i]);
+    }
+    var b = state.ball;
+    var x = b.x + b.vx * dt, y = b.y + b.vy * dt;
+    var vx = b.vx, vy = b.vy;
+    var lives = state.lives, rally = state.rally, hits = state.hits;
+    var serves = state.serves, over = state.over, winner = state.winner;
+    var ball = null, lost = -1;
+
+    // returns by a live paddle (crossing its plane within reach)
+    function steer(off) { return Math.max(-1, Math.min(1, off)) * 0.9; }
+    if (vy > 0 && lives[0] > 0 && b.y + r <= 1 - inset && y + r >= 1 - inset && Math.abs(x - pos[0]) <= half + r) {
+      hits++; rally++;
+      var sp0 = quadSpeed(hits), a0 = steer((x - pos[0]) / half);
+      vx = Math.sin(a0) * sp0; vy = -Math.cos(a0) * sp0; y = 1 - inset - r;
+    } else if (vy < 0 && lives[1] > 0 && b.y - r >= inset && y - r <= inset && Math.abs(x - pos[1]) <= half + r) {
+      hits++; rally++;
+      var sp1 = quadSpeed(hits), a1 = steer((x - pos[1]) / half);
+      vx = Math.sin(a1) * sp1; vy = Math.cos(a1) * sp1; y = inset + r;
+    } else if (vx < 0 && lives[2] > 0 && b.x - r >= inset && x - r <= inset && Math.abs(y - pos[2]) <= half + r) {
+      hits++; rally++;
+      var sp2 = quadSpeed(hits), a2 = steer((y - pos[2]) / half);
+      vy = Math.sin(a2) * sp2; vx = Math.cos(a2) * sp2; x = inset + r;
+    } else if (vx > 0 && lives[3] > 0 && b.x + r <= 1 - inset && x + r >= 1 - inset && Math.abs(y - pos[3]) <= half + r) {
+      hits++; rally++;
+      var sp3 = quadSpeed(hits), a3 = steer((y - pos[3]) / half);
+      vy = Math.sin(a3) * sp3; vx = -Math.cos(a3) * sp3; x = 1 - inset - r;
+    }
+
+    // the outer walls: a point against a live seat, a bounce for the rest
+    if (y + r > 1) { if (lives[0] > 0) lost = 0; else { y = 1 - r; vy = -Math.abs(vy); } }
+    else if (y - r < 0) { if (lives[1] > 0) lost = 1; else { y = r; vy = Math.abs(vy); } }
+    else if (x - r < 0) { if (lives[2] > 0) lost = 2; else { x = r; vx = Math.abs(vx); } }
+    else if (x + r > 1) { if (lives[3] > 0) lost = 3; else { x = 1 - r; vx = -Math.abs(vx); } }
+
+    if (lost >= 0) {
+      lives = lives.slice();
+      lives[lost]--;
+      serves++; rally = 0;
+      var st2 = { lives: lives };
+      var alive = quadAlive(st2);
+      ball = quadServe(state.seed, serves, alive);
+      if (state.players > 1 && alive.length <= 1) { over = true; winner = alive.length ? alive[0] : null; }
+      else if (state.players === 1 && lives[0] <= 0) { over = true; winner = null; }
+    } else {
+      ball = { x: x, y: y, vx: vx, vy: vy };
+    }
+
+    return { seed: state.seed, players: state.players, pos: pos, lives: lives,
+             ball: ball, rally: rally, hits: hits, serves: serves, over: over, winner: winner };
+  }
+
+  /* ================================================================
    * The console: one high-score table for every cartridge
    * ================================================================ */
 
@@ -591,6 +705,9 @@
     // versus pong
     PONG: PONG, pongServe: pongServe, newPong: newPong,
     pongSpeed: pongSpeed, clampPaddle: clampPaddle, stepPong: stepPong,
+    // quad
+    QUAD: QUAD, quadServe: quadServe, newQuad: newQuad, quadAlive: quadAlive,
+    quadSpeed: quadSpeed, clampQuadPos: clampQuadPos, stepQuad: stepQuad,
     // console
     recordScore: recordScore, bestScore: bestScore,
     isHighScore: isHighScore, formatScore: formatScore
