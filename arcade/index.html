@@ -153,6 +153,24 @@
   body.maxi { padding: 0; }
   body.maxi #shell { position: fixed; inset: 0; width: 100%; max-width: none; border-radius: 0;
     z-index: 50; justify-content: center; }
+  /* ---------- theater: an emulator cartridge is playing ---------- */
+  /* The emulator draws its own touch controls, so the shell's pads are
+     dead weight — hide them, slim the plate to a strip with an eject
+     button, and give the game the whole display. On a tall phone the 4:3
+     video letterboxes mid-screen, pushing the virtual controls onto the
+     dark bars instead of over the picture. */
+  #btnEject { display: none; font: inherit; font-size: 11px; font-weight: 700; letter-spacing: .1em;
+    line-height: 1; height: 22px; padding: 0 9px; align-items: center;
+    background: none; border: 1px solid var(--line); border-radius: 7px; color: var(--dim); cursor: pointer; }
+  #btnEject:active { color: var(--red); border-color: var(--red); }
+  body.theater { padding: 0; }
+  body.theater #shell { position: fixed; inset: 0; width: 100%; max-width: none; border-radius: 0;
+    z-index: 50; gap: 8px;
+    padding: calc(6px + env(safe-area-inset-top)) 8px calc(6px + env(safe-area-inset-bottom)); }
+  body.theater #controls, body.theater #speaker { display: none; }
+  body.theater #screen { flex: 1; height: auto; aspect-ratio: auto; max-width: none;
+    align-self: stretch; border-radius: 8px; }
+  body.theater #btnEject { display: inline-flex; }
 </style>
 </head>
 <body>
@@ -160,6 +178,7 @@
   <div id="plate">
     <div id="brand">ARCADE</div>
     <div id="plateBtns">
+      <button id="btnEject" aria-label="eject cartridge">⏏ EJECT</button>
       <span id="padLed">🎮</span>
       <button id="btnFS" aria-label="fullscreen" title="fullscreen (F)">⛶</button>
       <div id="power"><span class="led"></span>POWER</div>
@@ -449,6 +468,7 @@
   // Slot the real N64 emulator (ultra/play.html — self-hosted mupen64plus)
   // into the console's screen. The shell's B button ejects it.
   function bootUltra(core) {
+    document.body.classList.add('theater');
     emuFrame = document.createElement('iframe');
     emuFrame.id = 'emu';
     emuFrame.src = '../ultra/play.html?embed=1' + (core ? '&core=' + core : '');
@@ -458,6 +478,7 @@
     try { emuFrame.focus(); } catch (e) {}
   }
   function ejectUltra() {
+    document.body.classList.remove('theater');
     if (emuFrame && emuFrame.parentNode) emuFrame.parentNode.removeChild(emuFrame);
     emuFrame = null;
   }
@@ -486,6 +507,7 @@
     }
   }
   $('btnFS').addEventListener('click', toggleFullscreen);
+  $('btnEject').addEventListener('click', function () { pressB(); });
 
   /* ---------------- gamepads: Bluetooth/USB controllers land here ---------------- */
   // Paired controllers surface through the Gamepad API. Pad 0 drives the
