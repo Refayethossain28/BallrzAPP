@@ -28,15 +28,15 @@ let passed = 0; const tests = []; const test = (n, f) => tests.push([n, f]);
 const deepEq = (a, b, m) => assert.equal(JSON.stringify(a), JSON.stringify(b), m);
 
 /* ---------- the cartridge rack ---------- */
-test('GAMES: five cartridges, unique ids, gameById round-trips', () => {
-  assert.equal(E.GAMES.length, 5);
+test('GAMES: six cartridges, unique ids, gameById round-trips', () => {
+  assert.equal(E.GAMES.length, 6);
   const ids = E.GAMES.map((g) => g.id);
   deepEq([...new Set(ids)], ids, 'ids are unique');
   for (const g of E.GAMES) {
     assert.ok(g.name && g.emoji && g.tagline && g.controls, `${g.id} card is complete`);
     assert.equal(E.gameById(g.id).name, g.name);
   }
-  assert.equal(E.gameById('pong'), null);
+  assert.equal(E.gameById('tetris'), null);
 });
 test('the external slots: Ultra 64 pins n64, OmniCart opens the picker', () => {
   const ext = E.GAMES.filter((g) => g.external);
@@ -45,8 +45,11 @@ test('the external slots: Ultra 64 pins n64, OmniCart opens the picker', () => {
   assert.equal(E.gameById('omni').core, '', 'OmniCart shows the system picker');
   for (const g of ext) assert.ok(g.badge, `${g.id} carries a menu badge`);
   for (const g of E.GAMES) {
-    if (!g.external) assert.ok(['serpent', 'fuse', 'breaker'].includes(g.id), `${g.id} is a built-in engine game`);
+    if (!g.external) assert.ok(['serpent', 'fuse', 'breaker', 'pong'].includes(g.id), `${g.id} is a built-in engine game`);
   }
+  const vs = E.GAMES.filter((g) => g.versus);
+  deepEq(vs.map((g) => g.id), ['pong'], 'exactly one versus cartridge');
+  assert.ok(vs[0].badge, 'the versus cart carries a badge');
 });
 
 /* ---------- serpent: setup ---------- */
@@ -312,6 +315,75 @@ test('breaker physics replay identically from the same seed and inputs', () => {
   const run = () => {
     let s = E.launchBreaker(E.newBreaker('replay'));
     for (let i = 0; i < 600; i++) s = E.stepBreaker(s, 0.35 + 0.3 * Math.sin(i / 40), DT);
+    return s;
+  };
+  deepEq(run(), run());
+});
+
+/* ---------- versus pong ---------- */
+test('newPong: centre serve, level paddles, love-all, seed-deterministic', () => {
+  const p = E.newPong('x');
+  assert.equal(p.ball.x, 0.5);
+  assert.equal(p.p1Y, 0.5);
+  assert.equal(p.p2Y, 0.5);
+  deepEq(p.scores, [0, 0]);
+  assert.equal(p.winner, null);
+  assert.ok(Math.abs(Math.hypot(p.ball.vx, p.ball.vy) - E.PONG.baseSpeed) < 1e-9, 'serves at base speed');
+  deepEq(E.newPong('x'), E.newPong('x'));
+});
+test('pongServe alternates direction and varies angle by seed', () => {
+  const s0 = E.pongServe('x', 0), s1 = E.pongServe('x', 1);
+  assert.ok(s0.vx > 0 !== s1.vx > 0, 'consecutive serves go opposite ways');
+  const angles = new Set(['a', 'b', 'c', 'd'].map((s) => E.pongServe(s, 0).vy.toFixed(4)));
+  assert.ok(angles.size >= 3, 'seeds vary the angle');
+});
+test('walls reflect the ball; paddles clamp to the court', () => {
+  const base = E.newPong('x');
+  const atTop = { ...base, ball: { x: 0.5, y: 0.01, vx: 0.2, vy: -0.7 } };
+  const b1 = E.stepPong(atTop, 0.5, 0.5, 1 / 120);
+  assert.ok(b1.ball.vy > 0, 'top wall flips vy');
+  assert.equal(E.clampPaddle(-5), E.PONG.paddleH / 2);
+  assert.equal(E.clampPaddle(5), 1 - E.PONG.paddleH / 2);
+  assert.equal(E.stepPong(base, 9, -9, 1 / 120).p1Y, 1 - E.PONG.paddleH / 2, 'paddle input clamps');
+});
+test('a paddle returns the ball, steering by hit offset and speeding the rally', () => {
+  const base = E.newPong('x');
+  const leftFace = E.PONG.paddleX + E.PONG.paddleW / 2;
+  const incoming = { ...base, ball: { x: leftFace + E.PONG.ballR + 0.004, y: 0.5, vx: -0.75, vy: 0 } };
+  const centre = E.stepPong(incoming, 0.5, 0.5, 1 / 120);
+  assert.ok(centre.ball.vx > 0, 'reflected');
+  assert.equal(centre.rally, 1);
+  assert.ok(Math.abs(centre.ball.vy) < 0.05, 'a centre hit goes near-flat');
+  const edge = E.stepPong(incoming, 0.5 - E.PONG.paddleH / 2, 0.5, 1 / 120);
+  assert.ok(edge.ball.vy > 0.3, 'an edge hit steers hard');
+  assert.ok(E.pongSpeed(10) > E.pongSpeed(0), 'rallies speed up');
+  assert.equal(E.pongSpeed(1000), E.PONG.maxSpeed, 'speed caps');
+});
+test('a missed ball scores the other player and re-serves from centre', () => {
+  const base = E.newPong('x');
+  const missing = { ...base, ball: { x: -0.045, y: 0.5, vx: -0.9, vy: 0 } };
+  const p = E.stepPong(missing, 0.9, 0.5, 1 / 120); // paddle far away
+  deepEq(p.scores, [0, 1], 'P2 takes the point');
+  assert.equal(p.ball.x, 0.5, 'fresh serve from centre');
+  assert.equal(p.rally, 0);
+  assert.equal(p.serves, 1);
+  const missingRight = { ...base, ball: { x: 1.045, y: 0.5, vx: 0.9, vy: 0 } };
+  deepEq(E.stepPong(missingRight, 0.5, 0.9, 1 / 120).scores, [1, 0], 'P1 takes the point');
+});
+test('first to 7 wins and the match freezes', () => {
+  const base = E.newPong('x');
+  const matchPoint = { ...base, scores: [6, 3], ball: { x: 1.045, y: 0.5, vx: 0.9, vy: 0 } };
+  const won = E.stepPong(matchPoint, 0.5, 0.9, 1 / 120);
+  deepEq(won.scores, [7, 3]);
+  assert.equal(won.winner, 0);
+  assert.equal(E.stepPong(won, 0.1, 0.9, 1 / 120), won, 'a finished match ignores steps');
+});
+test('pong replays identically from the same seed and inputs (host/guest agree)', () => {
+  const run = () => {
+    let s = E.newPong('replay');
+    for (let i = 0; i < 2000; i++) {
+      s = E.stepPong(s, 0.5 + 0.3 * Math.sin(i / 30), 0.5 + 0.3 * Math.cos(i / 40), 1 / 120);
+    }
     return s;
   };
   deepEq(run(), run());

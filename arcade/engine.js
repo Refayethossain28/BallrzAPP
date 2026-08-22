@@ -49,6 +49,11 @@
     { id: 'breaker', name: 'Breaker', emoji: '🧱',
       tagline: 'One ball, three lives, a wall to demolish.',
       controls: '◀ ▶ moves the paddle · A launches' },
+    // A versus cartridge: two players, no high score — first to 7 wins.
+    // Playable on one console or over the internet (invite codes).
+    { id: 'pong', name: 'Versus', emoji: '🏓', versus: true, badge: '2P VS',
+      tagline: 'Neon pong — same couch, two pads, or across the internet.',
+      controls: 'W/S vs ▲▼ · gamepads & touch · online invite codes' },
     // External cartridges: not built-in engine games but whole other
     // machines slotted into the rack — the shell boots each in-screen.
     // `core` is the system the Ultra deck preselects ('' = show the picker).
@@ -430,6 +435,105 @@
   }
 
   /* ================================================================
+   * VERSUS — two-player neon pong
+   * A unit square again: paddles guard x≈0.05 and x≈0.95, walls top
+   * and bottom, first to 7 points wins. The step function takes BOTH
+   * players' paddle positions as inputs, so the same pure engine
+   * drives couch play, two gamepads, and online play (the host feeds
+   * in the remote paddle and streams the state back). Serve angles
+   * are seeded; everything else is fixed physics — same inputs, same
+   * rally, on both ends of the wire.
+   * ================================================================ */
+  var PONG = {
+    paddleH: 0.18, paddleW: 0.02, paddleX: 0.05,
+    ballR: 0.018, baseSpeed: 0.75, maxSpeed: 1.6, target: 7
+  };
+
+  // The nth serve of a given seed always leaves at the same angle,
+  // alternating sides so neither player serves twice in a row.
+  function pongServe(seed, serves) {
+    var angle = (rand01('serve:' + seed + ':' + serves) - 0.5) * 1.1; // ±~31°
+    var dir = serves % 2 === 0 ? 1 : -1;
+    return {
+      x: 0.5, y: 0.5,
+      vx: Math.cos(angle) * PONG.baseSpeed * dir,
+      vy: Math.sin(angle) * PONG.baseSpeed
+    };
+  }
+
+  function newPong(seed) {
+    seed = String(seed == null ? 'versus' : seed);
+    return {
+      seed: seed, ball: pongServe(seed, 0),
+      p1Y: 0.5, p2Y: 0.5, scores: [0, 0],
+      rally: 0, serves: 0, winner: null
+    };
+  }
+
+  function pongSpeed(rally) {
+    return Math.min(PONG.maxSpeed, PONG.baseSpeed + rally * 0.05);
+  }
+
+  function clampPaddle(y) {
+    var h = PONG.paddleH / 2;
+    return Math.max(h, Math.min(1 - h, Number(y) || 0.5));
+  }
+
+  // One fixed physics step. p1Y/p2Y are where each player wants their
+  // paddle (left and right); dt is seconds. Pure and deterministic.
+  function stepPong(state, p1Y, p2Y, dt) {
+    if (state.winner != null) return state;
+    var r = PONG.ballR, half = PONG.paddleH / 2;
+    var y1 = clampPaddle(p1Y), y2 = clampPaddle(p2Y);
+    var b = state.ball;
+    var x = b.x + b.vx * dt, y = b.y + b.vy * dt;
+    var vx = b.vx, vy = b.vy;
+    var rally = state.rally;
+
+    // top and bottom walls
+    if (y - r < 0) { y = r; vy = Math.abs(vy); }
+    if (y + r > 1) { y = 1 - r; vy = -Math.abs(vy); }
+
+    // the paddles: reflect a crossing ball, steering by where it hit
+    var leftFace = PONG.paddleX + PONG.paddleW / 2;
+    var rightFace = 1 - PONG.paddleX - PONG.paddleW / 2;
+    if (vx < 0 && b.x - r > leftFace && x - r <= leftFace && Math.abs(y - y1) <= half + r) {
+      rally++;
+      var off1 = Math.max(-1, Math.min(1, (y - y1) / half));
+      var sp1 = pongSpeed(rally);
+      vx = Math.cos(off1 * 0.9) * sp1;
+      vy = Math.sin(off1 * 0.9) * sp1;
+      x = leftFace + r;
+    } else if (vx > 0 && b.x + r < rightFace && x + r >= rightFace && Math.abs(y - y2) <= half + r) {
+      rally++;
+      var off2 = Math.max(-1, Math.min(1, (y - y2) / half));
+      var sp2 = pongSpeed(rally);
+      vx = -Math.cos(off2 * 0.9) * sp2;
+      vy = Math.sin(off2 * 0.9) * sp2;
+      x = rightFace - r;
+    }
+
+    // past a paddle → a point, a fresh seeded serve, maybe the match
+    var scores = state.scores, serves = state.serves, winner = state.winner;
+    var ball = { x: x, y: y, vx: vx, vy: vy };
+    var scored = false;
+    if (x < -0.04) { scores = [scores[0], scores[1] + 1]; scored = true; }
+    else if (x > 1.04) { scores = [scores[0] + 1, scores[1]]; scored = true; }
+    if (scored) {
+      serves = state.serves + 1;
+      rally = 0;
+      ball = pongServe(state.seed, serves);
+      if (scores[0] >= PONG.target) winner = 0;
+      else if (scores[1] >= PONG.target) winner = 1;
+    }
+
+    return {
+      seed: state.seed, ball: ball, p1Y: y1, p2Y: y2,
+      scores: scores, rally: rally, serves: serves, winner: winner
+    };
+  }
+
+  /* ================================================================
    * The console: one high-score table for every cartridge
    * ================================================================ */
 
@@ -478,6 +582,9 @@
     BREAKER: BREAKER, newBricks: newBricks, bricksAlive: bricksAlive,
     breakerSpeed: breakerSpeed, newBreaker: newBreaker,
     launchBreaker: launchBreaker, stepBreaker: stepBreaker,
+    // versus pong
+    PONG: PONG, pongServe: pongServe, newPong: newPong,
+    pongSpeed: pongSpeed, clampPaddle: clampPaddle, stepPong: stepPong,
     // console
     recordScore: recordScore, bestScore: bestScore,
     isHighScore: isHighScore, formatScore: formatScore
