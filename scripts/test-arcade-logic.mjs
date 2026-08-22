@@ -28,8 +28,8 @@ let passed = 0; const tests = []; const test = (n, f) => tests.push([n, f]);
 const deepEq = (a, b, m) => assert.equal(JSON.stringify(a), JSON.stringify(b), m);
 
 /* ---------- the cartridge rack ---------- */
-test('GAMES: seven cartridges, unique ids, gameById round-trips', () => {
-  assert.equal(E.GAMES.length, 7);
+test('GAMES: eight cartridges, unique ids, gameById round-trips', () => {
+  assert.equal(E.GAMES.length, 8);
   const ids = E.GAMES.map((g) => g.id);
   deepEq([...new Set(ids)], ids, 'ids are unique');
   for (const g of E.GAMES) {
@@ -47,11 +47,11 @@ test('the external slots: Ultra 64 pins n64, OmniCart opens the picker, Dreamcas
   assert.ok(!E.gameById('ultra64').machine && !E.gameById('omni').machine, 'core carts carry no machine');
   for (const g of ext) assert.ok(g.badge, `${g.id} carries a menu badge`);
   for (const g of E.GAMES) {
-    if (!g.external) assert.ok(['serpent', 'fuse', 'breaker', 'pong'].includes(g.id), `${g.id} is a built-in engine game`);
+    if (!g.external) assert.ok(['serpent', 'fuse', 'breaker', 'pong', 'quad'].includes(g.id), `${g.id} is a built-in engine game`);
   }
   const vs = E.GAMES.filter((g) => g.versus);
-  deepEq(vs.map((g) => g.id), ['pong'], 'exactly one versus cartridge');
-  assert.ok(vs[0].badge, 'the versus cart carries a badge');
+  deepEq(vs.map((g) => g.id), ['pong', 'quad'], 'two versus cartridges');
+  for (const g of vs) assert.ok(g.badge, `${g.id} carries a badge`);
 });
 
 /* ---------- serpent: setup ---------- */
@@ -385,6 +385,92 @@ test('pong replays identically from the same seed and inputs (host/guest agree)'
     let s = E.newPong('replay');
     for (let i = 0; i < 2000; i++) {
       s = E.stepPong(s, 0.5 + 0.3 * Math.sin(i / 30), 0.5 + 0.3 * Math.cos(i / 40), 1 / 120);
+    }
+    return s;
+  };
+  deepEq(run(), run());
+});
+
+/* ---------- quad: four walls, four phones ---------- */
+const QDT = 1 / 120;
+test('newQuad: centred serve, lives only for filled seats, seed-deterministic', () => {
+  const q4 = E.newQuad('x', 4);
+  deepEq(q4.lives, [3, 3, 3, 3]);
+  deepEq(q4.pos, [0.5, 0.5, 0.5, 0.5]);
+  assert.equal(q4.ball.x, 0.5);
+  assert.equal(q4.over, false);
+  const q2 = E.newQuad('x', 2);
+  deepEq(q2.lives, [3, 3, 0, 0], 'unfilled seats are walls');
+  deepEq(E.quadAlive(q4), [0, 1, 2, 3]);
+  deepEq(E.quadAlive(q2), [0, 1]);
+  deepEq(E.newQuad('x', 4), E.newQuad('x', 4));
+  assert.ok(Math.abs(Math.hypot(q4.ball.vx, q4.ball.vy) - E.QUAD.baseSpeed) < 1e-9);
+});
+test('an unfilled wall bounces; a live wall costs its player a life and re-serves', () => {
+  const q2 = E.newQuad('x', 2); // seats 2 (left) and 3 (right) are walls
+  const atLeft = { ...q2, ball: { x: 0.01, y: 0.5, vx: -0.5, vy: 0.05 } };
+  const b = E.stepQuad(atLeft, [], QDT);
+  assert.ok(b.ball.vx > 0, 'the empty left wall reflects');
+  deepEq(b.lives, [3, 3, 0, 0], 'nobody paid for it');
+  const pastBottom = { ...q2, ball: { x: 0.9, y: 1.001, vx: 0, vy: 0.6 } }; // far from paddle at 0.5
+  const p = E.stepQuad(pastBottom, [], QDT);
+  deepEq(p.lives, [2, 3, 0, 0], 'seat 0 lost a life');
+  assert.equal(p.ball.x, 0.5, 'fresh centred serve');
+  assert.equal(p.serves, 1);
+  assert.equal(p.rally, 0);
+});
+test('every seat\'s paddle returns the ball on its own axis', () => {
+  const q4 = E.newQuad('x', 4);
+  const cases = [
+    { ball: { x: 0.5, y: 1 - E.QUAD.inset - E.QUAD.ballR - 0.001, vx: 0, vy: 0.6 }, out: (s) => s.ball.vy < 0 },
+    { ball: { x: 0.5, y: E.QUAD.inset + E.QUAD.ballR + 0.001, vx: 0, vy: -0.6 }, out: (s) => s.ball.vy > 0 },
+    { ball: { x: E.QUAD.inset + E.QUAD.ballR + 0.001, y: 0.5, vx: -0.6, vy: 0 }, out: (s) => s.ball.vx > 0 },
+    { ball: { x: 1 - E.QUAD.inset - E.QUAD.ballR - 0.001, y: 0.5, vx: 0.6, vy: 0 }, out: (s) => s.ball.vx < 0 },
+  ];
+  for (let i = 0; i < 4; i++) {
+    const s = E.stepQuad({ ...q4, ball: cases[i].ball }, [0.5, 0.5, 0.5, 0.5], QDT);
+    assert.ok(cases[i].out(s), `seat ${i} returned the ball`);
+    assert.equal(s.hits, 1, `seat ${i} banked a hit`);
+  }
+});
+test('elimination turns a seat into a wall; the last paddle standing wins', () => {
+  const q2 = E.newQuad('x', 2);
+  const lastLife = { ...q2, lives: [3, 1, 0, 0], ball: { x: 0.9, y: -0.001, vx: 0, vy: -0.6 } };
+  const w = E.stepQuad(lastLife, [], QDT);
+  deepEq(w.lives, [3, 0, 0, 0]);
+  assert.equal(w.over, true);
+  assert.equal(w.winner, 0, 'seat 0 is the last one standing');
+  assert.equal(E.stepQuad(w, [], QDT), w, 'a finished match ignores steps');
+});
+test('solo practice: three lives then over, hits are the score', () => {
+  const q1 = E.newQuad('x', 1);
+  deepEq(q1.lives, [3, 0, 0, 0]);
+  const lastLife = { ...q1, lives: [1, 0, 0, 0], hits: 12, ball: { x: 0.9, y: 1.001, vx: 0, vy: 0.6 } };
+  const done = E.stepQuad(lastLife, [], QDT);
+  assert.equal(done.over, true);
+  assert.equal(done.winner, null, 'nobody "wins" practice');
+  assert.equal(done.hits, 12, 'the score survives');
+});
+test('quad inputs clamp and dead seats ignore input; speed ramps and caps', () => {
+  const q4 = E.newQuad('x', 4);
+  const s = E.stepQuad(q4, [9, -9, 0.7, null], QDT);
+  assert.equal(s.pos[0], 1 - E.QUAD.paddleLen / 2);
+  assert.equal(s.pos[1], E.QUAD.paddleLen / 2);
+  assert.equal(s.pos[2], 0.7);
+  assert.equal(s.pos[3], 0.5, 'null input keeps the paddle');
+  const dead = { ...q4, lives: [3, 3, 0, 3] };
+  assert.equal(E.stepQuad(dead, [0.5, 0.5, 0.9, 0.5], QDT).pos[2], 0.5, 'a dead seat ignores input');
+  assert.ok(E.quadSpeed(10) > E.quadSpeed(0));
+  assert.equal(E.quadSpeed(1000), E.QUAD.maxSpeed);
+});
+test('quad replays identically from the same seed and inputs (all four phones agree)', () => {
+  const run = () => {
+    let s = E.newQuad('replay', 4);
+    for (let i = 0; i < 3000 && !s.over; i++) {
+      s = E.stepQuad(s, [
+        0.5 + 0.35 * Math.sin(i / 25), 0.5 + 0.35 * Math.cos(i / 30),
+        0.5 + 0.35 * Math.sin(i / 35), 0.5 + 0.35 * Math.cos(i / 40)
+      ], QDT);
     }
     return s;
   };

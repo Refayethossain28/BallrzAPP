@@ -201,6 +201,7 @@
       <label id="npInLabel">PASTE THEIR REPLY</label>
       <textarea id="npIn" spellcheck="false"></textarea>
       <button class="npbtn" id="npGo">CONNECT</button>
+      <button class="npbtn" id="npStart" style="display:none; background:#1d4020; color:#4de8a1; border-color:#4de8a1;">▶ START GAME</button>
       <div id="npStatus"></div>
       <button class="npbtn" id="npBack">← BACK (B)</button>
     </div>
@@ -461,6 +462,18 @@
   var vsTouch = { p1: null, p2: null };
   var net = { pc: null, dc: null, open: false, remoteY: 0.5, lastSend: 0 };
 
+  // quad (4-player) state — star network: the host holds one peer per guest
+  var qPhase = null;          // 'pick' | 'net' | 'wait' | 'match'
+  var qMode = null;           // 'solo' | 'host' | 'join'
+  var qSel = 0, qSeat = 0;
+  var qState = null, qMyPos = 0.5, qTrail = [], qPrevLives = null, qPrevServes = 0;
+  var qFreezeUntil = 0, qAwaitRestart = false, qLastSend = 0;
+  var qHeld = { neg: false, pos: false };
+  var qTouch = null;
+  var qnet = { peers: [], pending: null, hostPc: null, hostDc: null, open: false };
+  var QUAD_COLORS = ['#4dd8ff', '#8f7cf7', '#e8b34c', '#4de8a1']; // bottom, top, left, right
+  var QUAD_NAMES = ['P1 · BOTTOM', 'P2 · TOP', 'P3 · LEFT', 'P4 · RIGHT'];
+
   function isExternal(id) {
     var g = E.gameById(id);
     return !!(g && g.external);
@@ -579,15 +592,16 @@
     if (mode === 'play' && isExternal(currentId)) return; // the emulator owns its pads
     var d = padDigital(pads[0]);
     var analog = mode === 'play' &&
-      (currentId === 'breaker' || (currentId === 'pong' && vsPhase === 'match'));
+      (currentId === 'breaker' || (currentId === 'pong' && vsPhase === 'match') ||
+       (currentId === 'quad' && qPhase === 'match'));
     if (!analog) {
       if (padEdge('up', d.up)) pressDir('up');
       if (padEdge('down', d.down)) pressDir('down');
       if (padEdge('left', d.left)) pressDir('left');
       if (padEdge('right', d.right)) pressDir('right');
     }
-    if (padEdge('a', d.a) && vsPhase !== 'net') pressA(); // A is inert on the code panel
-    if (padEdge('b', d.b)) pressB();                      // B still backs out of it
+    if (padEdge('a', d.a) && vsPhase !== 'net' && qPhase !== 'net') pressA(); // A is inert on the code panel
+    if (padEdge('b', d.b)) pressB();                                          // B still backs out of it
   }
   setInterval(pollPads, 50);
 
@@ -616,9 +630,12 @@
     stopLoops();
     ejectUltra();
     netCleanup();
+    quadCleanup();
     hideNetPanel();
     vsPhase = null;
     vsMode = null;
+    qPhase = null;
+    qMode = null;
     stopVsInput();
     mode = 'menu';
     currentId = null;
@@ -688,6 +705,7 @@
     if (id === 'serpent') startSerpent();
     else if (id === 'fuse') startFuse();
     else if (id === 'pong') startVersus();
+    else if (id === 'quad') startQuad();
     else startBreaker();
     ensureLoop();
   }
@@ -702,6 +720,7 @@
 
     if (mode === 'play' && currentId === 'breaker') stepBreakerFrame(t, dt);
     if (mode === 'play' && currentId === 'pong') stepPongFrame(t, dt);
+    if (mode === 'play' && currentId === 'quad') stepQuadFrame(t, dt);
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, CW, CH);
@@ -713,6 +732,7 @@
     else if (currentId === 'fuse') drawFuse(t);
     else if (currentId === 'breaker') drawBreaker(t);
     else if (currentId === 'pong') drawPong(t);
+    else if (currentId === 'quad') drawQuad(t);
 
     stepFX(dt);
     drawFX();
@@ -1285,6 +1305,7 @@
     vsPhase = 'net';
     vsMode = role;
     $('npTitle').textContent = role === 'host' ? 'HOST — INVITE A FRIEND' : 'JOIN A FRIEND';
+    $('npStart').style.display = 'none';
     $('npOut').value = '';
     $('npIn').value = '';
     if (role === 'host') {
@@ -1609,8 +1630,468 @@
     beep(celebrate ? 880 : 196, 260, 0.05);
   }
 
+  /* ================= QUAD (4 phones) ================= */
+  // Four walls, up to four phones. Star network: the host pairs with each
+  // guest through its own invite/reply code, runs the one pure engine, and
+  // streams state to everyone; each guest streams its paddle back.
+  var QUAD_OPTIONS = [
+    { key: 'solo', label: 'PRACTICE SOLO', sub: 'three lives, three bouncy walls' },
+    { key: 'host', label: 'HOST 2–4 PHONES', sub: 'one invite code per friend' },
+    { key: 'join', label: 'JOIN A GAME', sub: 'paste the invite you were sent' }
+  ];
+
+  function startQuad() {
+    qPhase = 'pick';
+    qSel = 0;
+    qState = null;
+    hideNetPanel();
+  }
+  function quadIsNet() { return qMode === 'host' || qMode === 'join'; }
+  function quadAxis(seat) { return seat < 2 ? 'x' : 'y'; } // bottom/top slide in x
+
+  function beginQuadMatch(players, seat) {
+    qPhase = 'match';
+    qSeat = seat;
+    qState = qMode === 'join' ? E.newQuad('pending', players) : E.newQuad(newSeed(), players);
+    qMyPos = 0.5;
+    qPrevLives = qState.lives.slice();
+    qPrevServes = 0;
+    qTrail = [];
+    qTouch = null;
+    qHeld.neg = qHeld.pos = false;
+    qAwaitRestart = false;
+    qFreezeUntil = performance.now() + 900;
+    hideNetPanel();
+    if (mode !== 'play') { mode = 'play'; $('overlay').style.display = 'none'; }
+    ensureLoop();
+  }
+
+  /* ---- the star: one peer per guest ---- */
+  function quadCleanup() {
+    for (var i = 0; i < qnet.peers.length; i++) {
+      try { qnet.peers[i].dc.close(); } catch (e) {}
+      try { qnet.peers[i].pc.close(); } catch (e) {}
+    }
+    qnet.peers = [];
+    if (qnet.pending) {
+      try { if (qnet.pending.dc) qnet.pending.dc.close(); } catch (e) {}
+      try { qnet.pending.pc.close(); } catch (e) {}
+      qnet.pending = null;
+    }
+    try { if (qnet.hostDc) qnet.hostDc.close(); } catch (e) {}
+    try { if (qnet.hostPc) qnet.hostPc.close(); } catch (e) {}
+    qnet.hostPc = null; qnet.hostDc = null; qnet.open = false;
+    $('npStart').style.display = 'none';
+  }
+  function quadPlayers() { return 1 + qnet.peers.length; }
+  function quadRoomStatus(extra) {
+    npStatus('Players in the room: ' + quadPlayers() + ' of 4 (you + ' + qnet.peers.length + ' friend' +
+             (qnet.peers.length === 1 ? '' : 's') + ').' + (extra ? ' ' + extra : ''));
+  }
+  function quadBroadcast(obj) {
+    var msg = JSON.stringify(obj);
+    for (var i = 0; i < qnet.peers.length; i++) {
+      var p = qnet.peers[i];
+      if (p.dc && p.dc.readyState === 'open') { try { p.dc.send(msg); } catch (e) {} }
+    }
+  }
+
+  function openQuadNet(role) {
+    quadCleanup();
+    qPhase = 'net';
+    qMode = role;
+    $('npTitle').textContent = role === 'host' ? 'HOST — UP TO 4 PHONES' : 'JOIN A GAME';
+    $('npOut').value = '';
+    $('npIn').value = '';
+    if (role === 'host') {
+      $('npOutLabel').textContent = 'INVITE CODE — SEND IT TO THE NEXT FRIEND';
+      $('npInLabel').textContent = 'PASTE THEIR REPLY';
+      $('npGo').textContent = 'CONNECT PLAYER';
+    } else {
+      $('npOutLabel').textContent = 'YOUR REPLY CODE — SEND IT BACK';
+      $('npInLabel').textContent = 'PASTE THEIR INVITE';
+      $('npGo').textContent = 'MAKE REPLY CODE';
+    }
+    showNetPanel();
+    if (typeof window.RTCPeerConnection !== 'function') {
+      npStatus('This browser has no WebRTC — online play needs it.', false);
+      return;
+    }
+    if (role === 'host') quadMakeInvite();
+    else {
+      qnet.hostPc = new window.RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+      qnet.hostPc.ondatachannel = function (e) { qnet.hostDc = e.channel; quadWireGuest(); };
+      qnet.hostPc.onconnectionstatechange = function () {
+        var st = qnet.hostPc && qnet.hostPc.connectionState;
+        if ((st === 'failed' || st === 'disconnected' || st === 'closed') && qnet.open) quadDrop();
+      };
+      npStatus('Paste the invite code you were sent, then make a reply.');
+    }
+  }
+  // Host: build the next guest slot's invite. The box empties immediately
+  // so a used code can never be sent to the next friend by mistake.
+  function quadMakeInvite() {
+    $('npOut').value = '';
+    $('npIn').value = '';
+    var pc = new window.RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+    var dc = pc.createDataChannel('arcade4');
+    qnet.pending = { pc: pc, dc: dc };
+    dc.onopen = function () { quadGuestJoined(pc, dc); };
+    pc.createOffer()
+      .then(function (o) { return pc.setLocalDescription(o); })
+      .then(function () { return waitIce(pc); })
+      .then(function () {
+        if (qnet.pending && qnet.pending.pc === pc) {
+          $('npOut').value = encodeSig(pc.localDescription);
+          $('npIn').value = '';
+          quadRoomStatus('Send the invite, paste the reply below.');
+        }
+      })
+      .catch(function () { npStatus('Couldn’t build an invite — try again.', false); });
+  }
+  function quadGuestJoined(pc, dc) {
+    var seat = 1 + qnet.peers.length;
+    var peer = { pc: pc, dc: dc, seat: seat, pos: 0.5 };
+    qnet.peers.push(peer);
+    qnet.pending = null;
+    dc.onmessage = function (e) {
+      var m;
+      try { m = JSON.parse(e.data); } catch (err) { return; }
+      if (m.t === 'i') peer.pos = Number(m.p) || 0.5;
+      else if (m.t === 're' && qState && qState.over) quadRestart();
+    };
+    dc.onclose = function () {
+      var idx = qnet.peers.indexOf(peer);
+      if (idx >= 0) qnet.peers.splice(idx, 1);
+      if (qPhase === 'match' && !qnet.peers.length) quadDrop();
+      else if (qPhase === 'net') quadRoomStatus();
+    };
+    try { dc.send(JSON.stringify({ t: 'seat', n: seat })); } catch (e) {}
+    beep(720, 90, 0.04);
+    $('npStart').style.display = '';
+    if (qnet.peers.length < 3) {
+      quadMakeInvite();
+      quadRoomStatus('Add another friend with the fresh invite, or press START GAME.');
+    } else {
+      $('npOut').value = '';
+      quadRoomStatus('Room full — start when ready!');
+    }
+  }
+  // Guest: the host's channel opened
+  function quadWireGuest() {
+    qnet.hostDc.onopen = function () {
+      qnet.open = true;
+      qPhase = 'wait';
+      hideNetPanel();
+      ensureLoop();
+      beep(720, 90, 0.04);
+    };
+    qnet.hostDc.onmessage = function (e) {
+      var m;
+      try { m = JSON.parse(e.data); } catch (err) { return; }
+      if (m.t === 'seat') qSeat = m.n | 0;
+      else if (m.t === 'go') beginQuadMatch(m.players | 0, qSeat);
+      else if (m.t === 's') {
+        if (qPhase === 'wait') beginQuadMatch(m.s.players, qSeat);
+        qState = m.s;
+        if (!qState.over) qAwaitRestart = false;
+        checkQuadFX();
+      }
+    };
+    qnet.hostDc.onclose = function () { if (qnet.open) quadDrop(); };
+  }
+  function quadGoPressed() {
+    var pasted;
+    try { pasted = decodeSig($('npIn').value); }
+    catch (e) { npStatus('That code didn’t parse — paste the whole thing.', false); return; }
+    if (qMode === 'host') {
+      if (!qnet.pending) { npStatus('The room is full.', false); return; }
+      qnet.pending.pc.setRemoteDescription(pasted)
+        .then(function () { npStatus('Reply accepted — connecting that player…'); })
+        .catch(function () { npStatus('That reply was rejected — is it from this invite?', false); });
+    } else {
+      qnet.hostPc.setRemoteDescription(pasted)
+        .then(function () { return qnet.hostPc.createAnswer(); })
+        .then(function (a) { return qnet.hostPc.setLocalDescription(a); })
+        .then(function () { return waitIce(qnet.hostPc); })
+        .then(function () {
+          $('npOut').value = encodeSig(qnet.hostPc.localDescription);
+          npStatus('Send the reply code back — connecting once they paste it…');
+        })
+        .catch(function () { npStatus('That invite was rejected — paste the whole code.', false); });
+    }
+  }
+  function quadStartPressed() {
+    if (qMode !== 'host' || !qnet.peers.length) return;
+    beginQuadMatch(quadPlayers(), 0);
+    quadBroadcast({ t: 'go', players: qState.players });
+  }
+  function quadRestart() {
+    if (qMode === 'join') return;
+    beginQuadMatch(qMode === 'solo' ? 1 : quadPlayers(), 0);
+    if (qMode === 'host') quadBroadcast({ t: 'go', players: qState.players });
+  }
+  function quadDrop() {
+    quadCleanup();
+    if (currentId !== 'quad') return;
+    mode = 'over';
+    $('overlay').innerHTML =
+      '<div class="big">CONNECTION LOST</div>' +
+      '<div class="sub">The wire went quiet.</div>' +
+      '<div class="sub">B MENU</div>';
+    $('overlay').style.display = 'flex';
+    beep(150, 300, 0.05);
+    ensureLoop();
+  }
+
+  /* ---- per-frame: inputs, physics (host/solo), the wire ---- */
+  function quadGeom() {
+    var top = 46, S = Math.min(CW, CH - top);
+    return { S: S, ox: (CW - S) / 2, oy: top };
+  }
+  function stepQuadFrame(t, dt) {
+    if (qPhase !== 'match' || !qState) return;
+    // local paddle: touch wins, else held keys / pad nudge along my axis
+    var vel = 1.5 * dt;
+    if (qHeld.neg) qMyPos -= vel;
+    if (qHeld.pos) qMyPos += vel;
+    var pads = listPads();
+    if (pads[0]) {
+      qMyPos += (quadAxis(qSeat) === 'x' ? padHorizontal(pads[0]) : padVertical(pads[0])) * vel;
+    }
+    if (qTouch != null) qMyPos = qTouch;
+    qMyPos = E.clampQuadPos(qMyPos);
+
+    if (qMode === 'join') {
+      if (t - qLastSend > 33 && qnet.hostDc && qnet.hostDc.readyState === 'open') {
+        qLastSend = t;
+        try { qnet.hostDc.send(JSON.stringify({ t: 'i', p: qMyPos })); } catch (e) {}
+      }
+    } else {
+      var inputs = [null, null, null, null];
+      inputs[qSeat] = qMyPos;
+      for (var i = 0; i < qnet.peers.length; i++) inputs[qnet.peers[i].seat] = qnet.peers[i].pos;
+      if (t >= qFreezeUntil && !qState.over) {
+        var slices = Math.max(1, Math.round(dt * 120));
+        for (var s = 0; s < slices; s++) qState = E.stepQuad(qState, inputs, 1 / 120);
+        checkQuadFX();
+      } else if (!qState.over) {
+        qState = E.stepQuad(qState, inputs, 0); // paddles stay live through the serve pause
+      }
+      if (qMode === 'host') quadBroadcast({ t: 's', s: qState });
+    }
+
+    if (!qState.over && (qState.ball.vx || qState.ball.vy)) {
+      qTrail.push({ x: qState.ball.x, y: qState.ball.y });
+      if (qTrail.length > 14) qTrail.shift();
+    }
+    if (qState.over && mode === 'play' && !qAwaitRestart) showQuadOver();
+  }
+  // a life was lost somewhere — flash that wall's colour, on every phone
+  function checkQuadFX() {
+    if (!qState || !qPrevLives) { qPrevLives = qState && qState.lives.slice(); return; }
+    if (qState.serves !== qPrevServes) {
+      for (var i = 0; i < 4; i++) {
+        if (qState.lives[i] < qPrevLives[i]) {
+          var g = quadGeom();
+          var cx = i === 2 ? g.ox + g.S * 0.06 : i === 3 ? g.ox + g.S * 0.94 : g.ox + g.S * 0.5;
+          var cy = i === 0 ? g.oy + g.S * 0.94 : i === 1 ? g.oy + g.S * 0.06 : g.oy + g.S * 0.5;
+          burst(cx, cy, { n: 18, color: QUAD_COLORS[i], speed: 280, size: 6, life: 0.7 });
+          addFlash(i === 0 ? '77,216,255' : i === 1 ? '143,124,247' : i === 2 ? '232,179,76' : '77,232,161', 0.18);
+          addShake(4);
+          if (qState.lives[i] <= 0 && qState.players > 1) {
+            addFloat(cx, cy, 'ELIMINATED', QUAD_COLORS[i]);
+          }
+          beep(i === qSeat ? 220 : 640, 160, 0.045);
+        }
+      }
+      qPrevServes = qState.serves;
+      qFreezeUntil = performance.now() + 900;
+      qTrail = [];
+    }
+    qPrevLives = qState.lives.slice();
+  }
+
+  function drawQuad(t) {
+    drawBackdrop(t, 'quad', 0);
+    var g = quadGeom(), S = g.S, ox = g.ox, oy = g.oy;
+
+    if (qPhase === 'pick' || (!qState && qPhase !== 'wait')) {
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#e8ecff';
+      ctx.font = '700 52px ui-monospace, monospace';
+      ctx.shadowColor = '#e8b34c';
+      ctx.shadowBlur = 24;
+      ctx.fillText('QUAD', CW / 2, oy + S * 0.16);
+      ctx.shadowBlur = 0;
+      for (var o = 0; o < QUAD_OPTIONS.length; o++) {
+        var y = oy + S * 0.36 + o * S * 0.17;
+        var sel = o === qSel;
+        if (sel) {
+          ctx.strokeStyle = '#e8b34c';
+          ctx.lineWidth = 2;
+          ctx.shadowColor = '#e8b34c';
+          ctx.shadowBlur = 14;
+          roundRect(ox + S * 0.08, y - S * 0.055, S * 0.84, S * 0.115, 14);
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+        }
+        ctx.fillStyle = sel ? '#e8ecff' : '#8b93b8';
+        ctx.font = '700 26px ui-monospace, monospace';
+        ctx.fillText(QUAD_OPTIONS[o].label, CW / 2, y - 12);
+        ctx.fillStyle = '#8b93b8';
+        ctx.globalAlpha = sel ? 1 : 0.6;
+        ctx.font = '400 16px ui-monospace, monospace';
+        ctx.fillText(QUAD_OPTIONS[o].sub, CW / 2, y + 18);
+        ctx.globalAlpha = 1;
+      }
+      ctx.fillStyle = '#8b93b8';
+      ctx.font = '600 18px ui-monospace, monospace';
+      ctx.fillText('3 LIVES EACH · LAST PADDLE WINS', CW / 2, oy + S * 0.94);
+      hud('QUAD', '2–4P');
+      return;
+    }
+    if (qPhase === 'wait') {
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.globalAlpha = 0.6 + 0.4 * Math.sin(t / 300);
+      ctx.fillStyle = '#4de8a1';
+      ctx.font = '700 26px ui-monospace, monospace';
+      ctx.fillText('CONNECTED', CW / 2, oy + S * 0.42);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#8b93b8';
+      ctx.font = '400 18px ui-monospace, monospace';
+      ctx.fillText('waiting for the host to start…', CW / 2, oy + S * 0.52);
+      hud('QUAD', 'JOINED');
+      return;
+    }
+
+    var st = qState, Q = E.QUAD;
+    // the court: each wall glows in its seat colour (dim when dead/unfilled)
+    for (var w = 0; w < 4; w++) {
+      var live = st.lives[w] > 0;
+      ctx.strokeStyle = live ? QUAD_COLORS[w] : 'rgba(139,147,184,0.25)';
+      ctx.lineWidth = live ? 2 : 4;
+      ctx.globalAlpha = live ? 0.4 : 1;
+      ctx.shadowColor = QUAD_COLORS[w];
+      ctx.shadowBlur = live ? 8 : 0;
+      ctx.beginPath();
+      if (w === 0) { ctx.moveTo(ox + 2, oy + S - 2); ctx.lineTo(ox + S - 2, oy + S - 2); }
+      else if (w === 1) { ctx.moveTo(ox + 2, oy + 2); ctx.lineTo(ox + S - 2, oy + 2); }
+      else if (w === 2) { ctx.moveTo(ox + 2, oy + 2); ctx.lineTo(ox + 2, oy + S - 2); }
+      else { ctx.moveTo(ox + S - 2, oy + 2); ctx.lineTo(ox + S - 2, oy + S - 2); }
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+    }
+
+    // lives as hearts along each live wall
+    ctx.font = '600 20px ui-monospace, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (var h = 0; h < 4; h++) {
+      if (st.players <= h && h !== 0) continue;
+      if (st.lives[h] <= 0 && st.players <= 1) continue;
+      var hearts = '';
+      for (var n = 0; n < st.lives[h]; n++) hearts += '♥';
+      if (!hearts) continue;
+      ctx.fillStyle = QUAD_COLORS[h];
+      if (h === 0) ctx.fillText(hearts, ox + S * 0.5, oy + S - 34);
+      else if (h === 1) ctx.fillText(hearts, ox + S * 0.5, oy + 34);
+      else if (h === 2) { ctx.save(); ctx.translate(ox + 34, oy + S * 0.5); ctx.rotate(-Math.PI / 2); ctx.fillText(hearts, 0, 0); ctx.restore(); }
+      else { ctx.save(); ctx.translate(ox + S - 34, oy + S * 0.5); ctx.rotate(Math.PI / 2); ctx.fillText(hearts, 0, 0); ctx.restore(); }
+    }
+
+    // ball trail + ball
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (var tr = 0; tr < qTrail.length; tr++) {
+      var a = (tr + 1) / qTrail.length;
+      ctx.globalAlpha = a * 0.3;
+      ctx.fillStyle = '#ffe9c2';
+      ctx.beginPath();
+      ctx.arc(ox + qTrail[tr].x * S, oy + qTrail[tr].y * S, Q.ballR * S * a, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1;
+    var bx = ox + st.ball.x * S, by = oy + st.ball.y * S, br = Q.ballR * S;
+    var halo = ctx.createRadialGradient(bx, by, 0, bx, by, br * 3);
+    halo.addColorStop(0, 'rgba(255,233,194,0.8)');
+    halo.addColorStop(1, 'rgba(232,179,76,0)');
+    ctx.fillStyle = halo;
+    ctx.beginPath(); ctx.arc(bx, by, br * 3, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI * 2); ctx.fill();
+
+    // paddles, with a YOU marker on yours
+    var len = Q.paddleLen * S, th = 0.02 * S * 1.6, inset = Q.inset * S;
+    for (var p = 0; p < 4; p++) {
+      if (st.lives[p] <= 0) continue;
+      ctx.fillStyle = QUAD_COLORS[p];
+      ctx.shadowColor = QUAD_COLORS[p];
+      ctx.shadowBlur = 16;
+      if (p === 0) roundRect(ox + st.pos[0] * S - len / 2, oy + S - inset - th / 2, len, th, th / 2);
+      else if (p === 1) roundRect(ox + st.pos[1] * S - len / 2, oy + inset - th / 2, len, th, th / 2);
+      else if (p === 2) roundRect(ox + inset - th / 2, oy + st.pos[2] * S - len / 2, th, len, th / 2);
+      else roundRect(ox + S - inset - th / 2, oy + st.pos[3] * S - len / 2, th, len, th / 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      if (p === qSeat && (quadIsNet() || qMode === 'solo')) {
+        ctx.fillStyle = '#e8ecff';
+        ctx.font = '700 15px ui-monospace, monospace';
+        var lx = p === 2 ? ox + inset + 26 : p === 3 ? ox + S - inset - 26 : ox + st.pos[p] * S;
+        var ly = p === 0 ? oy + S - inset - 26 : p === 1 ? oy + inset + 26 : oy + st.pos[p] * S;
+        ctx.fillText('YOU', lx, ly);
+      }
+    }
+
+    if (t < qFreezeUntil && !st.over) {
+      ctx.globalAlpha = 0.55 + 0.45 * Math.sin(t / 200);
+      ctx.fillStyle = '#8b93b8';
+      ctx.font = '600 22px ui-monospace, monospace';
+      ctx.fillText('READY', CW / 2, oy + S * 0.4);
+      ctx.globalAlpha = 1;
+    }
+
+    var mine = QUAD_COLORS[qSeat];
+    hud(qMode === 'solo' ? 'HITS <b>' + st.hits + '</b>' : 'QUAD · <b>' + st.players + 'P</b>',
+        '<b style="color:' + mine + '">' + (qMode === 'solo' ? 'PRACTICE' : 'YOU · ' + QUAD_NAMES[qSeat].split('·')[1]) + '</b>');
+  }
+
+  function showQuadOver() {
+    mode = 'over';
+    qHeld.neg = qHeld.pos = false;
+    qTouch = null;
+    var title, sub, celebrate = false;
+    if (qMode === 'solo') {
+      title = 'RUN OVER';
+      sub = qState.hits + ' return' + (qState.hits === 1 ? '' : 's');
+    } else if (qState.winner === qSeat) {
+      title = 'YOU WIN';
+      sub = 'last paddle standing';
+      celebrate = true;
+    } else {
+      title = QUAD_NAMES[qState.winner] ? QUAD_NAMES[qState.winner].split(' ·')[0] + ' WINS' : 'MATCH OVER';
+      sub = 'you were seat ' + (qSeat + 1);
+    }
+    $('overlay').innerHTML =
+      '<div class="big">' + title + '</div>' +
+      '<div class="score">⚔️</div>' +
+      '<div class="best">' + sub + '</div>' +
+      '<div class="sub">' + (qMode === 'join' ? 'A ASK FOR A REMATCH · B MENU' : 'A REMATCH · B MENU') + '</div>';
+    $('overlay').style.display = 'flex';
+    if (celebrate) confetti();
+    ensureLoop();
+    beep(celebrate ? 880 : 196, 260, 0.05);
+  }
+
   // net panel buttons
-  $('npGo').addEventListener('click', npGoPressed);
+  $('npGo').addEventListener('click', function () {
+    if (currentId === 'quad') quadGoPressed(); else npGoPressed();
+  });
+  $('npStart').addEventListener('click', quadStartPressed);
   $('npBack').addEventListener('click', function () { pressB(); });
   $('npCopy').addEventListener('click', function () {
     var out = $('npOut');
@@ -1642,6 +2123,11 @@
         else if (dir === 'down') vsSel = (vsSel + 1) % VS_OPTIONS.length;
         beep(440, 30);
       }
+      else if (currentId === 'quad' && qPhase === 'pick') {
+        if (dir === 'up') qSel = (qSel + QUAD_OPTIONS.length - 1) % QUAD_OPTIONS.length;
+        else if (dir === 'down') qSel = (qSel + 1) % QUAD_OPTIONS.length;
+        beep(440, 30);
+      }
       // breaker (and the pong match itself) use held state, handled below
     }
   }
@@ -1650,6 +2136,24 @@
       beep(660, 60);
       enterGame(E.GAMES[menuSel].id);
     } else if (mode === 'over') {
+      if (currentId === 'quad') {
+        if (qMode === 'join') {
+          if (qnet.open) {
+            // ask the host for a rematch; their fresh 'go' restarts us
+            try { qnet.hostDc.send(JSON.stringify({ t: 're' })); } catch (e) {}
+            qAwaitRestart = true;
+            qPhase = 'wait';
+            mode = 'play';
+            $('overlay').style.display = 'none';
+            ensureLoop();
+          } else {
+            enterGame('quad'); // wire is gone — back to the pick screen
+          }
+        } else {
+          quadRestart();
+        }
+        return;
+      }
       if (currentId === 'pong') {
         if (net.open && vsMode === 'host') { restartMatch(); }
         else if (net.open && vsMode === 'join') {
@@ -1669,6 +2173,11 @@
       var opt = VS_OPTIONS[vsSel].key;
       if (opt === 'local') beginMatch('local');
       else openNet(opt);
+    } else if (mode === 'play' && currentId === 'quad' && qPhase === 'pick') {
+      beep(660, 60);
+      var qopt = QUAD_OPTIONS[qSel].key;
+      if (qopt === 'solo') { qMode = 'solo'; beginQuadMatch(1, 0); }
+      else openQuadNet(qopt);
     } else if (mode === 'play' && currentId === 'breaker' && brkState.stuck) {
       brkState = E.launchBreaker(brkState);
       beep(600, 50);
@@ -1676,6 +2185,17 @@
   }
   function pressB() {
     if (mode === 'play') {
+      if (currentId === 'quad') {
+        if (qPhase === 'net') {
+          // back out of the code panel to the mode picker
+          quadCleanup();
+          hideNetPanel();
+          qPhase = 'pick';
+          return;
+        }
+        showMenu(); // versus keeps no high score to bank
+        return;
+      }
       if (currentId === 'pong') {
         if (vsPhase === 'net') {
           // back out of the code panel to the mode picker
@@ -1717,6 +2237,13 @@
       if (e.key === 'ArrowUp') { vsHeld.p2Up = true; e.preventDefault(); return; }
       if (e.key === 'ArrowDown') { vsHeld.p2Down = true; e.preventDefault(); return; }
     }
+    if (mode === 'play' && currentId === 'quad' && qPhase === 'match') {
+      // whichever wall is yours, all four direction keys steer along it
+      var neg = quadAxis(qSeat) === 'x' ? ['ArrowLeft', 'a', 'A'] : ['ArrowUp', 'w', 'W'];
+      var pos = quadAxis(qSeat) === 'x' ? ['ArrowRight', 'd', 'D'] : ['ArrowDown', 's', 'S'];
+      if (neg.indexOf(e.key) !== -1) { qHeld.neg = true; e.preventDefault(); return; }
+      if (pos.indexOf(e.key) !== -1) { qHeld.pos = true; e.preventDefault(); return; }
+    }
     var dir = KEY_DIRS[e.key];
     if (dir) {
       e.preventDefault();
@@ -1740,6 +2267,8 @@
     if (e.key === 's' || e.key === 'S') vsHeld.p1Down = false;
     if (e.key === 'ArrowUp') vsHeld.p2Up = false;
     if (e.key === 'ArrowDown') vsHeld.p2Down = false;
+    if (['ArrowLeft', 'ArrowUp', 'a', 'A', 'w', 'W'].indexOf(e.key) !== -1) qHeld.neg = false;
+    if (['ArrowRight', 'ArrowDown', 'd', 'D', 's', 'S'].indexOf(e.key) !== -1) qHeld.pos = false;
   });
 
   // on-screen d-pad: taps for turn-based games, hold for breaker
@@ -1784,6 +2313,15 @@
 
   // swipes on the screen steer serpent & fuse; drags steer the breaker
   // paddle; in a versus match each half of the screen is one player's paddle
+  // drag anywhere: your quad paddle follows the finger along your wall's axis
+  function quadTouch(e) {
+    var rect = canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    var g = quadGeom();
+    qTouch = quadAxis(qSeat) === 'x'
+      ? E.clampQuadPos(((e.clientX - rect.left) / rect.width * CW - g.ox) / g.S)
+      : E.clampQuadPos(((e.clientY - rect.top) / rect.height * CH - g.oy) / g.S);
+  }
   function pongTouch(e) {
     var rect = canvas.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
@@ -1805,6 +2343,7 @@
       if (rect.width) brkPointerX = (e.clientX - rect.left) / rect.width;
     }
     if (mode === 'play' && currentId === 'pong' && vsPhase === 'match') pongTouch(e);
+    if (mode === 'play' && currentId === 'quad' && qPhase === 'match') quadTouch(e);
   });
   $('screen').addEventListener('pointermove', function (e) {
     if (mode !== 'play' || !swipe) return;
@@ -1813,6 +2352,8 @@
       if (rect.width) brkPointerX = (e.clientX - rect.left) / rect.width;
     } else if (currentId === 'pong' && vsPhase === 'match') {
       pongTouch(e);
+    } else if (currentId === 'quad' && qPhase === 'match') {
+      quadTouch(e);
     }
   });
   // lift only the finger's own paddle, so two players on one screen coexist
@@ -1824,6 +2365,7 @@
       return;
     }
     vsTouch.p1 = null; vsTouch.p2 = null;
+    qTouch = null;
   }
   $('screen').addEventListener('pointercancel', endTouch);
   $('screen').addEventListener('pointerup', function (e) {
@@ -1833,6 +2375,7 @@
     swipe = null;
     if (mode !== 'play' || currentId === 'breaker') return;
     if (currentId === 'pong' && vsPhase === 'match') return; // drags are paddles, not swipes
+    if (currentId === 'quad' && qPhase === 'match') return;
     if (Math.abs(dx) < 24 && Math.abs(dy) < 24) return;
     pressDir(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up'));
   });
