@@ -49,11 +49,15 @@
     { id: 'breaker', name: 'Breaker', emoji: '🧱',
       tagline: 'One ball, three lives, a wall to demolish.',
       controls: '◀ ▶ moves the paddle · A launches' },
-    // An external cartridge: not a built-in engine game but a whole other
-    // machine slotted into the rack — the shell boots it in-screen.
-    { id: 'ultra64', name: 'Ultra 64', emoji: '🎮', external: true,
+    // External cartridges: not built-in engine games but whole other
+    // machines slotted into the rack — the shell boots each in-screen.
+    // `core` is the system the Ultra deck preselects ('' = show the picker).
+    { id: 'ultra64', name: 'Ultra 64', emoji: '🎮', external: true, core: 'n64', badge: 'REAL N64',
       tagline: 'Real N64 — the mupen64plus core. Bring a ROM you own.',
-      controls: 'Boots in-screen · B ejects the cartridge' }
+      controls: 'Boots in-screen · B ejects the cartridge' },
+    { id: 'omni', name: 'OmniCart', emoji: '📼', external: true, core: '', badge: '26 SYSTEMS',
+      tagline: 'Every console + arcade — 26 systems of real cores.',
+      controls: 'Pick a system in-screen · B ejects' }
   ];
 
   function gameById(id) {
