@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Arcade — a pocket console</title>
+<meta name="description" content="A pocket game console: Serpent, Fuse 2048 and Breaker on one dark handheld with a d-pad, two buttons and a high-score table.">
+<meta name="theme-color" content="#0b0d16">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<style>
+  :root {
+    --shell: #0b0d16;
+    --shell-2: #131728;
+    --screen: #060810;
+    --line: #232a44;
+    --ink: #e8ecff;
+    --dim: #8b93b8;
+    --cyan: #4dd8ff;
+    --violet: #8f7cf7;
+    --gold: #e8b34c;
+    --red: #ff5d7a;
+    --green: #4de8a1;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    background: radial-gradient(120% 90% at 50% 0%, #10142a 0%, var(--shell) 60%);
+    color: var(--ink);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    display: flex; align-items: center; justify-content: center;
+    padding: env(safe-area-inset-top) 10px calc(10px + env(safe-area-inset-bottom));
+    user-select: none; -webkit-user-select: none; touch-action: manipulation;
+  }
+  #shell {
+    width: min(430px, 100%);
+    background: linear-gradient(180deg, var(--shell-2), #0d1020 70%);
+    border: 1px solid var(--line);
+    border-radius: 26px;
+    padding: 14px 14px 18px;
+    box-shadow: 0 24px 60px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.05);
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  /* ---------- top plate ---------- */
+  #plate { display: flex; align-items: center; justify-content: space-between; padding: 0 4px; }
+  #brand { font-weight: 700; letter-spacing: .35em; font-size: 13px;
+    background: linear-gradient(90deg, var(--cyan), var(--violet) 55%, var(--gold));
+    -webkit-background-clip: text; background-clip: text; color: transparent; }
+  #power { display: flex; align-items: center; gap: 6px; color: var(--dim); font-size: 10px; letter-spacing: .15em; }
+  #power .led { width: 7px; height: 7px; border-radius: 50%; background: var(--green);
+    box-shadow: 0 0 8px var(--green); animation: breathe 2.4s ease-in-out infinite; }
+  @keyframes breathe { 50% { opacity: .45; } }
+  /* ---------- the screen ---------- */
+  #screen {
+    position: relative;
+    background: var(--screen);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    overflow: hidden;
+    aspect-ratio: 1 / 1.08;
+    box-shadow: inset 0 0 40px rgba(0,0,0,.7), inset 0 0 2px rgba(77,216,255,.25);
+  }
+  #screen::after { /* faint scanlines */
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(0deg, rgba(255,255,255,.02) 0 1px, transparent 1px 3px);
+  }
+  #game { position: absolute; inset: 0; width: 100%; height: 100%; display: none; }
+  #hud { position: absolute; top: 0; left: 0; right: 0; display: none;
+    justify-content: space-between; padding: 8px 12px; font-size: 11px; letter-spacing: .08em;
+    color: var(--dim); text-shadow: 0 0 6px rgba(0,0,0,.9); pointer-events: none; z-index: 2; }
+  #hud b { color: var(--ink); font-weight: 700; }
+  /* menu */
+  #menu { position: absolute; inset: 0; display: flex; flex-direction: column; padding: 14px; gap: 8px; }
+  #menu h1 { font-size: 12px; color: var(--dim); letter-spacing: .3em; text-align: center; margin: 4px 0 6px; font-weight: 400; }
+  .cart {
+    display: flex; align-items: center; gap: 12px;
+    border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px;
+    background: linear-gradient(180deg, rgba(255,255,255,.03), transparent);
+    cursor: pointer; transition: border-color .12s, transform .12s;
+  }
+  .cart.sel { border-color: var(--cyan); box-shadow: 0 0 0 1px var(--cyan), 0 0 18px rgba(77,216,255,.18); transform: translateX(2px); }
+  .cart .em { font-size: 24px; width: 34px; text-align: center; filter: drop-shadow(0 0 6px rgba(77,216,255,.3)); }
+  .cart .txt { flex: 1; min-width: 0; }
+  .cart .nm { font-size: 14px; font-weight: 700; letter-spacing: .04em; }
+  .cart .tg { font-size: 10.5px; color: var(--dim); margin-top: 2px; }
+  .cart .hs { font-size: 10px; color: var(--gold); text-align: right; white-space: nowrap; }
+  .cart .hs .z { color: var(--dim); }
+  #menuHint { margin-top: auto; text-align: center; color: var(--dim); font-size: 10px; letter-spacing: .12em; }
+  /* overlay (game over / paused / how-to) */
+  #overlay { position: absolute; inset: 0; display: none; z-index: 3;
+    flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+    background: rgba(4,6,12,.82); backdrop-filter: blur(2px); text-align: center; padding: 20px; }
+  #overlay .big { font-size: 20px; font-weight: 700; letter-spacing: .12em; }
+  #overlay .sub { font-size: 12px; color: var(--dim); line-height: 1.7; }
+  #overlay .score { font-size: 30px; font-weight: 700; color: var(--gold); text-shadow: 0 0 18px rgba(232,179,76,.4); }
+  #overlay .best { font-size: 11px; color: var(--cyan); letter-spacing: .1em; }
+  /* ---------- controls ---------- */
+  #controls { display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: 8px; padding: 2px 6px 0; }
+  #dpad { position: relative; width: 128px; height: 128px; justify-self: start; }
+  .dbtn {
+    position: absolute; width: 44px; height: 44px; border: 1px solid var(--line);
+    background: linear-gradient(180deg, #1a2038, #10142a);
+    color: var(--dim); font-size: 15px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+  }
+  .dbtn:active, .dbtn.held { background: #23305a; color: var(--cyan); border-color: var(--cyan); }
+  #d-up    { top: 0;    left: 42px; }
+  #d-down  { bottom: 0; left: 42px; }
+  #d-left  { top: 42px; left: 0; }
+  #d-right { top: 42px; right: 0; }
+  #d-mid   { top: 42px; left: 42px; width: 44px; height: 44px; border: none;
+    background: radial-gradient(circle at 40% 35%, #1c2340, #0d1020); border-radius: 8px; position: absolute; }
+  #ab { display: flex; gap: 14px; justify-self: end; align-items: center; padding-right: 4px; }
+  .ab { width: 58px; height: 58px; border-radius: 50%; border: 1px solid var(--line);
+    font: inherit; font-size: 16px; font-weight: 700; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; }
+  #btnB { background: radial-gradient(circle at 35% 30%, #2a2450, #171233); color: var(--violet); margin-top: 22px; }
+  #btnA { background: radial-gradient(circle at 35% 30%, #103247, #0a1f30); color: var(--cyan); }
+  .ab:active { filter: brightness(1.5); }
+  .ab .lbl { pointer-events: none; }
+  #speaker { display: flex; gap: 5px; justify-content: center; padding-top: 2px; }
+  #speaker i { width: 4px; height: 14px; border-radius: 2px; background: #1a2038; }
+</style>
+</head>
+<body>
+<div id="shell">
+  <div id="plate">
+    <div id="brand">ARCADE</div>
+    <div id="power"><span class="led"></span>POWER</div>
+  </div>
+
+  <div id="screen">
+    <div id="menu"></div>
+    <canvas id="game" width="720" height="778"></canvas>
+    <div id="hud">
+      <span id="hudLeft"></span>
+      <span id="hudRight"></span>
+    </div>
+    <div id="overlay"></div>
+  </div>
+
+  <div id="controls">
+    <div id="dpad">
+      <div id="d-mid"></div>
+      <button class="dbtn" id="d-up" data-dir="up" aria-label="up">▲</button>
+      <button class="dbtn" id="d-left" data-dir="left" aria-label="left">◀</button>
+      <button class="dbtn" id="d-right" data-dir="right" aria-label="right">▶</button>
+      <button class="dbtn" id="d-down" data-dir="down" aria-label="down">▼</button>
+    </div>
+    <div id="ab">
+      <button class="ab" id="btnB" aria-label="B — back"><span class="lbl">B</span></button>
+      <button class="ab" id="btnA" aria-label="A — select / launch"><span class="lbl">A</span></button>
+    </div>
+  </div>
+  <div id="speaker"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+</div>
+
+<script src="engine.js"></script>
+<script>
+(function () {
+  'use strict';
+  var E = self.ArcadeEngine;
+  function $(id) { return document.getElementById(id); }
+
+  var canvas = $('game');
+  var ctx = canvas.getContext('2d');
+  var CW = 720, CH = 778;
+
+  /* ---------------- persistence: the high-score table ---------------- */
+  var SCORES_KEY = 'arcade-scores-v1';
+  function loadScores() {
+    try { return JSON.parse(localStorage.getItem(SCORES_KEY) || '{}') || {}; }
+    catch (e) { return {}; }
+  }
+  function saveScores(t) {
+    try { localStorage.setItem(SCORES_KEY, JSON.stringify(t)); } catch (e) {}
+  }
+  var scores = loadScores();
+
+  /* ---------------- tiny bleeps (guarded; the console works silent) ---------------- */
+  var audioCtx = null;
+  function beep(freq, ms, gainV) {
+    try {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      if (!audioCtx) audioCtx = new AC();
+      var o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.type = 'square'; o.frequency.value = freq;
+      g.gain.value = gainV || 0.03;
+      o.connect(g); g.connect(audioCtx.destination);
+      var t = audioCtx.currentTime;
+      g.gain.setValueAtTime(g.gain.value, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + ms / 1000);
+      o.start(t); o.stop(t + ms / 1000);
+    } catch (e) {}
+  }
+
+  /* ---------------- console state machine ---------------- */
+  var mode = 'menu';          // 'menu' | 'play' | 'over'
+  var currentId = null;       // which cartridge is in
+  var menuSel = 0;
+  var timerId = 0;            // serpent tick timer
+  var rafId = 0;              // breaker frame loop
+  var newSeed = function () { return 'run-' + Date.now() + '-' + Math.floor(Math.random() * 1e6); };
+
+  // per-game live state
+  var snakeState = null, snakeWant = null;
+  var fuseState = null;
+  var brkState = null, brkHeld = { left: false, right: false }, brkPointerX = null, brkLast = 0;
+
+  /* ---------------- the menu ---------------- */
+  function renderMenu() {
+    var html = '<h1>INSERT CARTRIDGE</h1>';
+    for (var i = 0; i < E.GAMES.length; i++) {
+      var g = E.GAMES[i];
+      var best = E.bestScore(scores, g.id);
+      html += '<div class="cart' + (i === menuSel ? ' sel' : '') + '" data-idx="' + i + '">' +
+        '<div class="em">' + g.emoji + '</div>' +
+        '<div class="txt"><div class="nm">' + g.name + '</div><div class="tg">' + g.tagline + '</div></div>' +
+        '<div class="hs">' + (best ? 'BEST<br>' + E.formatScore(best) : '<span class="z">NO<br>SCORE</span>') + '</div>' +
+        '</div>';
+    }
+    html += '<div id="menuHint">▲▼ CHOOSE · A START</div>';
+    $('menu').innerHTML = html;
+  }
+
+  function showMenu() {
+    stopLoops();
+    mode = 'menu';
+    currentId = null;
+    $('menu').style.display = 'flex';
+    $('game').style.display = 'none';
+    $('hud').style.display = 'none';
+    $('overlay').style.display = 'none';
+    renderMenu();
+  }
+
+  function stopLoops() {
+    if (timerId) { clearTimeout(timerId); timerId = 0; }
+    if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
+  }
+
+  /* ---------------- HUD & overlay ---------------- */
+  function hud(left, right) {
+    $('hudLeft').innerHTML = left;
+    $('hudRight').innerHTML = right;
+  }
+
+  function showOver(title, score, sub) {
+    mode = 'over';
+    stopLoops();
+    var wasBest = E.isHighScore(scores, currentId, score);
+    scores = E.recordScore(scores, currentId, score, Date.now());
+    saveScores(scores);
+    var best = E.bestScore(scores, currentId);
+    $('overlay').innerHTML =
+      '<div class="big">' + title + '</div>' +
+      '<div class="score">' + E.formatScore(score) + '</div>' +
+      '<div class="best">' + (wasBest && score > 0 ? '★ NEW HIGH SCORE ★' : 'BEST ' + E.formatScore(best)) + '</div>' +
+      (sub ? '<div class="sub">' + sub + '</div>' : '') +
+      '<div class="sub">A PLAY AGAIN · B MENU</div>';
+    $('overlay').style.display = 'flex';
+    beep(wasBest && score > 0 ? 880 : 196, 220, 0.04);
+  }
+
+  function enterGame(id) {
+    mode = 'play';
+    currentId = id;
+    $('menu').style.display = 'none';
+    $('game').style.display = 'block';
+    $('hud').style.display = 'flex';
+    $('overlay').style.display = 'none';
+    if (id === 'serpent') startSerpent();
+    else if (id === 'fuse') startFuse();
+    else startBreaker();
+  }
+
+  function clearScreen() {
+    ctx.fillStyle = '#060810';
+    ctx.fillRect(0, 0, CW, CH);
+  }
+
+  /* ================= SERPENT ================= */
+  function startSerpent() {
+    snakeState = E.newSnake(newSeed());
+    snakeWant = null;
+    drawSerpent();
+    scheduleSnakeTick();
+  }
+  function scheduleSnakeTick() {
+    timerId = setTimeout(snakeTick, E.snakeSpeedMs(snakeState.score));
+  }
+  function snakeTick() {
+    if (mode !== 'play' || currentId !== 'serpent') return;
+    var prev = snakeState;
+    snakeState = E.stepSnake(snakeState, snakeWant);
+    snakeWant = null;
+    if (snakeState.eaten > prev.eaten) beep(660, 60);
+    drawSerpent();
+    if (!snakeState.alive) {
+      showOver('GAME OVER', snakeState.score, 'The serpent ate ' + snakeState.eaten + ' apple' + (snakeState.eaten === 1 ? '' : 's') + '.');
+      return;
+    }
+    scheduleSnakeTick();
+  }
+  function drawSerpent() {
+    var s = snakeState;
+    clearScreen();
+    var pad = 24, top = 58;
+    var cell = Math.min((CW - pad * 2) / s.cols, (CH - top - pad) / s.rows);
+    var ox = (CW - cell * s.cols) / 2, oy = top;
+    // garden
+    ctx.strokeStyle = '#232a44';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(ox - 3, oy - 3, cell * s.cols + 6, cell * s.rows + 6);
+    // apple
+    if (s.food) {
+      ctx.fillStyle = '#ff5d7a';
+      ctx.beginPath();
+      ctx.arc(ox + (s.food.x + 0.5) * cell, oy + (s.food.y + 0.5) * cell, cell * 0.32, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // serpent
+    for (var i = s.snake.length - 1; i >= 0; i--) {
+      var seg = s.snake[i];
+      var t = i / Math.max(1, s.snake.length - 1);
+      ctx.fillStyle = i === 0 ? '#4de8a1' : 'rgba(77,216,255,' + (0.95 - t * 0.55).toFixed(2) + ')';
+      var g = cell * 0.08;
+      ctx.fillRect(ox + seg.x * cell + g, oy + seg.y * cell + g, cell - g * 2, cell - g * 2);
+    }
+    hud('SCORE <b>' + E.formatScore(s.score) + '</b>', 'BEST <b>' + E.formatScore(E.bestScore(scores, 'serpent')) + '</b>');
+  }
+  function serpentInput(dir) {
+    snakeWant = dir;
+  }
+
+  /* ================= FUSE 2048 ================= */
+  var TILE_COLORS = {
+    2: '#1c2340', 4: '#232a58', 8: '#2f3b7a', 16: '#3d4f9e',
+    32: '#4d63c4', 64: '#5a5ae0', 128: '#7c5ae0', 256: '#9a4ee0',
+    512: '#c04ecf', 1024: '#e04ea6', 2048: '#e8b34c'
+  };
+  function startFuse() {
+    fuseState = E.new2048(newSeed());
+    drawFuse();
+  }
+  function fuseInput(dir) {
+    var prev = fuseState;
+    fuseState = E.move2048(fuseState, dir);
+    if (fuseState === prev) return;
+    if (fuseState.score > prev.score) beep(520 + Math.min(400, fuseState.score - prev.score), 50);
+    drawFuse();
+    if (fuseState.over) {
+      showOver('BOARD FULL', fuseState.score, 'Highest tile: ' + E.highestTile(fuseState.board));
+    } else if (fuseState.won && !prev.won) {
+      beep(880, 300, 0.05);
+    }
+  }
+  function drawFuse() {
+    var st = fuseState;
+    clearScreen();
+    var size = E.FUSE_SIZE, pad = 40, top = 90;
+    var grid = Math.min(CW - pad * 2, CH - top - pad);
+    var gap = grid * 0.03, cell = (grid - gap * (size + 1)) / size;
+    var ox = (CW - grid) / 2, oy = top;
+    ctx.fillStyle = '#10142a';
+    roundRect(ox, oy, grid, grid, 18);
+    ctx.fill();
+    for (var r = 0; r < size; r++) {
+      for (var c = 0; c < size; c++) {
+        var v = st.board[r][c];
+        var x = ox + gap + c * (cell + gap), y = oy + gap + r * (cell + gap);
+        ctx.fillStyle = v ? (TILE_COLORS[v] || '#e8b34c') : '#181d36';
+        roundRect(x, y, cell, cell, 12);
+        ctx.fill();
+        if (v) {
+          ctx.fillStyle = v >= 2048 ? '#0b0d16' : '#e8ecff';
+          ctx.font = '700 ' + Math.floor(cell * (v < 128 ? 0.42 : v < 1024 ? 0.34 : 0.28)) + 'px ui-monospace, monospace';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(String(v), x + cell / 2, y + cell / 2 + cell * 0.02);
+        }
+      }
+    }
+    hud('SCORE <b>' + E.formatScore(st.score) + '</b>' + (st.won ? ' · <b style="color:#e8b34c">2048!</b>' : ''),
+        'BEST <b>' + E.formatScore(E.bestScore(scores, 'fuse')) + '</b>');
+  }
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  /* ================= BREAKER ================= */
+  var BRICK_COLORS = ['#ff5d7a', '#e8b34c', '#4de8a1', '#4dd8ff', '#8f7cf7'];
+  function startBreaker() {
+    brkState = E.newBreaker(newSeed());
+    brkHeld.left = false; brkHeld.right = false;
+    brkPointerX = null;
+    brkLast = 0;
+    rafId = requestAnimationFrame(breakerFrame);
+    drawBreaker();
+  }
+  function breakerFrame(t) {
+    if (mode !== 'play' || currentId !== 'breaker') return;
+    if (!brkLast) brkLast = t;
+    var elapsed = Math.min(0.05, (t - brkLast) / 1000);
+    brkLast = t;
+    // paddle target: pointer wins, else held keys nudge it
+    var px = brkState.paddleX;
+    if (brkPointerX != null) px = brkPointerX;
+    else {
+      var v = 0.9 * elapsed;
+      if (brkHeld.left) px -= v;
+      if (brkHeld.right) px += v;
+    }
+    // fixed-dt physics: consume elapsed time in 1/120s slices
+    var prev = brkState;
+    var slices = Math.max(1, Math.round(elapsed * 120));
+    for (var i = 0; i < slices; i++) brkState = E.stepBreaker(brkState, px, 1 / 120);
+    if (brkState.score > prev.score) beep(700, 35);
+    if (brkState.lives < prev.lives && !brkState.over) beep(180, 200, 0.05);
+    if (brkState.level > prev.level) beep(880, 250, 0.05);
+    drawBreaker();
+    if (brkState.over) {
+      showOver('GAME OVER', brkState.score, 'Reached level ' + brkState.level + '.');
+      return;
+    }
+    rafId = requestAnimationFrame(breakerFrame);
+  }
+  function drawBreaker() {
+    var st = brkState;
+    clearScreen();
+    var top = 46, S = Math.min(CW, CH - top); // unit square in pixels
+    var ox = (CW - S) / 2, oy = top;
+    // bricks
+    for (var i = 0; i < st.bricks.length; i++) {
+      var bk = st.bricks[i];
+      if (!bk.alive) continue;
+      ctx.fillStyle = BRICK_COLORS[bk.row % BRICK_COLORS.length];
+      roundRect(ox + bk.x * S, oy + bk.y * S, bk.w * S, bk.h * S, 6);
+      ctx.fill();
+    }
+    // paddle
+    var B = E.BREAKER;
+    ctx.fillStyle = '#4dd8ff';
+    roundRect(ox + (st.paddleX - B.paddleW / 2) * S, oy + (B.paddleY - B.paddleH / 2) * S, B.paddleW * S, B.paddleH * S, 8);
+    ctx.fill();
+    // ball
+    ctx.fillStyle = '#e8ecff';
+    ctx.beginPath();
+    ctx.arc(ox + st.ball.x * S, oy + st.ball.y * S, B.ballR * S, 0, Math.PI * 2);
+    ctx.fill();
+    if (st.stuck && !st.over) {
+      ctx.fillStyle = '#8b93b8';
+      ctx.font = '600 26px ui-monospace, monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('PRESS A TO LAUNCH', CW / 2, oy + S * 0.62);
+    }
+    var hearts = '';
+    for (var h = 0; h < st.lives; h++) hearts += '♥';
+    hud('SCORE <b>' + E.formatScore(st.score) + '</b> · LV <b>' + st.level + '</b>',
+        '<b style="color:#ff5d7a">' + hearts + '</b> · BEST <b>' + E.formatScore(E.bestScore(scores, 'breaker')) + '</b>');
+  }
+
+  /* ---------------- input routing ---------------- */
+  function pressDir(dir) {
+    if (mode === 'menu') {
+      if (dir === 'up') menuSel = (menuSel + E.GAMES.length - 1) % E.GAMES.length;
+      else if (dir === 'down') menuSel = (menuSel + 1) % E.GAMES.length;
+      beep(440, 30);
+      renderMenu();
+    } else if (mode === 'play') {
+      if (currentId === 'serpent') serpentInput(dir);
+      else if (currentId === 'fuse') fuseInput(dir);
+      // breaker uses held state, handled below
+    }
+  }
+  function pressA() {
+    if (mode === 'menu') {
+      beep(660, 60);
+      enterGame(E.GAMES[menuSel].id);
+    } else if (mode === 'over') {
+      enterGame(currentId);
+    } else if (mode === 'play' && currentId === 'breaker' && brkState.stuck) {
+      brkState = E.launchBreaker(brkState);
+      beep(600, 50);
+    }
+  }
+  function pressB() {
+    if (mode === 'play') {
+      // leaving mid-run still banks the score
+      var sc = currentId === 'serpent' ? snakeState.score
+             : currentId === 'fuse' ? fuseState.score
+             : brkState.score;
+      scores = E.recordScore(scores, currentId, sc, Date.now());
+      saveScores(scores);
+      showMenu();
+    } else if (mode === 'over') {
+      showMenu();
+    }
+  }
+
+  // keyboard
+  var KEY_DIRS = {
+    ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
+    w: 'up', s: 'down', a: 'left', d: 'right',
+    W: 'up', S: 'down', A: 'left', D: 'right'
+  };
+  document.addEventListener('keydown', function (e) {
+    var dir = KEY_DIRS[e.key];
+    if (dir) {
+      e.preventDefault();
+      if (mode === 'play' && currentId === 'breaker') {
+        if (dir === 'left') brkHeld.left = true;
+        if (dir === 'right') brkHeld.right = true;
+        brkPointerX = null;
+      } else {
+        pressDir(dir);
+      }
+      return;
+    }
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pressA(); }
+    else if (e.key === 'Escape' || e.key === 'Backspace') { e.preventDefault(); pressB(); }
+  });
+  document.addEventListener('keyup', function (e) {
+    var dir = KEY_DIRS[e.key];
+    if (dir === 'left') brkHeld.left = false;
+    if (dir === 'right') brkHeld.right = false;
+  });
+
+  // on-screen d-pad: taps for turn-based games, hold for breaker
+  var dbtns = document.querySelectorAll('.dbtn');
+  for (var di = 0; di < dbtns.length; di++) {
+    (function (btn) {
+      var dir = btn.getAttribute('data-dir');
+      btn.addEventListener('pointerdown', function (e) {
+        e.preventDefault();
+        btn.classList.add('held');
+        if (mode === 'play' && currentId === 'breaker') {
+          if (dir === 'left') brkHeld.left = true;
+          if (dir === 'right') brkHeld.right = true;
+          brkPointerX = null;
+        } else {
+          pressDir(dir);
+        }
+      });
+      var release = function () {
+        btn.classList.remove('held');
+        if (dir === 'left') brkHeld.left = false;
+        if (dir === 'right') brkHeld.right = false;
+      };
+      btn.addEventListener('pointerup', release);
+      btn.addEventListener('pointercancel', release);
+      btn.addEventListener('pointerleave', release);
+    })(dbtns[di]);
+  }
+  $('btnA').addEventListener('pointerdown', function (e) { e.preventDefault(); pressA(); });
+  $('btnB').addEventListener('pointerdown', function (e) { e.preventDefault(); pressB(); });
+
+  // menu carts are tappable too
+  $('menu').addEventListener('click', function (e) {
+    var el = e.target;
+    while (el && el !== this && !el.getAttribute('data-idx')) el = el.parentElement;
+    if (el && el !== this) {
+      menuSel = parseInt(el.getAttribute('data-idx'), 10) || 0;
+      renderMenu();
+      pressA();
+    }
+  });
+
+  // swipes on the screen steer serpent & fuse; drags steer the breaker paddle
+  var swipe = null;
+  $('screen').addEventListener('pointerdown', function (e) {
+    swipe = { x: e.clientX, y: e.clientY };
+    if (mode === 'play' && currentId === 'breaker') {
+      var rect = canvas.getBoundingClientRect();
+      if (rect.width) brkPointerX = (e.clientX - rect.left) / rect.width;
+    }
+  });
+  $('screen').addEventListener('pointermove', function (e) {
+    if (mode === 'play' && currentId === 'breaker' && swipe) {
+      var rect = canvas.getBoundingClientRect();
+      if (rect.width) brkPointerX = (e.clientX - rect.left) / rect.width;
+    }
+  });
+  $('screen').addEventListener('pointerup', function (e) {
+    if (!swipe) return;
+    var dx = e.clientX - swipe.x, dy = e.clientY - swipe.y;
+    swipe = null;
+    if (mode !== 'play' || currentId === 'breaker') return;
+    if (Math.abs(dx) < 24 && Math.abs(dy) < 24) return;
+    pressDir(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up'));
+  });
+
+  /* ---------------- boot ---------------- */
+  showMenu();
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(function () {});
+  }
+})();
+</script>
+</body>
+</html>
