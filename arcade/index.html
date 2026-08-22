@@ -76,7 +76,7 @@
     color: var(--dim); text-shadow: 0 0 6px rgba(0,0,0,.9); pointer-events: none; z-index: 2; }
   #hud b { color: var(--ink); font-weight: 700; }
   /* menu */
-  #menu { position: absolute; inset: 0; display: flex; flex-direction: column; padding: 14px; gap: 8px; z-index: 1; }
+  #menu { position: absolute; inset: 0; display: flex; flex-direction: column; padding: 14px; gap: 8px; z-index: 1; overflow-y: auto; }
   #menu h1 { font-size: 12px; color: var(--dim); letter-spacing: .3em; text-align: center; margin: 4px 0 6px; font-weight: 400; }
   .cart {
     display: flex; align-items: center; gap: 12px;
@@ -395,10 +395,10 @@
   }
   // Slot the real N64 emulator (ultra/play.html — self-hosted mupen64plus)
   // into the console's screen. The shell's B button ejects it.
-  function bootUltra() {
+  function bootUltra(core) {
     emuFrame = document.createElement('iframe');
     emuFrame.id = 'emu';
-    emuFrame.src = '../ultra/play.html?embed=1';
+    emuFrame.src = '../ultra/play.html?embed=1' + (core ? '&core=' + core : '');
     emuFrame.setAttribute('allow', 'fullscreen; gamepad; autoplay');
     emuFrame.setAttribute('title', 'Ultra 64 — N64 emulator');
     $('screen').appendChild(emuFrame);
@@ -415,7 +415,7 @@
     for (var i = 0; i < E.GAMES.length; i++) {
       var g = E.GAMES[i];
       var best = E.bestScore(scores, g.id);
-      var hs = g.external ? '<span style="color:#4de8a1">REAL<br>N64</span>'
+      var hs = g.external ? '<span style="color:#4de8a1">' + String(g.badge || '').replace(' ', '<br>') + '</span>'
              : best ? 'BEST<br>' + E.formatScore(best)
              : '<span class="z">NO<br>SCORE</span>';
       html += '<div class="cart' + (i === menuSel ? ' sel' : '') + '" data-idx="' + i + '">' +
@@ -426,6 +426,8 @@
     }
     html += '<div id="menuHint">▲▼ CHOOSE · A START</div>';
     $('menu').innerHTML = html;
+    var sel = document.querySelector('#menu .cart.sel');
+    if (sel && sel.scrollIntoView) sel.scrollIntoView({ block: 'nearest' });
   }
 
   function showMenu() {
@@ -488,10 +490,10 @@
     $('menu').style.display = 'none';
     $('overlay').style.display = 'none';
     if (isExternal(id)) {
-      // the Ultra 64 slot: no canvas, no HUD — the emulator owns the screen
+      // an emulator slot: no canvas, no HUD — the Ultra deck owns the screen
       $('game').style.display = 'none';
       $('hud').style.display = 'none';
-      bootUltra();
+      bootUltra(E.gameById(id).core);
       return;
     }
     $('game').style.display = 'block';

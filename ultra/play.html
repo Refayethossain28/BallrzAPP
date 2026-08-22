@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b0b14">
-<title>Ultra — play real N64 ROMs</title>
+<title>Ultra — play real ROMs, every console + arcade</title>
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
 <style>
@@ -33,14 +33,30 @@
   .stage { border-radius: 16px; overflow: hidden; border: 1px solid var(--line); background: #000;
     aspect-ratio: 4 / 3; position: relative; }
   #game { width: 100%; height: 100%; }
-  .drop { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
-    justify-content: center; gap: 16px; text-align: center; padding: 24px; background: linear-gradient(180deg,#14141f,#0b0b14); }
+  .drop { position: absolute; inset: 0; display: flex;
+    background: linear-gradient(180deg,#14141f,#0b0b14); overflow-y: auto; }
+  /* margin:auto centers short content but lets tall content scroll without
+     clipping its top (flex centering + overflow would make it unreachable) */
+  .drop .inner { margin: auto; display: flex; flex-direction: column; align-items: center;
+    gap: 12px; text-align: center; padding: 18px; }
   .drop.hide { display: none; }
-  .drop b { font-size: 17px; letter-spacing: .04em; }
-  .drop p { color: var(--dim); font-size: 13px; max-width: 460px; }
+  .drop b { font-size: 16px; letter-spacing: .04em; }
+  .drop p { color: var(--dim); font-size: 12.5px; max-width: 520px; }
   button, .filebtn { font: inherit; color: var(--ink); background: var(--blue); border: 1px solid var(--blue);
-    border-radius: 10px; padding: 11px 18px; cursor: pointer; font-weight: 700; }
-  button:active { transform: translateY(1px); }
+    border-radius: 10px; padding: 10px 18px; cursor: pointer; font-weight: 700; display: inline-block; }
+  button:active, .filebtn:active { transform: translateY(1px); }
+
+  .sysgrid { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; max-width: 640px; }
+  .sys { font: inherit; font-size: 12px; font-weight: 600; color: var(--dim);
+    background: var(--panel2); border: 1px solid var(--line); border-radius: 999px;
+    padding: 6px 12px; cursor: pointer; }
+  .sys.sel { color: var(--ink); background: #24304f; border-color: var(--blue);
+    box-shadow: 0 0 0 1px var(--blue); }
+  .biosrow { font-size: 12px; color: var(--dim); }
+  .biosrow.hide { display: none; }
+  .biosrow input { font-size: 12px; color: var(--dim); max-width: 220px; }
+  #sysNote { min-height: 18px; font-size: 12px; color: var(--faint); }
+  #sysNote.warn { color: var(--yellow); }
 
   .note { margin-top: 16px; padding: 14px 16px; background: var(--panel); border: 1px solid var(--line);
     border-radius: 12px; color: var(--dim); font-size: 13px; line-height: 1.6; }
@@ -60,37 +76,47 @@
 
 <header>
   <div class="logo" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
-  <h1>ULTRA<small>play real N64 ROMs</small></h1>
+  <h1>ULTRA<small>play real ROMs — every console + arcade</small></h1>
 </header>
 <div class="back"><a href="./">← back to the Ultra emulator (homebrew + CPU debugger)</a></div>
 
 <div class="stage">
   <div id="game"></div>
   <div class="drop" id="drop">
-    <b>Load an N64 ROM you own</b>
-    <p>This runs the real <b>mupen64plus</b> emulator core (WebAssembly) — the same
-      full-hardware emulator used elsewhere on the web, self-hosted here. Commercial
-      games you own will actually play. Formats: .z64 / .v64 / .n64, or a .zip / .7z
-      containing one.</p>
-    <label class="filebtn">⬆ Choose ROM file…
-      <input type="file" id="rom" accept=".z64,.v64,.n64,.zip,.7z" hidden>
-    </label>
+    <div class="inner">
+      <b id="dropTitle">Pick a system, then load a ROM you own</b>
+      <div class="sysgrid" id="sysgrid"></div>
+      <div id="sysNote"></div>
+      <label class="filebtn">⬆ Choose ROM file…
+        <input type="file" id="rom" hidden>
+      </label>
+      <label class="biosrow hide" id="biosRow">BIOS file (this system may need one you own):
+        <input type="file" id="bios">
+      </label>
+      <p>Real libretro cores compiled to WebAssembly (EmulatorJS build), fully self-hosted —
+        nothing is uploaded anywhere. Zipped ROMs (.zip / .7z) work too.</p>
+    </div>
   </div>
 </div>
 
 <div class="note">
   <b>How this differs from the main Ultra page:</b> the main page is a from-scratch CPU
-  interpreter for learning — it runs homebrew and shows live disassembly, but it doesn't
-  emulate the N64's graphics chips. <b>This</b> page embeds a complete, mature emulator
-  (mupen64plus via EmulatorJS) so real games render and play.
-  <div class="warn">Only load ROMs you have the legal right to use — your own cartridge dumps.
-  Nothing is uploaded anywhere; the file runs entirely in your browser.</div>
+  interpreter for learning — it runs homebrew and shows live disassembly. <b>This</b> page
+  embeds complete, mature emulator cores (mupen64plus, snes9x, mGBA, Genesis Plus GX,
+  PCSX-ReARMed, FinalBurn Neo, MAME 2003+ and more) so real games render and play.
+  <div class="warn">Only load ROMs you have the legal right to use — your own cartridge and
+  disc dumps. Nothing leaves your browser.</div>
 </div>
 
 <footer id="footer">
-  <b>N64 only.</b> A Dreamcast core (flycast) isn't available through the packages this build
-  can pull, so real-ROM play is Nintendo 64 here; the Dreamcast SH-4 core on the main page
-  still runs its homebrew demos. mupen64plus and EmulatorJS are GPL-3.0 — see emujs/LICENSE.
+  <b>26 systems.</b> Nintendo: NES, SNES, Game Boy / Color, GBA, Virtual Boy, N64, DS ·
+  Sega: Master System, Game Gear, Mega Drive, Sega CD, 32X, Saturn ·
+  Sony: PlayStation · Atari: 2600, 5200, 7800, Lynx, Jaguar ·
+  NEC: TurboGrafx-16 · SNK: Neo Geo Pocket · Bandai: WonderSwan · ColecoVision · 3DO ·
+  Arcade: FinalBurn Neo + MAME 2003-Plus.
+  Saturn, Sega CD and 3DO usually need a BIOS you own (a BIOS slot appears for those);
+  PlayStation runs many games BIOS-free via HLE. PSP is absent: its core needs threading
+  headers static hosting can't serve. Cores are GPL-3.0 — see emujs/LICENSE.
 </footer>
 
 <script>
@@ -99,23 +125,110 @@
   if (String(location.search || '').indexOf('embed=1') !== -1) {
     document.documentElement.className += ' embed';
   }
-  var input = document.getElementById('rom');
-  var drop = document.getElementById('drop');
+
+  /* Every system this deck can boot. `core` pins the exact libretro core we
+     self-host in emujs/data/cores/ (so the loader never reaches for one we
+     don't ship); `exts` drives extension auto-detect; `bios` shows the
+     optional BIOS slot. */
+  var SYSTEMS = [
+    { id: 'nes',        name: 'NES',              core: 'fceumm',           exts: ['nes', 'fds', 'unf'] },
+    { id: 'snes',       name: 'SNES',             core: 'snes9x',           exts: ['sfc', 'smc'] },
+    { id: 'gb',         name: 'Game Boy / GBC',   core: 'gambatte',         exts: ['gb', 'gbc'] },
+    { id: 'gba',        name: 'GB Advance',       core: 'mgba',             exts: ['gba'] },
+    { id: 'vb',         name: 'Virtual Boy',      core: 'beetle_vb',        exts: ['vb'] },
+    { id: 'n64',        name: 'Nintendo 64',      core: 'mupen64plus_next', exts: ['z64', 'n64', 'v64'] },
+    { id: 'nds',        name: 'Nintendo DS',      core: 'desmume2015',      exts: ['nds'], ejs: 'desmume2015' },
+    { id: 'segaMS',     name: 'Master System',    core: 'genesis_plus_gx',  exts: ['sms'], ejs: 'genesis_plus_gx' },
+    { id: 'segaGG',     name: 'Game Gear',        core: 'genesis_plus_gx',  exts: ['gg'] },
+    { id: 'segaMD',     name: 'Mega Drive',       core: 'genesis_plus_gx',  exts: ['md', 'gen', 'smd'] },
+    { id: 'segaCD',     name: 'Sega CD',          core: 'genesis_plus_gx',  exts: [], bios: true },
+    { id: 'sega32x',    name: 'Sega 32X',         core: 'picodrive',        exts: ['32x'] },
+    { id: 'segaSaturn', name: 'Saturn',           core: 'yabause',          exts: [], bios: true },
+    { id: 'psx',        name: 'PlayStation',      core: 'pcsx_rearmed',     exts: ['pbp', 'chd'], bios: true },
+    { id: 'pce',        name: 'TurboGrafx-16',    core: 'mednafen_pce',     exts: ['pce'] },
+    { id: 'ngp',        name: 'Neo Geo Pocket',   core: 'mednafen_ngp',     exts: ['ngp', 'ngc'] },
+    { id: 'ws',         name: 'WonderSwan',       core: 'mednafen_wswan',   exts: ['ws', 'wsc'] },
+    { id: 'coleco',     name: 'ColecoVision',     core: 'gearcoleco',       exts: ['col'] },
+    { id: 'atari2600',  name: 'Atari 2600',       core: 'stella2014',       exts: ['a26'] },
+    { id: 'atari5200',  name: 'Atari 5200',       core: 'a5200',            exts: ['a52'] },
+    { id: 'atari7800',  name: 'Atari 7800',       core: 'prosystem',        exts: ['a78'] },
+    { id: 'lynx',       name: 'Atari Lynx',       core: 'handy',            exts: ['lnx'] },
+    { id: 'jaguar',     name: 'Atari Jaguar',     core: 'virtualjaguar',    exts: ['j64', 'jag'] },
+    { id: '3do',        name: '3DO',              core: 'opera',            exts: [], bios: true },
+    { id: 'arcade',     name: 'Arcade · FBNeo',   core: 'fbneo',            exts: [] },
+    { id: 'mame',       name: 'Arcade · MAME',    core: 'mame2003_plus',    exts: [] }
+  ];
+
+  function systemById(id) {
+    for (var i = 0; i < SYSTEMS.length; i++) if (SYSTEMS[i].id === id) return SYSTEMS[i];
+    return null;
+  }
+  // Which systems claim this file extension?
+  function systemsForExt(ext) {
+    var out = [];
+    for (var i = 0; i < SYSTEMS.length; i++) {
+      if (SYSTEMS[i].exts.indexOf(ext) !== -1) out.push(SYSTEMS[i]);
+    }
+    return out;
+  }
+
+  var drop = $('drop'), grid = $('sysgrid'), note = $('sysNote');
+  var romInput = $('rom'), biosInput = $('bios'), biosRow = $('biosRow');
+  var selected = null;
   var loaded = false;
+
+  function $(id) { return document.getElementById(id); }
+
+  // ?core=<systemId> (used by the Arcade console's cartridges) preselects a
+  // system and hides the picker — straight to "load a ROM".
+  var m = /[?&]core=([A-Za-z0-9_]+)/.exec(String(location.search || ''));
+  var pinned = m ? systemById(m[1]) : null;
+
+  function renderGrid() {
+    var html = '';
+    for (var i = 0; i < SYSTEMS.length; i++) {
+      var s = SYSTEMS[i];
+      html += '<button class="sys' + (selected && selected.id === s.id ? ' sel' : '') +
+              '" data-sys="' + s.id + '">' + s.name + '</button>';
+    }
+    grid.innerHTML = html;
+  }
+
+  function selectSystem(sys, quiet) {
+    selected = sys;
+    renderGrid();
+    var accept = ['zip', '7z'].concat(sys.exts).map(function (e) { return '.' + e; }).join(',');
+    romInput.setAttribute('accept', accept);
+    biosRow.className = 'biosrow' + (sys.bios ? '' : ' hide');
+    if (!quiet) {
+      note.className = '';
+      note.textContent = sys.name + ' — core: ' + sys.core;
+    }
+  }
+
+  function warn(msg) { note.className = 'warn'; note.textContent = msg; }
 
   function launch(file) {
     if (loaded) return;
+    if (!selected) { warn('Pick a system first — I can’t tell what "' + file.name + '" is for.'); return; }
     loaded = true;
     drop.className = 'drop hide';
     // EmulatorJS configuration — self-hosted, non-threaded, no external calls.
     window.EJS_player = '#game';
-    window.EJS_core = 'n64';
+    // The system id lets the loader apply per-system controls and disc
+    // handling; its first-choice core for each id below is exactly the one
+    // we self-host. The two `ejs` overrides pin systems whose default core
+    // isn't shipped (melonds, smsplus) to the core we do ship.
+    window.EJS_core = selected.ejs || selected.id;
     window.EJS_pathtodata = 'emujs/data/';
     window.EJS_gameUrl = URL.createObjectURL(file);
     window.EJS_gameName = file.name.replace(/\.[^.]+$/, '');
+    if (biosInput.files && biosInput.files[0]) {
+      window.EJS_biosUrl = URL.createObjectURL(biosInput.files[0]);
+    }
     window.EJS_startOnLoaded = true;
     window.EJS_DEBUG_XX = true;      // use the unminified src/ bundle we ship
-    window.EJS_threads = false;      // non-threaded core: no COOP/COEP headers needed
+    window.EJS_threads = false;      // non-threaded cores: no COOP/COEP headers needed
     window.EJS_disableDatabases = true; // don't fetch the online game database
     window.EJS_color = '#4f7df9';
     var s = document.createElement('script');
@@ -123,18 +236,46 @@
     document.body.appendChild(s);
   }
 
-  if (input) {
-    input.addEventListener('change', function () {
-      if (this.files && this.files[0]) launch(this.files[0]);
-    });
+  // A dropped/chosen file with a telltale extension picks its own system.
+  function autodetect(file) {
+    var em = /\.([A-Za-z0-9]+)$/.exec(String(file.name || ''));
+    var ext = em ? em[1].toLowerCase() : '';
+    if (ext === 'zip' || ext === '7z') return; // ambiguous — needs an explicit system
+    var owners = systemsForExt(ext);
+    if (owners.length === 1) selectSystem(owners[0]);
   }
+
+  function takeFile(file) {
+    if (!selected) autodetect(file);
+    launch(file);
+  }
+
+  if (pinned) {
+    selectSystem(pinned, true);
+    grid.className = 'sysgrid hide';
+    grid.innerHTML = '';
+    $('dropTitle').textContent = 'Load a ' + pinned.name + ' ROM you own';
+    note.className = '';
+    note.textContent = 'core: ' + pinned.core;
+  } else {
+    renderGrid();
+  }
+
+  grid.addEventListener('click', function (e) {
+    var el = e.target;
+    var id = el && el.getAttribute && el.getAttribute('data-sys');
+    if (id) selectSystem(systemById(id));
+  });
+  romInput.addEventListener('change', function () {
+    if (this.files && this.files[0]) takeFile(this.files[0]);
+  });
   // also accept drag-and-drop onto the stage
   var stage = document.querySelector('.stage');
   if (stage) {
     stage.addEventListener('dragover', function (e) { e.preventDefault(); });
     stage.addEventListener('drop', function (e) {
       e.preventDefault();
-      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) launch(e.dataTransfer.files[0]);
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) takeFile(e.dataTransfer.files[0]);
     });
   }
 })();
