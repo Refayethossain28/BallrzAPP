@@ -467,11 +467,15 @@
   }
   // Slot the real N64 emulator (ultra/play.html — self-hosted mupen64plus)
   // into the console's screen. The shell's B button ejects it.
-  function bootUltra(core) {
+  function bootUltra(g) {
     document.body.classList.add('theater');
     emuFrame = document.createElement('iframe');
     emuFrame.id = 'emu';
-    emuFrame.src = '../ultra/play.html?embed=1' + (core ? '&core=' + core : '');
+    // a `machine` cart boots the from-scratch CPU page (SH-4 Dreamcast);
+    // a `core` cart boots the real-ROM core player
+    emuFrame.src = g.machine
+      ? '../ultra/index.html?embed=1&machine=' + g.machine
+      : '../ultra/play.html?embed=1' + (g.core ? '&core=' + g.core : '');
     emuFrame.setAttribute('allow', 'fullscreen; gamepad; autoplay');
     emuFrame.setAttribute('title', 'Ultra 64 — N64 emulator');
     $('screen').appendChild(emuFrame);
@@ -676,7 +680,7 @@
       // an emulator slot: no canvas, no HUD — the Ultra deck owns the screen
       $('game').style.display = 'none';
       $('hud').style.display = 'none';
-      bootUltra(E.gameById(id).core);
+      bootUltra(E.gameById(id));
       return;
     }
     $('game').style.display = 'block';

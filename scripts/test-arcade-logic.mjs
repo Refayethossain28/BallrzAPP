@@ -28,8 +28,8 @@ let passed = 0; const tests = []; const test = (n, f) => tests.push([n, f]);
 const deepEq = (a, b, m) => assert.equal(JSON.stringify(a), JSON.stringify(b), m);
 
 /* ---------- the cartridge rack ---------- */
-test('GAMES: six cartridges, unique ids, gameById round-trips', () => {
-  assert.equal(E.GAMES.length, 6);
+test('GAMES: seven cartridges, unique ids, gameById round-trips', () => {
+  assert.equal(E.GAMES.length, 7);
   const ids = E.GAMES.map((g) => g.id);
   deepEq([...new Set(ids)], ids, 'ids are unique');
   for (const g of E.GAMES) {
@@ -38,11 +38,13 @@ test('GAMES: six cartridges, unique ids, gameById round-trips', () => {
   }
   assert.equal(E.gameById('tetris'), null);
 });
-test('the external slots: Ultra 64 pins n64, OmniCart opens the picker', () => {
+test('the external slots: Ultra 64 pins n64, OmniCart opens the picker, Dreamcast boots the SH-4', () => {
   const ext = E.GAMES.filter((g) => g.external);
-  deepEq(ext.map((g) => g.id), ['ultra64', 'omni']);
+  deepEq(ext.map((g) => g.id), ['ultra64', 'omni', 'dreamcast']);
   assert.equal(E.gameById('ultra64').core, 'n64', 'Ultra 64 boots straight into N64');
   assert.equal(E.gameById('omni').core, '', 'OmniCart shows the system picker');
+  assert.equal(E.gameById('dreamcast').machine, 'dc', 'Dreamcast boots the SH-4 interpreter page');
+  assert.ok(!E.gameById('ultra64').machine && !E.gameById('omni').machine, 'core carts carry no machine');
   for (const g of ext) assert.ok(g.badge, `${g.id} carries a menu badge`);
   for (const g of E.GAMES) {
     if (!g.external) assert.ok(['serpent', 'fuse', 'breaker', 'pong'].includes(g.id), `${g.id} is a built-in engine game`);

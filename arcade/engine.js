@@ -62,7 +62,13 @@
       controls: 'Boots in-screen · B ejects the cartridge' },
     { id: 'omni', name: 'OmniCart', emoji: '📼', external: true, core: '', badge: '26 SYSTEMS',
       tagline: 'Every console + arcade — 26 systems of real cores.',
-      controls: 'Pick a system in-screen · B ejects' }
+      controls: 'Pick a system in-screen · B ejects' },
+    // `machine` boots the Ultra CPU-interpreter page instead of the core
+    // player: no WASM Dreamcast core exists anywhere, so this slot runs
+    // Ultra's from-scratch SH-4 with its homebrew shelf and live debugger.
+    { id: 'dreamcast', name: 'Dreamcast', emoji: '🌀', external: true, machine: 'dc', badge: 'SH-4 LIVE',
+      tagline: 'A real Hitachi SH-4 interpreter — homebrew shelf, live CPU.',
+      controls: 'Boots in-screen · B ejects the cartridge' }
   ];
 
   function gameById(id) {
