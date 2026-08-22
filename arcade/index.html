@@ -70,6 +70,7 @@
       repeating-linear-gradient(0deg, rgba(255,255,255,.02) 0 1px, transparent 1px 3px);
   }
   #game { position: absolute; inset: 0; width: 100%; height: 100%; display: none; }
+  #emu { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #000; z-index: 2; }
   #hud { position: absolute; top: 0; left: 0; right: 0; display: none;
     justify-content: space-between; padding: 8px 12px; font-size: 11px; letter-spacing: .08em;
     color: var(--dim); text-shadow: 0 0 6px rgba(0,0,0,.9); pointer-events: none; z-index: 2; }
@@ -386,6 +387,27 @@
   var snakeState = null, snakeWant = null, snakePrev = null, snakeTickAt = 0, snakeTickMs = 160;
   var fuseState = null, fuseAnim = null, fusePulse = null;
   var brkState = null, brkHeld = { left: false, right: false }, brkPointerX = null, brkTrail = [];
+  var emuFrame = null; // the Ultra 64 cartridge: a whole other machine in-screen
+
+  function isExternal(id) {
+    var g = E.gameById(id);
+    return !!(g && g.external);
+  }
+  // Slot the real N64 emulator (ultra/play.html — self-hosted mupen64plus)
+  // into the console's screen. The shell's B button ejects it.
+  function bootUltra() {
+    emuFrame = document.createElement('iframe');
+    emuFrame.id = 'emu';
+    emuFrame.src = '../ultra/play.html?embed=1';
+    emuFrame.setAttribute('allow', 'fullscreen; gamepad; autoplay');
+    emuFrame.setAttribute('title', 'Ultra 64 — N64 emulator');
+    $('screen').appendChild(emuFrame);
+    try { emuFrame.focus(); } catch (e) {}
+  }
+  function ejectUltra() {
+    if (emuFrame && emuFrame.parentNode) emuFrame.parentNode.removeChild(emuFrame);
+    emuFrame = null;
+  }
 
   /* ---------------- the menu ---------------- */
   function renderMenu() {
@@ -393,10 +415,13 @@
     for (var i = 0; i < E.GAMES.length; i++) {
       var g = E.GAMES[i];
       var best = E.bestScore(scores, g.id);
+      var hs = g.external ? '<span style="color:#4de8a1">REAL<br>N64</span>'
+             : best ? 'BEST<br>' + E.formatScore(best)
+             : '<span class="z">NO<br>SCORE</span>';
       html += '<div class="cart' + (i === menuSel ? ' sel' : '') + '" data-idx="' + i + '">' +
         '<div class="em">' + g.emoji + '</div>' +
         '<div class="txt"><div class="nm">' + g.name + '</div><div class="tg">' + g.tagline + '</div></div>' +
-        '<div class="hs">' + (best ? 'BEST<br>' + E.formatScore(best) : '<span class="z">NO<br>SCORE</span>') + '</div>' +
+        '<div class="hs">' + hs + '</div>' +
         '</div>';
     }
     html += '<div id="menuHint">▲▼ CHOOSE · A START</div>';
@@ -405,6 +430,7 @@
 
   function showMenu() {
     stopLoops();
+    ejectUltra();
     mode = 'menu';
     currentId = null;
     pendingOver = null;
@@ -460,9 +486,16 @@
     pendingOver = null;
     particles.length = 0; floats.length = 0; flashes.length = 0; shakeMag = 0;
     $('menu').style.display = 'none';
+    $('overlay').style.display = 'none';
+    if (isExternal(id)) {
+      // the Ultra 64 slot: no canvas, no HUD — the emulator owns the screen
+      $('game').style.display = 'none';
+      $('hud').style.display = 'none';
+      bootUltra();
+      return;
+    }
     $('game').style.display = 'block';
     $('hud').style.display = 'flex';
-    $('overlay').style.display = 'none';
     if (id === 'serpent') startSerpent();
     else if (id === 'fuse') startFuse();
     else startBreaker();
@@ -1019,12 +1052,14 @@
   }
   function pressB() {
     if (mode === 'play') {
-      // leaving mid-run still banks the score
-      var sc = currentId === 'serpent' ? snakeState.score
-             : currentId === 'fuse' ? fuseState.score
-             : brkState.score;
-      scores = E.recordScore(scores, currentId, sc, Date.now());
-      saveScores(scores);
+      if (!isExternal(currentId)) {
+        // leaving mid-run still banks the score (the emulator keeps no score)
+        var sc = currentId === 'serpent' ? snakeState.score
+               : currentId === 'fuse' ? fuseState.score
+               : brkState.score;
+        scores = E.recordScore(scores, currentId, sc, Date.now());
+        saveScores(scores);
+      }
       showMenu();
     } else if (mode === 'over') {
       showMenu();

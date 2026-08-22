@@ -28,8 +28,8 @@ let passed = 0; const tests = []; const test = (n, f) => tests.push([n, f]);
 const deepEq = (a, b, m) => assert.equal(JSON.stringify(a), JSON.stringify(b), m);
 
 /* ---------- the cartridge rack ---------- */
-test('GAMES: three cartridges, unique ids, gameById round-trips', () => {
-  assert.equal(E.GAMES.length, 3);
+test('GAMES: four cartridges, unique ids, gameById round-trips', () => {
+  assert.equal(E.GAMES.length, 4);
   const ids = E.GAMES.map((g) => g.id);
   deepEq([...new Set(ids)], ids, 'ids are unique');
   for (const g of E.GAMES) {
@@ -37,6 +37,14 @@ test('GAMES: three cartridges, unique ids, gameById round-trips', () => {
     assert.equal(E.gameById(g.id).name, g.name);
   }
   assert.equal(E.gameById('pong'), null);
+});
+test('exactly one cartridge is external — the Ultra 64 slot', () => {
+  const ext = E.GAMES.filter((g) => g.external);
+  assert.equal(ext.length, 1);
+  assert.equal(ext[0].id, 'ultra64');
+  for (const g of E.GAMES) {
+    if (!g.external) assert.ok(['serpent', 'fuse', 'breaker'].includes(g.id), `${g.id} is a built-in engine game`);
+  }
 });
 
 /* ---------- serpent: setup ---------- */
