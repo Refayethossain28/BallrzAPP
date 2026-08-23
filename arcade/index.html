@@ -245,6 +245,37 @@
   }
   var scores = loadScores();
 
+  /* ---------------- persistence: saved runs (save states) ---------------- */
+  // The engine games' states are pure JSON, so a run in progress can be
+  // stashed whole — on B-exit, or when the app is backgrounded (iOS kills
+  // tabs) — and offered back as CONTINUE next time the cart is inserted.
+  var RESUME_KEY = 'arcade-resume-v1';
+  function loadResumes() {
+    try { return JSON.parse(localStorage.getItem(RESUME_KEY) || '{}') || {}; }
+    catch (e) { return {}; }
+  }
+  function saveResumes(r) {
+    try { localStorage.setItem(RESUME_KEY, JSON.stringify(r)); } catch (e) {}
+  }
+  var resumes = loadResumes();
+  function stashRun() {
+    if (mode !== 'play') return;
+    var snap = null;
+    if (currentId === 'serpent' && snakeState && snakeState.alive) snap = snakeState;
+    else if (currentId === 'fuse' && fuseState && !fuseState.over) snap = fuseState;
+    else if (currentId === 'breaker' && brkState && !brkState.over) snap = brkState;
+    if (!snap) return;
+    resumes[currentId] = { state: snap, ts: Date.now() };
+    saveResumes(resumes);
+  }
+  function clearResume(id) {
+    if (resumes[id]) { delete resumes[id]; saveResumes(resumes); }
+  }
+  window.addEventListener('pagehide', stashRun);
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden') stashRun();
+  });
+
   /* ---------------- tiny bleeps (guarded; the console works silent) ---------------- */
   var audioCtx = null;
   function beep(freq, ms, gainV) {
@@ -614,9 +645,10 @@
       var hs = (g.external || g.versus) ? '<span style="color:#4de8a1">' + String(g.badge || '').replace(' ', '<br>') + '</span>'
              : best ? 'BEST<br>' + E.formatScore(best)
              : '<span class="z">NO<br>SCORE</span>';
+      var saved = resumes[g.id] ? ' <span style="font-size:10px" title="saved run">💾</span>' : '';
       html += '<div class="cart' + (i === menuSel ? ' sel' : '') + '" data-idx="' + i + '">' +
         '<div class="em">' + g.emoji + '</div>' +
-        '<div class="txt"><div class="nm">' + g.name + '</div><div class="tg">' + g.tagline + '</div></div>' +
+        '<div class="txt"><div class="nm">' + g.name + saved + '</div><div class="tg">' + g.tagline + '</div></div>' +
         '<div class="hs">' + hs + '</div>' +
         '</div>';
     }
@@ -666,6 +698,7 @@
 
   function showOver(title, score, sub) {
     mode = 'over';
+    clearResume(currentId); // the run ended — nothing left to continue
     if (timerId) { clearTimeout(timerId); timerId = 0; }
     var wasBest = E.isHighScore(scores, currentId, score);
     scores = E.recordScore(scores, currentId, score, Date.now());
@@ -686,7 +719,79 @@
     pendingOver = { title: title, score: score, sub: sub, at: performance.now() + delayMs };
   }
 
-  function enterGame(id) {
+  /* ---------------- the CONTINUE prompt for a saved run ---------------- */
+  var resumeSel = 0, resumeFor = null;
+  function offerResume(id) {
+    stopLoops();
+    mode = 'resume';
+    currentId = id;
+    resumeFor = id;
+    resumeSel = 0;
+    $('menu').style.display = 'none';
+    $('game').style.display = 'none';
+    $('hud').style.display = 'none';
+    renderResume();
+    $('overlay').style.display = 'flex';
+  }
+  function renderResume() {
+    var r = resumes[resumeFor];
+    var score = r && r.state ? r.state.score || 0 : 0;
+    var opts = ['▶ CONTINUE RUN', '✦ START FRESH'];
+    var html = '<div class="big">SAVED RUN</div>' +
+      '<div class="score">' + E.formatScore(score) + '</div>' +
+      '<div class="best">SCORE WHEN SAVED</div>';
+    for (var i = 0; i < opts.length; i++) {
+      html += '<div class="sub" style="' + (i === resumeSel ?
+        'color:#4dd8ff;text-shadow:0 0 10px rgba(77,216,255,.5);font-weight:700' : '') + '">' + opts[i] + '</div>';
+    }
+    html += '<div class="sub">▲▼ CHOOSE · A SELECT · B MENU</div>';
+    $('overlay').innerHTML = html;
+  }
+  function doResume() {
+    var r = resumes[resumeFor];
+    clearResume(resumeFor); // consumed — a later exit re-stashes it
+    mode = 'play';
+    currentId = resumeFor;
+    pendingOver = null;
+    particles.length = 0; floats.length = 0; flashes.length = 0; shakeMag = 0;
+    $('overlay').style.display = 'none';
+    $('game').style.display = 'block';
+    $('hud').style.display = 'flex';
+    if (resumeFor === 'serpent') {
+      snakeState = r.state;
+      snakePrev = snakeState.snake;
+      snakeWant = null;
+      snakeTickAt = performance.now();
+      scheduleSnakeTick();
+    } else if (resumeFor === 'fuse') {
+      fuseState = r.state;
+      fuseAnim = null;
+      fusePulse = { spawn: null, merges: [], at: performance.now() - 1000 };
+    } else {
+      // breaker: keep score/lives/level/bricks, but hand the ball back —
+      // resuming mid-flight would be a cheap death
+      var B = E.BREAKER;
+      brkState = r.state;
+      brkState = {
+        seed: brkState.seed, level: brkState.level, score: brkState.score,
+        lives: brkState.lives, paddleX: brkState.paddleX,
+        ball: { x: brkState.paddleX, y: B.paddleY - B.paddleH / 2 - B.ballR, vx: 0, vy: 0 },
+        stuck: true, bricks: brkState.bricks, launches: brkState.launches, over: false
+      };
+      brkHeld.left = false; brkHeld.right = false;
+      brkPointerX = null;
+      brkTrail = [];
+    }
+    addFloat(CW / 2, CH * 0.5, 'RUN RESUMED', '#4de8a1');
+    beep(660, 90, 0.04);
+    ensureLoop();
+  }
+
+  function enterGame(id, fresh) {
+    if (!fresh && resumes[id] && (id === 'serpent' || id === 'fuse' || id === 'breaker')) {
+      offerResume(id);
+      return;
+    }
     mode = 'play';
     currentId = id;
     pendingOver = null;
@@ -713,7 +818,7 @@
   /* ---------------- the render loop: one heart for every game ---------------- */
   function frame(t) {
     rafId = 0;
-    if (mode === 'menu') return;
+    if (mode === 'menu' || mode === 'resume') return;
     if (!lastFrame) lastFrame = t;
     var dt = Math.min(0.05, (t - lastFrame) / 1000);
     lastFrame = t;
@@ -2110,6 +2215,14 @@
 
   /* ---------------- input routing ---------------- */
   function pressDir(dir) {
+    if (mode === 'resume') {
+      if (dir === 'up' || dir === 'down') {
+        resumeSel = 1 - resumeSel;
+        renderResume();
+        beep(440, 30);
+      }
+      return;
+    }
     if (mode === 'menu') {
       if (dir === 'up') menuSel = (menuSel + E.GAMES.length - 1) % E.GAMES.length;
       else if (dir === 'down') menuSel = (menuSel + 1) % E.GAMES.length;
@@ -2132,6 +2245,12 @@
     }
   }
   function pressA() {
+    if (mode === 'resume') {
+      beep(660, 60);
+      if (resumeSel === 0) doResume();
+      else { clearResume(resumeFor); enterGame(resumeFor, true); }
+      return;
+    }
     if (mode === 'menu') {
       beep(660, 60);
       enterGame(E.GAMES[menuSel].id);
@@ -2208,6 +2327,7 @@
         return;
       }
       if (!isExternal(currentId)) {
+        stashRun(); // the run keeps: CONTINUE is offered next insert
         // leaving mid-run still banks the score (the emulator keeps no score)
         var sc = currentId === 'serpent' ? snakeState.score
                : currentId === 'fuse' ? fuseState.score
@@ -2216,7 +2336,7 @@
         saveScores(scores);
       }
       showMenu();
-    } else if (mode === 'over') {
+    } else if (mode === 'over' || mode === 'resume') {
       showMenu();
     }
   }

@@ -514,6 +514,20 @@ test('bestScore / isHighScore / formatScore', () => {
   assert.equal(E.formatScore(1234567), '1,234,567');
 });
 
+/* ---------- save states: engine states survive JSON round-trips ---------- */
+test('a JSON-stringified state resumes identically (the save/resume mechanic)', () => {
+  const thaw = (s) => JSON.parse(JSON.stringify(s));
+  let snake = E.newSnake('save');
+  for (let i = 0; i < 5; i++) snake = E.stepSnake(snake, 'down');
+  deepEq(E.stepSnake(thaw(snake), 'left'), E.stepSnake(snake, 'left'), 'serpent thaws clean');
+  let fuse = E.new2048('save');
+  fuse = E.move2048(fuse, 'left');
+  deepEq(E.move2048(thaw(fuse), 'up'), E.move2048(fuse, 'up'), '2048 thaws clean');
+  let brk = E.launchBreaker(E.newBreaker('save'));
+  for (let i = 0; i < 60; i++) brk = E.stepBreaker(brk, 0.4, 1 / 120);
+  deepEq(E.stepBreaker(thaw(brk), 0.6, 1 / 120), E.stepBreaker(brk, 0.6, 1 / 120), 'breaker thaws clean');
+});
+
 /* ---------- seeded randomness ---------- */
 test('rand01/hashStr are stable, spread, and in range', () => {
   assert.equal(E.hashStr('arcade'), E.hashStr('arcade'));
