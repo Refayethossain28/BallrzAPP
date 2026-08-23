@@ -235,6 +235,11 @@
       window.EJS_biosUrl = URL.createObjectURL(biosInput.files[0]);
     }
     window.EJS_startOnLoaded = true;
+    // Progress survives: save states default to browser storage (IndexedDB,
+    // per game name — the menu's Save/Load State buttons) instead of file
+    // downloads, and battery/SRAM saves flush every minute so in-game saves
+    // outlive an iOS tab kill. Both stay overridable in the settings menu.
+    window.EJS_defaultOptions = { 'save-state-location': 'browser', 'save-save-interval': '60' };
     window.EJS_DEBUG_XX = true;      // use the unminified src/ bundle we ship
     window.EJS_threads = false;      // non-threaded cores: no COOP/COEP headers needed
     window.EJS_disableDatabases = true; // don't fetch the online game database
