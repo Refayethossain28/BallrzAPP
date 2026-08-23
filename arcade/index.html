@@ -482,6 +482,7 @@
   var fuseState = null, fuseAnim = null, fusePulse = null;
   var brkState = null, brkHeld = { left: false, right: false }, brkPointerX = null, brkTrail = [];
   var emuFrame = null; // the Ultra 64 cartridge: a whole other machine in-screen
+  var EMU_BUILD = '9'; // bump to force the emulator iframe past a stale SW cache
 
   // versus (pong) state
   var vsPhase = null;         // 'pick' | 'net' | 'match'
@@ -516,10 +517,14 @@
     emuFrame = document.createElement('iframe');
     emuFrame.id = 'emu';
     // a `machine` cart boots the from-scratch CPU page (SH-4 Dreamcast);
-    // a `core` cart boots the real-ROM core player
-    emuFrame.src = g.machine
+    // a `core` cart boots the real-ROM core player. The ?v cache-bust
+    // guarantees a deploy's fresh play.html/index.html reaches the iframe
+    // immediately — the emulator's own service worker would otherwise serve
+    // a stale copy for a reload or two, which stranded arcade ROM fixes.
+    var base = g.machine
       ? '../ultra/index.html?embed=1&machine=' + g.machine
       : '../ultra/play.html?embed=1' + (g.core ? '&core=' + g.core : '');
+    emuFrame.src = base + '&v=' + EMU_BUILD;
     emuFrame.setAttribute('allow', 'fullscreen; gamepad; autoplay');
     emuFrame.setAttribute('title', 'Ultra 64 — N64 emulator');
     $('screen').appendChild(emuFrame);
