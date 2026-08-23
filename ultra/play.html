@@ -230,7 +230,13 @@
     window.EJS_core = selected.ejs || selected.id;
     window.EJS_pathtodata = 'emujs/data/';
     window.EJS_gameUrl = URL.createObjectURL(file);
-    window.EJS_gameName = file.name.replace(/\.[^.]+$/, '');
+    // MAME and FBNeo locate the ROM by constructing "<name>.zip" from the
+    // content filename, and the loader writes arcade content under
+    // EJS_gameName verbatim — so arcade systems must keep the extension or
+    // the core looks for a zip that doesn't exist and falls into the
+    // RetroArch menu. Consoles get the tidier bare name.
+    var keepExt = selected.id === 'arcade' || selected.id === 'mame';
+    window.EJS_gameName = keepExt ? file.name : file.name.replace(/\.[^.]+$/, '');
     if (biosInput.files && biosInput.files[0]) {
       window.EJS_biosUrl = URL.createObjectURL(biosInput.files[0]);
     }
