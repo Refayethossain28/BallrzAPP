@@ -2,7 +2,7 @@
  * navigations are network-first (freshest build online, cached shell offline)
  * and static assets are cache-first for speed. Bump CACHE to force a clean
  * reinstall. */
-const CACHE = 'ultra-v6';
+const CACHE = 'ultra-v7';
 // The EmulatorJS framework + cores under emujs/ are large and runtime-cached on
 // first use, not precached here (cache.addAll is atomic — one 404 empties the
 // shell, and 4 MB of cores shouldn't block install).
