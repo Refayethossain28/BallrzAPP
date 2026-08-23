@@ -57,6 +57,8 @@
   .biosrow input { font-size: 12px; color: var(--dim); max-width: 220px; }
   #sysNote { min-height: 18px; font-size: 12px; color: var(--faint); }
   #sysNote.warn { color: var(--yellow); }
+  #sysHint { font-size: 12px; color: var(--yellow); max-width: 520px; line-height: 1.5; }
+  #sysHint.hide { display: none; }
 
   .note { margin-top: 16px; padding: 14px 16px; background: var(--panel); border: 1px solid var(--line);
     border-radius: 12px; color: var(--dim); font-size: 13px; line-height: 1.6; }
@@ -87,6 +89,7 @@
       <b id="dropTitle">Pick a system, then load a ROM you own</b>
       <div class="sysgrid" id="sysgrid"></div>
       <div id="sysNote"></div>
+      <p id="sysHint" class="hide"></p>
       <label class="filebtn">⬆ Choose ROM file…
         <input type="file" id="rom" hidden>
       </label>
@@ -155,8 +158,10 @@
     { id: 'lynx',       name: 'Atari Lynx',       core: 'handy',            exts: ['lnx'] },
     { id: 'jaguar',     name: 'Atari Jaguar',     core: 'virtualjaguar',    exts: ['j64', 'jag'] },
     { id: '3do',        name: '3DO',              core: 'opera',            exts: [], bios: true },
-    { id: 'arcade',     name: 'Arcade · FBNeo',   core: 'fbneo',            exts: [] },
-    { id: 'mame',       name: 'Arcade · MAME',    core: 'mame2003_plus',    exts: [] }
+    { id: 'arcade',     name: 'Arcade · FBNeo',   core: 'fbneo',            exts: [],
+      hint: 'Arcade zips are picky: keep the .zip intact, named by its arcade shortname (e.g. sfa3.zip), from the FBNeo ROM set. Clones also need their parent — prefer a non-merged set. A wrong set lands you in the RetroArch menu.' },
+    { id: 'mame',       name: 'Arcade · MAME',    core: 'mame2003_plus',    exts: [],
+      hint: 'This core is MAME 2003-Plus: it only boots zips from the MAME 0.78 (2003) ROM set, kept intact and named by the game’s shortname (e.g. pacman.zip). Dumps made for newer MAME versions won’t start — you’ll land in the RetroArch menu instead. Clones also need their parent zip.' }
   ];
 
   function systemById(id) {
@@ -200,6 +205,9 @@
     var accept = ['zip', '7z'].concat(sys.exts).map(function (e) { return '.' + e; }).join(',');
     romInput.setAttribute('accept', accept);
     biosRow.className = 'biosrow' + (sys.bios ? '' : ' hide');
+    var hintEl = $('sysHint');
+    hintEl.className = sys.hint ? '' : 'hide';
+    hintEl.textContent = sys.hint || '';
     if (!quiet) {
       note.className = '';
       note.textContent = sys.name + ' — core: ' + sys.core;
