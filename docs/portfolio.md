@@ -80,6 +80,7 @@ payments, deploy workflows, iOS wrappers.
 | Imposter | Pass-and-play social-deduction party game (3–12 players) | `imposter/` | Optional Anthropic | `test:imposter` (20) |
 | Cortex | Daily brain gym: five adaptive cognitive drills, global daily workout | `cortex/` | None | `test:cortex` (29) |
 | Cusp | "What to do right now" — salience-scored task decision engine | `cusp/` | None | `test:cusp` |
+| Peak | Human-performance engine: Move/Fuel/Rest — metabolism math, progressive overload, plate math, sleep cycles, one daily score | `peak/` | None | `test:peak` (30) |
 | Intro | Digital business card: QR/NFC/vCard/Apple-Wallet .pkpass pipeline | `intro/` | None | `test:intro` (34) + pass (17) |
 | TravelDeals | Flights & hotels: forecasts, deal scores, seat maps, booking wallet | `deals-app/` | Optional Amadeus keys | `test:deals` (31) |
 | Lingua | Learn any language: SRS, CEFR course, pronunciation scoring, Qur'an studio | `lingua/` | Optional Anthropic | smoke |
