@@ -1,0 +1,677 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Volley — train your hand-eye coordination</title>
+<meta name="description" content="A hand-eye coordination trainer: four short drills — Strike, Pursuit, Reflex and Chain — that sharpen your aim, tracking, reactions and precision, with ranks that grow as you do.">
+<meta name="theme-color" content="#070b14">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Volley">
+<style>
+  :root {
+    --bg: #070b14; --bg2: #0b1120; --card: #0e1526; --card2: #131d33;
+    --line: #1c2a45; --text: #eaf1ff; --dim: #8fa3c8; --faint: #5a6b8f;
+    --brand: #5cf2a6; --pink: #ff5c8f; --cyan: #4dd8ff; --gold: #ffd166;
+    --red: #ff6b6b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    background: radial-gradient(1100px 640px at 50% -10%, #10203a 0%, var(--bg) 58%) fixed, var(--bg);
+    color: var(--text);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    min-height: 100dvh;
+    overscroll-behavior-y: contain;
+  }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 0 16px calc(40px + env(safe-area-inset-bottom)); }
+
+  header { display: flex; align-items: baseline; gap: 12px; padding: 22px 0 4px; flex-wrap: wrap; }
+  .logo { font-size: 30px; font-weight: 800; letter-spacing: -1px; user-select: none; }
+  .logo .g { background: linear-gradient(92deg, var(--brand) 5%, var(--cyan) 55%, var(--pink) 95%);
+             -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .tagline { color: var(--dim); font-size: 13px; flex: 1 1 100%; margin-top: -6px; }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+          padding: 14px 16px; margin: 12px 0; }
+  .card h2 { font-size: 15px; margin-bottom: 8px; }
+
+  /* rank */
+  .rank { display: flex; gap: 14px; align-items: center; }
+  .rank .badge { font-size: 40px; line-height: 1; }
+  .rank .name { font-weight: 800; font-size: 18px; }
+  .rank .hint { color: var(--dim); font-size: 12.5px; margin-top: 1px; }
+  .xpbar { height: 8px; background: var(--bg2); border: 1px solid var(--line); border-radius: 999px;
+           overflow: hidden; margin-top: 8px; }
+  .xpbar i { display: block; height: 100%; border-radius: 999px;
+             background: linear-gradient(90deg, var(--brand), var(--cyan)); }
+  .xplabel { color: var(--faint); font-size: 11.5px; margin-top: 5px; }
+
+  /* daily */
+  .daily { display: flex; align-items: center; gap: 12px; cursor: pointer;
+           border-color: rgba(255,209,102,.35); }
+  .daily .sun { font-size: 26px; }
+  .daily b { color: var(--gold); }
+  .daily .go { margin-left: auto; color: var(--gold); font-size: 13px; white-space: nowrap; }
+
+  /* drill grid */
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0; }
+  .drill { background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+           padding: 14px; cursor: pointer; transition: border-color .15s, transform .08s; }
+  .drill:hover { border-color: var(--brand); }
+  .drill:active { transform: scale(.98); }
+  .drill .top { display: flex; align-items: center; gap: 8px; }
+  .drill .emoji { font-size: 24px; }
+  .drill .dname { font-weight: 800; font-size: 16px; }
+  .drill .skill { color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+  .drill .blurb { color: var(--dim); font-size: 12.5px; margin-top: 7px; min-height: 3.2em; }
+  .drill .meta { display: flex; gap: 8px; align-items: center; margin-top: 9px; font-size: 12px; }
+  .drill .best { color: var(--gold); }
+  .drill .trend.up { color: var(--brand); }
+  .drill .trend.down { color: var(--red); }
+  .drill .trend.flat { color: var(--faint); }
+
+  /* history */
+  .sess { display: flex; align-items: baseline; gap: 10px; padding: 7px 0; border-top: 1px solid var(--line);
+          font-size: 13.5px; }
+  .sess:first-of-type { border-top: 0; }
+  .sess .when { color: var(--faint); font-size: 12px; margin-left: auto; white-space: nowrap; }
+  .sess .sc { color: var(--brand); font-weight: 700; }
+  .empty { color: var(--faint); font-size: 13px; padding: 6px 0; }
+
+  button { background: var(--card2); color: var(--text); border: 1px solid var(--line);
+           border-radius: 10px; padding: 10px 18px; font-size: 14px; cursor: pointer; font-family: inherit; }
+  button:hover { border-color: var(--brand); }
+  button.primary { background: linear-gradient(92deg, #0e4a34, #114a5e); border-color: #1f7a58; font-weight: 700; }
+
+  /* play overlay */
+  #play { position: fixed; inset: 0; background: var(--bg); display: none; flex-direction: column; z-index: 20; }
+  #play.on { display: flex; }
+  .hud { display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+         padding-top: calc(12px + env(safe-area-inset-top)); font-size: 14px; }
+  .hud .dtitle { font-weight: 800; }
+  .hud .stat b { color: var(--brand); }
+  .hud .streak b { color: var(--gold); }
+  .hud .clock { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--dim); }
+  .hud .quit { padding: 5px 12px; font-size: 12.5px; }
+  #arena { flex: 1; touch-action: none; display: block; width: 100%; }
+
+  /* results overlay */
+  #results { position: fixed; inset: 0; background: rgba(4,7,13,.9); backdrop-filter: blur(6px);
+             display: none; align-items: center; justify-content: center; z-index: 30; padding: 20px; }
+  #results.on { display: flex; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 18px;
+           padding: 24px 22px; width: 100%; max-width: 420px; text-align: center; }
+  .panel .remoji { font-size: 40px; }
+  .panel h2 { font-size: 20px; margin: 6px 0 2px; }
+  .panel .bigscore { font-size: 44px; font-weight: 800; color: var(--brand); font-variant-numeric: tabular-nums; }
+  .panel .pb { color: var(--gold); font-size: 13px; margin: 2px 0 6px; min-height: 1.2em; }
+  .rstats { display: flex; justify-content: center; gap: 18px; flex-wrap: wrap; margin: 10px 0 4px; }
+  .rstats div { font-size: 12px; color: var(--faint); }
+  .rstats b { display: block; font-size: 17px; color: var(--text); font-variant-numeric: tabular-nums; }
+  .panel .xp { color: var(--cyan); font-size: 13.5px; margin-top: 10px; }
+  .panel .rankup { color: var(--gold); font-weight: 700; font-size: 14px; margin-top: 4px; min-height: 1.2em; }
+  .panel .btns { display: flex; gap: 10px; justify-content: center; margin-top: 16px; }
+
+  footer { color: var(--faint); font-size: 12px; text-align: center; margin-top: 26px; }
+</style>
+</head>
+<body>
+<div class="wrap" id="home">
+  <header>
+    <div class="logo"><span class="g">Volley</span> 🏐</div>
+    <div class="tagline">Hand-eye coordination, trained in two-minute bursts.</div>
+  </header>
+
+  <div class="card rank" id="rankCard"></div>
+  <div class="card daily" id="dailyCard"></div>
+  <div class="grid" id="drillGrid"></div>
+  <div class="card"><h2>Recent sessions</h2><div id="historyList"></div></div>
+  <footer>Volley keeps everything on this device — no accounts, no tracking.</footer>
+</div>
+
+<div id="play">
+  <div class="hud">
+    <span class="dtitle" id="hudTitle"></span>
+    <span class="stat">Score <b id="hudScore">0</b></span>
+    <span class="streak" id="hudStreak" hidden>Streak <b>0</b></span>
+    <span class="clock" id="hudClock"></span>
+    <button class="quit" id="quitBtn">End</button>
+  </div>
+  <canvas id="arena"></canvas>
+</div>
+
+<div id="results">
+  <div class="panel">
+    <div class="remoji" id="resEmoji"></div>
+    <h2 id="resTitle"></h2>
+    <div class="bigscore" id="resScore"></div>
+    <div class="pb" id="resPB"></div>
+    <div class="rstats" id="resStats"></div>
+    <div class="xp" id="resXP"></div>
+    <div class="rankup" id="resRank"></div>
+    <div class="btns">
+      <button class="primary" id="againBtn">Go again</button>
+      <button id="homeBtn">All drills</button>
+    </div>
+  </div>
+</div>
+
+<script src="engine.js"></script>
+<script>
+'use strict';
+var E = VolleyEngine;
+
+/* ---------------- storage (device-local, junk-safe) ---------------- */
+function loadJSON(key, fallback) {
+  try {
+    var raw = localStorage.getItem(key);
+    if (raw == null) return fallback;
+    var v = JSON.parse(raw);
+    return v == null ? fallback : v;
+  } catch (e) { return fallback; }
+}
+function saveJSON(key, v) {
+  try { localStorage.setItem(key, JSON.stringify(v)); } catch (e) {}
+}
+function getXP() { var n = Number(loadJSON('volley:xp', 0)); return isFinite(n) && n > 0 ? Math.round(n) : 0; }
+function getHistory() { var h = loadJSON('volley:history', []); return Array.isArray(h) ? h : []; }
+
+/* ---------------- dom helpers ---------------- */
+function $(id) { return document.getElementById(id); }
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+/* ---------------- home screen ---------------- */
+function todayISO(now) { return new Date(now).toISOString().slice(0, 10); }
+
+function renderRank() {
+  var rank = E.rankFor(getXP());
+  var label = rank.next
+    ? getXP() + ' XP — ' + rank.next.needed + ' more to ' + esc(rank.next.name)
+    : getXP() + ' XP — top rank held';
+  $('rankCard').innerHTML =
+    '<div class="badge">' + rank.emoji + '</div>' +
+    '<div style="flex:1">' +
+      '<div class="name">' + esc(rank.name) + '</div>' +
+      '<div class="hint">' + esc(rank.hint) + '</div>' +
+      '<div class="xpbar"><i style="width:' + Math.round(rank.progress * 100) + '%"></i></div>' +
+      '<div class="xplabel">' + label + '</div>' +
+    '</div>';
+}
+
+function renderDaily(now) {
+  var daily = E.dailyDrill(todayISO(now));
+  var done = getHistory().some(function (h) {
+    return h.drill === daily.drill.key && todayISO(h.ts || 0) === daily.date;
+  });
+  $('dailyCard').innerHTML =
+    '<div class="sun">' + (done ? '✅' : '📅') + '</div>' +
+    '<div>Today’s drill: <b>' + daily.drill.emoji + ' ' + esc(daily.drill.name) + '</b>' +
+      '<div style="color:var(--dim);font-size:12.5px">' + (done ? 'Done today — extra runs still earn XP.' : 'One run keeps the streak of you honest.') + '</div></div>' +
+    '<div class="go">' + (done ? 'again ▸' : 'play ▸') + '</div>';
+  $('dailyCard').onclick = function () { startDrill(daily.drill.key); };
+}
+
+function renderDrills() {
+  var history = getHistory();
+  var bests = E.personalBests(history);
+  var html = '';
+  for (var i = 0; i < E.DRILLS.length; i++) {
+    var d = E.DRILLS[i];
+    var best = bests[d.key];
+    var trend = E.trendFor(history, d.key);
+    var arrow = trend.dir === 'up' ? '▲ +' + trend.pct + '%' :
+                trend.dir === 'down' ? '▼ ' + trend.pct + '%' :
+                trend.runs >= 4 ? '— steady' : '';
+    html +=
+      '<div class="drill" data-drill="' + d.key + '">' +
+        '<div class="top"><span class="emoji">' + d.emoji + '</span>' +
+          '<span><span class="dname">' + esc(d.name) + '</span>' +
+          '<div class="skill">' + esc(d.skill) + '</div></span></div>' +
+        '<div class="blurb">' + esc(d.blurb) + '</div>' +
+        '<div class="meta">' +
+          (best ? '<span class="best">🏆 ' + best.score + '</span>' : '<span style="color:var(--faint)">no runs yet</span>') +
+          (arrow ? '<span class="trend ' + trend.dir + '">' + arrow + '</span>' : '') +
+        '</div>' +
+      '</div>';
+  }
+  $('drillGrid').innerHTML = html;
+  var cards = $('drillGrid').querySelectorAll('.drill');
+  for (var j = 0; j < cards.length; j++) {
+    (function (card) {
+      card.addEventListener('click', function () { startDrill(card.getAttribute('data-drill')); });
+    })(cards[j]);
+  }
+}
+
+function renderHistory(now) {
+  var history = getHistory().slice().sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); }).slice(0, 8);
+  if (!history.length) {
+    $('historyList').innerHTML = '<div class="empty">Nothing yet — pick a drill above. 45 seconds is all it takes.</div>';
+    return;
+  }
+  var html = '';
+  for (var i = 0; i < history.length; i++) {
+    var h = history[i];
+    var d = E.drillByKey(h.drill);
+    html += '<div class="sess">' + (d ? d.emoji + ' ' + esc(d.name) : esc(h.drill)) +
+            ' <span class="sc">' + (h.score | 0) + '</span>' +
+            '<span class="when">' + esc(E.timeAgo(h.ts || 0, now)) + '</span></div>';
+  }
+  $('historyList').innerHTML = html;
+}
+
+function renderHome() {
+  var now = Date.now();
+  renderRank();
+  renderDaily(now);
+  renderDrills();
+  renderHistory(now);
+}
+
+/* ---------------- the arena ---------------- */
+var canvas = $('arena');
+var ctx = canvas.getContext('2d');
+var arena = { w: 320, h: 480 };
+var dpr = 1;
+
+function sizeArena() {
+  dpr = Math.min(2, window.devicePixelRatio || 1);
+  var r = canvas.getBoundingClientRect();
+  arena.w = Math.max(200, Math.round(r.width) || 320);
+  arena.h = Math.max(300, Math.round(r.height) || 480);
+  canvas.width = arena.w * dpr;
+  canvas.height = arena.h * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+/* floating score/verdict labels that drift up and fade */
+var floaters = [];
+function addFloater(x, y, text, color) {
+  floaters.push({ x: x, y: y, text: text, color: color, born: Date.now() });
+}
+function drawFloaters(now) {
+  for (var i = floaters.length - 1; i >= 0; i--) {
+    var f = floaters[i];
+    var age = (now - f.born) / 700;
+    if (age >= 1) { floaters.splice(i, 1); continue; }
+    ctx.globalAlpha = 1 - age;
+    ctx.fillStyle = f.color;
+    ctx.font = '700 16px -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(f.text, f.x, f.y - age * 34);
+    ctx.globalAlpha = 1;
+  }
+}
+
+/* ---------------- game state machine ---------------- */
+var game = null;   // null when not playing
+var rafId = 0;
+
+function startDrill(key) {
+  var drill = E.drillByKey(key);
+  if (!drill) return;
+  $('play').classList.add('on');
+  $('results').classList.remove('on');
+  sizeArena();
+  var now = Date.now();
+  game = {
+    drill: drill,
+    seed: 'v:' + now,
+    startTs: now,
+    score: 0, streak: 0,
+    floatersCleared: (floaters.length = 0)
+  };
+  $('hudTitle').textContent = drill.emoji + ' ' + drill.name;
+  $('hudScore').textContent = '0';
+  $('hudStreak').hidden = drill.key !== 'strike';
+  if (drill.key === 'strike') {
+    game.targetIdx = 0;
+    game.events = [];
+    game.target = E.strikeTarget(game.seed, 0, arena);
+    game.targetBorn = now;
+  } else if (drill.key === 'pursuit') {
+    game.samples = [];
+    game.pointer = null;     // {x,y} while pressed
+  } else if (drill.key === 'reflex') {
+    game.round = 0;
+    game.times = [];
+    game.phase = 'arm';      // arm → go → verdict
+    game.phaseTs = now;
+    game.delay = E.reflexDelay(game.seed, 0);
+    game.verdict = null;
+  } else if (drill.key === 'chain') {
+    game.round = 0;
+    game.rounds = [];
+    game.layout = E.chainLayout(game.seed, 0, drill.chainLength, arena);
+    game.nextN = 1;
+    game.roundStart = now;
+    game.mistakes = 0;
+  }
+  cancelAnimationFrame(rafId);
+  rafId = requestAnimationFrame(frame);
+}
+
+function endGame() {
+  if (!game) return;
+  var g = game;
+  game = null;
+  cancelAnimationFrame(rafId);
+  $('play').classList.remove('on');
+  showResults(g);
+}
+
+function quitGame() {
+  game = null;
+  cancelAnimationFrame(rafId);
+  $('play').classList.remove('on');
+  renderHome();
+}
+
+/* ---------------- per-frame update + draw ---------------- */
+function frame() {
+  if (!game) return;
+  var now = Date.now();
+  var d = game.drill;
+  ctx.clearRect(0, 0, arena.w, arena.h);
+
+  if (d.mode === 'timed') {
+    var left = d.durationMs - (now - game.startTs);
+    if (left <= 0) { endGame(); return; }
+    $('hudClock').textContent = Math.ceil(left / 1000) + 's';
+  }
+
+  if (d.key === 'strike') frameStrike(now);
+  else if (d.key === 'pursuit') framePursuit(now);
+  else if (d.key === 'reflex') frameReflex(now);
+  else if (d.key === 'chain') frameChain(now);
+
+  drawFloaters(now);
+  rafId = requestAnimationFrame(frame);
+}
+
+/* ---- Strike ---- */
+function nextStrikeTarget(now) {
+  game.targetIdx++;
+  game.target = E.strikeTarget(game.seed, game.targetIdx, arena);
+  game.targetBorn = now;
+}
+function frameStrike(now) {
+  var t = game.target;
+  var elapsed = now - game.targetBorn;
+  if (elapsed >= t.ttl) {
+    game.events.push({ hit: false, reason: 'expired' });
+    game.streak = 0;
+    updateHUD();
+    addFloater(t.x, t.y, 'gone!', '#ff6b6b');
+    nextStrikeTarget(now);
+    t = game.target; elapsed = 0;
+  }
+  var r = E.strikeRadiusAt(t, elapsed);
+  // target: three rings, colour-tied to the scoring bands
+  ctx.beginPath(); ctx.arc(t.x, t.y, r, 0, 6.2832);
+  ctx.fillStyle = 'rgba(255,92,143,.16)'; ctx.fill();
+  ctx.lineWidth = 3; ctx.strokeStyle = '#ff5c8f'; ctx.stroke();
+  ctx.beginPath(); ctx.arc(t.x, t.y, r * 0.62, 0, 6.2832);
+  ctx.strokeStyle = 'rgba(255,209,102,.85)'; ctx.stroke();
+  ctx.beginPath(); ctx.arc(t.x, t.y, Math.max(2.5, r * 0.22), 0, 6.2832);
+  ctx.fillStyle = '#ffd166'; ctx.fill();
+  // life ring drains around the outside
+  var lifeLeft = 1 - elapsed / t.ttl;
+  ctx.beginPath(); ctx.arc(t.x, t.y, r + 7, -1.5708, -1.5708 + 6.2832 * lifeLeft);
+  ctx.lineWidth = 2.5; ctx.strokeStyle = 'rgba(92,242,166,.8)'; ctx.stroke();
+}
+function tapStrike(x, y, now) {
+  var t = game.target;
+  var res = E.judgeStrike(t, x, y, now - game.targetBorn);
+  game.events.push(res);
+  if (res.hit) {
+    var pts = Math.round(res.points * E.comboMult(game.streak));
+    game.score += pts;
+    game.streak++;
+    addFloater(t.x, t.y, '+' + pts + (res.ring === 'bull' ? ' 🎯' : ''), res.ring === 'bull' ? '#ffd166' : '#5cf2a6');
+    nextStrikeTarget(now);
+  } else {
+    game.streak = 0;
+    addFloater(x, y, 'miss', '#ff6b6b');
+  }
+  updateHUD();
+}
+
+/* ---- Pursuit ---- */
+function framePursuit(now) {
+  var ball = E.pursuitPos(game.seed, now - game.startTs, arena);
+  var p = game.pointer;
+  var sample = p ? E.pursuitSample(ball, p.x, p.y) : { on: false, dist: 9999 };
+  game.samples.push(sample);
+  game.score = E.pursuitSummary(game.samples, now - game.startTs).score;
+  updateHUD();
+  // grace halo, then the ball
+  ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r * 1.25, 0, 6.2832);
+  ctx.strokeStyle = sample.on ? 'rgba(92,242,166,.5)' : 'rgba(90,107,143,.35)';
+  ctx.lineWidth = 2; ctx.stroke();
+  var grad = ctx.createRadialGradient(ball.x - ball.r * 0.3, ball.y - ball.r * 0.3, 2, ball.x, ball.y, ball.r);
+  grad.addColorStop(0, sample.on ? '#aefccf' : '#7de0a9');
+  grad.addColorStop(1, sample.on ? '#2fae6e' : '#1f7a58');
+  ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, 6.2832);
+  ctx.fillStyle = grad; ctx.fill();
+  if (!p) {
+    ctx.fillStyle = 'rgba(143,163,200,.9)';
+    ctx.font = '600 15px -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('press and hold the ball', arena.w / 2, arena.h - 28);
+  }
+}
+
+/* ---- Reflex ---- */
+function frameReflex(now) {
+  var g = game;
+  $('hudClock').textContent = 'round ' + Math.min(g.round + 1, g.drill.rounds) + '/' + g.drill.rounds;
+  var phaseAge = now - g.phaseTs;
+  if (g.phase === 'arm' && phaseAge >= g.delay) { g.phase = 'go'; g.phaseTs = now; phaseAge = 0; }
+  if (g.phase === 'verdict' && phaseAge >= 950) {
+    g.round++;
+    if (g.round >= g.drill.rounds) { endGame(); return; }
+    g.phase = 'arm'; g.phaseTs = now;
+    g.delay = E.reflexDelay(g.seed, g.round);
+    g.verdict = null;
+  }
+  var cx = arena.w / 2, cy = arena.h / 2;
+  if (g.phase === 'arm') {
+    ctx.fillStyle = 'rgba(255,107,107,.08)'; ctx.fillRect(0, 0, arena.w, arena.h);
+    ctx.fillStyle = '#8fa3c8'; ctx.font = '700 26px -apple-system, sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('hold…', cx, cy);
+    ctx.font = '500 14px -apple-system, sans-serif'; ctx.fillStyle = '#5a6b8f';
+    ctx.fillText('tap the instant it turns green', cx, cy + 30);
+  } else if (g.phase === 'go') {
+    ctx.fillStyle = 'rgba(92,242,166,.16)'; ctx.fillRect(0, 0, arena.w, arena.h);
+    ctx.fillStyle = '#5cf2a6'; ctx.font = '800 48px -apple-system, sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('GO!', cx, cy);
+  } else if (g.verdict) {
+    ctx.fillStyle = '#eaf1ff'; ctx.font = '800 34px -apple-system, sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(g.verdict.emoji + ' ' + g.verdict.label, cx, cy - 8);
+    ctx.font = '600 18px -apple-system, sans-serif'; ctx.fillStyle = '#8fa3c8';
+    ctx.fillText(g.verdict.ms >= 0 ? E.formatMs(g.verdict.ms) : 'wait for the green', cx, cy + 24);
+  }
+}
+function tapReflex(now) {
+  var g = game;
+  if (g.phase === 'arm') {
+    g.times.push(-1);
+    g.verdict = E.judgeReflex(-1);
+    g.phase = 'verdict'; g.phaseTs = now;
+  } else if (g.phase === 'go') {
+    var ms = now - g.phaseTs;
+    g.times.push(ms);
+    g.verdict = E.judgeReflex(ms);
+    g.score += g.verdict.points;
+    g.phase = 'verdict'; g.phaseTs = now;
+    updateHUD();
+  }
+}
+
+/* ---- Chain ---- */
+function frameChain(now) {
+  var g = game;
+  $('hudClock').textContent = 'round ' + (g.round + 1) + '/' + g.drill.rounds;
+  var lay = g.layout;
+  for (var i = 0; i < lay.targets.length; i++) {
+    var t = lay.targets[i];
+    if (t.n < g.nextN) continue; // already cleared
+    var isNext = t.n === g.nextN;
+    ctx.beginPath(); ctx.arc(t.x, t.y, lay.r, 0, 6.2832);
+    ctx.fillStyle = isNext ? 'rgba(92,242,166,.18)' : 'rgba(19,29,51,.9)';
+    ctx.fill();
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = isNext ? '#5cf2a6' : '#1c2a45';
+    ctx.stroke();
+    ctx.fillStyle = isNext ? '#5cf2a6' : '#8fa3c8';
+    ctx.font = '800 ' + Math.round(lay.r * 0.9) + 'px -apple-system, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(String(t.n), t.x, t.y + 1);
+    ctx.textBaseline = 'alphabetic';
+  }
+}
+function tapChain(x, y, now) {
+  var g = game, lay = g.layout;
+  for (var i = 0; i < lay.targets.length; i++) {
+    var t = lay.targets[i];
+    if (t.n < g.nextN) continue;
+    if (Math.hypot(x - t.x, y - t.y) <= lay.r + E.TAP_PAD) {
+      if (t.n === g.nextN) {
+        g.nextN++;
+        addFloater(t.x, t.y, '✓', '#5cf2a6');
+        if (g.nextN > lay.targets.length) {
+          var res = { n: lay.targets.length, elapsedMs: now - g.roundStart, mistakes: g.mistakes };
+          g.rounds.push(res);
+          g.score += E.chainScore(res.n, res.elapsedMs, res.mistakes);
+          updateHUD();
+          g.round++;
+          if (g.round >= g.drill.rounds) { endGame(); return; }
+          g.layout = E.chainLayout(g.seed, g.round, g.drill.chainLength, arena);
+          g.nextN = 1; g.roundStart = now; g.mistakes = 0;
+        }
+      } else {
+        g.mistakes++;
+        addFloater(t.x, t.y, '✗ ' + g.nextN + ' first', '#ff6b6b');
+      }
+      return;
+    }
+  }
+}
+
+function updateHUD() {
+  if (!game) return;
+  $('hudScore').textContent = String(game.score);
+  if (game.drill.key === 'strike') {
+    $('hudStreak').innerHTML = 'Streak <b>' + game.streak +
+      (E.comboMult(game.streak) > 1 ? ' ×' + E.comboMult(game.streak) : '') + '</b>';
+  }
+}
+
+/* ---------------- input ---------------- */
+function canvasPoint(ev) {
+  var r = canvas.getBoundingClientRect();
+  return { x: ev.clientX - r.left, y: ev.clientY - r.top };
+}
+canvas.addEventListener('pointerdown', function (ev) {
+  if (!game) return;
+  ev.preventDefault();
+  try { canvas.setPointerCapture(ev.pointerId); } catch (e) {}
+  var p = canvasPoint(ev);
+  var now = Date.now();
+  if (game.drill.key === 'strike') tapStrike(p.x, p.y, now);
+  else if (game.drill.key === 'pursuit') game.pointer = p;
+  else if (game.drill.key === 'reflex') tapReflex(now);
+  else if (game.drill.key === 'chain') tapChain(p.x, p.y, now);
+});
+canvas.addEventListener('pointermove', function (ev) {
+  if (!game || game.drill.key !== 'pursuit' || !game.pointer) return;
+  game.pointer = canvasPoint(ev);
+});
+function liftPointer() { if (game && game.drill.key === 'pursuit') game.pointer = null; }
+canvas.addEventListener('pointerup', liftPointer);
+canvas.addEventListener('pointercancel', liftPointer);
+window.addEventListener('resize', function () { if (game) sizeArena(); });
+$('quitBtn').addEventListener('click', quitGame);
+
+/* ---------------- results ---------------- */
+function statHTML(label, value) {
+  return '<div><b>' + esc(String(value)) + '</b>' + esc(label) + '</div>';
+}
+function showResults(g) {
+  var now = Date.now();
+  var d = g.drill;
+  var stats = '';
+  var score = 0;
+  if (d.key === 'strike') {
+    var ss = E.strikeSummary(g.events);
+    score = ss.score;
+    stats = statHTML('hits', ss.hits) + statHTML('accuracy', ss.accuracy + '%') +
+            statHTML('avg tap', E.formatMs(ss.avgReactMs)) + statHTML('best streak', ss.bestStreak);
+  } else if (d.key === 'pursuit') {
+    var ps = E.pursuitSummary(g.samples, now - g.startTs);
+    score = ps.score;
+    stats = statHTML('on the ball', ps.onPct + '%') + statHTML('longest hold', E.formatMs(ps.longestHoldMs));
+  } else if (d.key === 'reflex') {
+    var rs = E.reflexSummary(g.times);
+    score = rs.score;
+    stats = statHTML('best', E.formatMs(rs.bestMs)) + statHTML('median', E.formatMs(rs.medianMs)) +
+            statHTML('false starts', rs.falseStarts);
+  } else if (d.key === 'chain') {
+    var cs = E.chainSummary(g.rounds);
+    score = cs.score;
+    stats = statHTML('rounds', cs.rounds) + statHTML('per target', E.formatMs(cs.avgPerTargetMs)) +
+            statHTML('wrong taps', cs.mistakes);
+  }
+
+  var history = getHistory();
+  var prevBest = E.personalBests(history)[d.key];
+  var isPB = !prevBest || score > prevBest.score;
+  history.push({ drill: d.key, score: score, ts: now });
+  saveJSON('volley:history', history.slice(-100));
+
+  var oldRank = E.rankFor(getXP());
+  var xp = E.xpFor(d.key, score);
+  saveJSON('volley:xp', getXP() + xp);
+  var newRank = E.rankFor(getXP());
+
+  $('resEmoji').textContent = d.emoji;
+  $('resTitle').textContent = d.name;
+  $('resScore').textContent = String(score);
+  $('resPB').textContent = isPB && score > 0 ? '🏆 new personal best!' :
+    (prevBest ? 'best: ' + prevBest.score : '');
+  $('resStats').innerHTML = stats;
+  $('resXP').textContent = '+' + xp + ' XP';
+  $('resRank').textContent = newRank.name !== oldRank.name
+    ? newRank.emoji + ' Rank up — ' + newRank.name + '!'
+    : (newRank.next ? newRank.next.needed + ' XP to ' + newRank.next.name : '');
+  $('results').classList.add('on');
+  var again = $('againBtn');
+  again.onclick = function () { startDrill(d.key); };
+  $('homeBtn').onclick = function () {
+    $('results').classList.remove('on');
+    renderHome();
+  };
+  renderHome(); // keep the page behind the panel fresh
+}
+
+/* ---------------- boot ---------------- */
+renderHome();
+
+/* offline shell */
+if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator &&
+    location.protocol !== 'file:') {
+  try { navigator.serviceWorker.register('sw.js'); } catch (e) {}
+}
+</script>
+</body>
+</html>

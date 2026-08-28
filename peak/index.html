@@ -1,0 +1,654 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0f14">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Peak">
+<meta name="description" content="The ultimate app: the one that upgrades you. Move, Fuel, Rest — one honest daily score, all on-device.">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<title>Peak — move, fuel, rest</title>
+<style>
+  :root{
+    color-scheme: dark;
+    --bg:#0a0f14; --panel:#101823; --panel2:#141e2c; --line:rgba(255,255,255,.09);
+    --ink:#eaf2f7; --dim:#9db0c2; --faint:#69809a;
+    --move:#3ddc97; --fuel:#ffb454; --rest:#6e8bff; --bad:#ff6b81;
+    --gold:#ffd166;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:radial-gradient(1100px 700px at 78% -10%,#12283a 0,transparent 60%),
+               radial-gradient(900px 700px at -5% 108%,#101f33 0,transparent 55%), var(--bg);
+    color:var(--ink); min-height:100dvh;
+    padding:max(14px,env(safe-area-inset-top)) 14px calc(84px + env(safe-area-inset-bottom));
+  }
+  .wrap{max-width:720px;margin:0 auto}
+  header{display:flex;align-items:center;gap:12px;margin:6px 2px 16px}
+  .logo{width:40px;height:40px;border-radius:12px;flex:none;position:relative;overflow:hidden;
+    background:linear-gradient(160deg,#0e2233,#0a141d);border:1px solid var(--line);
+    box-shadow:0 6px 20px rgba(61,220,151,.22)}
+  .logo::before{content:"";position:absolute;left:-6px;bottom:6px;width:0;height:0;
+    border-left:16px solid transparent;border-right:16px solid transparent;border-bottom:22px solid #1f4e63}
+  .logo::after{content:"";position:absolute;left:8px;bottom:6px;width:0;height:0;
+    border-left:13px solid transparent;border-right:13px solid transparent;border-bottom:26px solid var(--move)}
+  h1{font-size:21px;letter-spacing:-.02em;margin:0;line-height:1}
+  .tag{color:var(--faint);font-size:12.5px;margin-top:3px}
+  .idbadges{margin-left:auto;display:flex;gap:7px;align-items:center}
+  .badge{font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;border:1px solid var(--line);
+    border-radius:999px;padding:5px 10px;background:rgba(255,255,255,.04);color:var(--dim)}
+  .badge.flame{color:var(--gold);border-color:rgba(255,209,102,.4)}
+  .panel{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);
+    border-radius:18px;padding:16px;margin-bottom:14px}
+  .sec{display:flex;align-items:baseline;justify-content:space-between;margin:18px 2px 9px}
+  .sec h3{font-size:13px;letter-spacing:.05em;text-transform:uppercase;color:var(--faint);margin:0;font-weight:700}
+  .sec .hint{font-size:12px;color:var(--faint)}
+  .muted{color:var(--faint);font-size:13px}
+  button{font:inherit}
+
+  /* ---- onboarding ---- */
+  .field{min-width:0;margin-bottom:12px}
+  label.k{display:block;font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin-bottom:7px}
+  input[type=number],input[type=time],input[type=text],select{width:100%;background:rgba(0,0,0,.24);border:1px solid var(--line);
+    border-radius:11px;color:var(--ink);padding:11px 12px;font-size:15px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .seg{display:flex;border:1px solid var(--line);border-radius:11px;overflow:hidden}
+  .seg button{flex:1;background:none;border:0;color:var(--dim);padding:10px 4px;font-size:13.5px;cursor:pointer}
+  .seg button.on{background:rgba(61,220,151,.16);color:#bff0da;font-weight:700}
+  .cta{width:100%;border:0;border-radius:13px;padding:13px;font-size:15.5px;font-weight:700;cursor:pointer;color:#04140c;
+    background:linear-gradient(180deg,#4ee6a4,#2fc586);box-shadow:0 8px 22px rgba(61,220,151,.3)}
+  .errors{color:var(--bad);font-size:13px;margin:8px 0 0;padding-left:18px}
+
+  /* ---- score ring ---- */
+  .scorewrap{display:flex;gap:18px;align-items:center}
+  .ring{width:128px;height:128px;flex:none;border-radius:50%;display:grid;place-items:center;position:relative}
+  .ring .inner{width:102px;height:102px;border-radius:50%;background:var(--panel);display:grid;place-items:center;text-align:center}
+  .ring .n{font-size:34px;font-weight:800;letter-spacing:-.03em;line-height:1;font-variant-numeric:tabular-nums}
+  .ring .lab{font-size:10.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.06em;margin-top:3px}
+  .pillars{flex:1;display:flex;flex-direction:column;gap:10px;min-width:0}
+  .pill-row{display:grid;grid-template-columns:52px 1fr 46px;gap:9px;align-items:center}
+  .pill-row .nm{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+  .bar{height:9px;border-radius:5px;background:rgba(0,0,0,.3);border:1px solid var(--line);overflow:hidden}
+  .bar i{display:block;height:100%;border-radius:5px}
+  .pill-row .v{font-size:12px;color:var(--dim);text-align:right;font-variant-numeric:tabular-nums}
+  .quote{margin-top:14px;padding-top:12px;border-top:1px solid var(--line);color:var(--dim);font-size:14px;font-style:italic}
+  .xpbar{margin-top:12px}
+  .xpbar .bar i{background:linear-gradient(90deg,#8b7cff,#6e8bff)}
+  .xpline{display:flex;justify-content:space-between;font-size:12px;color:var(--faint);margin-bottom:5px}
+
+  /* ---- quick actions ---- */
+  .quick{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .qbtn{border:1px solid var(--line);background:rgba(255,255,255,.04);color:var(--ink);border-radius:13px;
+    padding:12px;font-size:14px;font-weight:600;cursor:pointer;text-align:left}
+  .qbtn .big{font-size:17px;display:block}
+  .qbtn small{color:var(--faint);font-weight:500}
+  .qbtn.on{border-color:rgba(61,220,151,.55);background:rgba(61,220,151,.12)}
+  .qbtn.water{border-color:rgba(110,139,255,.35)}
+
+  /* ---- train ---- */
+  .planday{border:1px solid var(--line);border-radius:14px;padding:12px 13px;margin-bottom:9px;background:var(--panel)}
+  .planday h4{margin:0 0 7px;font-size:14px;text-transform:capitalize}
+  .planday h4 span{color:var(--faint);font-weight:500;font-size:12px}
+  .ex{display:flex;justify-content:space-between;gap:8px;font-size:13.5px;padding:3px 0;color:var(--dim)}
+  .ex b{color:var(--ink);font-weight:600}
+  .ex .rr{font-variant-numeric:tabular-nums;color:var(--faint)}
+  .toolrow{display:grid;grid-template-columns:1fr 1fr auto;gap:9px;align-items:end}
+  .result{margin-top:11px;font-size:14px;color:var(--dim)}
+  .result b{color:var(--ink)}
+  .result .hero-n{font-size:26px;font-weight:800;color:var(--move);font-variant-numeric:tabular-nums}
+  .loads{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+  .loads span{font-size:12px;border:1px solid var(--line);border-radius:8px;padding:3px 8px;color:var(--dim);font-variant-numeric:tabular-nums}
+  .plates{display:flex;align-items:center;gap:3px;margin-top:10px;flex-wrap:wrap}
+  .plate{display:inline-grid;place-items:center;color:#04140c;font-weight:800;font-size:11px;border-radius:4px;
+    background:linear-gradient(180deg,#4ee6a4,#2fc586);min-width:30px;padding:0 3px;font-variant-numeric:tabular-nums}
+  .barline{height:7px;width:26px;background:#3a4b60;border-radius:3px}
+  .go{border:0;border-radius:11px;padding:11px 15px;font-weight:700;font-size:14px;cursor:pointer;color:#04140c;
+    background:linear-gradient(180deg,#4ee6a4,#2fc586)}
+  .go.alt{background:rgba(255,255,255,.07);color:var(--ink);border:1px solid var(--line)}
+
+  /* ---- fuel ---- */
+  .macros{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center}
+  .macro{border:1px solid var(--line);border-radius:12px;padding:9px 4px;background:rgba(0,0,0,.18)}
+  .macro .n{font-size:17px;font-weight:800;font-variant-numeric:tabular-nums}
+  .macro .k{font-size:10.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;margin-top:2px}
+  .foods{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+  .foods li{display:flex;align-items:center;gap:9px;border:1px solid var(--line);border-radius:11px;padding:8px 11px;background:var(--panel)}
+  .foods .fm{flex:1;min-width:0}
+  .foods .fn{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .foods .fs{font-size:11.5px;color:var(--faint);font-variant-numeric:tabular-nums}
+  .foods button{border:1px solid var(--line);background:rgba(255,255,255,.05);color:var(--ink);border-radius:9px;
+    width:30px;height:30px;font-size:16px;cursor:pointer;flex:none;line-height:1}
+  .foods button.del:hover{border-color:var(--bad);color:var(--bad)}
+  .remain{margin-top:11px;font-size:14px;color:var(--dim)}
+  .remain b{color:var(--fuel);font-variant-numeric:tabular-nums}
+  .remain.over b{color:var(--bad)}
+
+  /* ---- rest ---- */
+  .bedtimes{display:flex;gap:8px;margin-top:11px;flex-wrap:wrap}
+  .bt{flex:1;min-width:90px;text-align:center;border:1px solid rgba(110,139,255,.35);border-radius:12px;padding:10px 6px;background:rgba(110,139,255,.08)}
+  .bt .t{font-size:19px;font-weight:800;font-variant-numeric:tabular-nums;color:#c3cfff}
+  .bt .c{font-size:11px;color:var(--faint);margin-top:2px}
+  .sleepres{margin-top:11px;font-size:14px;color:var(--dim)}
+  .sleepres b{color:var(--rest)}
+
+  /* ---- tab bar ---- */
+  nav{position:fixed;left:0;right:0;bottom:0;background:rgba(10,15,20,.92);backdrop-filter:blur(14px);
+    border-top:1px solid var(--line);padding:8px 10px calc(8px + env(safe-area-inset-bottom));z-index:10}
+  .tabs{max-width:720px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+  .tabs button{background:none;border:0;color:var(--faint);font-size:11.5px;font-weight:600;cursor:pointer;
+    display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 2px;border-radius:11px}
+  .tabs button .ic{font-size:19px;line-height:1}
+  .tabs button.on{color:var(--ink);background:rgba(255,255,255,.06)}
+  .view{display:none}
+  .view.on{display:block}
+  .footer{color:var(--faint);font-size:11.5px;text-align:center;margin-top:22px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo" aria-hidden="true"></div>
+    <div>
+      <h1>Peak</h1>
+      <div class="tag">Move · Fuel · Rest — one honest score a day</div>
+    </div>
+    <div class="idbadges">
+      <span class="badge flame" id="streakBadge">🔥 0</span>
+      <span class="badge" id="levelBadge">Lv 1</span>
+    </div>
+  </header>
+
+  <!-- onboarding -->
+  <section class="panel" id="onboard" style="display:none">
+    <div class="sec" style="margin-top:0"><h3>Set your baseline</h3><span class="hint">stays on this device</span></div>
+    <div class="field"><label class="k">Body</label>
+      <div class="seg" id="obSex">
+        <button data-v="male">Male</button><button data-v="female">Female</button>
+      </div>
+    </div>
+    <div class="grid2">
+      <div class="field"><label class="k">Age</label><input type="number" id="obAge" min="13" max="100" value="30"></div>
+      <div class="field"><label class="k">Height (cm)</label><input type="number" id="obHeight" min="120" max="230" value="175"></div>
+    </div>
+    <div class="grid2">
+      <div class="field"><label class="k">Weight (kg)</label><input type="number" id="obWeight" min="30" max="300" value="75"></div>
+      <div class="field"><label class="k">Activity</label><select id="obActivity"></select></div>
+    </div>
+    <div class="field"><label class="k">Goal</label>
+      <div class="seg" id="obGoal">
+        <button data-v="cut">Lose fat</button><button data-v="maintain">Maintain</button><button data-v="build">Build muscle</button>
+      </div>
+    </div>
+    <button class="cta" id="obGo">Compute my targets</button>
+    <ul class="errors" id="obErrors" style="display:none"></ul>
+  </section>
+
+  <div id="app" style="display:none">
+
+  <!-- TODAY -->
+  <section class="view on" id="view-today">
+    <div class="panel">
+      <div class="scorewrap">
+        <div class="ring" id="ring"><div class="inner"><div><div class="n" id="scoreN">0</div><div class="lab" id="scoreLab">—</div></div></div></div>
+        <div class="pillars">
+          <div class="pill-row"><span class="nm" style="color:var(--move)">Move</span><span class="bar"><i id="barMove" style="background:var(--move)"></i></span><span class="v" id="valMove">0/40</span></div>
+          <div class="pill-row"><span class="nm" style="color:var(--fuel)">Fuel</span><span class="bar"><i id="barFuel" style="background:var(--fuel)"></i></span><span class="v" id="valFuel">0/30</span></div>
+          <div class="pill-row"><span class="nm" style="color:var(--rest)">Rest</span><span class="bar"><i id="barRest" style="background:var(--rest)"></i></span><span class="v" id="valRest">0/30</span></div>
+        </div>
+      </div>
+      <div class="xpbar">
+        <div class="xpline"><span id="xpName">Rookie</span><span id="xpInto">0 / 250 xp</span></div>
+        <div class="bar"><i id="xpFill" style="width:0%"></i></div>
+      </div>
+      <div class="quote" id="quote"></div>
+    </div>
+
+    <div class="sec"><h3>Log today</h3><span class="hint" id="todayDate"></span></div>
+    <div class="quick">
+      <button class="qbtn" id="qTrain"><span class="big">🏋️ Trained</span><small>tap when the session is done</small></button>
+      <button class="qbtn water" id="qWater"><span class="big">💧 <span id="waterNow">0</span> ml</span><small id="waterHint">+250 ml per tap</small></button>
+      <button class="qbtn" id="qSteps"><span class="big">👟 <span id="stepsNow">0</span> steps</span><small>tap to enter today’s steps</small></button>
+      <button class="qbtn" id="qSleep"><span class="big">🌙 <span id="sleepNow">—</span></span><small>logged from the Rest tab</small></button>
+    </div>
+    <p class="muted" style="margin:12px 2px 0">A day scoring 60+ keeps the streak alive. Score locks in as you log — nothing is credited silently.</p>
+  </section>
+
+  <!-- TRAIN -->
+  <section class="view" id="view-train">
+    <div class="sec" style="margin-top:0"><h3>Your split</h3><span class="hint" id="planHint"></span></div>
+    <div class="panel">
+      <div class="toolrow">
+        <div class="field" style="margin:0"><label class="k">Days / week</label><select id="planDays"><option>2</option><option selected>3</option><option>4</option><option>5</option><option>6</option></select></div>
+        <div class="field" style="margin:0"><label class="k">Equipment</label><select id="planEquip"><option value="gym">Full gym</option><option value="dumbbells">Dumbbells</option><option value="bodyweight">Bodyweight</option></select></div>
+        <button class="go alt" id="planShuffle">↻ New</button>
+      </div>
+      <div id="planOut" style="margin-top:12px"></div>
+    </div>
+
+    <div class="sec"><h3>Strength calculator</h3><span class="hint">Epley 1RM</span></div>
+    <div class="panel">
+      <div class="toolrow">
+        <div class="field" style="margin:0"><label class="k">Weight (kg)</label><input type="number" id="ormW" value="80" min="1"></div>
+        <div class="field" style="margin:0"><label class="k">Reps</label><input type="number" id="ormR" value="5" min="1" max="12"></div>
+        <button class="go" id="ormGo">1RM</button>
+      </div>
+      <div class="result" id="ormOut"></div>
+    </div>
+
+    <div class="sec"><h3>Plate math</h3><span class="hint">what goes on each side</span></div>
+    <div class="panel">
+      <div class="toolrow">
+        <div class="field" style="margin:0"><label class="k">Target (kg)</label><input type="number" id="plateT" value="100" min="1"></div>
+        <div class="field" style="margin:0"><label class="k">Bar (kg)</label><input type="number" id="plateB" value="20" min="1"></div>
+        <button class="go" id="plateGo">Load</button>
+      </div>
+      <div class="result" id="plateOut"></div>
+    </div>
+
+    <div class="sec"><h3>Next session</h3><span class="hint">double progression, 8–12</span></div>
+    <div class="panel">
+      <div class="toolrow">
+        <div class="field" style="margin:0"><label class="k">Last weight (kg)</label><input type="number" id="progW" value="60" min="1"></div>
+        <div class="field" style="margin:0"><label class="k">Reps per set</label><input type="text" id="progR" value="12, 10, 9" inputmode="numeric"></div>
+        <button class="go" id="progGo">Plan</button>
+      </div>
+      <div class="result" id="progOut"></div>
+    </div>
+  </section>
+
+  <!-- FUEL -->
+  <section class="view" id="view-fuel">
+    <div class="sec" style="margin-top:0"><h3>Today vs targets</h3><span class="hint" id="fuelHint"></span></div>
+    <div class="panel">
+      <div class="macros">
+        <div class="macro"><div class="n" id="mKcal">0</div><div class="k">kcal</div></div>
+        <div class="macro"><div class="n" id="mProt">0</div><div class="k">protein g</div></div>
+        <div class="macro"><div class="n" id="mCarb">0</div><div class="k">carbs g</div></div>
+        <div class="macro"><div class="n" id="mFat">0</div><div class="k">fat g</div></div>
+      </div>
+      <div class="remain" id="remainLine"></div>
+    </div>
+
+    <div class="sec"><h3>Add food</h3><span class="hint">built-in library</span></div>
+    <div class="panel">
+      <input type="text" id="foodQ" placeholder="Search — chicken, oats, whey…">
+      <ul class="foods" id="foodResults"></ul>
+    </div>
+
+    <div class="sec"><h3>Today’s log</h3><span class="hint" id="logCount"></span></div>
+    <div class="panel"><ul class="foods" id="foodLog"></ul><div class="muted" id="logEmpty">Nothing logged yet — the score can’t see invisible meals.</div></div>
+  </section>
+
+  <!-- REST -->
+  <section class="view" id="view-rest">
+    <div class="sec" style="margin-top:0"><h3>Tonight’s bedtime</h3><span class="hint">90-min cycles + 15 min to drift off</span></div>
+    <div class="panel">
+      <div class="field" style="margin-bottom:0"><label class="k">Alarm tomorrow</label><input type="time" id="wakeAt" value="07:00"></div>
+      <div class="bedtimes" id="bedtimes"></div>
+    </div>
+
+    <div class="sec"><h3>Log last night</h3><span class="hint">feeds today’s Rest score</span></div>
+    <div class="panel">
+      <div class="toolrow">
+        <div class="field" style="margin:0"><label class="k">Lights out</label><input type="time" id="bedT" value="23:00"></div>
+        <div class="field" style="margin:0"><label class="k">Woke up</label><input type="time" id="wakeT" value="07:00"></div>
+        <button class="go" id="sleepGo">Log</button>
+      </div>
+      <div class="sleepres" id="sleepOut"></div>
+    </div>
+
+    <div class="sec"><h3>Sleep debt</h3><span class="hint">last 7 nights vs 8h</span></div>
+    <div class="panel"><div class="sleepres" id="debtOut" style="margin-top:0">No nights logged yet.</div></div>
+  </section>
+
+  </div><!-- /app -->
+
+  <div class="footer">Peak · everything computed on-device by a deterministic engine · guidance, not medical advice</div>
+</div>
+
+<nav>
+  <div class="tabs">
+    <button class="on" data-view="today"><span class="ic">⛰️</span>Today</button>
+    <button data-view="train"><span class="ic">🏋️</span>Train</button>
+    <button data-view="fuel"><span class="ic">🍳</span>Fuel</button>
+    <button data-view="rest"><span class="ic">🌙</span>Rest</button>
+  </div>
+</nav>
+
+<script src="engine.js"></script>
+<script>
+(function () {
+  'use strict';
+  var E = PeakEngine;
+  var KEY = 'peak-v1';
+  var $ = function (id) { return document.getElementById(id); };
+
+  /* ---------- state ---------- */
+  var state = { profile: null, days: {}, xp: 0, scores: {}, nights: [], regen: 0, planDays: 3, planEquip: 'gym' };
+  try {
+    var saved = JSON.parse(localStorage.getItem(KEY) || 'null');
+    if (saved && typeof saved === 'object') {
+      for (var k in state) if (saved[k] !== undefined) state[k] = saved[k];
+    }
+  } catch (e) {}
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+
+  var TZ = -new Date().getTimezoneOffset();
+  function todayKey() { return E.dayKey(Date.now(), TZ); }
+  function today() {
+    var k = todayKey();
+    if (!state.days[k]) state.days[k] = { trained: false, steps: 0, waterMl: 0, entries: [], sleepHours: 0 };
+    return state.days[k];
+  }
+
+  /* ---------- onboarding ---------- */
+  var ob = { sex: null, goal: null };
+  function segWire(el, obj, prop) {
+    var btns = el.querySelectorAll('button');
+    for (var i = 0; i < btns.length; i++) {
+      (function (b) {
+        b.addEventListener('click', function () {
+          obj[prop] = b.getAttribute('data-v');
+          for (var j = 0; j < btns.length; j++) btns[j].classList.toggle('on', btns[j] === b);
+        });
+      })(btns[i]);
+    }
+  }
+  segWire($('obSex'), ob, 'sex');
+  segWire($('obGoal'), ob, 'goal');
+  (function () {
+    var sel = $('obActivity'), keys = ['sedentary', 'light', 'moderate', 'active', 'athlete'];
+    var html = '';
+    for (var i = 0; i < keys.length; i++) html += '<option value="' + keys[i] + '"' + (keys[i] === 'moderate' ? ' selected' : '') + '>' + E.ACTIVITY[keys[i]].label + '</option>';
+    sel.innerHTML = html;
+  })();
+  $('obGo').addEventListener('click', function () {
+    var v = E.validateProfile({
+      sex: ob.sex, goal: ob.goal, activity: $('obActivity').value,
+      age: $('obAge').value, heightCm: $('obHeight').value, weightKg: $('obWeight').value
+    });
+    var errUl = $('obErrors');
+    if (!v.ok) {
+      var lis = '';
+      for (var i = 0; i < v.errors.length; i++) lis += '<li>' + v.errors[i] + '</li>';
+      errUl.innerHTML = lis; errUl.style.display = 'block';
+      return;
+    }
+    errUl.style.display = 'none';
+    state.profile = v;
+    save();
+    boot();
+  });
+
+  /* ---------- targets (recomputed from the profile every load) ---------- */
+  var targets = null;
+  function computeTargets() {
+    var p = state.profile;
+    targets = {
+      macros: E.macroTargets(p),
+      water: E.hydrationTarget(p),
+      tdee: E.tdee(p),
+      bmr: E.bmr(p)
+    };
+  }
+
+  /* ---------- today view ---------- */
+  function scoreToday() {
+    var d = today();
+    return E.peakScore({
+      trained: d.trained, steps: d.steps, stepTarget: 8000,
+      kcal: E.logTotals(d.entries).kcal, protein: E.logTotals(d.entries).protein,
+      fuelTargets: { kcal: targets.macros.kcal, protein: targets.macros.protein },
+      sleepHours: d.sleepHours, waterMl: d.waterMl, waterTarget: targets.water
+    });
+  }
+  function renderToday() {
+    var d = today();
+    var s = scoreToday();
+    var k = todayKey();
+    state.scores[k] = s.total;
+    $('scoreN').textContent = s.total;
+    $('scoreLab').textContent = E.scoreLabel(s.total);
+    var deg = Math.round(s.total * 3.6);
+    $('ring').style.background = 'conic-gradient(var(--move) 0deg, var(--fuel) ' + Math.round(deg * 0.5) + 'deg, var(--rest) ' + deg + 'deg, rgba(255,255,255,.07) ' + deg + 'deg)';
+    $('barMove').style.width = Math.round(s.move / 40 * 100) + '%';
+    $('barFuel').style.width = Math.round(s.fuel / 30 * 100) + '%';
+    $('barRest').style.width = Math.round(s.rest / 30 * 100) + '%';
+    $('valMove').textContent = s.move + '/40';
+    $('valFuel').textContent = s.fuel + '/30';
+    $('valRest').textContent = s.rest + '/30';
+    $('quote').textContent = '“' + E.dailyPrompt(k).prompt + '”';
+    $('todayDate').textContent = k;
+
+    $('qTrain').classList.toggle('on', !!d.trained);
+    $('waterNow').textContent = d.waterMl;
+    $('waterHint').textContent = d.waterMl >= targets.water ? 'target ' + targets.water + ' ml hit ✓' : '+250 ml per tap · target ' + targets.water;
+    $('qWater').classList.toggle('on', d.waterMl >= targets.water);
+    $('stepsNow').textContent = d.steps;
+    $('qSteps').classList.toggle('on', d.steps >= 8000);
+    $('sleepNow').textContent = d.sleepHours ? d.sleepHours + ' h' : '—';
+    $('qSleep').classList.toggle('on', d.sleepHours >= 7 && d.sleepHours <= 9);
+
+    $('streakBadge').textContent = '🔥 ' + E.streak(state.scores, k);
+    var lv = E.levelFor(state.xp);
+    $('levelBadge').textContent = 'Lv ' + lv.level;
+    $('xpName').textContent = E.levelName(lv.level) + ' · level ' + lv.level;
+    $('xpInto').textContent = lv.into + ' / ' + lv.need + ' xp';
+    $('xpFill').style.width = Math.round(lv.into / lv.need * 100) + '%';
+    save();
+  }
+
+  // XP: the day's score is banked continuously as its best-so-far.
+  function bankXp() {
+    var k = todayKey();
+    var d = today();
+    var s = scoreToday().total;
+    var prevBest = d.bestScore || 0;
+    if (s > prevBest) { state.xp += (E.xpForScore(s) - E.xpForScore(prevBest)); d.bestScore = s; }
+  }
+  function touch() { bankXp(); renderToday(); renderFuel(); save(); }
+
+  $('qTrain').addEventListener('click', function () { var d = today(); d.trained = !d.trained; touch(); });
+  $('qWater').addEventListener('click', function () { var d = today(); d.waterMl += 250; touch(); });
+  $('qSteps').addEventListener('click', function () {
+    var v = prompt('Steps so far today:', String(today().steps || ''));
+    if (v == null) return;
+    var n = Math.max(0, Math.round(Number(v) || 0));
+    today().steps = n; touch();
+  });
+  $('qSleep').addEventListener('click', function () { showView('rest'); });
+
+  /* ---------- train view ---------- */
+  function renderPlan() {
+    var plan = E.workoutPlan(state.planDays, state.planEquip, (state.profile ? state.profile.weightKg : 'p') + ':' + state.regen);
+    var html = '';
+    for (var i = 0; i < plan.length; i++) {
+      var day = plan[i];
+      html += '<div class="planday"><h4>Day ' + day.day + ' <span>· ' + day.kind + '</span></h4>';
+      for (var j = 0; j < day.exercises.length; j++) {
+        var ex = day.exercises[j];
+        html += '<div class="ex"><b>' + ex.name + '</b><span class="rr">' + ex.sets + ' × ' + ex.reps + '</span></div>';
+      }
+      html += '</div>';
+    }
+    $('planOut').innerHTML = html;
+    $('planHint').textContent = state.planDays + ' days · ' + state.planEquip;
+  }
+  $('planDays').addEventListener('change', function () { state.planDays = Number($('planDays').value); save(); renderPlan(); });
+  $('planEquip').addEventListener('change', function () { state.planEquip = $('planEquip').value; save(); renderPlan(); });
+  $('planShuffle').addEventListener('click', function () { state.regen++; save(); renderPlan(); });
+
+  $('ormGo').addEventListener('click', function () {
+    var orm = E.oneRepMax($('ormW').value, $('ormR').value);
+    if (!orm) { $('ormOut').innerHTML = 'Enter a real lift.'; return; }
+    var loads = E.trainingLoads(orm);
+    var chips = '';
+    for (var i = 0; i < loads.length; i++) chips += '<span>' + loads[i].pct + '% · ' + loads[i].kg + ' kg</span>';
+    $('ormOut').innerHTML = 'Estimated 1RM: <span class="hero-n">' + orm + ' kg</span><div class="loads">' + chips + '</div>';
+  });
+
+  $('plateGo').addEventListener('click', function () {
+    var r = E.plateMath(Number($('plateT').value), Number($('plateB').value));
+    if (!r.ok) { $('plateOut').innerHTML = r.reason; return; }
+    var html = 'Loads to <b>' + r.achievedKg + ' kg</b>' + (r.shortKg > 0 ? ' (' + r.shortKg + ' kg short of target — smallest plate is 1.25)' : '') + '<div class="plates"><span class="barline"></span>';
+    if (r.perSide.length === 0) html += '<span class="muted" style="margin-left:6px">empty bar</span>';
+    for (var i = 0; i < r.perSide.length; i++) {
+      var p = r.perSide[i];
+      var h = 16 + Math.round(p);
+      html += '<span class="plate" style="height:' + Math.min(46, h) + 'px">' + p + '</span>';
+    }
+    html += '<span class="muted" style="margin-left:8px">per side</span></div>';
+    $('plateOut').innerHTML = html;
+  });
+
+  $('progGo').addEventListener('click', function () {
+    var reps = String($('progR').value).split(/[,\s]+/).filter(function (x) { return x !== ''; }).map(Number);
+    var n = E.nextSession({ weightKg: Number($('progW').value), reps: reps });
+    $('progOut').innerHTML = 'Next: <span class="hero-n">' + n.weightKg + ' kg</span> · aim ' + n.targetReps + '+ reps per set<br><span class="muted">' + n.note + '</span>';
+  });
+
+  /* ---------- fuel view ---------- */
+  function renderFoodResults() {
+    var res = E.searchFoods($('foodQ').value);
+    var html = '';
+    for (var i = 0; i < res.length; i++) {
+      var f = res[i];
+      html += '<li><div class="fm"><div class="fn">' + f.name + '</div><div class="fs">' + f.kcal + ' kcal · P' + f.protein + ' C' + f.carbs + ' F' + f.fat + '</div></div>' +
+        '<button data-add="' + E.FOODS.indexOf(f) + '">+</button></li>';
+    }
+    $('foodResults').innerHTML = html || '<li><div class="fm"><div class="fs">No match — try a simpler word.</div></div></li>';
+  }
+  $('foodQ').addEventListener('input', renderFoodResults);
+  $('foodResults').addEventListener('click', function (ev) {
+    var t = ev.target;
+    if (!t || !t.getAttribute) return;
+    var idx = t.getAttribute('data-add');
+    if (idx == null) return;
+    var f = E.FOODS[Number(idx)];
+    if (!f) return;
+    today().entries.push({ name: f.name, kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat });
+    touch();
+  });
+  $('foodLog').addEventListener('click', function (ev) {
+    var t = ev.target;
+    if (!t || !t.getAttribute) return;
+    var idx = t.getAttribute('data-del');
+    if (idx == null) return;
+    today().entries.splice(Number(idx), 1);
+    touch();
+  });
+  function renderFuel() {
+    var d = today();
+    var tot = E.logTotals(d.entries);
+    var fs = E.fuelState(tot, targets.macros);
+    $('mKcal').textContent = tot.kcal;
+    $('mProt').textContent = tot.protein;
+    $('mCarb').textContent = tot.carbs;
+    $('mFat').textContent = tot.fat;
+    $('fuelHint').textContent = targets.macros.kcal + ' kcal · P' + targets.macros.protein + ' C' + targets.macros.carbs + ' F' + targets.macros.fat;
+    var rl = $('remainLine');
+    rl.className = 'remain' + (fs.over ? ' over' : '');
+    rl.innerHTML = fs.over
+      ? '<b>' + (-fs.remainingKcal) + ' kcal over</b> target · protein ' + fs.pctProtein + '%'
+      : '<b>' + fs.remainingKcal + ' kcal left</b> · calories ' + fs.pctKcal + '% · protein ' + fs.pctProtein + '%';
+    var html = '';
+    for (var i = 0; i < d.entries.length; i++) {
+      var e = d.entries[i];
+      html += '<li><div class="fm"><div class="fn">' + e.name + '</div><div class="fs">' + e.kcal + ' kcal · P' + e.protein + '</div></div><button class="del" data-del="' + i + '">×</button></li>';
+    }
+    $('foodLog').innerHTML = html;
+    $('logEmpty').style.display = d.entries.length ? 'none' : 'block';
+    $('logCount').textContent = d.entries.length + ' item' + (d.entries.length === 1 ? '' : 's');
+  }
+
+  /* ---------- rest view ---------- */
+  function tsFromTime(timeStr, dayOffset) {
+    var p = String(timeStr || '0:0').split(':');
+    var base = Date.now();
+    var k = E.dayKey(base, TZ).split('-');
+    var utcMidnight = Date.UTC(+k[0], +k[1] - 1, +k[2]) - TZ * E.MINUTE;
+    return utcMidnight + (dayOffset || 0) * E.DAY + (+p[0]) * E.HOUR + (+p[1]) * E.MINUTE;
+  }
+  function renderBedtimes() {
+    var wake = tsFromTime($('wakeAt').value, 1); // tomorrow's alarm
+    var b = E.bedtimesFor(wake);
+    var html = '';
+    for (var i = 0; i < b.length; i++) {
+      html += '<div class="bt"><div class="t">' + E.fmtClock(b[i].ts, TZ) + '</div><div class="c">' + b[i].cycles + ' cycles · ' + b[i].hours + ' h</div></div>';
+    }
+    $('bedtimes').innerHTML = html;
+  }
+  $('wakeAt').addEventListener('input', renderBedtimes);
+  $('sleepGo').addEventListener('click', function () {
+    var wake = tsFromTime($('wakeT').value, 0);          // this morning
+    var bed = tsFromTime($('bedT').value, 0);
+    if (bed >= wake) bed -= E.DAY;                        // lights out was yesterday evening
+    var s = E.sleepStats(bed, wake);
+    if (!s.ok) { $('sleepOut').textContent = s.reason; return; }
+    $('sleepOut').innerHTML = '<b>' + s.hours + ' h asleep</b> · ' + s.cycles + ' full cycles · ' + s.label;
+    today().sleepHours = s.hours;
+    state.nights.push(s.hours);
+    if (state.nights.length > 7) state.nights = state.nights.slice(-7);
+    renderDebt();
+    touch();
+  });
+  function renderDebt() {
+    if (!state.nights.length) { $('debtOut').textContent = 'No nights logged yet.'; return; }
+    var debt = E.sleepDebt(state.nights, 8);
+    $('debtOut').innerHTML = debt > 0
+      ? 'You owe your body <b>' + debt + ' h</b> across the last ' + state.nights.length + ' night' + (state.nights.length === 1 ? '' : 's') + '. Tonight is the repayment plan.'
+      : 'Debt-free across ' + state.nights.length + ' night' + (state.nights.length === 1 ? '' : 's') + '. Protect the routine.';
+  }
+
+  /* ---------- tabs ---------- */
+  function showView(name) {
+    var views = ['today', 'train', 'fuel', 'rest'];
+    for (var i = 0; i < views.length; i++) {
+      var el = $('view-' + views[i]);
+      if (el) el.classList.toggle('on', views[i] === name);
+    }
+    var btns = document.querySelectorAll('.tabs button');
+    for (var j = 0; j < btns.length; j++) btns[j].classList.toggle('on', btns[j].getAttribute('data-view') === name);
+  }
+  (function () {
+    var btns = document.querySelectorAll('.tabs button');
+    for (var i = 0; i < btns.length; i++) {
+      (function (b) { b.addEventListener('click', function () { showView(b.getAttribute('data-view')); }); })(btns[i]);
+    }
+  })();
+
+  /* ---------- boot ---------- */
+  function boot() {
+    if (!state.profile) {
+      $('onboard').style.display = 'block';
+      $('app').style.display = 'none';
+      return;
+    }
+    $('onboard').style.display = 'none';
+    $('app').style.display = 'block';
+    computeTargets();
+    $('planDays').value = String(state.planDays);
+    $('planEquip').value = state.planEquip;
+    renderToday();
+    renderPlan();
+    renderFoodResults();
+    renderFuel();
+    renderBedtimes();
+    renderDebt();
+    save();
+  }
+  boot();
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
+  }
+})();
+</script>
+</body>
+</html>
