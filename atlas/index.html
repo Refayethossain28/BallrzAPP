@@ -1288,43 +1288,30 @@ window.addEventListener('resize', resize);
 resize();
 
 /* tile cache with a small LRU + in-flight bookkeeping. Sources:
-   'voy'  = CARTO Voyager — clean, modern day cartography (retina @2x)
-   'dark' = CARTO Dark Matter — a DESIGNED night map, not an inversion
-   'sat'  = Esri World Imagery (note Esri's {z}/{y}/{x} order)
-   CARTO tiles fall back to openstreetmap.org per-tile if they fail. */
+   OpenStreetMap standard tiles for every map style — keyless and reliable
+   (CARTO's free basemaps began watermarking "API KEY REQUIRED", so Atlas
+   styles the map itself: night is a canvas inversion, positron a
+   desaturation). Satellite stays Esri World Imagery ({z}/{y}/{x} order).
+   The layer key still names the STYLE, so caches and callers are unchanged. */
 var tiles = {}, tileOrder = [], TILE_CAP = 380;
-var TILE_R = (window.devicePixelRatio || 1) >= 1.5 ? '@2x' : '';
 var TILE_URL = function (layer, z, x, y) {
   if (layer === 'sat') {
     return 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/' + z + '/' + y + '/' + x;
   }
-  if (layer === 'dark') {
-    return 'https://basemaps.cartocdn.com/dark_all/' + z + '/' + x + '/' + y + TILE_R + '.png';
-  }
-  if (layer === 'pos') {
-    return 'https://basemaps.cartocdn.com/light_all/' + z + '/' + x + '/' + y + TILE_R + '.png';
-  }
-  return 'https://basemaps.cartocdn.com/rastertiles/voyager/' + z + '/' + x + '/' + y + TILE_R + '.png';
-};
-var TILE_FALLBACK_URL = function (z, x, y) {
   return 'https://tile.openstreetmap.org/' + z + '/' + x + '/' + y + '.png';
 };
 function getTile(layer, z, x, y) {
   var n = Math.pow(2, z);
   if (y < 0 || y >= n) return null;
   x = ((x % n) + n) % n;
-  var key = layer + '|' + z + '/' + x + '/' + y;
+  // non-sat styles share one OSM image per tile — cache under a shared key
+  var key = (layer === 'sat' ? 'sat' : 'osm') + '|' + z + '/' + x + '/' + y;
   var t = tiles[key];
   if (t) return t;
-  t = { img: new Image(), ok: false, err: false, fellBack: false };
+  t = { img: new Image(), ok: false, err: false };
   t.img.crossOrigin = 'anonymous';
   t.img.onload = function () { t.ok = true; needsDraw = true; };
-  t.img.onerror = function () {
-    if (layer !== 'sat' && !t.fellBack) {
-      t.fellBack = true;
-      t.img.src = TILE_FALLBACK_URL(z, x, y);
-    } else t.err = true;
-  };
+  t.img.onerror = function () { t.err = true; };
   t.img.src = TILE_URL(layer, z, x, y);
   tiles[key] = t; tileOrder.push(key);
   if (tileOrder.length > TILE_CAP) {
@@ -1396,7 +1383,11 @@ function drawFlatScene(night, withBuildings) {
             : night ? 'dark'
             : settings.baseLayer === 'positron' ? 'pos' : 'voy';
   ctx.setTransform(RDPR, 0, 0, RDPR, 0, 0);
-  ctx.fillStyle = layer === 'sat' ? '#090d12' : night ? '#161b26' : layer === 'pos' ? '#f4f4f2' : '#f2f0eb';
+  // the dark style is OSM inverted on-canvas: on the composite path the
+  // background must be light PRE-inversion so gaps land dark, not glowing
+  ctx.fillStyle = layer === 'sat' ? '#090d12'
+    : layer === 'dark' ? (FILTER_OK ? '#161b26' : '#e8e4dc')
+    : night ? '#161b26' : layer === 'pos' ? '#f4f4f2' : '#f2f0eb';
   ctx.fillRect(0, 0, W, H);
 
   var z = Math.max(2, Math.min(19, Math.floor(view.zoom)));
@@ -1411,10 +1402,12 @@ function drawFlatScene(night, withBuildings) {
   ctx.rotate(view.rot);
   ctx.scale(scale, scale);
   ctx.translate(-c.x, -c.y);
-  // CARTO's styles are already designed — the night map just gets a lift so
-  // roads read at a glance while driving; satellite dims a little after dark.
+  // Atlas styles the map itself from plain OSM tiles: 'dark' is a designed
+  // inversion (deep slate ground, readable roads), 'pos' a quiet
+  // desaturation; satellite dims a little after dark.
   if (FILTER_OK) {
-    if (layer === 'dark') ctx.filter = 'brightness(1.45) saturate(1.05)';
+    if (layer === 'dark') ctx.filter = 'invert(1) hue-rotate(180deg) brightness(0.88) saturate(0.5)';
+    else if (layer === 'pos') ctx.filter = 'saturate(0.25) brightness(1.04)';
     else if (layer === 'sat' && night) ctx.filter = 'brightness(0.82) saturate(0.9)';
   }
 
@@ -1432,12 +1425,34 @@ function drawFlatScene(night, withBuildings) {
         var sx = (tx & 1) * A.TILE / 2, sy = (ty & 1) * A.TILE / 2;
         ctx.drawImage(pt.img, sx, sy, A.TILE / 2, A.TILE / 2, tx * A.TILE, ty * A.TILE, A.TILE, A.TILE);
       } else {
-        ctx.fillStyle = layer === 'sat' ? '#0c1118' : night ? '#1c2230' : layer === 'pos' ? '#efefed' : '#eae7e1';
+        // dark placeholders are PRE-inversion light (both paths invert them)
+        ctx.fillStyle = layer === 'sat' ? '#0c1118' : layer === 'dark' ? '#e8e4dc'
+          : night ? '#1c2230' : layer === 'pos' ? '#efefed' : '#eae7e1';
         ctx.fillRect(tx * A.TILE, ty * A.TILE, A.TILE, A.TILE);
       }
     }
   }
   if (FILTER_OK) ctx.filter = 'none';
+  // no canvas filter (iOS Safari): style the raw OSM tiles with blend modes —
+  // difference-white inverts to night, a multiply tint cools it; positron
+  // desaturates with a grey 'saturation' fill. Confined to the tile region,
+  // before any overlays draw.
+  if (!FILTER_OK && (layer === 'dark' || layer === 'pos')) {
+    var fx0 = c.x - radius, fy0 = c.y - radius, fs = radius * 2;
+    if (layer === 'dark') {
+      ctx.globalCompositeOperation = 'difference';
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(fx0, fy0, fs, fs);
+      ctx.globalCompositeOperation = 'multiply';
+      ctx.fillStyle = '#8f9bbd';
+      ctx.fillRect(fx0, fy0, fs, fs);
+    } else {
+      ctx.globalCompositeOperation = 'saturation';
+      ctx.fillStyle = '#8a8a8a';
+      ctx.fillRect(fx0, fy0, fs, fs);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
   // 🎮 the synthwave ground grid — world-fixed lines, so they stream past
   if (gameOn()) {
     var gsp = A.TILE / 4;
@@ -1452,18 +1467,11 @@ function drawFlatScene(night, withBuildings) {
   }
   ctx.restore();
 
-  // Safari (no canvas filter): brighten the night map with a screen-composite
-  // lift, and dim satellite after dark with a plain wash.
-  if (!FILTER_OK && night) {
-    if (layer === 'dark') {
-      ctx.globalCompositeOperation = 'screen';
-      ctx.fillStyle = 'rgba(58,68,92,0.42)';
-      ctx.fillRect(0, 0, W, H);
-      ctx.globalCompositeOperation = 'source-over';
-    } else if (layer === 'sat') {
-      ctx.fillStyle = 'rgba(2,6,14,0.35)';
-      ctx.fillRect(0, 0, W, H);
-    }
+  // Safari (no canvas filter): dim satellite after dark with a plain wash
+  // (the dark style already inverted itself inside the tile pass above).
+  if (!FILTER_OK && night && layer === 'sat') {
+    ctx.fillStyle = 'rgba(2,6,14,0.35)';
+    ctx.fillRect(0, 0, W, H);
   }
 
   // 🎮 ApexGP: sink the world into indigo, then bloom magenta above and
@@ -2337,7 +2345,7 @@ function apply3d() {
 function updateAttribution() {
   $('attribution').innerHTML = settings.baseLayer === 'sat'
     ? 'Imagery © Esri, Maxar, Earthstar Geographics'
-    : '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors · © <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>';
+    : '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors';
 }
 
 /* ================================= GPS ================================== */
@@ -5352,12 +5360,14 @@ function drawDashMap(c, cw, ch) {
   c.arcTo(x0, y0, x0 + mw, y0, rr);
   c.closePath();
   c.clip();
-  c.fillStyle = '#10131c';
-  c.fillRect(x0, y0, mw, mh);
   var layer = settings.baseLayer === 'sat' ? 'sat' : nightMode() ? 'dark' : 'voy';
+  // pre-inversion light backdrop when the night style will blend-invert
+  c.fillStyle = (layer === 'dark' && !FILTER_OK) ? '#e8e4dc' : '#10131c';
+  c.fillRect(x0, y0, mw, mh);
   var ts = 256 * sc;
   var tx0 = Math.floor((w0.x - (mw / 2) / sc) / 256), tx1 = Math.floor((w0.x + (mw / 2) / sc) / 256);
   var ty0 = Math.floor((w0.y - (mh / 2) / sc) / 256), ty1 = Math.floor((w0.y + (mh / 2) / sc) / 256);
+  if (layer === 'dark' && FILTER_OK) c.filter = 'invert(1) hue-rotate(180deg) brightness(0.88) saturate(0.5)';
   for (var tx = tx0; tx <= tx1; tx++) {
     for (var ty = ty0; ty <= ty1; ty++) {
       var t = getTile(layer, zi, tx, ty);
@@ -5366,6 +5376,14 @@ function drawDashMap(c, cw, ch) {
                     y0 + mh / 2 + (ty * 256 - w0.y) * sc, ts, ts);
       }
     }
+  }
+  if (layer === 'dark' && FILTER_OK) c.filter = 'none';
+  if (layer === 'dark' && !FILTER_OK) { // same night look without canvas filters
+    c.globalCompositeOperation = 'difference';
+    c.fillStyle = '#fff'; c.fillRect(x0, y0, mw, mh);
+    c.globalCompositeOperation = 'multiply';
+    c.fillStyle = '#8f9bbd'; c.fillRect(x0, y0, mw, mh);
+    c.globalCompositeOperation = 'source-over';
   }
   if (nav.active && nav.route) {
     var geo = nav.route.geometry;
