@@ -1134,7 +1134,7 @@ function speakBtn(text, bcp){
 /* ---- speech INPUT (talk to translate / chat) via Web Speech API ---- */
 function speechInOK(){ try{ return typeof window !== "undefined" && !!(window.SpeechRecognition || window.webkitSpeechRecognition); }catch(e){ return false; } }
 var _rec = null;
-function listen(bcp, btn, onText){
+function listen(bcp, btn, onText, onError){
   try{
     var R = window.SpeechRecognition || window.webkitSpeechRecognition;
     if(!R) return;
@@ -1143,15 +1143,41 @@ function listen(bcp, btn, onText){
     r.lang = bcp || "en-US"; r.interimResults = false; r.maxAlternatives = 1;
     if(btn) btn.classList.add("rec");
     r.onresult = function(ev){ try{ onText(ev.results[0][0].transcript); }catch(e){} };
-    r.onerror = function(){};
+    r.onerror = function(e){
+      if(btn) btn.classList.remove("rec"); _rec = null;
+      var code = e && e.error;
+      var standalone = false;
+      try{ standalone = navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches; }catch(err){}
+      var msg = "";
+      if(code === "not-allowed"){
+        msg = standalone
+          ? "Mic blocked — home-screen apps can't use speech on iOS. Open in Safari, tap ᴬᴬ → Website Settings → Microphone → Allow."
+          : "Microphone blocked. Tap ᴬᴬ in the address bar → Website Settings → Microphone → Allow, then reload.";
+      } else if(code === "service-not-allowed"){
+        msg = standalone
+          ? "iOS blocks speech in installed apps — open this page in Safari instead. Also check Settings → General → Keyboard → Dictation is ON."
+          : "Speech service blocked. Check Settings → General → Keyboard → Dictation is ON, then reload.";
+      } else if(code === "audio-capture"){
+        msg = "No microphone found — check another app isn't holding the mic and try again.";
+      } else if(code === "no-speech"){
+        msg = "Nothing heard — tap the mic and speak clearly.";
+      } else if(code){
+        msg = "Mic error: " + code + ". Try reloading the page.";
+      }
+      if(msg && onError) onError(msg);
+    };
     r.onend = function(){ if(btn) btn.classList.remove("rec"); _rec = null; };
     r.start();
   }catch(e){ if(btn) btn.classList.remove("rec"); _rec = null; }
 }
-function wireMic(btn, getBcp, onText){
+function wireMic(btn, getBcp, onText, hintEl){
   if(!btn) return;
   if(!speechInOK()){ btn.disabled = true; btn.style.opacity = "0.45"; btn.title = "Speech input not supported on this browser"; return; }
-  on(btn,"click",function(){ listen(getBcp(), btn, onText); });
+  on(btn,"click",function(){
+    listen(getBcp(), btn, onText, function(msg){
+      if(hintEl){ hintEl.textContent = msg; hintEl.style.color = "var(--bad)"; }
+    });
+  });
 }
 
 /* =========================================================================
@@ -3059,7 +3085,8 @@ function init(){
   // Speech input (mic) — translate uses the "from" language; chat uses the target.
   wireMic($("translateMic"),
     function(){ return state.reversed ? bcpForLang(state.lang, state.dialect) : bcpForLang(otherLang(), null); },
-    function(t){ var ta=$("srcText"); ta.value = (ta.value ? ta.value+" " : "") + t; });
+    function(t){ var ta=$("srcText"); ta.value = (ta.value ? ta.value+" " : "") + t; },
+    $("translateHint"));
   wireMic($("chatMic"),
     function(){ return bcpForLang(state.lang, state.dialect); },
     function(t){ var ci=$("chatInput"); ci.value = (ci.value ? ci.value+" " : "") + t; });
