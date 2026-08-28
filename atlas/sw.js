@@ -4,8 +4,8 @@
  * opportunistically in their own bounded cache so areas you've seen keep
  * working offline; routing/search requests are never cached (live answers
  * or an honest failure). Bump CACHE to force a clean reinstall. */
-const CACHE = 'atlas-v49';
-const TILE_CACHE = 'atlas-tiles-v1';
+const CACHE = 'atlas-v50';
+const TILE_CACHE = 'atlas-tiles-v2'; // v2: purge watermarked CARTO tiles
 const OFFLINE_CACHE = 'atlas-offline-v1'; // downloaded route packs — never trimmed
 const TILE_LIMIT = 600;
 const ASSETS = ['./', './index.html', './engine.js', './config.js', './manifest.json',
