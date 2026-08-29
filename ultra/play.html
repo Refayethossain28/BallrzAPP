@@ -129,6 +129,37 @@
     document.documentElement.className += ' embed';
   }
 
+  /* iOS audio unlock: Safari creates the emulator's AudioContext suspended
+     (game audio starts via a file-input change, outside a clean gesture
+     window) and keeps it silent until a touch resumes it. Track every
+     context the emulator creates and resume them on the first interaction —
+     so sound just works instead of needing a mystery tap. Note the ringer
+     mute switch still silences Web Audio on iPhones; that part is the OS. */
+  (function () {
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC || typeof Proxy !== 'function') return;
+    var contexts = [];
+    var Wrapped = new Proxy(AC, {
+      construct: function (target, args) {
+        var ctx = new target(args[0]);
+        contexts.push(ctx);
+        return ctx;
+      }
+    });
+    if (window.AudioContext) window.AudioContext = Wrapped;
+    if (window.webkitAudioContext) window.webkitAudioContext = Wrapped;
+    function unlock() {
+      for (var i = 0; i < contexts.length; i++) {
+        try {
+          if (contexts[i].state === 'suspended') contexts[i].resume().catch(function () {});
+        } catch (e) {}
+      }
+    }
+    document.addEventListener('pointerdown', unlock, true);
+    document.addEventListener('touchend', unlock, true);
+    document.addEventListener('keydown', unlock, true);
+  })();
+
   /* Every system this deck can boot. `core` pins the exact libretro core we
      self-host in emujs/data/cores/ (so the loader never reaches for one we
      don't ship); `exts` drives extension auto-detect; `bios` shows the
