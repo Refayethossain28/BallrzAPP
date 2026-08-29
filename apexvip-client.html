@@ -955,6 +955,20 @@ function lineIcon(name,size=18,color='currentColor'){
     phone:'M4.2 3.5h2.9l1.4 3.8-1.9 1.4a10.8 10.8 0 004.7 4.7l1.4-1.9 3.8 1.4v2.9a1.4 1.4 0 01-1.5 1.4A14.2 14.2 0 012.8 5 1.4 1.4 0 014.2 3.5z',
     snow:'M10 2.8v14.4M4 6.2l12 7.6M16 6.2L4 13.8',
     warn:'M10 3.6l7.4 12.9H2.6L10 3.6zM10 8.6v3.4m0 2.4v.01',
+    sun:'M10 6.2a3.8 3.8 0 110 7.6 3.8 3.8 0 010-7.6zM10 2v1.8M10 16.2V18M2 10h1.8M16.2 10H18M4.3 4.3l1.3 1.3M14.4 14.4l1.3 1.3M15.7 4.3l-1.3 1.3M5.6 14.4l-1.3 1.3',
+    moon:'M16.7 12.4A7 7 0 017.6 3.3a7 7 0 109.1 9.1z',
+    leaf:'M4.4 15.6C4.2 8.8 8.6 4.4 15.6 4.4c.2 6.8-4.2 11.2-11.2 11.2zM4.4 15.6c2.4-5 5.4-8 9.2-9.2',
+    sliders:'M3 6.2h8M14.8 6.2H17M13 4.6a1.6 1.6 0 100 3.2 1.6 1.6 0 000-3.2zM3 13.8h2.2M9 13.8H17M7.2 12.2a1.6 1.6 0 100 3.2 1.6 1.6 0 000-3.2z',
+    cardpay:'M2.5 5.5h15v9h-15v-9zM2.5 8.4h15M5 12h3.4',
+    pin:'M10 17.8S4.6 13.2 4.6 8.9a5.4 5.4 0 1110.8 0c0 4.3-5.4 8.9-5.4 8.9zM10 10.7a1.9 1.9 0 110-3.8 1.9 1.9 0 010 3.8z',
+    building:'M4.5 17V4.2a1.2 1.2 0 011.2-1.2h5.6a1.2 1.2 0 011.2 1.2V17M2.8 17h14.4M12.5 8.2h2.3a1.2 1.2 0 011.2 1.2V17M6.9 5.9h1.5M6.9 8.9h1.5M6.9 11.9h1.5',
+    gift:'M3.6 9.4h12.8V16a1.2 1.2 0 01-1.2 1.2H4.8A1.2 1.2 0 013.6 16V9.4zM2.9 6.4h14.2v3H2.9v-3zM10 6.4v10.8M10 6.4S8.9 3 7 3a1.7 1.7 0 000 3.4h3zM10 6.4s1.1-3.4 3-3.4a1.7 1.7 0 010 3.4h-3z',
+    calendar:'M3.6 5.6h12.8v10.8H3.6V5.6zM3.6 8.8h12.8M6.9 3.6v2.5M13.1 3.6v2.5',
+    chat:'M3.6 4.6h12.8v8.2h-7.2L5.8 15.9v-3.1H3.6V4.6z',
+    shield:'M10 2.6l6.4 2.3v4.5c0 4-2.6 6.7-6.4 7.9-3.8-1.2-6.4-3.9-6.4-7.9V4.9L10 2.6z',
+    cookie:'M17.2 10.7A7.3 7.3 0 1110 2.7a2.8 2.8 0 003 3.3 2.6 2.6 0 002.9 2.9c.5.5 1 1.1 1.3 1.8zM7.6 8.3h.01M11.2 12.5h.01M7.2 12.9h.01',
+    doc:'M5.1 2.6h6.8l3 3v11.8H5.1V2.6zM11.9 2.6v3.2h3M7.5 9.2h5M7.5 12.2h5M7.5 15h3.2',
+    lock:'M5.1 9h9.8v8.4H5.1V9zM6.9 9V6.3a3.1 3.1 0 016.2 0V9M10 12.4v2.2',
   };
   return `<svg width="${size}" height="${size}" viewBox="0 0 20 20" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="${P[name]||P.star}"/></svg>`;
 }
@@ -962,6 +976,43 @@ function lineIcon(name,size=18,color='currentColor'){
 function catIcon(cat,size=18,color='currentColor'){
   const m={Hotel:'bed',Dining:'dining',Shopping:'bag',Culture:'landmark',Events:'ticket'};
   return lineIcon(m[cat]||'star',size,color);
+}
+
+// ── Brand crest ────────────────────────────────────────────────────────────
+// The ApexVIP monogram: an engraved "A" inside a coin-edge tick ring. Drawn
+// parametrically so the ticks sit perfectly — the kind of detail print
+// engravers cut by hand.
+function apexMark(size=64,color='var(--gold)'){
+  let ticks='';
+  for(let i=0;i<60;i++){
+    const a=i*6*Math.PI/180,r1=46,r2=i%5===0?42:44.5;
+    ticks+=`M${(50+r1*Math.sin(a)).toFixed(2)} ${(50-r1*Math.cos(a)).toFixed(2)}L${(50+r2*Math.sin(a)).toFixed(2)} ${(50-r2*Math.cos(a)).toFixed(2)}`;
+  }
+  return `<svg width="${size}" height="${size}" viewBox="0 0 100 100" fill="none" stroke="${color}" style="flex-shrink:0">
+    <circle cx="50" cy="50" r="49" stroke-width="1"/>
+    <circle cx="50" cy="50" r="46.2" stroke-width=".5" opacity=".65"/>
+    <path d="${ticks}" stroke-width=".7" opacity=".8"/>
+    <circle cx="50" cy="50" r="37.5" stroke-width=".5" opacity=".5"/>
+    <path d="M50 28L36.5 67M50 28L63.5 67M41.8 52.6h16.4" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M50 33.5L39.5 64M50 33.5L60.5 64" stroke-width=".7" opacity=".7" stroke-linecap="round"/>
+    <path d="M30 82.5h40M33.5 86h33" stroke-width=".5" opacity="0"/>
+  </svg>`;
+}
+
+// Guilloché engraving — the interference rosettes cut into banknotes and
+// share certificates. A dozen sine-modulated rings, half a pixel wide.
+function guilloche(w=360,h=190,color='rgba(212,175,110,.13)'){
+  let paths='';
+  for(let k=0;k<12;k++){
+    let d='';const R=30+k*6;
+    for(let i=0;i<=200;i++){
+      const t=i/200*2*Math.PI;
+      const r=R+11*Math.sin(7*t+k*.7)+4*Math.sin(13*t-k*1.3);
+      d+=(i?'L':'M')+(w/2+r*Math.cos(t)*1.75).toFixed(1)+' '+(h/2+r*Math.sin(t)*.8).toFixed(1);
+    }
+    paths+=`<path d="${d}Z"/>`;
+  }
+  return `<svg width="100%" height="100%" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid slice" fill="none" stroke="${color}" stroke-width=".5">${paths}</svg>`;
 }
 
 // ── Native push (iOS shell) ────────────────────────────────────────────────
@@ -2792,10 +2843,9 @@ splash: () => `
   </div>
   <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 40px;position:relative;z-index:2">
     <div style="text-align:center">
+      <div style="display:flex;justify-content:center;margin-bottom:26px;animation:scaleIn 1.4s .3s var(--ease-spring) both">${apexMark(72,'rgba(212,175,110,.92)')}</div>
       <div style="position:relative;display:inline-block;margin-bottom:20px;animation:logoReveal 5.5s .4s both ease-out">
-        <div class="diamond-text" style="font-family:var(--font-serif);font-size:76px;font-weight:300;letter-spacing:4px;line-height:1">ApexVIP</div>
-        <i class="sp sp1">✦</i><i class="sp sp2">✧</i><i class="sp sp3">✦</i>
-        <i class="sp sp4">✧</i><i class="sp sp5">✦</i><i class="sp sp6">✧</i><i class="sp sp7">✦</i>
+        <div class="diamond-text" style="font-family:var(--font-serif);font-size:64px;font-weight:300;letter-spacing:4px;line-height:1">ApexVIP</div>
       </div>
       <div style="font-size:11px;font-weight:400;color:rgba(255,255,255,.7);text-transform:uppercase;letter-spacing:6px;animation:subtitleReveal 1.4s 1.2s both ease-out;margin-bottom:10px">Luxury Concierge Services</div>
       <div style="font-size:11px;color:rgba(255,255,255,.45);letter-spacing:3px;animation:fadeIn 1s 2.2s both ease">London · Dubai · Global</div>
@@ -3984,12 +4034,12 @@ payment: () => {
       <div style="font-size:12px;color:var(--fg-4);letter-spacing:2px;text-transform:uppercase;animation:fadeIn .5s .5s both">Your journey is arranged</div>
       ${state.user?.name?`<div style="font-size:15px;color:var(--fg-3);margin-top:12px;font-family:var(--font-serif);font-style:italic;animation:fadeIn .5s .9s both;line-height:1.5">"Good ${new Date().getHours()<12?'morning':'afternoon'}, ${esc(state.user.name.split(' ')[0])}. Your chauffeur is briefed and awaits."</div>`:''}
     </div>
-    ${(()=>{const n=TRIPS.filter(t=>t.status==='completed').length+1;const ms={5:'🥂 Journey #5',10:'🌟 Journey #10',25:'🏆 Journey #25',50:'💎 Journey #50',100:'👑 Journey #100'};return ms[n]?`<div style="width:100%;text-align:center;padding:16px;background:rgba(200,169,126,.08);border:1px solid rgba(200,169,126,.2);border-radius:18px;margin-bottom:20px;animation:scaleIn .4s var(--ease-spring) both"><div style="font-size:28px;margin-bottom:6px">${ms[n].split(' ')[0]}</div><div style="font-size:15px;font-weight:700;color:var(--gold)">${ms[n]} milestone!</div><div style="font-size:12px;color:var(--fg-3);margin-top:4px">A personal note has been added to your account</div></div>`:''})()}
+    ${(()=>{const n=TRIPS.filter(t=>t.status==='completed').length+1;const ms={5:'Journey #5',10:'Journey #10',25:'Journey #25',50:'Journey #50',100:'Journey #100'};return ms[n]?`<div style="width:100%;text-align:center;padding:16px;background:rgba(200,169,126,.08);border:1px solid rgba(200,169,126,.2);border-radius:18px;margin-bottom:20px;animation:scaleIn .4s var(--ease-spring) both"><div style="display:flex;justify-content:center;margin-bottom:8px;color:var(--gold)">${lineIcon('star',24)}</div><div style="font-size:15px;font-weight:700;color:var(--gold)">${ms[n]} milestone</div><div style="font-size:12px;color:var(--fg-3);margin-top:4px">A personal note has been added to your account</div></div>`:''})()}
     <div style="font-size:12px;color:var(--fg-4);letter-spacing:2px;margin-bottom:8px">REFERENCE</div>
     <div style="font-size:24px;font-weight:800;color:var(--fg);letter-spacing:4px;margin-bottom:${state._lastApexEarned>0?'8px':'16px'}">${ref}</div>
     ${state.memberNumber?`<div style="font-size:11px;color:var(--gold);letter-spacing:1.5px;margin-bottom:${state._lastApexEarned>0?'16px':'28px'};opacity:.8">Charter Member #${state.memberNumber}</div>`:''}
     ${(()=>{if(state.booking?.vehicleId!=='vClassMulti')return'';const k=Math.max(2,Math.ceil((state.booking.passengers||8)/7));const refs=Array.from({length:k},(_,i)=>i?ref+'-'+(i+1):ref).join(' · ');return `<div style="width:100%;text-align:left;background:var(--gold-3,rgba(200,169,126,.12));border:1px solid var(--gold-2,rgba(200,169,126,.3));border-radius:16px;padding:16px 18px;margin-bottom:20px">
-      <div style="font-size:13px;font-weight:700;color:var(--gold);margin-bottom:6px">🚐 Convoy of ${k} V-Classes</div>
+      <div style="display:flex;align-items:center;gap:7px;font-size:13px;font-weight:700;color:var(--gold);margin-bottom:6px">${lineIcon('car',15)}Convoy of ${k} V-Classes</div>
       <div style="font-size:12px;color:var(--fg-3);line-height:1.6">Your party of ${state.booking.passengers} travels together — each van has its own chauffeur and arrives as one convoy. References: <span style="color:var(--fg)">${refs}</span></div>
     </div>`;})()}
     ${state.booking?.flight?flightStatusCard(state.booking.flight):''}
@@ -4560,14 +4610,24 @@ profile: () => {
     <div style="font-size:32px;font-weight:800">Profile</div>
   </div>
   <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding:0 22px 100px">
-    <div class="card" style="padding:18px;margin-bottom:16px;display:flex;align-items:center;gap:16px">
-      <div style="width:58px;height:58px;border-radius:18px;background:linear-gradient(135deg,#ffffff,#8B6914);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800;color:#000;flex-shrink:0">${initials}</div>
-      <div style="flex:1;min-width:0">
-        <div style="font-size:17px;font-weight:700">${u?.name||'Guest'}</div>
-        <div style="font-size:13px;color:var(--fg-3);margin-top:2px">${u?.email||''}</div>
-        ${state.memberNumber?`<div style="display:inline-flex;align-items:center;gap:5px;background:rgba(200,169,126,.1);border:1px solid rgba(200,169,126,.25);border-radius:20px;padding:3px 9px;margin-top:6px"><span style="font-size:10px;font-weight:700;color:var(--gold);letter-spacing:.5px">Charter Member #${state.memberNumber}</span></div>`:''}
+    <!-- Membership card: guilloché engraving under a graded black field -->
+    <div style="position:relative;border-radius:20px;overflow:hidden;background:#0b0906;border:1px solid rgba(212,175,110,.32);margin-bottom:16px">
+      <div style="position:absolute;inset:0">${guilloche()}</div>
+      <div style="position:absolute;inset:0;background:linear-gradient(115deg,rgba(5,4,3,.15) 0%,rgba(5,4,3,.55) 55%,rgba(5,4,3,.8) 100%)"></div>
+      <div style="position:relative;padding:18px 20px 16px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div style="font-size:9px;letter-spacing:3.5px;color:var(--gold);font-weight:600;padding-top:3px">APEXVIP</div>
+          <button style="background:rgba(5,4,3,.4);border:1px solid rgba(255,248,235,.16);color:var(--fg-3);padding:5px 12px;border-radius:9px;font-size:12px;cursor:pointer;font-family:inherit" onclick="go('edit-profile')">Edit</button>
+        </div>
+        <div style="margin-top:20px">
+          <div style="font-family:var(--font-serif);font-size:24px;font-weight:400;letter-spacing:.5px">${u?.name||'Guest'}</div>
+          <div style="font-size:11.5px;color:var(--fg-3);margin-top:3px">${u?.email||''}</div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:20px">
+          ${state.memberNumber?`<div style="font-size:9.5px;letter-spacing:2.5px;color:var(--gold);opacity:.9">CHARTER MEMBER · Nº ${state.memberNumber}</div>`:'<div></div>'}
+          <div style="opacity:.92">${apexMark(42)}</div>
+        </div>
       </div>
-      <button style="background:var(--surface-2);border:1px solid var(--border);color:var(--fg-3);padding:7px 14px;border-radius:10px;font-size:13px;cursor:pointer;font-family:inherit" onclick="go('edit-profile')">Edit</button>
     </div>
 
     <!-- APEX Loyalty Card -->
@@ -4598,34 +4658,34 @@ profile: () => {
     <button onclick="go('apex-benefits')" style="width:100%;margin-top:10px;margin-bottom:16px;padding:9px 16px;background:${apexTierColor(apexTier(state.apexBalance))}18;border:1px solid ${apexTierColor(apexTier(state.apexBalance))}44;border-radius:20px;font-size:12px;font-weight:700;color:${apexTierColor(apexTier(state.apexBalance))};cursor:pointer;letter-spacing:.5px;font-family:inherit">VIEW TIER BENEFITS & REWARDS →</button>
 
     <div style="background:rgba(34,197,94,.05);border:1px solid rgba(34,197,94,.14);border-radius:16px;padding:16px 18px;margin-bottom:16px;display:flex;align-items:center;gap:14px">
-      <div style="font-size:28px">🌱</div>
+      <div style="display:flex;color:#22c55e">${lineIcon('leaf',26)}</div>
       <div style="flex:1">
         <div style="font-size:13px;font-weight:700;margin-bottom:6px">Carbon Offset</div>
         <div style="display:flex;gap:12px">
           <div><div style="font-size:16px;font-weight:800;color:#22c55e">${(TRIPS.length*14.7*0.21).toFixed(1)} kg</div><div style="font-size:10px;color:var(--fg-4)">CO₂ offset</div></div>
-          <div><div style="font-size:16px;font-weight:800;color:#22c55e">${Math.max(1,Math.round(TRIPS.length*14.7*0.21/21))} 🌳</div><div style="font-size:10px;color:var(--fg-4)">trees equiv.</div></div>
+          <div><div style="font-size:16px;font-weight:800;color:#22c55e">${Math.max(1,Math.round(TRIPS.length*14.7*0.21/21))}</div><div style="font-size:10px;color:var(--fg-4)">trees equiv.</div></div>
         </div>
       </div>
     </div>
 
     <div style="background:var(--surface);border-radius:20px;overflow:hidden;border:1px solid var(--border);margin-bottom:12px">
       ${[
-        {icon:state.theme==='light'?'☀️':'🌙',label:'Appearance',action:'toggleTheme()'},
-        {icon:'🎛',label:'Journey Preferences',action:"go('preferences')"},
-        {icon:'💳',label:'Payment methods',action:"go('payment-methods')"},
-        {icon:'📍',label:'Saved addresses',action:"go('saved-addresses')"},
-        {icon:'🏢',label:'Corporate Account',action:"go('corporate')"},
-        {icon:'🎁',label:'Referral code',action:"go('referral')"},
-        {icon:'🎀',label:'Gift a ride',action:"go('gift-ride')"},
-        {icon:'📅',label:'Year in Review',action:"go('year-review')"},
-        {icon:'✦',label:'App Tour',action:"state.guideStep=0;go('guide')"},
-        {icon:'💬',label:'Help & support',action:"go('help')"},
-        {icon:'🛡',label:'Your data (GDPR)',action:"go('your-data')"},
-        {icon:'🍪',label:'Cookie preferences',action:"go('cookies')"},
-        {icon:'📄',label:'Terms & Conditions',action:"go('terms')"},
-        {icon:'🔒',label:'Privacy Policy',action:"go('privacy')"},
+        {icon:state.theme==='light'?'sun':'moon',label:'Appearance',action:'toggleTheme()'},
+        {icon:'sliders',label:'Journey Preferences',action:"go('preferences')"},
+        {icon:'cardpay',label:'Payment methods',action:"go('payment-methods')"},
+        {icon:'pin',label:'Saved addresses',action:"go('saved-addresses')"},
+        {icon:'building',label:'Corporate Account',action:"go('corporate')"},
+        {icon:'gift',label:'Referral code',action:"go('referral')"},
+        {icon:'gift',label:'Gift a ride',action:"go('gift-ride')"},
+        {icon:'calendar',label:'Year in Review',action:"go('year-review')"},
+        {icon:'star',label:'App Tour',action:"state.guideStep=0;go('guide')"},
+        {icon:'chat',label:'Help & support',action:"go('help')"},
+        {icon:'shield',label:'Your data (GDPR)',action:"go('your-data')"},
+        {icon:'cookie',label:'Cookie preferences',action:"go('cookies')"},
+        {icon:'doc',label:'Terms & Conditions',action:"go('terms')"},
+        {icon:'lock',label:'Privacy Policy',action:"go('privacy')"},
       ].map((r,i,a)=>`<div onclick="${r.action}" style="display:flex;align-items:center;gap:14px;padding:16px 18px;border-bottom:${i<a.length-1?'1px solid rgba(255,255,255,.05)':'none'};cursor:pointer">
-        <div style="width:36px;height:36px;border-radius:11px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">${r.icon}</div>
+        <div style="width:36px;height:36px;border-radius:11px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--gold)">${lineIcon(r.icon,17)}</div>
         <span style="font-size:15px;flex:1">${r.label}</span>
         <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.2)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
       </div>`).join('')}
@@ -5569,12 +5629,12 @@ profile: () => {
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
       ${[
-        {label:'Cities visited',value:cities,icon:'🌍'},
-        {label:'Total distance',value:distance+' km',icon:'📍'},
-        {label:'CO₂ offset',value:saved+' kg',icon:'🌱'},
-        {label:'APEX earned',value:state.apexBalance.toLocaleString(),icon:'◈'},
+        {label:'Cities visited',value:cities,icon:'landmark'},
+        {label:'Total distance',value:distance+' km',icon:'pin'},
+        {label:'CO₂ offset',value:saved+' kg',icon:'leaf'},
+        {label:'APEX earned',value:state.apexBalance.toLocaleString(),icon:'star'},
       ].map(s=>`<div style="background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:18px 16px;text-align:center">
-        <div style="font-size:24px;margin-bottom:6px">${s.icon}</div>
+        <div style="display:flex;justify-content:center;margin-bottom:8px;color:var(--gold)">${lineIcon(s.icon,20)}</div>
         <div style="font-size:20px;font-weight:800;margin-bottom:4px">${s.value}</div>
         <div style="font-size:10px;color:var(--fg-4);letter-spacing:.5px">${s.label}</div>
       </div>`).join('')}
