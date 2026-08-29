@@ -1227,6 +1227,40 @@ test('watch links: shareable live view, never a membership', () => {
   assert.equal(A.watchLink('https://x.test/', 'nope'), null);
 });
 
+test('ghost replay: time-true interpolation, grid key, finish verdict', () => {
+  // a 100 s drive north: 10 points, 10 s apart, 0.001° (~111 m) per step
+  const t0 = 1000000;
+  const track = { startedAt: t0, points: Array.from({ length: 10 }, (_, i) =>
+    ({ lat: 51 + i * 0.001, lon: -0.1, t: t0 + i * 10000, v: 11 })) };
+  // halfway between points 3 and 4 in time = halfway in space
+  const mid = A.ghostAt(track, 35000);
+  near(mid.lat, 51.0035, 1e-6);
+  assert.equal(mid.done, false);
+  near(mid.heading, 0, 1);           // heading due north
+  // start and past-the-end
+  near(A.ghostAt(track, 0).lat, 51, 1e-9);
+  const end = A.ghostAt(track, 999999);
+  near(end.lat, 51.009, 1e-9);
+  assert.equal(end.done, true);
+  // junk-safe
+  assert.equal(A.ghostAt(null, 10), null);
+  assert.equal(A.ghostAt({ points: [{ lat: 1, lon: 1, t: 5 }] }, 10), null);
+
+  // key: jitter within ~110 m maps to the same ghost, junk maps to none
+  assert.equal(A.ghostKey({ lat: 51.50041, lon: -0.12038 }), A.ghostKey({ lat: 51.50019, lon: -0.11989 }));
+  assert.notEqual(A.ghostKey({ lat: 51.5, lon: -0.12 }), A.ghostKey({ lat: 51.51, lon: -0.12 }));
+  assert.equal(A.ghostKey({ lat: NaN, lon: 0 }), null);
+  assert.equal(A.ghostKey(null), null);
+
+  // verdict: ghost took 90 s
+  const win = A.ghostResult(track, 75);
+  assert.ok(win.beat && win.deltaS === 15 && win.ghostS === 90);
+  const lose = A.ghostResult(track, 100);
+  assert.ok(!lose.beat && lose.deltaS === -10);
+  assert.equal(A.ghostResult(track, 0), null);
+  assert.equal(A.ghostResult(null, 60), null);
+});
+
 test('sponsored places: labelled, capped, relevant — never spam', () => {
   const now = Date.now();
   const items = [

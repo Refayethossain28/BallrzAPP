@@ -1406,7 +1406,10 @@ function drawFlatScene(night, withBuildings) {
   // inversion (deep slate ground, readable roads), 'pos' a quiet
   // desaturation; satellite dims a little after dark.
   if (FILTER_OK) {
-    if (layer === 'dark') ctx.filter = 'invert(1) hue-rotate(180deg) brightness(0.88) saturate(0.5)';
+    // lifted + saturated: casings, labels, water and big-road colours carry
+    // the night contrast (white-on-cream inverts to a ~5% gap — the POP has
+    // to come from everything else glowing)
+    if (layer === 'dark') ctx.filter = 'invert(1) hue-rotate(180deg) brightness(1.35) saturate(1.35)';
     else if (layer === 'pos') ctx.filter = 'saturate(0.25) brightness(1.04)';
     else if (layer === 'sat' && night) ctx.filter = 'brightness(0.82) saturate(0.9)';
   }
@@ -1443,8 +1446,13 @@ function drawFlatScene(night, withBuildings) {
       ctx.globalCompositeOperation = 'difference';
       ctx.fillStyle = '#fff';
       ctx.fillRect(fx0, fy0, fs, fs);
+      // screen-lift the inverted map so casings and labels glow, then a
+      // light multiply cools it — mirrors the filter path's lifted look
+      ctx.globalCompositeOperation = 'screen';
+      ctx.fillStyle = 'rgba(26,34,56,0.55)';
+      ctx.fillRect(fx0, fy0, fs, fs);
       ctx.globalCompositeOperation = 'multiply';
-      ctx.fillStyle = '#8f9bbd';
+      ctx.fillStyle = '#c9d2e8';
       ctx.fillRect(fx0, fy0, fs, fs);
     } else {
       ctx.globalCompositeOperation = 'saturation';
@@ -1494,6 +1502,7 @@ function drawFlatScene(night, withBuildings) {
   drawCameras();
   drawTraffic();
   drawAmbientCars();
+  drawGhostFlat();
   drawConvoy();
   drawSponsoredPins();
   drawTapPin();
@@ -1562,6 +1571,7 @@ function drawPerspective(night) {
 
   drawBuildingsPersp(night, ga, cam);
   drawCars3D(night, ga, cam);
+  drawGhost3D(ga, cam);
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
 }
 
@@ -3464,6 +3474,16 @@ function startNav(demo) {
   // 📼 flight recorder + ⏱ personal pace + 🏁 co-driver + 🛰 ghost mode state
   nav.track = A.newTrack(Date.now());
   nav.startTs = Date.now(); nav.predictedS = route.totalS;
+  // 👻 in game mode, a previous drive to this destination races you
+  ghostRace.track = null; ghostRace.active = false; ghostRace.finished = false;
+  if (gameOn() && trip.dest) {
+    var gh = load('atlas.ghosts', {})[A.ghostKey(trip.dest) || ''];
+    if (gh && gh.track && gh.track.points && gh.track.points.length > 1) {
+      ghostRace.track = gh.track; ghostRace.active = true;
+      var gs = Math.round((gh.track.points[gh.track.points.length - 1].t - gh.track.points[0].t) / 1000);
+      toast('👻 Ghost on track — your last drive here took ' + A.fmtDur(gs) + '. Beat it!');
+    }
+  }
   nav.notes = settings.codriver === 'on' ? A.paceNotes(route) : null;
   nav.noteIdx = 0; nav.noteSpoken = {};
   nav.lastAlong = 0; nav.lastFixTs = Date.now(); nav.ghostCount = 0; nav.ghosting = false;
@@ -3897,6 +3917,16 @@ function finishNav() {
       ecoLine = '🌱 ~' + imp.co2Kg + ' kg CO₂ · ~' + imp.litres + ' L fuel (est)';
     }
     if (!wasDemo) { save('atlas.lastTrack', track); logDrive(st, ecoMode); }
+    // 👻 the race verdict, then this run becomes the destination's new ghost
+    if (ghostRace.active && ghostRace.track) {
+      var gr = A.ghostResult(ghostRace.track, (Date.now() - (nav.startTs || Date.now())) / 1000);
+      if (gr) {
+        statsLine = (gr.beat ? '👻 Beat your ghost by ' + gr.deltaS + ' s! · '
+                             : '👻 Your ghost won by ' + (-gr.deltaS) + ' s · ') + statsLine;
+        speak(gr.beat ? 'You beat your ghost!' : 'Your ghost got there first.');
+      }
+    }
+    if (trip.dest) ghostSaveTrack(trip.dest, track);
   }
   // ⏱ personal pace: learn how you actually drive vs the prediction
   if (!wasDemo && nav.startTs && nav.predictedS > 60) {
@@ -3986,6 +4016,7 @@ $('btnArrivedDone').addEventListener('click', function () {
 function stopNavUI() {
   nav.active = false;
   disarmGuardian();
+  ghostRace.track = null; ghostRace.active = false; ghostRace.finished = false;
   $('gameScore').classList.remove('show');
   $('cockpit').classList.remove('show');
   wheelDeg = 0;
@@ -5057,6 +5088,90 @@ $('btnWatchShare').addEventListener('click', function () {
   } else toast(url);
 });
 
+/* ------------------------ 👻 ghost replay --------------------------------
+   Game mode only: when you navigate somewhere you've driven before, a
+   translucent ghost car replays your previous drive in real time — beat it
+   to the destination. Tracks are already recorded on every navigated
+   drive; arriving saves this run as the destination's new ghost (at most
+   8 destinations, oldest forgotten). Purely cosmetic, purely local. */
+var ghostRace = { track: null, active: false, finished: false };
+
+function ghostSaveTrack(dest, track) {
+  var key = A.ghostKey(dest);
+  if (!key || !track || !track.points || track.points.length < 8) return;
+  var all = load('atlas.ghosts', {});
+  all[key] = { track: { startedAt: track.startedAt, points: track.points },
+               name: dest.name || '', savedAt: Date.now() };
+  var keys = Object.keys(all);
+  if (keys.length > 8) {
+    keys.sort(function (x, y) { return (all[x].savedAt || 0) - (all[y].savedAt || 0); });
+    while (keys.length > 8) delete all[keys.shift()];
+  }
+  save('atlas.ghosts', all);
+}
+
+function ghostPosNow() {
+  if (!ghostRace.active || !ghostRace.track || !nav.active || !gameOn()) return null;
+  var g = A.ghostAt(ghostRace.track, Date.now() - (nav.startTs || Date.now()));
+  if (g && g.done && !ghostRace.finished) {
+    ghostRace.finished = true;
+    toast('👻 Your ghost has arrived — catch it next time!');
+  }
+  return g;
+}
+
+function drawGhostFlat() {
+  if (perspActive()) return;
+  var g = ghostPosNow();
+  if (!g) return;
+  var s = toScreen(g);
+  if (s.x < -40 || s.x > W + 40 || s.y < -40 || s.y > H + 40) return;
+  var mpp = A.metresPerPixel(view.lat, view.zoom);
+  var lenPx = Math.max(10, 4.6 / mpp * 1.6), widPx = lenPx * 0.52;
+  ctx.save();
+  ctx.translate(s.x, s.y);
+  ctx.rotate((g.heading || 0) * Math.PI / 180 + view.rot);
+  ctx.globalAlpha = 0.55;
+  ctx.shadowColor = 'rgba(125,255,244,0.9)'; ctx.shadowBlur = 14;
+  rrect(-widPx / 2, -lenPx / 2, widPx, lenPx, widPx * 0.32);
+  ctx.fillStyle = 'rgba(212,248,255,0.85)';
+  ctx.fill();
+  ctx.restore();
+  ctx.font = '14px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('👻', s.x, s.y - lenPx / 2 - 4);
+}
+
+/** The ghost in the Mode-7 cockpit: a glowing translucent shade on the
+ *  road ahead (or behind), projected through the same camera as the cars. */
+function drawGhost3D(ga, cam) {
+  var g = ghostPosNow();
+  if (!g) return;
+  var bz = view.zoom + PK_LOG;
+  var c0 = A.lonLatToWorld(view, bz);
+  var cos = Math.cos(view.rot), sin = Math.sin(view.rot);
+  var w = A.lonLatToWorld(g, bz);
+  var dx = w.x - c0.x, dy = w.y - c0.y;
+  var gx = ga.x + dx * cos - dy * sin, gy = ga.y + dx * sin + dy * cos;
+  var dyG = ga.y - gy;
+  if (dyG < 14 || dyG > ga.y - 4) return;
+  var k = cam.f / dyG;
+  var x = cam.sw / 2 + (gx - ga.x) * k;
+  var yB = cam.yh + cam.camH * k;
+  var mppG = A.metresPerPixel(view.lat, bz);
+  var hPx = Math.max(6, (1.6 / mppG) * k), wPx = Math.max(5, (2.0 / mppG) * k);
+  ctx.save();
+  ctx.globalAlpha = 0.6;
+  ctx.shadowColor = 'rgba(125,255,244,0.95)'; ctx.shadowBlur = 16;
+  ctx.beginPath();
+  ctx.ellipse(x, yB - hPx / 2, wPx / 2, hPx / 2, 0, 0, 7);
+  ctx.fillStyle = 'rgba(215,250,255,0.85)';
+  ctx.fill();
+  ctx.restore();
+  ctx.font = Math.round(Math.max(12, hPx * 0.55)) + 'px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('👻', x, yB - hPx * 1.2);
+}
+
 /* ------------------- 📣 sponsored places (paid pins) ---------------------
    Atlas's only advertising: local businesses pay for a labelled pin and at
    most one labelled search suggestion. Read-only data from Firestore
@@ -5367,7 +5482,7 @@ function drawDashMap(c, cw, ch) {
   var ts = 256 * sc;
   var tx0 = Math.floor((w0.x - (mw / 2) / sc) / 256), tx1 = Math.floor((w0.x + (mw / 2) / sc) / 256);
   var ty0 = Math.floor((w0.y - (mh / 2) / sc) / 256), ty1 = Math.floor((w0.y + (mh / 2) / sc) / 256);
-  if (layer === 'dark' && FILTER_OK) c.filter = 'invert(1) hue-rotate(180deg) brightness(0.88) saturate(0.5)';
+  if (layer === 'dark' && FILTER_OK) c.filter = 'invert(1) hue-rotate(180deg) brightness(1.35) saturate(1.35)';
   for (var tx = tx0; tx <= tx1; tx++) {
     for (var ty = ty0; ty <= ty1; ty++) {
       var t = getTile(layer, zi, tx, ty);
@@ -5378,11 +5493,13 @@ function drawDashMap(c, cw, ch) {
     }
   }
   if (layer === 'dark' && FILTER_OK) c.filter = 'none';
-  if (layer === 'dark' && !FILTER_OK) { // same night look without canvas filters
+  if (layer === 'dark' && !FILTER_OK) { // same lifted night look without canvas filters
     c.globalCompositeOperation = 'difference';
     c.fillStyle = '#fff'; c.fillRect(x0, y0, mw, mh);
+    c.globalCompositeOperation = 'screen';
+    c.fillStyle = 'rgba(26,34,56,0.55)'; c.fillRect(x0, y0, mw, mh);
     c.globalCompositeOperation = 'multiply';
-    c.fillStyle = '#8f9bbd'; c.fillRect(x0, y0, mw, mh);
+    c.fillStyle = '#c9d2e8'; c.fillRect(x0, y0, mw, mh);
     c.globalCompositeOperation = 'source-over';
   }
   if (nav.active && nav.route) {
