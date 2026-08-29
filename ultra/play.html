@@ -175,9 +175,11 @@
     { id: 'segaMS',     name: 'Master System',    core: 'genesis_plus_gx',  exts: ['sms'], ejs: 'genesis_plus_gx' },
     { id: 'segaGG',     name: 'Game Gear',        core: 'genesis_plus_gx',  exts: ['gg'] },
     { id: 'segaMD',     name: 'Mega Drive',       core: 'genesis_plus_gx',  exts: ['md', 'gen', 'smd'] },
-    { id: 'segaCD',     name: 'Sega CD',          core: 'genesis_plus_gx',  exts: [], bios: true },
+    { id: 'segaCD',     name: 'Sega CD',          core: 'genesis_plus_gx',  exts: ['cue', 'iso', 'chd'], bios: true,
+      hint: 'Needs the Sega CD BIOS named exactly bios_CD_U.bin (US), bios_CD_E.bin (EU) or bios_CD_J.bin (JP) — put it inside the game zip with that name.' },
     { id: 'sega32x',    name: 'Sega 32X',         core: 'picodrive',        exts: ['32x'] },
-    { id: 'segaSaturn', name: 'Saturn',           core: 'yabause',          exts: [], bios: true },
+    { id: 'segaSaturn', name: 'Saturn',           core: 'yabause',          exts: ['cue', 'iso', 'mds', 'ccd', 'chd'], bios: true, biosName: 'saturn_bios.bin',
+      hint: 'The core only finds the BIOS under the exact name saturn_bios.bin. Pick it in the BIOS slot with a loose disc image and it’s renamed for you; with a zipped game, put it inside the zip under that name. Fair warning: Saturn is heavy — big discs can exhaust a phone tab’s memory, and speed will be low.' },
     { id: 'psx',        name: 'PlayStation',      core: 'pcsx_rearmed',     exts: ['pbp', 'chd'], bios: true },
     { id: 'pce',        name: 'TurboGrafx-16',    core: 'mednafen_pce',     exts: ['pce'] },
     { id: 'ngp',        name: 'Neo Geo Pocket',   core: 'mednafen_ngp',     exts: ['ngp', 'ngc'] },
@@ -188,7 +190,8 @@
     { id: 'atari7800',  name: 'Atari 7800',       core: 'prosystem',        exts: ['a78'] },
     { id: 'lynx',       name: 'Atari Lynx',       core: 'handy',            exts: ['lnx'] },
     { id: 'jaguar',     name: 'Atari Jaguar',     core: 'virtualjaguar',    exts: ['j64', 'jag'] },
-    { id: '3do',        name: '3DO',              core: 'opera',            exts: [], bios: true },
+    { id: '3do',        name: '3DO',              core: 'opera',            exts: ['iso', 'cue', 'chd'], bios: true, biosName: 'panafz10.bin',
+      hint: 'Needs the Panasonic FZ-10 BIOS: pick it in the BIOS slot with a loose disc image (renamed for you to panafz10.bin), or include it in the game zip under that name.' },
     { id: 'arcade',     name: 'Arcade · FBNeo',   core: 'fbneo',            exts: [],
       hint: 'Arcade zips are picky: keep the .zip intact, named by its arcade shortname (e.g. sfa3.zip), from the FBNeo ROM set. Clones also need their parent — prefer a non-merged set. A wrong set lands you in the RetroArch menu.' },
     { id: 'mame',       name: 'Arcade · MAME',    core: 'mame2003_plus',    exts: [],
@@ -247,11 +250,85 @@
 
   function warn(msg) { note.className = 'warn'; note.textContent = msg; }
 
+  /* Build an uncompressed (STORE) zip in the browser. This exists because
+     the emulator names a separately-supplied BIOS after its blob URL — a
+     random UUID — so cores that look for an exact filename (yabause wants
+     saturn_bios.bin) never find it. Bundling game + BIOS into one zip,
+     with the BIOS entry renamed to what the core expects, sidesteps the
+     whole path: the loader extracts both into the core's filesystem. */
+  var crcTable = null;
+  function crc32(bytes) {
+    if (!crcTable) {
+      crcTable = [];
+      for (var n = 0; n < 256; n++) {
+        var c = n;
+        for (var k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+        crcTable[n] = c >>> 0;
+      }
+    }
+    var crc = 0xFFFFFFFF;
+    for (var i = 0; i < bytes.length; i++) crc = crcTable[(crc ^ bytes[i]) & 0xFF] ^ (crc >>> 8);
+    return (crc ^ 0xFFFFFFFF) >>> 0;
+  }
+  function le16(v) { return [v & 255, (v >> 8) & 255]; }
+  function le32(v) { return [v & 255, (v >>> 8) & 255, (v >>> 16) & 255, (v >>> 24) & 255]; }
+  function buildStoredZip(entries) { // entries: [{name, bytes}]
+    var chunks = [], central = [], offset = 0;
+    for (var i = 0; i < entries.length; i++) {
+      var name = new TextEncoder().encode(entries[i].name);
+      var bytes = entries[i].bytes;
+      var crc = crc32(bytes);
+      var head = new Uint8Array([].concat(
+        [0x50, 0x4B, 0x03, 0x04], le16(20), le16(0), le16(0), le16(0), le16(0),
+        le32(crc), le32(bytes.length), le32(bytes.length), le16(name.length), le16(0)));
+      chunks.push(head, name, bytes);
+      central.push(new Uint8Array([].concat(
+        [0x50, 0x4B, 0x01, 0x02], le16(20), le16(20), le16(0), le16(0), le16(0), le16(0),
+        le32(crc), le32(bytes.length), le32(bytes.length), le16(name.length),
+        le16(0), le16(0), le16(0), le16(0), le32(0), le32(offset))));
+      central.push(name);
+      offset += head.length + name.length + bytes.length;
+    }
+    var cdSize = 0;
+    for (var c = 0; c < central.length; c++) { chunks.push(central[c]); cdSize += central[c].length; }
+    chunks.push(new Uint8Array([].concat(
+      [0x50, 0x4B, 0x05, 0x06], le16(0), le16(0), le16(entries.length), le16(entries.length),
+      le32(cdSize), le32(offset), le16(0))));
+    return new Blob(chunks, { type: 'application/zip' });
+  }
+
   function launch(file) {
     if (loaded) return;
     if (!selected) { warn('Pick a system first — I can’t tell what "' + file.name + '" is for.'); return; }
+    var biosFile = biosInput.files && biosInput.files[0];
+    if (biosFile && /\.(zip|7z)$/i.test(file.name)) {
+      warn('With a zipped game, put the BIOS inside the zip named exactly ' +
+           (selected.biosName || 'what the core expects') + ' — one zip with everything in it.');
+      return;
+    }
+    if (biosFile) {
+      // loose disc + BIOS: bundle them, renaming the BIOS to the core's name
+      loaded = true;
+      drop.className = 'drop hide';
+      Promise.all([file.arrayBuffer(), biosFile.arrayBuffer()]).then(function (bufs) {
+        var zip = buildStoredZip([
+          { name: file.name, bytes: new Uint8Array(bufs[0]) },
+          { name: selected.biosName || biosFile.name, bytes: new Uint8Array(bufs[1]) }
+        ]);
+        startEmulator(new File([zip], file.name.replace(/\.[^.]+$/, '') + '.zip', { type: 'application/zip' }));
+      }).catch(function () {
+        loaded = false;
+        drop.className = 'drop';
+        warn('Couldn’t read those files — try again.');
+      });
+      return;
+    }
     loaded = true;
     drop.className = 'drop hide';
+    startEmulator(file);
+  }
+
+  function startEmulator(file) {
     // EmulatorJS configuration — self-hosted, non-threaded, no external calls.
     window.EJS_player = '#game';
     // The system id lets the loader apply per-system controls and disc
@@ -268,9 +345,6 @@
     // RetroArch menu. Consoles get the tidier bare name.
     var keepExt = selected.id === 'arcade' || selected.id === 'mame';
     window.EJS_gameName = keepExt ? file.name : file.name.replace(/\.[^.]+$/, '');
-    if (biosInput.files && biosInput.files[0]) {
-      window.EJS_biosUrl = URL.createObjectURL(biosInput.files[0]);
-    }
     window.EJS_startOnLoaded = true;
     // Progress survives: save states default to browser storage (IndexedDB,
     // per game name — the menu's Save/Load State buttons) instead of file
