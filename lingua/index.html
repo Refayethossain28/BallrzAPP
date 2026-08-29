@@ -1161,21 +1161,71 @@ function listen(bcp, btn, onText, onError){
         msg = "No microphone found — check another app isn't holding the mic and try again.";
       } else if(code === "no-speech"){
         msg = "Nothing heard — tap the mic and speak clearly.";
+      } else if(code === "language-not-supported"){
+        msg = "Your device's speech recognition doesn't support this language.";
       } else if(code){
         msg = "Mic error: " + code + ". Try reloading the page.";
       }
-      if(msg && onError) onError(msg);
+      if(msg && onError) onError(msg, code);
     };
     r.onend = function(){ if(btn) btn.classList.remove("rec"); _rec = null; };
     r.start();
   }catch(e){ if(btn) btn.classList.remove("rec"); _rec = null; }
 }
+/* Languages the device's speech service has been proven not to support
+   (English worked right after the language failed). Remembered on-device so
+   the mic can fall back to English without re-failing every tap. */
+var MIC_UNSUP_KEY = "lingua.micUnsupported.v1";
+function micLangOf(bcp){ return String(bcp || "").split("-")[0].toLowerCase(); }
+function micLangName(bcp){
+  var l = micLangOf(bcp);
+  try{ var dn = new Intl.DisplayNames(["en"], { type:"language" }); return dn.of(l) || l; }catch(e){ return l; }
+}
+function micUnsupported(){ try{ return JSON.parse(localStorage.getItem(MIC_UNSUP_KEY) || "[]") || []; }catch(e){ return []; } }
+function micMarkUnsupported(bcp){
+  try{
+    var a = micUnsupported(), l = micLangOf(bcp);
+    if(a.indexOf(l) < 0){ a.push(l); localStorage.setItem(MIC_UNSUP_KEY, JSON.stringify(a)); }
+  }catch(e){}
+}
 function wireMic(btn, getBcp, onText, hintEl){
   if(!btn) return;
   if(!speechInOK()){ btn.disabled = true; btn.style.opacity = "0.45"; btn.title = "Speech input not supported on this browser"; return; }
+  function setHint(msg, bad){
+    if(!hintEl) return;
+    hintEl.textContent = msg;
+    hintEl.style.color = bad ? "var(--bad)" : "var(--muted2)";
+  }
+  /* The language failed at the service level: dictation may be off, OR the
+     device simply has no recognizer for that language. Offer a one-tap
+     English probe — if English works, the language is the problem, so
+     remember it and fall back to English on future taps. */
+  function offerEnglish(bcp, failMsg){
+    if(!hintEl) return;
+    setHint(failMsg + " If Dictation is already ON, " + micLangName(bcp) + " speech may not be available on this device — ", true);
+    var a = document.createElement("button");
+    a.type = "button"; a.className = "mini"; a.textContent = "🎤 try English instead";
+    a.addEventListener("click", function(){
+      listen("en-US", btn, function(t){
+        micMarkUnsupported(bcp);
+        onText(t);
+        setHint("🎤 English works — " + micLangName(bcp) + " dictation isn't available on this device, so the mic will listen in English from now on.", false);
+      }, function(m2){ setHint(m2, true); });
+    });
+    hintEl.appendChild(a);
+  }
   on(btn,"click",function(){
-    listen(getBcp(), btn, onText, function(msg){
-      if(hintEl){ hintEl.textContent = msg; hintEl.style.color = "var(--bad)"; }
+    var bcp = getBcp();
+    if(micLangOf(bcp) !== "en" && micUnsupported().indexOf(micLangOf(bcp)) >= 0){
+      setHint("🎤 Listening in English — " + micLangName(bcp) + " dictation isn't available on this device. Speak English, or type the " + micLangName(bcp) + " text instead.", false);
+      bcp = "en-US";
+    }
+    listen(bcp, btn, onText, function(msg, code){
+      if((code === "service-not-allowed" || code === "language-not-supported") && micLangOf(bcp) !== "en"){
+        offerEnglish(bcp, msg);
+      } else {
+        setHint(msg, true);
+      }
     });
   });
 }
