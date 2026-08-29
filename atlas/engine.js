@@ -1990,6 +1990,47 @@
     return Math.max(-120, Math.min(120, d * 3.2));
   }
 
+  /* ====================== 👻 ghost replay (game mode) ===================== */
+
+  /** Where the ghost car is `elapsedMs` after ITS drive began: linear
+   *  interpolation along the recorded track by timestamp. Past the end it
+   *  parks at the finish with done:true. Null for junk/short tracks. */
+  function ghostAt(track, elapsedMs) {
+    if (!track || !track.points || track.points.length < 2) return null;
+    var pts = track.points;
+    var t = pts[0].t + Math.max(0, elapsedMs || 0);
+    var last = pts[pts.length - 1];
+    if (!(typeof last.t === 'number') || !(typeof pts[0].t === 'number')) return null;
+    if (t >= last.t) {
+      return { lat: last.lat, lon: last.lon,
+               heading: bearing(pts[pts.length - 2], last), done: true };
+    }
+    var lo = 0, hi = pts.length - 1;
+    while (lo + 1 < hi) { var mid = (lo + hi) >> 1; if (pts[mid].t <= t) lo = mid; else hi = mid; }
+    var a = pts[lo], b = pts[lo + 1];
+    var f = (t - a.t) / Math.max(1, b.t - a.t);
+    return { lat: a.lat + (b.lat - a.lat) * f, lon: a.lon + (b.lon - a.lon) * f,
+             heading: bearing(a, b), done: false };
+  }
+
+  /** Stable store key for a destination — a ~110 m grid, so GPS jitter and
+   *  re-geocoding still find the same ghost. */
+  function ghostKey(dest) {
+    if (!dest || typeof dest.lat !== 'number' || typeof dest.lon !== 'number' ||
+        !isFinite(dest.lat) || !isFinite(dest.lon)) return null;
+    return dest.lat.toFixed(3) + ',' + dest.lon.toFixed(3);
+  }
+
+  /** The finish-line verdict: how this run compared to the ghost's time. */
+  function ghostResult(ghostTrack, myDurS) {
+    if (!ghostTrack || !ghostTrack.points || ghostTrack.points.length < 2) return null;
+    var pts = ghostTrack.points;
+    var gs = Math.round((pts[pts.length - 1].t - pts[0].t) / 1000);
+    if (!(gs > 0) || !(typeof myDurS === 'number') || !(myDurS > 0)) return null;
+    var d = Math.round(gs - myDurS);
+    return { ghostS: gs, deltaS: d, beat: d > 0 };
+  }
+
   /* ===================== 📣 sponsored places (ads) ======================== */
   /* The only advertising Atlas shows: local businesses as labelled map pins
    * and at most ONE labelled search suggestion — never overlays, never
@@ -2288,6 +2329,7 @@
     carHeading: carHeading, shareEtaText: shareEtaText, tripImpact: tripImpact,
     crashSignature: crashSignature, guardianMessage: guardianMessage,
     validSponsored: validSponsored, sponsoredNearby: sponsoredNearby, sponsoredForSearch: sponsoredForSearch,
+    ghostAt: ghostAt, ghostKey: ghostKey, ghostResult: ghostResult,
     calmScore: calmScore, calmestRoute: calmestRoute, etaBand: etaBand,
     rankParking: rankParking, walkInfo: walkInfo,
     evUsableRangeM: evUsableRangeM, evChargePlan: evChargePlan, parseMetres: parseMetres, vehicleHazards: vehicleHazards,
