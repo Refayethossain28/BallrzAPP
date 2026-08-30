@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Ballrz — Interactive Demo</title>
+<style>
+  :root {
+    --bg: #000; --surface: #16161a; --border: #2a2a31;
+    --text: #fff; --muted: #9b9ba3; --accent: #ff6b00; --like: #ff2d55;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: radial-gradient(circle at 50% 0%, #1a1a22, #000 60%);
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    padding: 20px; color: var(--text);
+  }
+  .wrap { text-align: center; }
+  .demo-note { color: var(--muted); font-size: 13px; margin-bottom: 14px; max-width: 380px; }
+  .demo-note b { color: var(--accent); }
+  /* Phone frame */
+  .phone {
+    width: 380px; max-width: 100%; height: 800px; max-height: 90vh;
+    background: var(--bg); border-radius: 44px; border: 12px solid #1c1c22;
+    box-shadow: 0 30px 80px rgba(0,0,0,.6); overflow: hidden; position: relative;
+  }
+  .notch {
+    position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+    width: 150px; height: 26px; background: #1c1c22;
+    border-bottom-left-radius: 16px; border-bottom-right-radius: 16px; z-index: 50;
+  }
+  .screen { position: absolute; inset: 0; overflow: hidden; }
+
+  /* ---------- Feed ---------- */
+  .feed { height: 100%; overflow-y: scroll; scroll-snap-type: y mandatory; scrollbar-width: none; }
+  .feed::-webkit-scrollbar { display: none; }
+  .card {
+    height: 100%; scroll-snap-align: start; position: relative;
+    display: flex; align-items: flex-end; overflow: hidden;
+  }
+  .card .video {
+    position: absolute; inset: 0; background-size: cover; background-position: center;
+    display: flex; align-items: center; justify-content: center; font-size: 80px;
+  }
+  .card .scrim {
+    position: absolute; inset: 0;
+    background: linear-gradient(to top, rgba(0,0,0,.7) 0%, transparent 35%, transparent 75%, rgba(0,0,0,.3) 100%);
+  }
+  .rail {
+    position: absolute; right: 12px; bottom: 130px; z-index: 5;
+    display: flex; flex-direction: column; align-items: center; gap: 20px;
+  }
+  .avatar {
+    width: 46px; height: 46px; border-radius: 50%; background: var(--accent);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 18px; border: 2px solid #fff; cursor: pointer;
+  }
+  .action { display: flex; flex-direction: column; align-items: center; cursor: pointer; }
+  .action .icon { font-size: 30px; line-height: 1; }
+  .action .icon.liked { color: var(--like); }
+  .action .label { font-size: 12px; font-weight: 600; margin-top: 3px; }
+  .action.small .icon { font-size: 22px; opacity: .75; }
+  .caption-box { position: absolute; left: 14px; right: 80px; bottom: 56px; z-index: 5; }
+  .caption-box .handle { font-weight: 800; font-size: 16px; cursor: pointer; }
+  .caption-box .caption { font-size: 14px; margin-top: 4px; }
+  .caption-box .ctag { color: var(--accent); font-weight: 700; font-size: 12px; margin-top: 4px; }
+
+  /* Top tabs */
+  .tabs {
+    position: absolute; top: 34px; left: 0; right: 0; z-index: 20;
+    display: flex; justify-content: center; align-items: center; gap: 14px;
+  }
+  .tab { font-weight: 700; font-size: 16px; color: rgba(255,255,255,.55); cursor: pointer; text-shadow: 0 1px 4px rgba(0,0,0,.6); }
+  .tab.active { color: #fff; font-size: 17px; }
+  .tab-div { color: rgba(255,255,255,.35); }
+
+  /* Challenge banner */
+  .banner {
+    position: absolute; top: 66px; left: 14px; right: 14px; z-index: 20;
+    background: rgba(22,22,26,.85); border: 1px solid var(--accent); border-radius: 20px;
+    padding: 8px 14px; font-size: 13px; font-weight: 600; text-align: center; cursor: pointer;
+  }
+
+  /* FAB */
+  .fab {
+    position: absolute; right: 18px; bottom: 24px; z-index: 30;
+    width: 56px; height: 56px; border-radius: 28px; background: var(--accent);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 30px; font-weight: 700; cursor: pointer; border: none; color: #fff;
+    box-shadow: 0 6px 18px rgba(255,107,0,.4);
+  }
+
+  /* ---------- Sheets / sub-screens ---------- */
+  .sheet {
+    position: absolute; inset: 0; z-index: 40; background: var(--bg);
+    transform: translateY(100%); transition: transform .28s ease; display: flex; flex-direction: column;
+  }
+  .sheet.open { transform: translateY(0); }
+  .sheet-head {
+    display: flex; align-items: center; gap: 12px; padding: 16px;
+    border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .sheet-head .back { font-size: 22px; cursor: pointer; }
+  .sheet-head .title { font-weight: 800; font-size: 17px; }
+  .sheet-body { flex: 1; overflow-y: auto; padding: 16px; }
+
+  /* Comments */
+  .comment { padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .comment .ch { color: var(--accent); font-weight: 600; font-size: 13px; }
+  .comment .ct { font-size: 14px; margin-top: 2px; }
+  .comment-input {
+    display: flex; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--border); flex-shrink: 0;
+  }
+  .comment-input input {
+    flex: 1; background: var(--surface); border: none; border-radius: 20px;
+    padding: 10px 14px; color: var(--text); font-size: 14px; outline: none;
+  }
+  .comment-input button { background: none; border: none; color: var(--accent); font-weight: 700; cursor: pointer; }
+
+  /* Profile */
+  .prof-head { text-align: center; padding: 24px 16px; }
+  .prof-avatar {
+    width: 80px; height: 80px; border-radius: 40px; background: var(--accent);
+    margin: 0 auto; display: flex; align-items: center; justify-content: center;
+    font-size: 32px; font-weight: 800;
+  }
+  .prof-handle { font-size: 20px; font-weight: 800; margin-top: 10px; }
+  .prof-bio { color: var(--muted); margin-top: 4px; font-size: 14px; }
+  .stats { display: flex; justify-content: center; gap: 32px; margin: 16px 0; }
+  .stat .v { font-size: 18px; font-weight: 800; }
+  .stat .l { font-size: 12px; color: var(--muted); }
+  .btn {
+    background: var(--accent); color: #fff; border: none; border-radius: 24px;
+    padding: 10px 40px; font-weight: 700; cursor: pointer; font-size: 14px;
+  }
+  .btn.outline { background: var(--surface); border: 1px solid var(--border); color: var(--text); }
+  .vid-row { padding: 14px 0; border-top: 1px solid var(--border); }
+  .vid-row .vc { font-weight: 600; }
+  .vid-row .vm { color: var(--muted); font-size: 12px; margin-top: 2px; }
+
+  /* Challenge */
+  .ch-hero { text-align: center; padding: 8px 0 16px; }
+  .ch-hero .tr { font-size: 48px; }
+  .ch-hero .t { font-size: 22px; font-weight: 800; margin-top: 4px; }
+  .ch-hero .d { color: var(--muted); margin-top: 4px; }
+  .ch-hero .dl { color: var(--accent); font-weight: 700; margin-top: 6px; }
+  .lb-title { font-weight: 800; margin: 18px 0 4px; }
+  .lb-row { display: flex; align-items: center; gap: 14px; padding: 12px 0; border-top: 1px solid var(--border); }
+  .lb-row .rank { font-weight: 800; width: 26px; color: var(--muted); }
+  .lb-row .rank.top { color: var(--accent); }
+  .lb-row .info { flex: 1; }
+  .lb-row .lh { font-weight: 700; }
+  .lb-row .lc { color: var(--muted); font-size: 12px; }
+  .lb-row .ll { color: var(--like); font-weight: 700; }
+
+  /* Upload mock */
+  .up-pick {
+    background: var(--surface); border: 1px dashed var(--border); border-radius: 16px;
+    padding: 32px; text-align: center; color: var(--muted); cursor: pointer;
+  }
+  .toast {
+    position: absolute; bottom: 90px; left: 50%; transform: translateX(-50%);
+    background: rgba(22,22,26,.95); border: 1px solid var(--border); color: #fff;
+    padding: 10px 18px; border-radius: 20px; font-size: 13px; z-index: 60;
+    opacity: 0; transition: opacity .2s; pointer-events: none; white-space: nowrap;
+  }
+  .toast.show { opacity: 1; }
+  .links { margin-top: 16px; font-size: 13px; color: var(--muted); }
+  .links a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="demo-note">
+      <b>BALLRZ</b> — interactive demo. Swipe/scroll the feed, tap ♥, comment, open a profile or the 🏆 challenge.
+      Sample data only — the real app runs on React Native + Firebase.
+    </div>
+
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="screen">
+        <!-- Feed -->
+        <div class="tabs">
+          <span class="tab active" data-tab="forYou" onclick="switchTab('forYou')">For You</span>
+          <span class="tab-div">|</span>
+          <span class="tab" data-tab="following" onclick="switchTab('following')">Following</span>
+        </div>
+        <div class="banner" onclick="openChallenge()">🏆 Deep Three Week — tap for leaderboard</div>
+        <div class="feed" id="feed"></div>
+        <button class="fab" onclick="openUpload()">＋</button>
+
+        <!-- Comments sheet -->
+        <div class="sheet" id="commentsSheet">
+          <div class="sheet-head">
+            <span class="back" onclick="closeSheet('commentsSheet')">✕</span>
+            <span class="title">Comments</span>
+          </div>
+          <div class="sheet-body" id="commentsBody"></div>
+          <div class="comment-input">
+            <input id="commentInput" placeholder="Add a comment…" onkeydown="if(event.key==='Enter')sendComment()" />
+            <button onclick="sendComment()">Send</button>
+          </div>
+        </div>
+
+        <!-- Profile sheet -->
+        <div class="sheet" id="profileSheet">
+          <div class="sheet-head">
+            <span class="back" onclick="closeSheet('profileSheet')">←</span>
+            <span class="title">Profile</span>
+          </div>
+          <div class="sheet-body" id="profileBody"></div>
+        </div>
+
+        <!-- Challenge sheet -->
+        <div class="sheet" id="challengeSheet">
+          <div class="sheet-head">
+            <span class="back" onclick="closeSheet('challengeSheet')">←</span>
+            <span class="title">Weekly Challenge</span>
+          </div>
+          <div class="sheet-body" id="challengeBody"></div>
+        </div>
+
+        <!-- Upload sheet -->
+        <div class="sheet" id="uploadSheet">
+          <div class="sheet-head">
+            <span class="back" onclick="closeSheet('uploadSheet')">←</span>
+            <span class="title">Post a highlight</span>
+          </div>
+          <div class="sheet-body">
+            <div class="up-pick" id="upPick" onclick="mockPick()">🎥<br/>Tap to pick / record a highlight (max 60s)</div>
+            <input id="upCaption" class="comment-input" style="margin-top:16px;border:none;border-radius:12px;background:var(--surface);padding:14px;color:#fff;width:100%;outline:none" placeholder="Caption — what's the play?" />
+            <div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface);border-radius:12px;padding:14px;margin-top:14px">
+              <div><div style="font-weight:700">🏆 Deep Three Week</div><div style="color:var(--muted);font-size:12px">Post your best shot from downtown.</div></div>
+              <input type="checkbox" id="upChallenge" style="width:20px;height:20px;accent-color:var(--accent)" />
+            </div>
+            <button class="btn" style="width:100%;margin-top:18px" onclick="mockPost()">Post highlight</button>
+          </div>
+        </div>
+
+        <div class="toast" id="toast"></div>
+      </div>
+    </div>
+
+    <div class="links">
+      Real app source &amp; setup → <a href="https://github.com/Refayethossain28/BallrzAPP/tree/claude/most-popular-app-world-yr87pq/ballrz" target="_blank">ballrz/ on GitHub</a>
+    </div>
+  </div>
+
+<script>
+  // ---------- Sample data ----------
+  const gradients = [
+    'linear-gradient(135deg,#ff6b00,#7a1f00)',
+    'linear-gradient(135deg,#0066ff,#001a4d)',
+    'linear-gradient(135deg,#9b00ff,#2d004d)',
+    'linear-gradient(135deg,#00c853,#003d1a)',
+    'linear-gradient(135deg,#ff2d55,#4d000d)'
+  ];
+  const users = {
+    hooper23: { bio: 'Point guard • NYC runs 🏀', followers: 12400, following: 312 },
+    splashbro: { bio: 'If I see space, I shoot.', followers: 88200, following: 95 },
+    rim_rocker: { bio: 'Above the rim only.', followers: 5300, following: 540 },
+    ankle_dr: { bio: 'Handles for days 🪄', followers: 23900, following: 201 },
+  };
+  let videos = [
+    { id:'v1', owner:'splashbro', cap:'Logo three, wet 🌊 #deepthree', likes:18420, liked:false, challenge:true,
+      comments:[{h:'hooper23',t:'Range is unlimited 😤'},{h:'rim_rocker',t:'Wettttt'}] },
+    { id:'v2', owner:'ankle_dr', cap:'Sent him to the shadow realm 👻', likes:9310, liked:false, challenge:false,
+      comments:[{h:'splashbro',t:'He folded 😂'}] },
+    { id:'v3', owner:'rim_rocker', cap:'Poster night. 360 finish.', likes:24100, liked:false, challenge:false,
+      comments:[{h:'ankle_dr',t:'Insane hops'},{h:'hooper23',t:'🚀🚀'}] },
+    { id:'v4', owner:'hooper23', cap:'Buzzer beater to win the run 🔔', likes:6720, liked:false, challenge:true,
+      comments:[{h:'splashbro',t:'Clutch gene'}] },
+  ];
+  const following = ['splashbro','hooper23']; // who "you" follow
+  let tab = 'forYou';
+  let activeVideoId = null;
+
+  // ---------- Helpers ----------
+  const fmt = n => n >= 1000 ? (n/1000).toFixed(1).replace(/\.0$/,'') + 'k' : '' + n;
+  const initial = h => h.charAt(0).toUpperCase();
+  const vidIndex = (() => { let i = 0; return o => { const m = {}; videos.forEach((v,k)=>m[v.owner]=k); return gradients[Object.keys(m).indexOf(o) % gradients.length] || gradients[0]; }; })();
+  const gFor = owner => gradients[Object.keys(users).indexOf(owner) % gradients.length];
+  const emojiFor = owner => ({splashbro:'🎯',ankle_dr:'🪄',rim_rocker:'🔥',hooper23:'⛹️'}[owner] || '🏀');
+
+  // ---------- Feed ----------
+  function rankForYou(list){
+    const now = Date.now();
+    return [...list].sort((a,b)=> (b.likes + b.comments.length*40) - (a.likes + a.comments.length*40));
+  }
+  function visibleVideos(){
+    if (tab === 'following') return videos.filter(v => following.includes(v.owner));
+    return rankForYou(videos);
+  }
+  function renderFeed(){
+    const list = visibleVideos();
+    const feed = document.getElementById('feed');
+    if (!list.length){
+      feed.innerHTML = `<div class="card"><div class="video" style="background:#111">👀</div>
+        <div class="caption-box" style="bottom:50%;text-align:center;right:14px"><div class="caption">Follow some ballers and their posts show up here.</div></div></div>`;
+      return;
+    }
+    feed.innerHTML = list.map(v => `
+      <div class="card">
+        <div class="video" style="background:${gFor(v.owner)}">${emojiFor(v.owner)}</div>
+        <div class="scrim"></div>
+        <div class="rail">
+          <div class="avatar" onclick="openProfile('${v.owner}')">${initial(v.owner)}</div>
+          <div class="action" onclick="toggleLike('${v.id}')">
+            <span class="icon ${v.liked?'liked':''}">${v.liked?'♥':'♡'}</span>
+            <span class="label">${fmt(v.likes)}</span>
+          </div>
+          <div class="action" onclick="openComments('${v.id}')">
+            <span class="icon">💬</span><span class="label">${v.comments.length}</span>
+          </div>
+          <div class="action" onclick="share('${v.owner}')"><span class="icon">↗</span><span class="label">Share</span></div>
+          <div class="action small" onclick="report()"><span class="icon">⚑</span></div>
+        </div>
+        <div class="caption-box">
+          <div class="handle" onclick="openProfile('${v.owner}')">@${v.owner}</div>
+          <div class="caption">${v.cap}</div>
+          ${v.challenge?'<div class="ctag">🏆 Weekly Challenge entry</div>':''}
+        </div>
+      </div>`).join('');
+  }
+
+  function switchTab(t){
+    tab = t;
+    document.querySelectorAll('.tab').forEach(el => el.classList.toggle('active', el.dataset.tab === t));
+    renderFeed();
+    document.getElementById('feed').scrollTop = 0;
+  }
+
+  function toggleLike(id){
+    const v = videos.find(x=>x.id===id);
+    v.liked = !v.liked; v.likes += v.liked ? 1 : -1;
+    renderFeed();
+    if (v.liked) toast('Liked ❤️');
+  }
+
+  // ---------- Comments ----------
+  function openComments(id){
+    activeVideoId = id;
+    renderComments();
+    openSheet('commentsSheet');
+  }
+  function renderComments(){
+    const v = videos.find(x=>x.id===activeVideoId);
+    const body = document.getElementById('commentsBody');
+    body.innerHTML = v.comments.length
+      ? v.comments.map(c=>`<div class="comment"><div class="ch">@${c.h}</div><div class="ct">${c.t}</div></div>`).join('')
+      : `<div style="color:var(--muted);text-align:center;padding:30px">No comments yet — start it off.</div>`;
+  }
+  function sendComment(){
+    const input = document.getElementById('commentInput');
+    const text = input.value.trim();
+    if (!text) return;
+    const v = videos.find(x=>x.id===activeVideoId);
+    v.comments.unshift({h:'you', t:text});
+    input.value = '';
+    renderComments(); renderFeed();
+  }
+
+  // ---------- Profile ----------
+  function openProfile(handle){
+    const u = users[handle];
+    const posts = videos.filter(v=>v.owner===handle);
+    const isFollowing = following.includes(handle);
+    document.getElementById('profileBody').innerHTML = `
+      <div class="prof-head">
+        <div class="prof-avatar">${initial(handle)}</div>
+        <div class="prof-handle">@${handle}</div>
+        <div class="prof-bio">${u.bio}</div>
+        <div class="stats">
+          <div class="stat"><div class="v">${fmt(u.followers)}</div><div class="l">Followers</div></div>
+          <div class="stat"><div class="v">${u.following}</div><div class="l">Following</div></div>
+          <div class="stat"><div class="v">${posts.length}</div><div class="l">Posts</div></div>
+        </div>
+        <button class="btn ${isFollowing?'outline':''}" id="followBtn" onclick="toggleFollow('${handle}')">${isFollowing?'Following ✓':'Follow'}</button>
+      </div>
+      ${posts.map(v=>`<div class="vid-row"><div class="vc">${v.cap}</div><div class="vm">♥ ${fmt(v.likes)} · 💬 ${v.comments.length}${v.challenge?' · 🏆':''}</div></div>`).join('') || '<div style="color:var(--muted);text-align:center;padding:20px">No highlights yet.</div>'}
+    `;
+    openSheet('profileSheet');
+  }
+  function toggleFollow(handle){
+    const i = following.indexOf(handle);
+    if (i>=0){ following.splice(i,1); users[handle].followers--; }
+    else { following.push(handle); users[handle].followers++; }
+    openProfile(handle);
+  }
+
+  // ---------- Challenge ----------
+  function openChallenge(){
+    const entries = videos.filter(v=>v.challenge).sort((a,b)=>b.likes-a.likes);
+    document.getElementById('challengeBody').innerHTML = `
+      <div class="ch-hero">
+        <div class="tr">🏆</div>
+        <div class="t">Deep Three Week</div>
+        <div class="d">Post your best shot from way downtown.</div>
+        <div class="dl">3 days left</div>
+        <button class="btn" style="margin-top:10px" onclick="closeSheet('challengeSheet');openUpload()">Enter the challenge</button>
+      </div>
+      <div class="lb-title">Leaderboard</div>
+      ${entries.map((v,i)=>`<div class="lb-row" onclick="closeSheet('challengeSheet');openProfile('${v.owner}')">
+        <span class="rank ${i<3?'top':''}">${i+1}</span>
+        <div class="info"><div class="lh">@${v.owner}</div><div class="lc">${v.cap}</div></div>
+        <span class="ll">♥ ${fmt(v.likes)}</span></div>`).join('')}
+    `;
+    openSheet('challengeSheet');
+  }
+
+  // ---------- Upload (mock) ----------
+  let picked = false;
+  function openUpload(){ picked=false; document.getElementById('upPick').innerHTML='🎥<br/>Tap to pick / record a highlight (max 60s)'; openSheet('uploadSheet'); }
+  function mockPick(){ picked=true; document.getElementById('upPick').innerHTML='✅<br/>Highlight selected — looking clean'; }
+  function mockPost(){
+    if(!picked){ toast('Pick a video first'); return; }
+    const cap = document.getElementById('upCaption').value.trim() || 'My new highlight';
+    const isCh = document.getElementById('upChallenge').checked;
+    videos.unshift({ id:'v'+Date.now(), owner:'hooper23', cap, likes:0, liked:false, challenge:isCh, comments:[] });
+    closeSheet('uploadSheet');
+    switchTab('forYou');
+    toast('Posted! 🏀');
+  }
+
+  // ---------- Misc ----------
+  function share(owner){ toast('Share sheet → @'+owner); }
+  function report(){ toast('Reported — thanks 🙏'); }
+  function openSheet(id){ document.getElementById(id).classList.add('open'); }
+  function closeSheet(id){ document.getElementById(id).classList.remove('open'); }
+  let toastTimer;
+  function toast(msg){
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastTimer); toastTimer = setTimeout(()=>t.classList.remove('show'), 1600);
+  }
+
+  renderFeed();
+</script>
+</body>
+</html>
