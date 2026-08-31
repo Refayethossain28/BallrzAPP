@@ -33,11 +33,16 @@
     clientForm: null,       // {id} while editing a client
   };
 
-  /* ── API (shared-key aware) ── */
+  /* ── API (shared-key aware; optionally pointed at a remote Fare server,
+        so the static copy in the hub can drive a hosted backend) ── */
   function getKey() { try { return localStorage.getItem('fareKey') || ''; } catch (e) { return ''; } }
+  function getServer() {
+    try { return (localStorage.getItem('fareServer') || '').trim().replace(/\/+$/, ''); }
+    catch (e) { return ''; }
+  }
   function withKey(url) {
     var k = getKey();
-    return k ? url + (url.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(k) : url;
+    return getServer() + (k ? url + (url.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(k) : url);
   }
   function api(path, opts) {
     opts = opts || {};
@@ -46,7 +51,7 @@
       init.headers['Content-Type'] = 'application/json';
       init.body = JSON.stringify(opts.body);
     }
-    return fetch(path, init).then(function (res) {
+    return fetch(getServer() + path, init).then(function (res) {
       if (res.status === 401 && !opts.retried) {
         var k = prompt('This Fare server needs its access key:');
         if (k) {
@@ -528,6 +533,12 @@
     }
     else if (act === 'clear-logo') { state.settings.logo = null; toast('Logo removed — tap Save settings'); render(); }
     else if (act === 'backup') { location.href = withKey('/api/backup'); }
+    else if (act === 'save-server') {
+      var url = String($('srv-url').value || '').trim().replace(/\/+$/, '');
+      if (url && !/^https?:\/\//.test(url)) url = 'https://' + url;
+      try { localStorage.setItem('fareServer', url); } catch (e) { /* private mode */ }
+      location.reload();
+    }
   }
 
   /* ── boot ── */
@@ -570,7 +581,17 @@
       .then(function () { return Promise.all([loadJobs(), loadInvoices()]); })
       .then(render)
       .catch(function (err) {
-        $('view').innerHTML = '<div class="empty">Could not reach the Fare server.<br><span class="small">' + esc(String(err && err.message || err)) + '</span></div>';
+        // No API here (e.g. the static copy in the Ballrz hub) or the server
+        // is down — offer to connect to a hosted Fare server instead.
+        $('view').innerHTML =
+          '<div class="empty" style="padding-bottom:10px">Could not reach a Fare server here.<br>' +
+          '<span class="small">' + esc(String(err && err.message || err)) + '</span></div>' +
+          '<div class="card"><b>Connect to your Fare server</b>' +
+          '<p class="muted small">Fare keeps your jobs and invoices on your own server (see fare/README.md). ' +
+          'Enter its address once — this page remembers it.</p>' +
+          '<input id="srv-url" inputmode="url" placeholder="e.g. https://fare-xxxx.onrender.com" value="' + esc(getServer()) + '">' +
+          '<button class="primary" data-act="save-server">Connect</button>' +
+          '<p class="muted small">Running it yourself? <code>node fare/server.mjs</code> then open that address.</p></div>';
       });
   }
 
