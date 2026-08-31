@@ -116,6 +116,15 @@ jobs:
             echo "auto-published /$d"
           done
 
+          # Fare — the chauffeur back-office client (fare/README.md). The API
+          # is a Node server (deployed via render.yaml); this publishes the
+          # static client, which connects to it through its in-app Connect
+          # screen. The auto-publish loop above keys on a top-level
+          # index.html, and Fare's page lives in fare/public/ — so without
+          # this block the hub's Fare tile 404s.
+          mkdir -p _site/fare/public
+          cp -r fare/public/. _site/fare/public/ 2>/dev/null || true
+
           # Fixr — luxury ground-transport + concierge prototype (static demo).
           # The full Fixr app is a Node server; deploy it to Render (fixr/app/DEPLOY.md).
           mkdir -p _site/fixr
