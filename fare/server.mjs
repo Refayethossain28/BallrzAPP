@@ -44,9 +44,18 @@ const MIME = {
   '.webmanifest': 'application/manifest+json',
 };
 
+// CORS lets the static copy of the app (e.g. the Ballrz hub on Pages) drive
+// this server from another origin. Data stays guarded by FARE_KEY.
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, x-fare-key',
+  'Access-Control-Max-Age': '86400',
+};
+
 function sendJson(res, code, obj) {
   const body = JSON.stringify(obj);
-  res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...CORS });
   res.end(body);
 }
 const bad = (res, msg, code = 400) => sendJson(res, code, { error: msg });
@@ -175,6 +184,7 @@ async function api(req, res, url) {
       'Content-Type': 'application/pdf',
       'Content-Disposition': `attachment; filename="${inv.displayNumber}-${client}.pdf"`,
       'Cache-Control': 'no-store',
+      ...CORS,
     });
     return res.end(pdf);
   }
@@ -201,6 +211,7 @@ async function api(req, res, url) {
       'Content-Type': 'application/json',
       'Content-Disposition': `attachment; filename="fare-backup-${todayISO()}.json"`,
       'Cache-Control': 'no-store',
+      ...CORS,
     });
     return res.end(JSON.stringify(dump, null, 1));
   }
@@ -233,6 +244,10 @@ function serveStatic(res, pathname) {
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  if (req.method === 'OPTIONS' && url.pathname.startsWith('/api/')) {
+    res.writeHead(204, CORS);
+    return res.end();
+  }
   if (url.pathname.startsWith('/api/')) {
     api(req, res, url).catch((err) => {
       if (!res.headersSent) bad(res, String(err.message || err), err.message === 'body too large' ? 413 : 500);

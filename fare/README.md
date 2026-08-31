@@ -53,7 +53,17 @@ Any Node 22+ host works. Two things matter:
 
 Example (Render): web service, `startCommand: node fare/server.mjs`,
 `NODE_VERSION=22.12.0`+, disk mounted at `/data`, `FARE_DB_PATH=/data/fare.db`,
-`FARE_KEY=<random>`.
+`FARE_KEY=<random>` — all pre-configured in the repo's `render.yaml` blueprint.
+
+### The Ballrz hub tile
+
+The hub links to the static copy of this page on the published site. That copy
+has no API behind it, so on first open it shows a **Connect to your Fare
+server** screen — paste your deployed server's address (e.g.
+`https://fare-xxxx.onrender.com`) once and it's remembered. The API serves
+CORS headers so this cross-origin setup works; data stays guarded by
+`FARE_KEY`. Opening the deployed server's own URL directly works too, with no
+connect step.
 
 ## v2 seams (deliberate)
 
