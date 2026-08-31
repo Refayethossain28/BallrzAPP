@@ -82,6 +82,36 @@ services:
       # PORT is injected by Render; server.mjs honours it. Leave
       # VOYAGER_ALLOW_PRIVATE unset in production (keeps the SSRF guard on).
 
+  # Fare — chauffeur job logging + monthly invoicing (fare/README.md).
+  # Zero dependencies; needs Node 22.13+ for the built-in node:sqlite.
+  # NOTE: the disk is what keeps the SQLite file across deploys/restarts,
+  # and Render disks require a paid instance — hence plan: starter. Do not
+  # downgrade to free: the free filesystem is wiped on every deploy and the
+  # invoicing data would be lost.
+  - type: web
+    name: fare
+    runtime: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: node fare/server.mjs
+    healthCheckPath: /api/health
+    autoDeploy: true
+    disk:
+      name: fare-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: "22.22.2"
+      # Keep the database on the mounted disk, not the ephemeral filesystem.
+      - key: FARE_DB_PATH
+        value: /data/fare.db
+      # Shared secret guarding the API (client list + bank details). Render
+      # generates it; read it in the dashboard (Environment tab) and enter it
+      # in the app when prompted on first load.
+      - key: FARE_KEY
+        generateValue: true
+
 databases:
   - name: fixr-db
     plan: free
