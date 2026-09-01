@@ -969,6 +969,8 @@ function lineIcon(name,size=18,color='currentColor'){
     cookie:'M17.2 10.7A7.3 7.3 0 1110 2.7a2.8 2.8 0 003 3.3 2.6 2.6 0 002.9 2.9c.5.5 1 1.1 1.3 1.8zM7.6 8.3h.01M11.2 12.5h.01M7.2 12.9h.01',
     doc:'M5.1 2.6h6.8l3 3v11.8H5.1V2.6zM11.9 2.6v3.2h3M7.5 9.2h5M7.5 12.2h5M7.5 15h3.2',
     lock:'M5.1 9h9.8v8.4H5.1V9zM6.9 9V6.3a3.1 3.1 0 016.2 0V9M10 12.4v2.2',
+    mail:'M2.6 5.2h14.8v9.6H2.6V5.2zM2.6 5.6l7.4 5.8 7.4-5.8',
+    search:'M8.8 2.8a6 6 0 110 12 6 6 0 010-12zM13.2 13.2l4 4',
   };
   return `<svg width="${size}" height="${size}" viewBox="0 0 20 20" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="${P[name]||P.star}"/></svg>`;
 }
@@ -1013,6 +1015,100 @@ function guilloche(w=360,h=190,color='rgba(212,175,110,.13)'){
     paths+=`<path d="${d}Z"/>`;
   }
   return `<svg width="100%" height="100%" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid slice" fill="none" stroke="${color}" stroke-width=".5">${paths}</svg>`;
+}
+
+// ── Apex Command ───────────────────────────────────────────────────────────
+// One field that reaches everything: actions, screens, and the member's own
+// trips. Opened from the home search button, ⌘K/Ctrl+K, or "/" on desktop.
+function apexCmdIndex(){
+  const A=[
+    {l:'Book a journey',s:'Chauffeur · airport · hourly · daily',i:'car',a:"go('chauffeur')",k:'ride car s-class v-class airport transfer book'},
+    {l:'Search flights',s:'Compare via Skyscanner',i:'ticket',a:"go('flight-search')",k:'fly plane aviation'},
+    {l:'Search hotels',s:'Compare four providers',i:'bed',a:"go('hotel-search')",k:'stay room suite'},
+    {l:'Concierge',s:'Your personal desk',i:'star',a:"go('concierge')",k:'velvet membership desk request'},
+    {l:'My trips',s:'Upcoming & past journeys',i:'clock',a:"go('trips')",k:'history receipts bookings export'},
+    {l:'Profile & membership card',s:'Rewards · settings',i:'shield',a:"go('profile')",k:'account apex coins charter'},
+    {l:'Referral code',s:'Invite & earn APEX',i:'gift',a:"go('referral')",k:'invite friend share code'},
+    {l:'Gift a ride',s:'Send a journey to someone',i:'gift',a:"go('gift-ride')",k:'present'},
+    {l:'Corporate account',s:'Teams · PAs · monthly invoicing',i:'building',a:"go('corporate')",k:'business company work'},
+    {l:'Payment methods',s:'Cards on file',i:'cardpay',a:"go('payment-methods')",k:'billing card'},
+    {l:'Journey preferences',s:'Cabin temperature · music · privacy',i:'sliders',a:"go('preferences')",k:'settings discrete'},
+    {l:'Help & support',s:'Talk to us',i:'chat',a:"go('help')",k:'contact question'},
+  ];
+  TRIPS.slice(0,20).forEach(t=>{
+    const id=String(t.id||'').replace(/[^\w-]/g,'');
+    A.push({l:esc(`${t.pickup||''} → ${t.dropoff||''}`),s:esc([t.ref,t.date,t.time].filter(Boolean).join(' · ')),
+            i:'car',a:`go('trip-detail',TRIPS.find(x=>x.id==='${id}'))`,k:'trip journey '+(t.status||'')});
+  });
+  return A;
+}
+function cmdResults(q){
+  q=(q||'').trim().toLowerCase();
+  const all=apexCmdIndex();
+  const hits=(q?all.filter(e=>(e.l+' '+e.s+' '+e.k).toLowerCase().includes(q)):all.slice(0,7)).slice(0,8);
+  if(!hits.length)return `<div style="padding:26px;text-align:center;color:var(--fg-4);font-size:13px">Nothing for “${esc(q)}” — try “flights”, “gift”, or a destination.</div>`;
+  return hits.map(e=>`
+    <div onclick="closeCmd();${e.a.replace(/"/g,'&quot;')}" onmouseover="this.style.background='var(--surface-2)'" onmouseout="this.style.background=''" style="display:flex;align-items:center;gap:13px;padding:12px 14px;border-radius:14px;cursor:pointer">
+      <div style="width:34px;height:34px;border-radius:10px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--gold)">${lineIcon(e.i,16)}</div>
+      <div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e.l}</div>${e.s?`<div style="font-size:11.5px;color:var(--fg-4);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e.s}</div>`:''}</div>
+      <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="var(--fg-4)" stroke-width="2" style="flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+    </div>`).join('');
+}
+function cmdOverlay(){
+  if(!state._cmdOpen)return'';
+  return `<div onclick="closeCmd()" style="position:fixed;inset:0;background:rgba(5,4,3,.72);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);z-index:9500;animation:fadeIn .18s ease"></div>
+  <div style="position:fixed;top:max(64px,env(safe-area-inset-top));left:16px;right:16px;margin:0 auto;max-width:460px;background:var(--bg);border:1px solid var(--gold-2);border-radius:22px;z-index:9501;overflow:hidden;animation:scaleIn .22s var(--ease-spring);box-shadow:0 24px 80px rgba(0,0,0,.55)">
+    <div style="display:flex;align-items:center;gap:12px;padding:15px 18px;border-bottom:1px solid var(--divider)">
+      <span style="display:flex;color:var(--gold)">${lineIcon('search',16)}</span>
+      <input id="cmd-input" placeholder="Where to? Try “flights” or “gift a ride”" autocomplete="off"
+        oninput="const r=document.getElementById('cmd-results');if(r)r.innerHTML=cmdResults(this.value)"
+        style="flex:1;background:none;border:none;outline:none;color:var(--fg);font-size:15px;font-family:inherit;min-width:0"/>
+      <span onclick="closeCmd()" style="font-size:10.5px;color:var(--fg-4);border:1px solid var(--border);border-radius:7px;padding:2px 7px;cursor:pointer;letter-spacing:.5px">ESC</span>
+    </div>
+    <div id="cmd-results" style="max-height:min(52vh,420px);overflow-y:auto;padding:8px">${cmdResults('')}</div>
+  </div>`;
+}
+function openCmd(){state._cmdOpen=true;haptic('light');renderNow();const i=document.getElementById('cmd-input');if(i)i.focus();}
+function closeCmd(){state._cmdOpen=false;render();}
+document.addEventListener('keydown',e=>{
+  if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();state._cmdOpen?closeCmd():openCmd();}
+  else if(e.key==='Escape'&&state._cmdOpen)closeCmd();
+  else if(e.key==='/'&&!state._cmdOpen&&!/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName||'')){e.preventDefault();openCmd();}
+});
+
+// ── Living membership card ─────────────────────────────────────────────────
+// The card tilts under the pointer and catches light where it's touched —
+// object behaviour, not screen behaviour.
+function cardTilt(el,ev){
+  const p=ev.touches?ev.touches[0]:ev;if(!p)return;
+  const r=el.getBoundingClientRect();
+  const x=(p.clientX-r.left)/r.width-.5,y=(p.clientY-r.top)/r.height-.5;
+  el.style.transition='none';
+  el.style.transform=`perspective(700px) rotateY(${(x*7).toFixed(2)}deg) rotateX(${(-y*7).toFixed(2)}deg)`;
+  const sh=el.querySelector('.card-sheen');
+  if(sh){sh.style.opacity='1';sh.style.background=`radial-gradient(230px circle at ${((x+.5)*100).toFixed(1)}% ${((y+.5)*100).toFixed(1)}%,rgba(245,240,232,.09),transparent 70%)`;}
+}
+function cardTiltReset(el){
+  el.style.transition='transform .4s var(--ease-spring)';
+  el.style.transform='perspective(700px)';
+  const sh=el.querySelector('.card-sheen');if(sh)sh.style.opacity='0';
+}
+
+// T-minus until a trip, from its date + time fields. Empty string when the
+// data can't be parsed or the trip is long past.
+function tripTMinus(t){
+  try{
+    const d=new Date(`${t.date}T${t.time||'12:00'}:00`);
+    if(isNaN(d.getTime()))return'';
+    const ms=d.getTime()-Date.now();
+    if(ms<-36e5)return'';
+    if(ms<6e4)return'Now';
+    const m=Math.round(ms/6e4);
+    if(m<60)return `In ${m} min`;
+    const h=Math.floor(m/60);
+    if(h<48)return `In ${h}h ${m%60?(m%60)+'m':''}`.trim();
+    return `In ${Math.round(h/24)} days`;
+  }catch(e){return''}
 }
 
 // ── Native push (iOS shell) ────────────────────────────────────────────────
@@ -2968,9 +3064,6 @@ home: () => {
     <div>
       <div style="position:relative;display:inline-block">
         <div class="diamond-text" style="font-size:10px;letter-spacing:3px;font-weight:600;text-transform:uppercase;animation:diamondShimmer 6s linear infinite">ApexVIP</div>
-        <i class="sp" style="top:-7px;left:-3px;font-size:5px;animation:sparkle 3.2s 1.8s ease-in-out infinite">✦</i>
-        <i class="sp" style="top:-5px;right:-6px;font-size:4px;animation:sparkleB 4.1s 3.4s ease-in-out infinite">✧</i>
-        <i class="sp" style="bottom:-4px;left:28%;font-size:4px;animation:sparkle 3.7s 5s ease-in-out infinite">✦</i>
       </div>
       <div style="font-size:18px;font-weight:700;margin-top:3px">${name?`${greeting}, ${name}`:greeting}</div>
       <div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap">
@@ -2984,9 +3077,14 @@ home: () => {
         </div>` : ''}
       </div>
     </div>
-    <div onclick="go('notifications')" style="position:relative;width:42px;height:42px;border-radius:50%;background:var(--surface-2);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.09);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
-      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
-      ${(typeof NOTIFS!=='undefined'&&NOTIFS.length)?'<div style="position:absolute;top:9px;right:9px;width:7px;height:7px;border-radius:50%;background:var(--gold);border:1.5px solid rgba(0,0,0,.4)"></div>':''}
+    <div style="display:flex;gap:10px;flex-shrink:0">
+      <div onclick="openCmd()" style="width:42px;height:42px;border-radius:50%;background:var(--surface-2);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.09);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--fg)">
+        ${lineIcon('search',17)}
+      </div>
+      <div onclick="go('notifications')" style="position:relative;width:42px;height:42px;border-radius:50%;background:var(--surface-2);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.09);display:flex;align-items:center;justify-content:center;cursor:pointer">
+        <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+        ${(typeof NOTIFS!=='undefined'&&NOTIFS.length)?'<div style="position:absolute;top:9px;right:9px;width:7px;height:7px;border-radius:50%;background:var(--gold);border:1.5px solid rgba(0,0,0,.4)"></div>':''}
+      </div>
     </div>
   </div>
 
@@ -2994,9 +3092,9 @@ home: () => {
     <div class="sheet-handle"></div>
     <div class="stagger" style="padding:20px 22px 0;height:calc(100% - 26px);overflow-y:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding-bottom:calc(env(safe-area-inset-bottom) + 128px)">
 
-      ${(()=>{const b=state.user?.birthday||localStorage.getItem('apex_birthday');if(!b)return'';const today=new Date();const bday=new Date(b);const next=new Date(today.getFullYear(),bday.getMonth(),bday.getDate());if(next<today)next.setFullYear(today.getFullYear()+1);const days=Math.round((next-today)/86400000);if(days>7)return'';return`<div style="display:flex;align-items:center;gap:12px;background:rgba(200,169,126,.08);border:1px solid rgba(200,169,126,.2);border-radius:16px;padding:14px 18px;margin-bottom:14px"><div style="font-size:24px">🎂</div><div><div style="font-size:13px;font-weight:700;color:var(--gold)">Happy ${days===0?'Birthday!':'upcoming birthday!'}</div><div style="font-size:12px;color:var(--fg-3);margin-top:2px">${days===0?'A complimentary upgrade awaits you today.':'Your birthday journey credit activates in '+days+' day'+(days===1?'':'s')+'.'}</div></div></div>`;})()}
+      ${(()=>{const b=state.user?.birthday||localStorage.getItem('apex_birthday');if(!b)return'';const today=new Date();const bday=new Date(b);const next=new Date(today.getFullYear(),bday.getMonth(),bday.getDate());if(next<today)next.setFullYear(today.getFullYear()+1);const days=Math.round((next-today)/86400000);if(days>7)return'';return`<div style="display:flex;align-items:center;gap:12px;background:rgba(200,169,126,.08);border:1px solid rgba(200,169,126,.2);border-radius:16px;padding:14px 18px;margin-bottom:14px"><div style="display:flex;color:var(--gold)">${lineIcon('gift',22)}</div><div><div style="font-size:13px;font-weight:700;color:var(--gold)">Happy ${days===0?'Birthday!':'upcoming birthday!'}</div><div style="font-size:12px;color:var(--fg-3);margin-top:2px">${days===0?'A complimentary upgrade awaits you today.':'Your birthday journey credit activates in '+days+' day'+(days===1?'':'s')+'.'}</div></div></div>`;})()}
       ${(FIREBASE_ENABLED && auth?.currentUser && auth.currentUser.emailVerified===false)?`<div style="display:flex;align-items:center;gap:12px;background:rgba(212,168,67,.08);border:1px solid rgba(212,168,67,.28);border-radius:16px;padding:13px 16px;margin-bottom:14px">
-        <div style="font-size:20px">✉️</div>
+        <div style="display:flex;color:var(--gold)">${lineIcon('mail',20)}</div>
         <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;color:var(--gold)">Verify your email</div><div style="font-size:12px;color:var(--fg-3);margin-top:1px">Confirm ${auth.currentUser.email} to secure your account.</div></div>
         <button onclick="resendVerification()" style="background:var(--gold);border:none;border-radius:10px;color:#0c0b09;font-size:12px;font-weight:800;padding:8px 12px;cursor:pointer;font-family:inherit;flex-shrink:0">Resend</button>
       </div>`:''}
@@ -3027,14 +3125,17 @@ ${upcoming.length ? `
       <div class="section-label" style="margin-bottom:12px">Upcoming</div>
       ${upcoming.slice(0,1).map(t=>`
       <div onclick="go('trip-detail',TRIPS.find(x=>x.id==='${t.id}'))" style="display:flex;align-items:center;gap:14px;background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:15px 16px;cursor:pointer;margin-bottom:10px">
-        <div style="width:42px;height:42px;border-radius:14px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;flex-shrink:0">
-          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#ffffff" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M5 3l14 9-14 9V3z"/></svg>
+        <div style="width:42px;height:42px;border-radius:14px;background:rgba(212,175,110,.08);border:1px solid rgba(212,175,110,.22);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--gold)">
+          ${lineIcon('car',18)}
         </div>
         <div style="flex:1;min-width:0">
           <div style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.pickup} → ${t.dropoff}</div>
-          <div style="font-size:12px;color:var(--fg-3);margin-top:3px">${t.date} · ${t.time}</div>
+          <div style="font-size:12px;color:var(--fg-3);margin-top:3px">${t.date} · ${t.time}${t.driverName?` · ${esc(String(t.driverName).split(' ')[0])}`:''}${t.vehicle?` · ${esc(t.vehicle)}`:''}</div>
         </div>
-        <div style="font-size:16px;font-weight:800;color:#ffffff;flex-shrink:0">${t.price}</div>
+        <div style="text-align:right;flex-shrink:0">
+          ${(()=>{const tm=tripTMinus(t);return tm?`<div style="display:inline-block;background:var(--gold-3);border:1px solid var(--gold-2);border-radius:20px;padding:3px 10px;font-size:10.5px;font-weight:700;color:var(--gold);letter-spacing:.4px;margin-bottom:5px">${tm}</div>`:''})()}
+          <div style="font-size:15px;font-weight:800;color:#ffffff">${t.price}</div>
+        </div>
       </div>
       ${t.flight ? flightStatusCard(t.flight) : ''}`).join('')}` : ''}
     </div>
@@ -4610,10 +4711,13 @@ profile: () => {
     <div style="font-size:32px;font-weight:800">Profile</div>
   </div>
   <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding:0 22px 100px">
-    <!-- Membership card: guilloché engraving under a graded black field -->
-    <div style="position:relative;border-radius:20px;overflow:hidden;background:#0b0906;border:1px solid rgba(212,175,110,.32);margin-bottom:16px">
+    <!-- Membership card: guilloché engraving under a graded black field.
+         Tilts under the pointer like the physical object it stands in for. -->
+    <div onmousemove="cardTilt(this,event)" onmouseleave="cardTiltReset(this)" ontouchmove="cardTilt(this,event)" ontouchend="cardTiltReset(this)"
+         style="position:relative;border-radius:20px;overflow:hidden;background:#0b0906;border:1px solid rgba(212,175,110,.32);margin-bottom:16px;will-change:transform">
       <div style="position:absolute;inset:0">${guilloche()}</div>
       <div style="position:absolute;inset:0;background:linear-gradient(115deg,rgba(5,4,3,.15) 0%,rgba(5,4,3,.55) 55%,rgba(5,4,3,.8) 100%)"></div>
+      <div class="card-sheen" style="position:absolute;inset:0;opacity:0;transition:opacity .3s ease;pointer-events:none"></div>
       <div style="position:relative;padding:18px 20px 16px">
         <div style="display:flex;justify-content:space-between;align-items:flex-start">
           <div style="font-size:9px;letter-spacing:3.5px;color:var(--gold);font-weight:600;padding-top:3px">APEXVIP</div>
@@ -7016,7 +7120,7 @@ function renderNow(){
   try{
     document.body.setAttribute('data-screen',state.screen);
     const fn=screens[state.screen];
-    app.innerHTML=(fn?fn():`<div style="padding:40px;text-align:center;color:var(--fg-4)">Screen not found</div>`)+subscribeSheet();
+    app.innerHTML=(fn?fn():`<div style="padding:40px;text-align:center;color:var(--fg-4)">Screen not found</div>`)+subscribeSheet()+cmdOverlay();
     renderAirportPickerPortal();
     if(state.screen==='home') setTimeout(initMap,60);
     if(state.screen==='payment') setTimeout(initSquare,60);
