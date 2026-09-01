@@ -179,6 +179,10 @@
 
   function str(v, max) { return String(v == null ? '' : v).trim().slice(0, max || 200); }
 
+  function validEmail(s) {
+    return typeof s === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(s.trim()) && s.length <= 120;
+  }
+
   function validateClient(input) {
     input = input || {};
     var name = str(input.name, 80);
@@ -196,6 +200,7 @@
         termsDays: terms,
         waitRate: waitRate,
         notes: str(input.notes, 600),
+        chaseOptout: !!input.chaseOptout,
       },
     };
   }
@@ -238,6 +243,9 @@
     defaultWaitRate: 0,         // pence per hour, prefilled on new jobs
     defaultTermsDays: 14,
     footerNote: '',
+    chaseEnabled: false,        // automated payment chasing (v2)
+    chaseIntervalDays: 7,       // days between reminders once overdue
+    chaseMax: 3,                // stop after this many reminders per invoice
   };
 
   function normaliseSettings(raw) {
@@ -267,6 +275,11 @@
     s.footerNote = str(s.footerNote, 300);
     s.logo = typeof s.logo === 'string' && /^data:image\/jpeg;base64,/.test(s.logo) && s.logo.length < 400000
       ? s.logo : null;
+    s.chaseEnabled = !!s.chaseEnabled;
+    var interval = Math.round(Number(s.chaseIntervalDays));
+    s.chaseIntervalDays = isFinite(interval) && interval >= 1 && interval <= 60 ? interval : 7;
+    var max = Math.round(Number(s.chaseMax));
+    s.chaseMax = isFinite(max) && max >= 1 && max <= 10 ? max : 3;
     return s;
   }
 
@@ -362,6 +375,69 @@
     return 'sent';
   }
 
+  /* ──────────────────── accounts & billing (v2, pure) ──────────────────── */
+
+  function trialDaysLeft(account, todayISO) {
+    if (!account || !account.trialEndsAt) return null;
+    var end = Date.parse(String(account.trialEndsAt).slice(0, 10) + 'T00:00:00Z');
+    var today = Date.parse(todayISO + 'T00:00:00Z');
+    if (isNaN(end) || isNaN(today)) return null;
+    return Math.ceil((end - today) / 86400000);
+  }
+
+  // What may this account do right now? Billing disabled → everything (the
+  // pre-launch mode). Trial running or subscription active → everything.
+  // Otherwise read-only: the driver always keeps access to their own data.
+  function accountAccess(account, todayISO, billingEnabled) {
+    if (!billingEnabled) return { ok: true, readOnly: false, reason: '' };
+    if (!account) return { ok: false, readOnly: true, reason: 'no account' };
+    if (account.status === 'active') return { ok: true, readOnly: false, reason: '' };
+    var left = trialDaysLeft(account, todayISO);
+    if (account.status === 'trial' && (left === null || left >= 0)) {
+      return { ok: true, readOnly: false, reason: '', trialDaysLeft: left };
+    }
+    return {
+      ok: true, readOnly: true,
+      reason: account.status === 'past_due'
+        ? 'Your subscription payment failed — update your card to keep logging jobs.'
+        : 'Your trial has ended — subscribe to keep logging jobs. Your data stays yours either way.',
+    };
+  }
+
+  /* ──────────────── payment chasing (v2, pure planning) ──────────────── */
+
+  // Which invoices deserve a reminder today? An invoice qualifies when it is
+  // still 'sent', past due, its client hasn't opted out, fewer than chaseMax
+  // reminders have gone, and the last touch (due date or last reminder) is at
+  // least chaseIntervalDays old. Returns [{invoice, reminderNo, recipient}].
+  function chasePlan(invoices, emailLog, clients, settings, todayISO) {
+    settings = normaliseSettings(settings);
+    if (!settings.chaseEnabled) return [];
+    var byClient = {};
+    (clients || []).forEach(function (c) { byClient[c.id] = c; });
+    var reminders = {};
+    (emailLog || []).forEach(function (e) {
+      if (e.kind !== 'reminder' || !e.invoiceId) return;
+      var r = reminders[e.invoiceId] || { count: 0, last: '' };
+      r.count++;
+      var day = String(e.sentAt || '').slice(0, 10);
+      if (day > r.last) r.last = day;
+      reminders[e.invoiceId] = r;
+    });
+    var out = [];
+    (invoices || []).forEach(function (inv) {
+      if (inv.status !== 'sent' || !inv.dueDate || inv.dueDate >= todayISO) return;
+      var client = byClient[inv.clientId];
+      if (!client || client.chaseOptout || !validEmail(client.email)) return;
+      var r = reminders[inv.id] || { count: 0, last: '' };
+      if (r.count >= settings.chaseMax) return;
+      var anchor = r.last || inv.dueDate;
+      if (addDaysISO(anchor, settings.chaseIntervalDays) > todayISO) return;
+      out.push({ invoice: inv, reminderNo: r.count + 1, recipient: client.email });
+    });
+    return out;
+  }
+
   /* ─────────────────────────────── misc ─────────────────────────────── */
 
   function escapeHtml(s) {
@@ -382,6 +458,8 @@
     SETTINGS_DEFAULTS: SETTINGS_DEFAULTS, normaliseSettings: normaliseSettings,
     formatInvoiceNumber: formatInvoiceNumber, uninvoicedGroups: uninvoicedGroups,
     buildInvoice: buildInvoice, invoiceStatus: invoiceStatus,
+    validEmail: validEmail, trialDaysLeft: trialDaysLeft, accountAccess: accountAccess,
+    chasePlan: chasePlan,
     escapeHtml: escapeHtml,
   };
 

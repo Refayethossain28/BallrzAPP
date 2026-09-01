@@ -1,14 +1,15 @@
 # Fare — chauffeur job logging & invoicing
 
-A single-driver web app: log a job from your phone in under 30 seconds, then
-generate a clean monthly PDF invoice per client in one tap. v1 is
-single-user (no login); the code is structured so v2 can add accounts,
-automated email sending and payment chasing without a rewrite.
+Log a job from your phone in under 30 seconds, generate a clean monthly PDF
+invoice per client in one tap — then let Fare email it and chase the payment.
+v2 is a **multi-tenant SaaS**: drivers sign in with a magic link, get a
+30-day free trial, and subscribe for £9.99/month via Stripe.
 
 **Stack: zero dependencies.** Node 22+ only — `node:http` for the server,
 `node:sqlite` for storage, a pure business-rules engine
-(`public/engine.js`) shared by the browser and the server, and a
-hand-written PDF generator (`pdf.mjs`). Nothing to `npm install`.
+(`public/engine.js`) shared by the browser and the server, a hand-written
+PDF generator (`pdf.mjs`), and plain-fetch integrations for Resend
+(`email.mjs`) and Stripe (`stripe.mjs`). Nothing to `npm install`.
 
 ## Run it
 
@@ -16,69 +17,59 @@ hand-written PDF generator (`pdf.mjs`). Nothing to `npm install`.
 node fare/server.mjs          # → http://localhost:8797
 ```
 
-Open it on your phone and “Add to Home Screen” — it installs as an app
-(offline shell included; data always live from the server).
-
-First-run order: **Settings** (business details, bank details, invoice
-prefix, VAT on/off, default waiting rate) → **Clients** → start logging jobs.
+With no env vars set it runs in **dev mode**: magic sign-in links print to
+the console (and surface in the UI), emails log instead of sending, and
+billing is off so every account has full access.
 
 ## What's inside
 
 | Piece | Job |
 | --- | --- |
-| `public/engine.js` | Every rule: pence-integer money, pro-rata per-minute waiting time, extras (parking / airport / ULEZ / tolls / other), remembered routes per client, sequential invoice numbers, VAT, due dates, sent/paid/overdue. Pure + clock-injected → fully unit-tested. |
-| `db.mjs` | SQLite schema + queries. Invoicing is one transaction: insert invoice, claim jobs, bump the counter — numbers can never double-issue. Voiding releases jobs but retires the number (gaps are honest). |
-| `pdf.mjs` | The invoice PDF: itemised jobs with waiting + extras, optional VAT row, bank-details footer, optional JPEG logo, multi-page. |
-| `server.mjs` | Thin JSON API + static host. All validation goes through the engine. |
-| `public/app.js` | The phone UI. Job entry is chips-first: tap client → tap a remembered route (fills pickup, drop-off, fare, rate, usual extras) → adjust → save. |
+| `public/engine.js` | Every rule: pence-integer money, pro-rata per-minute waiting, extras, remembered routes, sequential invoice numbers, VAT, due dates, sent/paid/overdue, **trial/subscription gating and chase planning**. Pure + clock-injected → fully unit-tested. |
+| `db.mjs` | Multi-tenant SQLite: every row scoped by `account_id`; invoicing is one transaction; **a v1 single-user database migrates itself in place on first boot** (legacy data becomes account 1, claimed by the owner's first sign-in). |
+| `auth.mjs` | Passwordless magic links + sessions. Only SHA-256 hashes are stored; links are single-use, 15-minute; sessions last 90 days; sign-in emails rate-limited. |
+| `email.mjs` | Resend over HTTPS: sign-in links, invoices (PDF attached), payment reminders. Reply-to is the driver. |
+| `chase.mjs` | Hourly loop: engine's `chasePlan` decides, this sends + logs. Reminders stop at paid, the per-account cap, or a per-client opt-out. |
+| `stripe.mjs` | Checkout, customer portal, and a hand-verified webhook (HMAC). Expired trial / failed payment → **read-only**, never locked out: drivers always keep and can export their data. |
+| `pdf.mjs` / `server.mjs` / `public/app.js` | As v1: the invoice PDF, the thin scoped API, the chips-first phone UI — now with sign-in, account/billing settings, "Email invoice", and chasing controls. `public/landing.html` is the marketing page. |
+
+## Configuration (all optional; features light up as keys appear)
+
+| Env | Effect |
+| --- | --- |
+| `FARE_DB_PATH` | SQLite file (default `fare/data/fare.db`) — point at a persistent disk in production. |
+| `FARE_APP_URL` | Public URL used in emailed links and Stripe redirects. |
+| `FARE_KEY` | Owner API key → account 1 (keeps v1 phones and curl backups working). |
+| `RESEND_API_KEY`, `FARE_EMAIL_FROM` | Real email. Verify a sending domain at resend.com (SPF/DKIM DNS records) or invoices land in spam. |
+| `STRIPE_SECRET_KEY` | Turns billing on: 30-day trials enforce, subscribe = £9.99/mo. |
+| `STRIPE_PRICE_ID` | Optional; if unset a "Fare" £9.99/mo GBP price is created once and reused. |
+| `STRIPE_WEBHOOK_SECRET` | For `POST /api/billing/webhook` (add the endpoint in the Stripe dashboard: events `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`). |
+
+The repo's `render.yaml` blueprint pre-wires all of these for the `fare`
+service (secrets left blank to fill in the dashboard).
+
+## Going live checklist
+
+1. Deploy (blueprint) → the v1 database upgrades itself on first boot.
+2. Sign in with your own email — that first sign-in **claims the legacy
+   account** with all your existing data.
+3. resend.com: create key, verify your domain, set `RESEND_API_KEY` +
+   `FARE_EMAIL_FROM` → invoice emailing + chasing go live.
+4. stripe.com: set `STRIPE_SECRET_KEY`, add the webhook endpoint
+   (`/api/billing/webhook`) and set `STRIPE_WEBHOOK_SECRET` → trials and
+   subscriptions enforce.
+5. Point prospects at `/landing.html`.
 
 ## Data & backups
 
-- DB file: `fare/data/fare.db` by default; set `FARE_DB_PATH` to move it
-  (point it at a persistent disk in production).
-- **Settings → Download backup** exports everything as one JSON file.
-  Restore into a fresh server with:
-  `curl -X POST --data-binary @fare-backup-….json localhost:8797/api/restore -H 'content-type: application/json'`
-
-## Putting it on the internet
-
-Any Node 22+ host works. Two things matter:
-
-1. **Persistent disk.** Free tiers (e.g. Render free) wipe the filesystem on
-   every deploy/restart — use a paid instance with a mounted disk (~£5/mo) and
-   set `FARE_DB_PATH` to it. Until then, download backups regularly.
-2. **Set `FARE_KEY`.** Any long random string. With it set, every API call
-   must present the key — the app prompts once and remembers it. Without it,
-   your client list and bank details are readable by anyone with the URL.
-
-Example (Render): web service, `startCommand: node fare/server.mjs`,
-`NODE_VERSION=22.12.0`+, disk mounted at `/data`, `FARE_DB_PATH=/data/fare.db`,
-`FARE_KEY=<random>` — all pre-configured in the repo's `render.yaml` blueprint.
-
-### The Ballrz hub tile
-
-The hub links to the static copy of this page on the published site. That copy
-has no API behind it, so on first open it shows a **Connect to your Fare
-server** screen — paste your deployed server's address (e.g.
-`https://fare-xxxx.onrender.com`) once and it's remembered. The API serves
-CORS headers so this cross-origin setup works; data stays guarded by
-`FARE_KEY`. Opening the deployed server's own URL directly works too, with no
-connect step.
-
-## v2 seams (deliberate)
-
-- Invoices are **frozen snapshots** — emailing them later can't be skewed by
-  edits made after the fact.
-- Status is stored (`sent`/`paid`) + derived (`overdue` from the clock) —
-  exactly what an automated payment-chaser needs to read.
-- The HTTP API is the single door: auth/multi-tenant lands in `server.mjs`
-  without touching engine, PDF or UI logic.
-- Email sending will be a new module that takes an invoice id → PDF buffer
-  (already available server-side) + client email (already stored).
+`Settings → Download backup` exports one account's world as JSON; restore
+with `POST /api/restore` (ids are remapped, so it lands cleanly anywhere).
+Read-only accounts can still export — drivers are never locked out of
+their own data.
 
 ## Tests
 
 ```sh
-npm run test:fare     # engine + store + PDF unit tests
+npm run test:fare     # engine + store (incl. v1→v2 migration) + auth + stripe + PDF
 npm run test:smoke    # repo-wide inline-script sanity
 ```

@@ -26,40 +26,46 @@
 
   /* ── state ── */
   var state = {
-    tab: 'jobs',            // jobs | invoices | clients | settings | jobform | clientform
+    tab: 'jobs',            // jobs | invoices | clients | settings | jobform | clientform | login
     settings: null, clients: [], jobs: [], jobsTotal: 0, invoices: [], uninvoiced: [],
+    emailLog: [],
+    me: null,               // /api/me: account, access, billing/email availability
     month: localDate().slice(0, 7), clientFilter: 0,
     form: null,             // job form model {id, clientId, extras:[], routes:[]}
     clientForm: null,       // {id} while editing a client
+    loginSent: '',          // email address a sign-in link went to
+    devLink: '',            // dev-mode magic link (no email provider configured)
   };
 
-  /* ── API (shared-key aware; optionally pointed at a remote Fare server,
-        so the static copy in the hub can drive a hosted backend) ── */
-  function getKey() { try { return localStorage.getItem('fareKey') || ''; } catch (e) { return ''; } }
-  function getServer() {
-    try { return (localStorage.getItem('fareServer') || '').trim().replace(/\/+$/, ''); }
-    catch (e) { return ''; }
-  }
-  function withKey(url) {
-    var k = getKey();
-    return getServer() + (k ? url + (url.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(k) : url);
+  /* ── API (session or owner-key auth; optionally pointed at a remote Fare
+        server, so the static copy in the hub can drive a hosted backend) ── */
+  function lsGet(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* private mode */ } }
+  function getKey() { return lsGet('fareKey'); }
+  function getSession() { return lsGet('fareSession'); }
+  function getServer() { return lsGet('fareServer').trim().replace(/\/+$/, ''); }
+  // For <a>/location downloads, where headers can't travel.
+  function authedUrl(url) {
+    var s = getSession(), k = getKey();
+    var q = s ? 'session=' + encodeURIComponent(s) : k ? 'key=' + encodeURIComponent(k) : '';
+    return getServer() + (q ? url + (url.indexOf('?') >= 0 ? '&' : '?') + q : url);
   }
   function api(path, opts) {
     opts = opts || {};
-    var init = { method: opts.method || 'GET', headers: { 'x-fare-key': getKey() } };
+    var init = { method: opts.method || 'GET', headers: {} };
+    if (getSession()) init.headers['x-fare-session'] = getSession();
+    if (getKey()) init.headers['x-fare-key'] = getKey();
     if (opts.body !== undefined) {
       init.headers['Content-Type'] = 'application/json';
       init.body = JSON.stringify(opts.body);
     }
     return fetch(getServer() + path, init).then(function (res) {
-      if (res.status === 401 && !opts.retried) {
-        var k = prompt('This Fare server needs its access key:');
-        if (k) {
-          try { localStorage.setItem('fareKey', k); } catch (e) { /* private mode */ }
-          return api(path, { method: opts.method, body: opts.body, retried: true });
-        }
-      }
       return res.json().then(function (data) {
+        if (res.status === 401) {
+          state.tab = 'login';
+          render();
+          throw new Error((data && data.error) || 'sign in to continue');
+        }
         if (res.status >= 400) throw new Error((data && data.error) || ('request failed (' + res.status + ')'));
         return data;
       });
@@ -68,9 +74,10 @@
 
   /* ── data loading ── */
   function loadCore() {
-    return Promise.all([api('/api/settings'), api('/api/clients')]).then(function (r) {
+    return Promise.all([api('/api/settings'), api('/api/clients'), api('/api/me')]).then(function (r) {
       state.settings = r[0];
       state.clients = r[1];
+      state.me = r[2];
     });
   }
   function loadJobs() {
@@ -78,7 +85,11 @@
     return api(q).then(function (r) { state.jobs = r.jobs; state.jobsTotal = r.total; });
   }
   function loadInvoices() {
-    return api('/api/invoices').then(function (r) { state.invoices = r.invoices; state.uninvoiced = r.uninvoiced; });
+    return api('/api/invoices').then(function (r) {
+      state.invoices = r.invoices;
+      state.uninvoiced = r.uninvoiced;
+      state.emailLog = r.emailLog || [];
+    });
   }
 
   /* ── rendering ── */
@@ -89,12 +100,21 @@
     }
     $('fab').style.display = state.tab === 'jobs' || state.tab === 'invoices' ? '' : 'none';
     var html = '';
-    if (state.tab === 'jobs') html = viewJobs();
+    if (state.tab === 'login') html = viewLogin();
+    else if (state.tab === 'jobs') html = viewJobs();
     else if (state.tab === 'invoices') html = viewInvoices();
     else if (state.tab === 'clients') html = viewClients();
     else if (state.tab === 'settings') html = viewSettings();
     else if (state.tab === 'jobform') html = viewJobForm();
     else if (state.tab === 'clientform') html = viewClientForm();
+    // Trial over / payment failed → everything still readable, writes gated.
+    if (state.tab !== 'login' && state.me && state.me.access && state.me.access.readOnly) {
+      html = '<div class="card" style="border-color:rgba(224,168,58,.5)"><b>Read-only</b>' +
+        '<div class="muted small">' + esc(state.me.access.reason || '') + '</div>' +
+        (state.me.billing && state.me.billing.enabled
+          ? '<button class="btn-sm gold" style="margin-top:8px" data-act="subscribe">Subscribe — £9.99/month</button>' : '') +
+        '</div>' + html;
+    }
     $('view').innerHTML = html;
     if (typeof scrollTo === 'function') scrollTo(0, 0);
   }
@@ -102,6 +122,26 @@
   function clientName(id) {
     var c = (state.clients || []).filter(function (x) { return x.id === id; })[0];
     return c ? c.name : 'Client ' + id;
+  }
+
+  /* ---- Login (magic link) ---- */
+  function viewLogin() {
+    if (state.loginSent) {
+      return '<div class="card" style="margin-top:24px"><b>Check your email</b>' +
+        '<p class="muted small">We sent a sign-in link to <b>' + esc(state.loginSent) + '</b>. ' +
+        'Tap it on this device — it works once and lasts 15 minutes.</p>' +
+        (state.devLink
+          ? '<p class="muted small">Dev mode (no email provider configured):</p>' +
+            '<button class="primary" data-act="dev-link">Open sign-in link</button>'
+          : '') +
+        '<button class="secondary" data-act="login-again">Use a different email</button></div>';
+    }
+    return '<div class="card" style="margin-top:24px"><b>Sign in to Fare</b>' +
+      '<p class="muted small">Your jobs, clients and invoices live in your own account. ' +
+      'No password — we email you a sign-in link.</p>' +
+      '<label class="f">Email</label><input id="login-email" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com">' +
+      '<button class="primary" data-act="send-link">Email me a sign-in link</button>' +
+      '<p class="muted small">New here? The same button starts your free 30-day trial — no card needed.</p></div>';
   }
 
   /* ---- Jobs tab ---- */
@@ -267,17 +307,35 @@
       : '';
 
     var today = localDate();
+    var sends = {};
+    (state.emailLog || []).forEach(function (e) {
+      if (!e.invoiceId) return;
+      var s = sends[e.invoiceId] || { invoice: 0, reminder: 0 };
+      if (e.kind === 'invoice') s.invoice++;
+      if (e.kind === 'reminder') s.reminder++;
+      sends[e.invoiceId] = s;
+    });
+    var canEmail = state.me && state.me.email && state.me.email.enabled;
     var list = (state.invoices || []).length
       ? '<div class="section">Invoices</div>' + state.invoices.map(function (inv) {
         var st = inv.derivedStatus || E.invoiceStatus(inv, today);
+        var sent = sends[inv.id];
+        var sentLine = sent
+          ? '<div class="muted small">' +
+            (sent.invoice ? 'Emailed ×' + sent.invoice : '') +
+            (sent.reminder ? (sent.invoice ? ' · ' : '') + 'Chased ×' + sent.reminder : '') + '</div>'
+          : '';
         return '<div class="card"><div class="row"><div><b>' + esc(inv.displayNumber) + '</b> <span class="pill ' + st + '">' + st + '</span>' +
           '<div class="muted small">' + esc((inv.snapshot && inv.snapshot.client && inv.snapshot.client.name) || clientName(inv.clientId)) +
           ' · ' + esc(E.monthLabel(inv.period)) + '</div>' +
           '<div class="muted small">Issued ' + esc(E.formatDayLabel(inv.issueDate)) + ' · due ' + esc(E.formatDayLabel(inv.dueDate)) +
-          (inv.paidDate ? ' · paid ' + esc(E.formatDayLabel(inv.paidDate)) : '') + '</div></div>' +
+          (inv.paidDate ? ' · paid ' + esc(E.formatDayLabel(inv.paidDate)) : '') + '</div>' + sentLine + '</div>' +
           '<span class="amount">' + E.formatMoney(inv.total) + '</span></div>' +
           '<div class="chips" style="padding-top:10px">' +
           '<button class="btn-sm" data-act="pdf" data-id="' + inv.id + '">⬇ PDF</button>' +
+          (canEmail && inv.status !== 'paid'
+            ? '<button class="btn-sm" data-act="email-inv" data-id="' + inv.id + '">📧 Email' + (sent && sent.invoice ? ' again' : '') + '</button>'
+            : '') +
           (inv.status === 'paid'
             ? '<button class="btn-sm" data-act="mark-sent" data-id="' + inv.id + '">Mark unpaid</button>'
             : '<button class="btn-sm" data-act="mark-paid" data-id="' + inv.id + '">Mark paid</button>') +
@@ -314,6 +372,7 @@
       '<div><label class="f">Waiting rate (£/hr)</label>' +
       '<input id="cf-waitrate" inputmode="decimal" value="' + (c.waitRate ? c.waitRate / 100 : '') + '" placeholder="default"></div></div>' +
       '<label class="f">Notes</label><textarea id="cf-notes">' + esc(c.notes || '') + '</textarea>' +
+      '<div class="switch"><span>Never auto-chase this client</span><input type="checkbox" id="cf-chase-optout"' + (c.chaseOptout ? ' checked' : '') + '></div>' +
       '<button class="primary" data-act="save-client">Save client</button>' +
       (id ? '<button class="secondary danger" data-act="archive-client" data-id="' + id + '">Archive client</button>' : '');
   }
@@ -325,6 +384,7 @@
       name: $('cf-name').value, email: $('cf-email').value, address: $('cf-address').value,
       termsDays: Number($('cf-terms').value), waitRate: rate === null ? 0 : rate,
       notes: $('cf-notes').value,
+      chaseOptout: !!$('cf-chase-optout').checked,
     };
     var req = id ? api('/api/clients/' + id, { method: 'PUT', body: payload })
       : api('/api/clients', { method: 'POST', body: payload });
@@ -346,9 +406,35 @@
   }
 
   /* ---- Settings tab ---- */
+  function viewAccount() {
+    var me = state.me || {};
+    var acct = me.account || {};
+    var access = me.access || {};
+    var bits = [];
+    if (acct.status === 'active') bits.push('<span class="pill paid">subscribed</span>');
+    else if (access.readOnly) bits.push('<span class="pill overdue">read-only</span>');
+    else if (acct.status === 'trial' && access.trialDaysLeft != null) {
+      bits.push('<span class="pill sent">trial · ' + access.trialDaysLeft + ' day' + (access.trialDaysLeft === 1 ? '' : 's') + ' left</span>');
+    }
+    var buttons = '';
+    if (me.billing && me.billing.enabled) {
+      if (acct.status === 'active') buttons += '<button class="btn-sm" data-act="billing-portal">Manage billing</button>';
+      else buttons += '<button class="btn-sm gold" data-act="subscribe">Subscribe — £9.99/month</button>';
+    }
+    if (me.via === 'session') buttons += '<button class="btn-sm" data-act="sign-out">Sign out</button>';
+    return '<div class="section">Account</div><div class="card"><div class="row"><div>' +
+      '<b>' + esc(acct.email || 'Owner (API key)') + '</b>' +
+      (me.via === 'key' && !acct.email
+        ? '<div class="muted small">Sign in with your email once to attach this data to your account.</div>' : '') +
+      '</div><div>' + bits.join(' ') + '</div></div>' +
+      (buttons ? '<div class="chips" style="padding-top:10px">' + buttons + '</div>' : '') +
+      '</div>';
+  }
+
   function viewSettings() {
     var s = state.settings || {};
-    return '<div class="section">Your business (appears on invoices)</div>' +
+    return viewAccount() +
+      '<div class="section">Your business (appears on invoices)</div>' +
       '<label class="f">Business name</label><input id="st-name" value="' + esc(s.businessName || '') + '">' +
       '<label class="f">Your name</label><input id="st-owner" value="' + esc(s.ownerName || '') + '">' +
       '<label class="f">Address</label><textarea id="st-address">' + esc(s.address || '') + '</textarea>' +
@@ -372,6 +458,13 @@
       (s.defaultWaitRate ? s.defaultWaitRate / 100 : '') + '"></div>' +
       '<div><label class="f">Default terms (days)</label><input id="st-terms" inputmode="numeric" value="' + (s.defaultTermsDays != null ? s.defaultTermsDays : 14) + '"></div></div>' +
       '<label class="f">Invoice footer note</label><input id="st-footer" placeholder="e.g. Thank you for your business" value="' + esc(s.footerNote || '') + '">' +
+      '<div class="section">Payment chasing</div>' +
+      '<div class="switch"><span>Auto-chase overdue invoices by email</span><input type="checkbox" id="st-chase"' + (s.chaseEnabled ? ' checked' : '') + '></div>' +
+      '<p class="muted small">Once an invoice passes its due date, a polite reminder (with the PDF attached) goes to the client, then again every few days — until it’s marked paid, the limit is reached, or the client is opted out.</p>' +
+      '<div class="grid2"><div><label class="f">Days between reminders</label><input id="st-chase-days" inputmode="numeric" value="' + (s.chaseIntervalDays != null ? s.chaseIntervalDays : 7) + '"></div>' +
+      '<div><label class="f">Max reminders</label><input id="st-chase-max" inputmode="numeric" value="' + (s.chaseMax != null ? s.chaseMax : 3) + '"></div></div>' +
+      (state.me && state.me.email && !state.me.email.enabled
+        ? '<p class="muted small">⚠ Email sending isn’t configured on this server yet (RESEND_API_KEY) — chasing stays off until it is.</p>' : '') +
       '<button class="primary" data-act="save-settings">Save settings</button>' +
       '<div class="section">Your data</div>' +
       '<button class="secondary" data-act="backup">Download backup (JSON)</button>' +
@@ -398,6 +491,9 @@
     s.defaultWaitRate = wr === null ? 0 : wr;
     s.defaultTermsDays = Number($('st-terms').value);
     s.footerNote = $('st-footer').value;
+    s.chaseEnabled = !!$('st-chase').checked;
+    s.chaseIntervalDays = Number($('st-chase-days').value);
+    s.chaseMax = Number($('st-chase-max').value);
     return s;
   }
 
@@ -493,7 +589,15 @@
         }).then(render)
         .catch(function (err) { toast(err.message); });
     }
-    else if (act === 'pdf') { location.href = withKey('/api/invoices/' + Number(id) + '/pdf'); }
+    else if (act === 'pdf') { location.href = authedUrl('/api/invoices/' + Number(id) + '/pdf'); }
+    else if (act === 'email-inv') {
+      var target = (state.invoices || []).filter(function (x) { return x.id === Number(id); })[0];
+      if (!confirm('Email ' + (target ? target.displayNumber : 'this invoice') + ' (PDF attached) to the client now?')) return;
+      api('/api/invoices/' + Number(id) + '/email', { method: 'POST', body: {} })
+        .then(function (r) { toast(r.sent ? 'Emailed to ' + r.to : 'Logged (dev mode) — to ' + r.to); return loadInvoices(); })
+        .then(render)
+        .catch(function (err) { toast(err.message); });
+    }
     else if (act === 'mark-paid' || act === 'mark-sent') {
       api('/api/invoices/' + Number(id), { method: 'PATCH', body: { status: act === 'mark-paid' ? 'paid' : 'sent' } })
         .then(function () { return loadInvoices(); }).then(render)
@@ -532,7 +636,36 @@
       }).catch(function (err) { toast(err.message); });
     }
     else if (act === 'clear-logo') { state.settings.logo = null; toast('Logo removed — tap Save settings'); render(); }
-    else if (act === 'backup') { location.href = withKey('/api/backup'); }
+    else if (act === 'backup') { location.href = authedUrl('/api/backup'); }
+    else if (act === 'send-link') {
+      var addr = String($('login-email').value || '').trim();
+      if (!E.validEmail(addr)) { toast('Enter a valid email address'); return; }
+      api('/api/auth/request', { method: 'POST', body: { email: addr } }).then(function (r) {
+        state.loginSent = addr;
+        state.devLink = r.devLink || '';
+        render();
+      }).catch(function (err) { toast(err.message); });
+    }
+    else if (act === 'login-again') { state.loginSent = ''; state.devLink = ''; render(); }
+    else if (act === 'dev-link') { if (state.devLink) location.href = state.devLink; }
+    else if (act === 'sign-out') {
+      api('/api/auth/logout', { method: 'POST', body: {} }).catch(function () { /* best effort */ });
+      lsSet('fareSession', '');
+      state.me = null;
+      state.tab = 'login';
+      state.loginSent = '';
+      render();
+    }
+    else if (act === 'subscribe') {
+      api('/api/billing/checkout', { method: 'POST', body: {} })
+        .then(function (r) { if (r.url) location.href = r.url; })
+        .catch(function (err) { toast(err.message); });
+    }
+    else if (act === 'billing-portal') {
+      api('/api/billing/portal', { method: 'POST', body: {} })
+        .then(function (r) { if (r.url) location.href = r.url; })
+        .catch(function (err) { toast(err.message); });
+    }
     else if (act === 'save-server') {
       var url = String($('srv-url').value || '').trim().replace(/\/+$/, '');
       if (url && !/^https?:\/\//.test(url)) url = 'https://' + url;
@@ -577,10 +710,14 @@
     var hash = String((location && location.hash) || '').replace('#', '');
     if (hash === 'new') { state.form = newJobForm(); state.tab = 'jobform'; }
     else if (['jobs', 'invoices', 'clients', 'settings'].indexOf(hash) >= 0) state.tab = hash;
+    var search = String((location && location.search) || '');
+    if (search.indexOf('billing=success') >= 0) { state.tab = 'settings'; toast('Subscription active — thank you!'); }
     loadCore()
       .then(function () { return Promise.all([loadJobs(), loadInvoices()]); })
       .then(render)
       .catch(function (err) {
+        // A 401 already switched to the sign-in screen — leave it be.
+        if (state.tab === 'login') return;
         // No API here (e.g. the static copy in the Ballrz hub) or the server
         // is down — offer to connect to a hosted Fare server instead.
         $('view').innerHTML =

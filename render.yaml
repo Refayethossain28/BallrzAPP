@@ -106,11 +106,27 @@ services:
       # Keep the database on the mounted disk, not the ephemeral filesystem.
       - key: FARE_DB_PATH
         value: /data/fare.db
-      # Shared secret guarding the API (client list + bank details). Render
-      # generates it; read it in the dashboard (Environment tab) and enter it
-      # in the app when prompted on first load.
+      # Owner API key (maps to account 1; keeps curl backups working). Render
+      # generates it; read it in the dashboard (Environment tab).
       - key: FARE_KEY
         generateValue: true
+      # Public URL, used in emailed sign-in links and Stripe redirects.
+      - key: FARE_APP_URL
+        value: https://fare-uouk.onrender.com
+      # v2 — email (resend.com; verify your sending domain there first).
+      # Without these, sign-in links/invoice emails print to the logs (dev mode).
+      - key: RESEND_API_KEY
+        sync: false
+      - key: FARE_EMAIL_FROM       # e.g. "Fare <invoices@yourdomain.uk>"
+        sync: false
+      # v2 — subscriptions (£9.99/mo). Without these, billing is off and every
+      # account has full access — the pre-launch mode.
+      - key: STRIPE_SECRET_KEY     # sk_live_… / sk_test_…
+        sync: false
+      - key: STRIPE_PRICE_ID       # optional; auto-created if unset
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET # whsec_… for POST /api/billing/webhook
+        sync: false
 
 databases:
   - name: fixr-db
