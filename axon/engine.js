@@ -435,6 +435,13 @@
         sizes[0] !== FEATURE_MODES[o.features].size || sizes[sizes.length - 1] !== CLASSES) {
       return { ok: false, reason: 'bad shape' };
     }
+    for (var s = 0; s < sizes.length; s++) {
+      // every layer must hold at least one neuron — a zero-width layer would
+      // leave empty weight matrices that blow up downstream
+      if (typeof sizes[s] !== 'number' || sizes[s] !== Math.floor(sizes[s]) || sizes[s] < 1) {
+        return { ok: false, reason: 'bad shape' };
+      }
+    }
     if (!Array.isArray(o.weights) || o.weights.length !== sizes.length - 1 ||
         !Array.isArray(o.biases) || o.biases.length !== sizes.length - 1) {
       return { ok: false, reason: 'bad shape' };

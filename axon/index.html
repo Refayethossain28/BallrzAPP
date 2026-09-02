@@ -198,8 +198,12 @@
   var datasetKey = typeof state.dataset === 'string' ? state.dataset : 'xor';
   var drawClass = 0;
   var customDots = Array.isArray(state.dots) ? state.dots.filter(function (p) {
-    return p && isFinite(p.x) && isFinite(p.y) && p.k >= 0 && p.k < 3;
-  }) : [];
+    // strict: real in-range numbers and an exact class id, or the dot is out —
+    // a poisoned coordinate would ride gradients all the way to NaN weights
+    return p && typeof p.x === 'number' && p.x >= -1 && p.x <= 1 &&
+           typeof p.y === 'number' && p.y >= -1 && p.y <= 1 &&
+           (p.k === 0 || p.k === 1 || p.k === 2);
+  }).slice(-400) : [];
   var seed = typeof state.seed === 'string' ? state.seed : ('mind-' + Math.floor(Math.random() * 1e9));
 
   function findArch(key) {
@@ -215,12 +219,14 @@
   var net = null;
   var savedMind = loadJSON(LS_MIND, null);
   if (typeof savedMind === 'string') {
-    var back = E.deserialize(savedMind);
-    if (back.ok && back.net.activation === actKey && back.net.features === senseKey &&
-        JSON.stringify(back.net.sizes) === JSON.stringify(freshNet().sizes)) {
-      net = back.net;
-      seed = net.seed;
-    }
+    try {
+      var back = E.deserialize(savedMind);
+      if (back.ok && back.net.activation === actKey && back.net.features === senseKey &&
+          JSON.stringify(back.net.sizes) === JSON.stringify(freshNet().sizes)) {
+        net = back.net;
+        seed = net.seed;
+      }
+    } catch (e) { net = null; }   // a poisoned save must never brick boot
   }
   if (!net) net = freshNet();
 
@@ -396,6 +402,11 @@
   }
 
   function renderStats() {
+    if (!lastStats && net.epochs > 0) {
+      // a restored mind knows things — measure it instead of calling it clueless
+      var d0 = currentData();
+      if (E.trainable(d0).ok) lastStats = E.evaluate(net, d0);
+    }
     $('pill').textContent = E.describe(net);
     $('m-name').textContent = E.netName(seed);
     $('m-desc').textContent = 'This mind grew from seed “' + seed.slice(0, 18) + '” — same seed, same starting synapses, every time. ' +
@@ -436,25 +447,38 @@
     return ran;
   }
 
+  var tickQueued = false;          // one loop, ever — a pause/resume inside a
+  var lastAutoSave = 0;            // frame gap must not stack a second one
+
+  function queueTick() {
+    if (tickQueued) return;
+    tickQueued = true;
+    requestAnimationFrame(tick);
+  }
+
   function tick() {
+    tickQueued = false;
     if (!training) return;
     runEpochs(9);
     if (calmStreak >= 40) {          // it has flatlined at perfect — let it rest
       training = false;
       persist();
+    } else if (Date.now() - lastAutoSave > 2000) {
+      persist();                     // a closed tab mid-training keeps its progress
+      lastAutoSave = Date.now();
     }
     drawMap();
     drawBrain();
     drawSpark();
     renderStats();
-    if (training) requestAnimationFrame(tick);
+    if (training) queueTick();
   }
 
   function setTraining(on) {
     if (on === training) return;
     training = on;
     calmStreak = 0;
-    if (training) requestAnimationFrame(tick);
+    if (training) queueTick();
     else persist();
     renderStats();
   }
@@ -563,6 +587,7 @@
 
   /* ---------- first paint ---------- */
   renderAll();
+  persist();   // a first visit keeps its seed (and name) even if the tab closes now
 
   /* ---------- offline ---------- */
   if (typeof navigator !== 'undefined' && navigator.serviceWorker && navigator.serviceWorker.register) {

@@ -294,6 +294,20 @@ test('deserialize rejects junk: bad JSON, wrong version, tampered shapes, NaN', 
   badHead.sizes[badHead.sizes.length - 1] = 7;
   assert.equal(E.deserialize(JSON.stringify(badHead)).ok, false);
 });
+test('deserialize rejects a zero-width hidden layer instead of throwing', () => {
+  // empty weight matrices satisfy every length check vacuously — this must
+  // come back {ok:false}, never crash the boot path
+  const poison = JSON.stringify({
+    v: 1, sizes: [2, 0, 3], features: 'xy', activation: 'tanh', seed: 'x', epochs: 0,
+    weights: [[], [[], [], []]], biases: [[], [0, 0, 0]],
+  });
+  const r = E.deserialize(poison);
+  assert.equal(r.ok, false);
+  assert.equal(E.deserialize(JSON.stringify({
+    v: 1, sizes: [2, 2.5, 3], features: 'xy', activation: 'tanh', seed: 'x', epochs: 0,
+    weights: [], biases: [],
+  })).ok, false, 'fractional layer width');
+});
 
 /* ---------- formatters & safety ---------- */
 test('formatters: percent, loss, epoch counts', () => {
