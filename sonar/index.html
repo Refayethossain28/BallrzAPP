@@ -165,6 +165,14 @@
       var s = raw ? JSON.parse(raw) : defaultState();
       if (!Array.isArray(s.msgs)) s.msgs = [];
       if (!Array.isArray(s.history)) s.history = [];
+      // a reload mid-stream must not leave an eternal spinner behind
+      for (var i = 0; i < s.msgs.length; i++) {
+        var m = s.msgs[i];
+        if (m && m.role === 'sonar' && !m.done) {
+          m.done = true;
+          if (!m.err) m.err = 'Interrupted — ask again for a fresh answer.';
+        }
+      }
       return s;
     } catch (e) { return defaultState(); }
   }
@@ -218,7 +226,13 @@
     for (var i = 0; i < S.msgs.length; i++) h += msgHTML(S.msgs[i], i);
     $('feed').innerHTML = h;
   }
-  function renderLast() { renderFeed(); window.scrollTo(0, document.body.scrollHeight || 999999); }
+  function renderLast() {
+    // only chase the bottom if the user is already there — never yank them
+    // back down while they are reading or checking a source mid-stream
+    var stick = (window.innerHeight || 0) + (window.scrollY || 0) >= (document.body.scrollHeight || 0) - 80;
+    renderFeed();
+    if (stick) window.scrollTo(0, document.body.scrollHeight || 999999);
+  }
   function renderChips() {
     var chips = E.dailySuggestions(Date.now());
     var h = '';
@@ -290,7 +304,9 @@
   function finishMsg(m, t0) {
     m.ms = Date.now() - t0;
     m.done = true;
-    if (!m.err && m.segments.length) {
+    // simulated demo answers are not real assistant turns — never send them
+    // to the live model as conversation history
+    if (!m.err && !m.simulated && m.segments.length) {
       var full = '';
       for (var i = 0; i < m.segments.length; i++) full += m.segments[i].text || '';
       S.history.push({ role: 'assistant', content: full });
@@ -306,7 +322,7 @@
     fetch('api/ask', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ question: question, history: S.history.slice(0, -1) }),
+      body: JSON.stringify({ question: question, history: E.sanitizeHistory(S.history.slice(0, -1)) }),
     }).then(function (res) {
       if (!res.ok) return res.json().then(function (j) { throw new Error(j.error || ('server ' + res.status)); });
       var reader = res.body.getReader();
@@ -333,7 +349,6 @@
   function askByok(m, question, t0) {
     var state = E.initStream();
     var body = E.buildRequestBody(question, S.history.slice(0, -1), { model: BYOK_MODEL }, Date.now());
-    var baseMessages = body.messages;
     var resumes = 0;
 
     function oneTurn() {
@@ -366,8 +381,12 @@
         return pump();
       }).then(function () {
         if (state.stop === 'pause_turn' && resumes < 3) {
+          var echo = E.replayContent(state);
+          if (!echo.length) return; // nothing valid to echo back — cannot resume
           resumes++;
-          body.messages = baseMessages.concat([{ role: 'assistant', content: E.replayContent(state) }]);
+          // echoes accumulate: a second pause must still carry the first
+          // continuation's searches and text
+          body.messages = body.messages.concat([{ role: 'assistant', content: echo }]);
           return oneTurn();
         }
       });
@@ -381,11 +400,19 @@
   }
 
   function askOffline(m, question, t0) {
-    var demo = E.offlineAnswer(question, Date.now());
-    m.segments.push({ text: demo.answer });
-    m.sources = demo.sources;
-    m.simulated = true;
-    finishMsg(m, t0);
+    // the first keystroke can beat the boot-time health probe — check once
+    // more before falling back to the canned demo, so a live proxy always wins
+    fetch('api/health').then(function (r) { return r.json(); }).then(function (h) {
+      if (h && h.ok && h.live) { mode = 'server'; renderMode(); askServer(m, question, t0); return; }
+      throw new Error('not live');
+    }).catch(function () {
+      if (getKey()) { mode = 'byok'; renderMode(); askByok(m, question, t0); return; }
+      var demo = E.offlineAnswer(question, Date.now());
+      m.segments.push({ text: demo.answer });
+      m.sources = demo.sources;
+      m.simulated = true;
+      finishMsg(m, t0);
+    });
   }
 
   function ask(text) {
@@ -399,6 +426,7 @@
     S.history.push({ role: 'user', content: v.question });
     var m = { role: 'sonar', segments: [], sources: [], status: 'Pinging…', err: '', done: false, ms: 0 };
     S.msgs.push(m);
+    save(); // the question survives a reload even if the answer doesn't finish
     renderLast();
     var t0 = Date.now();
     if (mode === 'server') askServer(m, v.question, t0);
@@ -412,7 +440,11 @@
     if (!el) return;
     var act = el.getAttribute('data-action');
     if (act === 'ask') ask($('q').value);
-    else if (act === 'chip') { $('q').value = el.textContent; ask(el.textContent); }
+    else if (act === 'chip') {
+      if (busy) { toast('One ping at a time'); return; } // never clobber a typed draft
+      $('q').value = el.textContent;
+      ask(el.textContent);
+    }
     else if (act === 'new-chat') {
       if (busy) { toast('Wait for the current ping'); return; }
       S = defaultState(); save(); renderFeed(); toast('Fresh chat');
@@ -432,7 +464,9 @@
       probeServer();
     } else if (act === 'jump-source') {
       var n = el.getAttribute('data-n');
-      var rows = document.querySelectorAll('[data-src="' + n + '"]');
+      // numbering restarts per answer — resolve within the clicked message only
+      var scope = (el.closest && el.closest('.msg')) || document;
+      var rows = scope.querySelectorAll('[data-src="' + n + '"]');
       for (var i = 0; i < rows.length; i++) {
         rows[i].className = 'src hot';
         if (rows[i].scrollIntoView) rows[i].scrollIntoView({ block: 'center' });
@@ -443,6 +477,7 @@
     }
   });
   document.addEventListener('keydown', function (ev) {
+    if (ev.isComposing || ev.keyCode === 229) return; // IME conversion, not a send
     if (ev.key === 'Enter' && ev.target && ev.target.id === 'q') ask($('q').value);
   });
 

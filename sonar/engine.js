@@ -325,7 +325,7 @@
       var b = state.blocks[state.order[i]];
       if (!b) continue;
       if (b.type === 'text') {
-        if (!b.text && !b.citations.length) continue; // empty text block is invalid to echo
+        if (!b.text) continue; // empty text is invalid to echo, citations or not
         var t = { type: 'text', text: b.text };
         if (b.citations.length) t.citations = b.citations;
         content.push(t);

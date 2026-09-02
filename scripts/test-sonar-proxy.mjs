@@ -2,8 +2,8 @@
 /**
  * Integration tests for sonar/server.mjs — spawns the REAL proxy pointed at a
  * throwaway fake Anthropic upstream (SONAR_API_URL), then asserts over real
- * HTTP: the NDJSON event stream for a full web-searched answer including a
- * pause_turn resume (echoed assistant blocks), health reporting, static
+ * HTTP: the NDJSON event stream for a full web-searched answer including two
+ * pause_turn resumes (echoed assistant blocks, accumulating), health, static
  * serving with the traversal guard, and the keyless degraded mode with its
  * rate limit. No network beyond 127.0.0.1; no real key is ever used.
  * Run: node scripts/test-sonar-proxy.mjs
@@ -48,9 +48,18 @@ const CALL_1 = sse([
 const CALL_2 = sse([
   { type: 'message_start', message: { id: 'msg_2' } },
   { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
-  { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: ' — released this week.' } },
+  { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: ' — released this week' } },
   { type: 'content_block_stop', index: 0 },
-  { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 6 } },
+  { type: 'message_delta', delta: { stop_reason: 'pause_turn' }, usage: { output_tokens: 6 } },
+  { type: 'message_stop' },
+]);
+
+const CALL_3 = sse([
+  { type: 'message_start', message: { id: 'msg_3' } },
+  { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+  { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: ', enjoy.' } },
+  { type: 'content_block_stop', index: 0 },
+  { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 3 } },
   { type: 'message_stop' },
 ]);
 
@@ -61,7 +70,7 @@ const upstream = http.createServer((req, res) => {
   req.on('end', () => {
     upstreamCalls.push({ headers: req.headers, body: JSON.parse(raw) });
     res.writeHead(200, { 'content-type': 'text/event-stream' });
-    res.end(upstreamCalls.length === 1 ? CALL_1 : CALL_2);
+    res.end([CALL_1, CALL_2, CALL_3][upstreamCalls.length - 1] || CALL_3);
   });
 });
 
@@ -102,16 +111,17 @@ test('health reports live + the configured model', async () => {
   deepEq(h, { ok: true, live: true, model: 'claude-test-1' });
 });
 
-test('a full ask streams NDJSON events in order, resuming through pause_turn', async () => {
+test('a full ask streams NDJSON events in order, resuming through TWO pause_turns', async () => {
   const { status, events } = await askNDJSON(P(''), 'what is the latest node lts?');
   assert.equal(status, 200);
   deepEq(events.map((e) => e.t),
-    ['hello', 'searching', 'search', 'found', 'text', 'cite', 'turn', 'text', 'turn', 'done']);
+    ['hello', 'searching', 'search', 'found', 'text', 'cite', 'turn', 'text', 'turn', 'text', 'turn', 'done']);
   assert.equal(events[2].query, 'latest node lts');
   assert.equal(events[3].count, 2);
   assert.equal(events[5].n, 1);
   assert.equal(events[5].domain, 'nodejs.org');
   assert.equal(events[6].stop, 'pause_turn');
+  assert.equal(events[8].stop, 'pause_turn');
   const done = events[events.length - 1];
   assert.equal(done.stop, 'end_turn');
   assert.equal(done.sources.length, 1);
@@ -119,7 +129,7 @@ test('a full ask streams NDJSON events in order, resuming through pause_turn', a
 });
 
 test('the upstream saw a real Messages request with the web_search tool', () => {
-  assert.equal(upstreamCalls.length, 2, 'one original call + one pause_turn resume');
+  assert.equal(upstreamCalls.length, 3, 'one original call + two pause_turn resumes');
   const { headers, body } = upstreamCalls[0];
   assert.equal(headers['x-api-key'], 'test-key-not-real');
   assert.equal(headers['anthropic-version'], '2023-06-01');
@@ -140,6 +150,16 @@ test('the resume echoed the paused assistant blocks verbatim (parsed input, resu
   assert.equal(echo.content[1].content.length, 2);
   assert.equal(echo.content[2].text, 'The current LTS is fresh');
   assert.equal(echo.content[2].citations.length, 1);
+});
+
+test('echoes ACCUMULATE across pauses: the second resume still carries the first', () => {
+  const { body } = upstreamCalls[2];
+  assert.equal(body.messages.length, 3, 'user + first echo + second echo');
+  deepEq(body.messages.map((m) => m.role), ['user', 'assistant', 'assistant']);
+  deepEq(body.messages[1].content.map((b) => b.type), ['server_tool_use', 'web_search_tool_result', 'text'],
+    'the first paused segment (its search + text) is not dropped');
+  deepEq(body.messages[2].content.map((b) => b.type), ['text']);
+  assert.equal(body.messages[2].content[0].text, ' — released this week');
 });
 
 test('an unanswerable question is refused before spending anything', async () => {
@@ -179,6 +199,16 @@ test('keyless ask degrades to a 503 the page turns into offline mode', async () 
   const { status, events } = await askNDJSON(B(''), 'anything');
   assert.equal(status, 503);
   assert.ok(events[0].error.includes('ANTHROPIC_API_KEY'));
+});
+
+test('an oversized request gets a readable 413, not a dead socket', async () => {
+  const res = await fetch(P('/api/ask'), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ question: 'x', history: [{ role: 'user', content: 'y'.repeat(70_000) }] }),
+  });
+  assert.equal(res.status, 413);
+  assert.ok((await res.json()).error.includes('too large'));
 });
 
 test('the per-IP rate limit brakes a hot loop with 429', async () => {

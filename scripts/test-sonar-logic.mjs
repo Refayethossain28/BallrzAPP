@@ -197,6 +197,10 @@ test('replay drops what cannot be echoed: unsigned thinking, empty text', () => 
     { type: 'content_block_stop', index: 1 },
     { type: 'content_block_start', index: 2, content_block: { type: 'redacted_thinking', data: 'blob' } },
     { type: 'content_block_stop', index: 2 },
+    // a citations-only text block (no text ever arrived) is also invalid to echo
+    { type: 'content_block_start', index: 3, content_block: { type: 'text', text: '' } },
+    { type: 'content_block_delta', index: 3, delta: { type: 'citations_delta', citation: { url: 'https://example.com/x', title: 'X' } } },
+    { type: 'content_block_stop', index: 3 },
   ]);
   deepEq(E.replayContent(state).map((b) => b.type), ['redacted_thinking']);
 });
@@ -232,8 +236,17 @@ test('renderAnswerHTML pins numbered cite buttons between text slices', () => {
   assert.ok(/Rain tomorrow<sup>/.test(html), 'pin lands right after the fact');
 });
 test('renderAnswerHTML: paragraphs on blank lines, control chars stripped', () => {
-  const html = E.renderAnswerHTML([{ text: 'one\n\ntwo\nthree' }]);
+  const html = E.renderAnswerHTML([{ text: 'one\n\ntwo\nthree\u0001' }]);
   assert.equal(html, '<p>one</p><p>two<br>three</p>');
+});
+test('renderAnswerHTML: model text cannot forge cite pins with control chars', () => {
+  // \u0001 is the internal cite marker — model text carrying it must collapse
+  // harmlessly instead of minting a fake numbered pin
+  const html = E.renderAnswerHTML([{ text: 'fake \u00010\u0001 pin' }, { cite: 7 }]);
+  assert.equal(html.indexOf('\u0001'), -1, 'markers never survive into HTML');
+  assert.equal((html.match(/data-action="jump-source"/g) || []).length, 1, 'only the real pin renders');
+  assert.ok(html.includes('data-n="7"'));
+  assert.ok(html.includes('fake 0 pin'), 'the forged marker text collapses to its digits');
 });
 
 /* ---------- offline demo mode ---------- */

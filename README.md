@@ -154,7 +154,7 @@ pinned to every fact; the browsing happens server-side via the model's
 honestly-labelled offline demo):
 
 ```sh
-ANTHROPIC_API_KEY=sk-ant-... node sonar/server.mjs   # then open http://localhost:8797 (or: npm run sonar)
+ANTHROPIC_API_KEY=sk-ant-... node sonar/server.mjs   # then open http://localhost:8794 (or: npm run sonar)
 ```
 
 Live Claude tool-use in the concierge prototype:

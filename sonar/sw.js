@@ -36,8 +36,10 @@ self.addEventListener('fetch', (e) => {
     const cacheKey = isEngine ? './engine.js' : './index.html';
     e.respondWith(
       fetch(req).then((resp) => {
-        const copy = resp.clone();
-        caches.open(CACHE).then((c) => c.put(cacheKey, copy)).catch(() => {});
+        if (resp.ok) { // a transient 404/500 must never overwrite a good copy
+          const copy = resp.clone();
+          caches.open(CACHE).then((c) => c.put(cacheKey, copy)).catch(() => {});
+        }
         return resp;
       }).catch(() => caches.match(req).then((hit) => hit || caches.match(cacheKey)))
     );
@@ -47,8 +49,10 @@ self.addEventListener('fetch', (e) => {
   e.respondWith(
     caches.match(req).then((hit) =>
       hit || fetch(req).then((resp) => {
-        const copy = resp.clone();
-        caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+        if (resp.ok) {
+          const copy = resp.clone();
+          caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+        }
         return resp;
       }).catch(() => undefined)
     )

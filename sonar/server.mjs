@@ -15,7 +15,7 @@
  * ethos (the engine is evaluated in a node:vm sandbox, as everywhere else).
  *
  * Run:  ANTHROPIC_API_KEY=sk-ant-... node sonar/server.mjs   (or: npm run sonar)
- * Then: open http://localhost:8797
+ * Then: open http://localhost:8794
  *
  * Endpoints:
  *   GET  /api/health   → { ok, live, model }        (live=false without a key)
@@ -32,10 +32,10 @@ import http from 'node:http';
 import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join, normalize } from 'node:path';
+import { dirname, join, normalize, sep } from 'node:path';
 
 const DIR = dirname(fileURLToPath(import.meta.url));
-const PORT = Number(process.env.PORT) || 8797;
+const PORT = Number(process.env.PORT) || 8794;
 const HOST = process.env.HOST || '127.0.0.1'; // deploy with HOST=0.0.0.0
 const API_KEY = process.env.ANTHROPIC_API_KEY || '';
 // Latest most capable model by default — live answers are the whole point.
@@ -67,6 +67,7 @@ function sendJSON(res, status, obj) {
 const hits = new Map();
 function rateLimited(ip) {
   const now = Date.now();
+  if (hits.size > 2000) { for (const [k, r] of hits) if (now > r.reset) hits.delete(k); }
   const rec = hits.get(ip);
   if (!rec || now > rec.reset) { hits.set(ip, { n: 1, reset: now + RATE_WINDOW_MS }); return false; }
   rec.n += 1;
@@ -94,32 +95,47 @@ async function streamAsk({ question, history }, res) {
   const state = Engine.initStream();
   const decoder = new TextDecoder();
 
-  // The server-side search loop can pause (stop_reason "pause_turn"); echo the
-  // assistant blocks back — no extra user turn — and it picks up where it left off.
-  for (let attempt = 0; attempt <= MAX_RESUMES; attempt++) {
-    state.stop = null;
-    body.messages = attempt === 0 ? baseMessages
-      : baseMessages.concat([{ role: 'assistant', content: Engine.replayContent(state) }]);
+  // Stop paying for tokens nobody will read: abort the upstream stream the
+  // moment the browser goes away, and cap the whole ask at 5 minutes.
+  const abort = new AbortController();
+  const killTimer = setTimeout(() => abort.abort(), 300_000);
+  res.on('close', () => abort.abort());
 
-    const upstream = await fetch(API_URL, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(180_000),
-    });
-    if (!upstream.ok || !upstream.body) {
-      throw new Error('anthropic ' + upstream.status + ': ' + (await upstream.text()).slice(0, 400));
-    }
+  try {
+    // The server-side search loop can pause (stop_reason "pause_turn"); echo
+    // the assistant blocks back — no extra user turn — and it picks up where
+    // it left off. Echoes ACCUMULATE: a second pause must still carry the
+    // first continuation's searches and text.
+    let messages = baseMessages;
+    for (let attempt = 0; attempt <= MAX_RESUMES; attempt++) {
+      state.stop = null;
+      body.messages = messages;
 
-    let carry = '';
-    for await (const chunk of upstream.body) {
-      const parsed = Engine.sseParse(carry, decoder.decode(chunk, { stream: true }));
-      carry = parsed.carry;
-      for (const evt of parsed.events) {
-        for (const out of Engine.reduceEvent(state, evt)) emit(out);
+      const upstream = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify(body),
+        signal: abort.signal,
+      });
+      if (!upstream.ok || !upstream.body) {
+        throw new Error('anthropic ' + upstream.status + ': ' + (await upstream.text()).slice(0, 400));
       }
+
+      let carry = '';
+      for await (const chunk of upstream.body) {
+        const parsed = Engine.sseParse(carry, decoder.decode(chunk, { stream: true }));
+        carry = parsed.carry;
+        for (const evt of parsed.events) {
+          for (const out of Engine.reduceEvent(state, evt)) emit(out);
+        }
+      }
+      if (state.stop !== 'pause_turn' || res.writableEnded || res.destroyed) break;
+      const echo = Engine.replayContent(state);
+      if (!echo.length) break; // nothing valid to echo back — cannot resume
+      messages = messages.concat([{ role: 'assistant', content: echo }]);
     }
-    if (state.stop !== 'pause_turn') break;
+  } finally {
+    clearTimeout(killTimer);
   }
 
   emit({ t: 'done', stop: state.stop, sources: state.sources });
@@ -144,11 +160,18 @@ const server = http.createServer(async (req, res) => {
         req.socket.remoteAddress || 'unknown';
       if (rateLimited(ip)) return sendJSON(res, 429, { ok: false, error: 'rate limit — try again in a minute' });
       let raw = '';
+      let tooBig = false;
       req.on('data', (c) => {
+        if (tooBig) return; // drain the rest so the 413 reliably reaches the client
         raw += c;
-        if (raw.length > 64_000) { req.destroy(); }
+        if (raw.length > 64_000) {
+          tooBig = true;
+          raw = '';
+          sendJSON(res, 413, { ok: false, error: 'request too large — start a fresh chat' });
+        }
       });
       req.on('end', async () => {
+        if (tooBig) return;
         try {
           await streamAsk(JSON.parse(raw || '{}'), res);
         } catch (err) {
@@ -168,7 +191,7 @@ const server = http.createServer(async (req, res) => {
     let p = decodeURIComponent(u.pathname);
     if (p === '/' || p === '') p = '/index.html';
     const file = normalize(join(DIR, p));
-    if (!file.startsWith(DIR)) return send(res, 403, {}, 'no');
+    if (file !== DIR && !file.startsWith(DIR + sep)) return send(res, 403, {}, 'no');
     try {
       const ext = file.slice(file.lastIndexOf('.'));
       return send(res, 200, { 'content-type': MIME[ext] || 'application/octet-stream' }, readFileSync(file));
