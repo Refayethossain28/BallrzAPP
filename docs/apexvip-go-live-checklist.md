@@ -24,12 +24,29 @@ Items marked **[code done]** ship in the repo; the rest are operator/legal work.
 > `hotelConciergeBook`, `notifyBookingConfirmed`, `notifyDriverArriving`,
 > `notifyDriverAssigned`, `onBookingStatusChange`, `processCheckoutPayment`) were
 > deleted after their source zips were backed up to
-> `gs://gcf-sources-254410067879-us-central1/consolidation-backup/`. The one
-> gen-1 survivor is `whatsappWebhook`, kept in case it's registered as a callback
-> URL in an external Meta console — confirm and retire or replace it before launch.
-> The **Backend consolidation** workflow (`backend-consolidate.yml`, run manually
-> from the Actions tab) re-audits or re-runs this at any time; `audit` mode is
-> read-only.
+> `gs://gcf-sources-254410067879-us-central1/consolidation-backup/`. The last
+> gen-1 survivor, `whatsappWebhook`, was **retired on 2 Sep 2026** after Cloud
+> Logging showed zero invocations in 30 days (nothing — including Meta — calls
+> it); its source is archived alongside the others as
+> `whatsappWebhook-retired.zip`. The backend is now entirely one gen-2 codebase.
+> The **Backend consolidation** workflow (`backend-consolidate.yml`) and the
+> **Backend trio** workflow (`backend-trio.yml`, audit/fix modes) re-audit any
+> of this from the Actions tab.
+>
+> ⚠️ **Backups still blocked on one owner-only action**: the service account
+> cannot grant itself the export role (verified — `setIamPolicy` denied). Run
+> once in Cloud Shell as the project owner, then nightly Firestore backups work:
+>
+> ```
+> gcloud projects add-iam-policy-binding apexvip-1b4a9 \
+>   --member=serviceAccount:firebase-adminsdk-fbsvc@apexvip-1b4a9.iam.gserviceaccount.com \
+>   --role=roles/datastore.importExportAdmin
+> ```
+>
+> Amadeus note: the stored keys could not be validated from GitHub runners
+> (connection blocked, HTTP 000 on both hosts — not a key verdict). To settle
+> it, run the two probe lines printed by the Backend trio workflow's `amadeus`
+> step in Cloud Shell, or just re-run the workflow later.
 
 ## 0. Legal & regulatory (blockers — cannot launch without)
 - [ ] **TfL Private Hire Vehicle (PHV) Operator licence** + licensed drivers & vehicles.
