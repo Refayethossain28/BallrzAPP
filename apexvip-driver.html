@@ -38,7 +38,7 @@ body{background:var(--bg);color:var(--fg);font-family:-apple-system,system-ui,sa
   --bg:#050505;--fg:#f4f0ea;--fg-muted:#c8bfb0;--fg-dim:#8a8278;--fg-subtle:#5a5550;--fg-ghost:#3a3632;--fg-faint:#28251f;
   --surface:rgba(255,255,255,.045);--surface-b:rgba(255,255,255,.03);--surface-c:rgba(255,255,255,.07);
   --border:rgba(255,255,255,.08);--border-b:rgba(255,255,255,.05);--divider:rgba(255,255,255,.04);
-  --gold:#C8A97E;--gold-2:rgba(200,169,126,.22);--gold-3:rgba(200,169,126,.12);--gold-dim:rgba(200,169,126,.18);--gold-glow:rgba(200,169,126,.28)}
+  --gold:#C8A97E;--gold-2:rgba(200,169,126,.22);--gold-3:rgba(200,169,126,.12);--gold-dim:rgba(200,169,126,.18);--gold-glow:0 0 14px rgba(212,175,110,.10)}
 body.light{
   --bg:#f5f0e8;--fg:#1a1612;--fg-muted:#3d3730;--fg-dim:#6b6258;--fg-subtle:#9a9088;--fg-ghost:#c8bfb0;--fg-faint:#e0d8cc;
   --surface:rgba(0,0,0,.04);--surface-b:rgba(0,0,0,.025);--surface-c:rgba(0,0,0,.065);
@@ -75,9 +75,9 @@ input,select,textarea{font-size:16px !important}
 /* ── Splash aurora ── */
 .aurora{position:absolute;inset:0;overflow:hidden;z-index:0;pointer-events:none}
 .aurora i{position:absolute;border-radius:50%;filter:blur(110px);will-change:transform}
-.aurora i:nth-child(1){width:520px;height:520px;top:-180px;left:-140px;background:radial-gradient(circle,rgba(90,65,150,.16),transparent 65%);animation:auroraDrift1 28s ease-in-out infinite}
-.aurora i:nth-child(2){width:440px;height:440px;bottom:8%;right:-160px;background:radial-gradient(circle,rgba(180,140,55,.1),transparent 65%);animation:auroraDrift2 34s ease-in-out infinite}
-.aurora i:nth-child(3){width:380px;height:380px;top:38%;left:22%;background:radial-gradient(circle,rgba(75,55,145,.11),transparent 65%);animation:auroraDrift3 22s ease-in-out infinite}
+.aurora i:nth-child(1){width:520px;height:520px;top:-180px;left:-140px;background:radial-gradient(circle,rgba(190,150,90,.05),transparent 65%);animation:auroraDrift1 28s ease-in-out infinite}
+.aurora i:nth-child(2){width:440px;height:440px;bottom:8%;right:-160px;background:radial-gradient(circle,rgba(190,150,90,.06),transparent 65%);animation:auroraDrift2 34s ease-in-out infinite}
+.aurora i:nth-child(3){width:380px;height:380px;top:38%;left:22%;background:radial-gradient(circle,rgba(190,150,90,.04),transparent 65%);animation:auroraDrift3 22s ease-in-out infinite}
 
 /* ── Diamond shimmer text ── */
 .diamond-text{
@@ -108,7 +108,7 @@ input,select,textarea{font-size:16px !important}
 .orb{position:absolute;border-radius:50%;filter:blur(90px);will-change:transform}
 .orb-1{width:340px;height:340px;background:radial-gradient(circle,#C8A97E,transparent 70%);opacity:.2;top:-80px;left:-60px;animation:orbDrift1 24s ease-in-out infinite alternate}
 .orb-2{width:280px;height:280px;background:radial-gradient(circle,#8a6020,transparent 70%);opacity:.18;bottom:80px;right:-80px;animation:orbDrift2 30s ease-in-out infinite alternate}
-.orb-3{width:280px;height:280px;background:radial-gradient(circle,rgba(90,80,160,.9),transparent 70%);opacity:.14;top:38%;left:28%;animation:orbDrift3 27s ease-in-out infinite alternate}
+.orb-3{width:280px;height:280px;background:radial-gradient(circle,rgba(190,150,90,.45),transparent 70%);opacity:.14;top:38%;left:28%;animation:orbDrift3 27s ease-in-out infinite alternate}
 
 /* ── Staggered entrances ── */
 .stagger>*{opacity:0;animation:fadeUp .4s ease forwards}
@@ -247,6 +247,50 @@ function addRipple(btn,e){
   btn.appendChild(r);r.addEventListener('animationend',()=>r.remove(),{once:true});
 }
 
+// ── Line icons ─────────────────────────────────────────────────────────────
+// Hairline SVG marks wherever the UI needs a pictogram. Emoji render in each
+// platform's cartoon set and read as filler; a consistent 1.5px stroke reads
+// as drawn for this app.
+function lineIcon(name,size=18,color='currentColor'){
+  const P={
+    car:'M2.5 12.5l1.3-3.8A2 2 0 015.7 7.3h8.6a2 2 0 011.9 1.4l1.3 3.8M2.5 12.5h15M2.5 12.5V16h2.2M17.5 12.5V16h-2.2M7.2 16a1.35 1.35 0 11-2.7 0M15.5 16a1.35 1.35 0 11-2.7 0',
+    clock:'M10 6v4l2.8 1.8M10 2.5a7.5 7.5 0 110 15 7.5 7.5 0 010-15',
+    bed:'M2.5 15.5V5.5M2.5 12.5h15v3M2.5 9.5h15M5.2 9.5V8a1.5 1.5 0 011.5-1.5h1.8A1.5 1.5 0 0110 8v1.5',
+    dining:'M6.8 2.5h6.4l-.7 4.2a2.6 2.6 0 01-5 0l-.7-4.2zM10 9.4v5.4M7.2 17.5h5.6',
+    bag:'M4.8 6.5h10.4l-.9 9.2a1.6 1.6 0 01-1.6 1.4H7.3a1.6 1.6 0 01-1.6-1.4l-.9-9.2zM7.4 6.5V5a2.6 2.6 0 015.2 0v1.5',
+    landmark:'M3 17h14M4.6 17V9.2m3.6 7.8V9.2m3.6 7.8V9.2m3.6 7.8V9.2M3 9.2h14L10 3.4 3 9.2z',
+    ticket:'M3.5 6.5h13v2.6a1.9 1.9 0 000 3.8v2.6h-13v-2.6a1.9 1.9 0 000-3.8V6.5z',
+    star:'M10 3.2l2 4.2 4.6.6-3.4 3.2.9 4.6L10 13.6l-4.1 2.2.9-4.6-3.4-3.2 4.6-.6 2-4.2z',
+    phone:'M4.2 3.5h2.9l1.4 3.8-1.9 1.4a10.8 10.8 0 004.7 4.7l1.4-1.9 3.8 1.4v2.9a1.4 1.4 0 01-1.5 1.4A14.2 14.2 0 012.8 5 1.4 1.4 0 014.2 3.5z',
+    snow:'M10 2.8v14.4M4 6.2l12 7.6M16 6.2L4 13.8',
+    warn:'M10 3.6l7.4 12.9H2.6L10 3.6zM10 8.6v3.4m0 2.4v.01',
+    sun:'M10 6.2a3.8 3.8 0 110 7.6 3.8 3.8 0 010-7.6zM10 2v1.8M10 16.2V18M2 10h1.8M16.2 10H18M4.3 4.3l1.3 1.3M14.4 14.4l1.3 1.3M15.7 4.3l-1.3 1.3M5.6 14.4l-1.3 1.3',
+    moon:'M16.7 12.4A7 7 0 017.6 3.3a7 7 0 109.1 9.1z',
+    leaf:'M4.4 15.6C4.2 8.8 8.6 4.4 15.6 4.4c.2 6.8-4.2 11.2-11.2 11.2zM4.4 15.6c2.4-5 5.4-8 9.2-9.2',
+    sliders:'M3 6.2h8M14.8 6.2H17M13 4.6a1.6 1.6 0 100 3.2 1.6 1.6 0 000-3.2zM3 13.8h2.2M9 13.8H17M7.2 12.2a1.6 1.6 0 100 3.2 1.6 1.6 0 000-3.2z',
+    cardpay:'M2.5 5.5h15v9h-15v-9zM2.5 8.4h15M5 12h3.4',
+    pin:'M10 17.8S4.6 13.2 4.6 8.9a5.4 5.4 0 1110.8 0c0 4.3-5.4 8.9-5.4 8.9zM10 10.7a1.9 1.9 0 110-3.8 1.9 1.9 0 010 3.8z',
+    building:'M4.5 17V4.2a1.2 1.2 0 011.2-1.2h5.6a1.2 1.2 0 011.2 1.2V17M2.8 17h14.4M12.5 8.2h2.3a1.2 1.2 0 011.2 1.2V17M6.9 5.9h1.5M6.9 8.9h1.5M6.9 11.9h1.5',
+    gift:'M3.6 9.4h12.8V16a1.2 1.2 0 01-1.2 1.2H4.8A1.2 1.2 0 013.6 16V9.4zM2.9 6.4h14.2v3H2.9v-3zM10 6.4v10.8M10 6.4S8.9 3 7 3a1.7 1.7 0 000 3.4h3zM10 6.4s1.1-3.4 3-3.4a1.7 1.7 0 010 3.4h-3z',
+    calendar:'M3.6 5.6h12.8v10.8H3.6V5.6zM3.6 8.8h12.8M6.9 3.6v2.5M13.1 3.6v2.5',
+    chat:'M3.6 4.6h12.8v8.2h-7.2L5.8 15.9v-3.1H3.6V4.6z',
+    shield:'M10 2.6l6.4 2.3v4.5c0 4-2.6 6.7-6.4 7.9-3.8-1.2-6.4-3.9-6.4-7.9V4.9L10 2.6z',
+    cookie:'M17.2 10.7A7.3 7.3 0 1110 2.7a2.8 2.8 0 003 3.3 2.6 2.6 0 002.9 2.9c.5.5 1 1.1 1.3 1.8zM7.6 8.3h.01M11.2 12.5h.01M7.2 12.9h.01',
+    doc:'M5.1 2.6h6.8l3 3v11.8H5.1V2.6zM11.9 2.6v3.2h3M7.5 9.2h5M7.5 12.2h5M7.5 15h3.2',
+    lock:'M5.1 9h9.8v8.4H5.1V9zM6.9 9V6.3a3.1 3.1 0 016.2 0V9M10 12.4v2.2',
+    mail:'M2.6 5.2h14.8v9.6H2.6V5.2zM2.6 5.6l7.4 5.8 7.4-5.8',
+    bell:'M4.2 13.3v-.4a5.8 5.8 0 0111.6 0v.4M3.3 15.8h13.4M10 7.1V5.8',
+    search:'M8.8 2.8a6 6 0 110 12 6 6 0 010-12zM13.2 13.2l4 4',
+    camera:'M2.6 6.6h3.2l1.4-2h5.6l1.4 2h3.2v8.8H2.6V6.6zM10 13.2a2.8 2.8 0 110-5.6 2.8 2.8 0 010 5.6z',
+  };
+  return `<svg width="${size}" height="${size}" viewBox="0 0 20 20" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="${P[name]||P.star}"/></svg>`;
+}
+// Category → mark, for venue/experience data that used to carry an emoji.
+function catIcon(cat,size=18,color='currentColor'){
+  const m={Hotel:'bed',Dining:'dining',Shopping:'bag',Culture:'landmark',Events:'ticket'};
+  return lineIcon(m[cat]||'star',size,color);
+}
+
 // ── Firebase init ──────────────────────────────────────────────────────
 let auth, db, fns, storage, FIREBASE_ENABLED = false, _driverId = null;
 let _gpsInterval = null, _gpsWatchId = null, _gpsLastWrite = 0;
@@ -305,7 +349,7 @@ function getClientPreferences(clientId, structuredPrefs) {
     if (musicMap[structuredPrefs.music]) lines.push(musicMap[structuredPrefs.music]);
     if (convoMap[structuredPrefs.convo]) lines.push(convoMap[structuredPrefs.convo]);
     if (paperMap[structuredPrefs.newspaper]) lines.push(paperMap[structuredPrefs.newspaper]);
-    if (structuredPrefs.discrete) lines.push('⚡ Discrete mode — confirm pickup location only at collection point');
+    if (structuredPrefs.discrete) lines.push(lineIcon('lock',13,'var(--gold)')+' Discrete mode — confirm pickup location only at collection point');
     if (lines.length > 0) return lines;
   }
   // Fallback: check legacy stored prefs
@@ -770,7 +814,7 @@ function renderDocsList(){
     const st = doc.status || 'none';
     const stLabel = {none:'Not uploaded',pending:'Under review',approved:'Approved',rejected:'Rejected'}[st];
     const stColor = {none:'var(--fg-dim)',pending:'#D4A843',approved:'#22c55e',rejected:'#ef4444'}[st];
-    const icon = {none:'📄',pending:'🕐',approved:'✅',rejected:'❌'}[st];
+    const icon = lineIcon({none:'doc',pending:'clock',approved:'shield',rejected:'warn'}[st],20,stColor);
     return `<div class="card" style="margin-bottom:10px">
       <div style="display:flex;align-items:center;gap:14px">
         <div style="width:42px;height:42px;border-radius:12px;background:var(--surface-b);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">${icon}</div>
@@ -1145,7 +1189,7 @@ function showInteriorPhotoPrompt(){
 <div style="width:100%;max-width:480px;background:var(--surface);border-radius:28px 28px 0 0;padding:28px 24px calc(env(safe-area-inset-bottom)+28px);animation:slideUpSheet .3s cubic-bezier(0.16,1,0.3,1)">
   <div style="width:40px;height:4px;border-radius:2px;background:var(--border);margin:0 auto 24px"></div>
   <div style="text-align:center;margin-bottom:24px">
-    <div style="font-size:40px;margin-bottom:12px">📸</div>
+    <div style="margin-bottom:12px;display:flex;justify-content:center">${lineIcon('car',40,'var(--gold)')}</div>
     <div style="font-size:20px;font-weight:700;margin-bottom:8px">Vehicle Interior Check</div>
     <div style="font-size:14px;color:var(--fg-dim);line-height:1.6">Please take a photo of the vehicle interior before your passenger boards.<br><span style="color:var(--gold)">This is stored as evidence in case of any complaint.</span></div>
   </div>
@@ -1154,7 +1198,7 @@ function showInteriorPhotoPrompt(){
     <div id="interior-upload-status" style="padding:10px 14px;font-size:12px;color:var(--fg-dim);display:flex;align-items:center;gap:8px"></div>
   </div>
   <input type="file" id="interior-file" accept="image/*" capture="environment" style="display:none" onchange="handleInteriorPhoto(this)"/>
-  <button onclick="document.getElementById('interior-file').click()" id="interior-camera-btn" style="width:100%;padding:16px;background:var(--gold);border:none;border-radius:16px;font-size:16px;font-weight:700;color:#0c0b09;cursor:pointer;font-family:inherit;margin-bottom:10px">📷  Open Camera</button>
+  <button onclick="document.getElementById('interior-file').click()" id="interior-camera-btn" style="width:100%;padding:16px;background:var(--gold);border:none;border-radius:16px;font-size:16px;font-weight:700;color:#0c0b09;cursor:pointer;font-family:inherit;margin-bottom:10px;display:flex;align-items:center;justify-content:center;gap:8px">${lineIcon('camera',17,'#0c0b09')} Open Camera</button>
   <button id="interior-confirm-btn" onclick="confirmInteriorPhoto()" style="display:none;width:100%;padding:16px;background:#22c55e;border:none;border-radius:16px;font-size:16px;font-weight:700;color:#fff;cursor:pointer;font-family:inherit;margin-bottom:10px">✓  Confirm & Mark Arrived</button>
   <button onclick="skipInteriorPhoto()" style="width:100%;padding:13px;background:none;border:1px solid var(--border);border-radius:16px;font-size:14px;color:var(--fg-dim);cursor:pointer;font-family:inherit">Skip (not recommended)</button>
 </div>`;
@@ -1177,9 +1221,9 @@ function handleInteriorPhoto(input){
   const confirmBtn=document.getElementById('interior-confirm-btn');
   if(preview)preview.style.display='block';
   if(img)img.src=_interiorObjectURL;
-  if(cameraBtn)cameraBtn.textContent='📷  Retake Photo';
+  if(cameraBtn)cameraBtn.innerHTML=lineIcon('camera',17,'#0c0b09')+' Retake Photo';
   if(confirmBtn)confirmBtn.style.display='block';
-  if(status)status.innerHTML='<span style="animation:pulse 1s infinite;color:var(--gold)">⬆</span> Uploading…';
+  if(status)status.innerHTML='<span style="animation:pulse 1s infinite;color:var(--gold)">↑</span> Uploading…';
 
   // Upload to Firebase Storage
   if(FIREBASE_ENABLED&&_driverId){
@@ -1194,7 +1238,7 @@ function handleInteriorPhoto(input){
         db.collection('jobs').doc(S.activeJob.id).update({interiorPhotoUrl:url,interiorPhotoAt:firebase.firestore.FieldValue.serverTimestamp()}).catch(reportError);
       }
     }).catch(e=>{
-      if(status)status.innerHTML='<span style="color:#f87171">⚠ Upload failed — photo saved locally</span>';
+      if(status)status.innerHTML='<span style="color:#f87171;display:flex;align-items:center;gap:6px">'+lineIcon('warn',13,'#f87171')+' Upload failed — photo saved locally</span>';
       console.warn('Interior photo upload:',e.message);
     });
   }else{
@@ -1265,9 +1309,9 @@ function toggleErrand(jobId,idx){
 }
 
 function jobTag(type){
-  const m={airport:'tag-blue ✈ Airport',hourly:'tag-gold ⏱ Hourly',day:'tag-purple ◈ Full Day'};
-  const v=m[type]||'tag-gold Hourly';const[c,...r]=v.split(' ');
-  return`<span class="tag ${c}">${r.join(' ')}</span>`;
+  const m={airport:['tag-blue',lineIcon('ticket',11,'currentColor'),'Airport'],hourly:['tag-gold',lineIcon('clock',11,'currentColor'),'Hourly'],day:['tag-purple','◈','Full Day']};
+  const[c,ic,l]=m[type]||['tag-gold','','Hourly'];
+  return`<span class="tag ${c}" style="align-items:center;gap:5px">${ic} ${l}</span>`;
 }
 function stars(r){return'★'.repeat(r)+'☆'.repeat(5-r);}
 
@@ -1348,7 +1392,7 @@ home:()=>{
       </div>
       <div style="width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#C8A97E,#8B6020);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:#000;margin:0 auto 8px">${oj?.initials||'CL'}</div>
       <div style="font-size:13px;font-weight:600;margin-bottom:4px">${oj?.client||'Client'}</div>
-      <div style="font-size:11px;color:var(--fg-dim);margin-bottom:${oj?.type==='day'?'10':'16'}px">${oj?.type==='airport'?'✈':oj?.type==='hourly'?'⏱':'📅'} ${oj?.service||'Airport Transfer'}</div>
+      <div style="font-size:11px;color:var(--fg-dim);margin-bottom:${oj?.type==='day'?'10':'16'}px;display:flex;align-items:center;justify-content:center;gap:5px">${lineIcon(oj?.type==='airport'?'ticket':oj?.type==='hourly'?'clock':'calendar',11,'var(--fg-dim)')} ${oj?.service||'Airport Transfer'}</div>
       ${oj?.type==='day'?`<div style="background:linear-gradient(135deg,rgba(200,169,126,.18),rgba(200,169,126,.08));border:1px solid rgba(200,169,126,.35);border-radius:10px;padding:8px 12px;margin-bottom:14px;text-align:center"><div style="font-size:10px;font-weight:700;color:#C8A97E;letter-spacing:1px">PERSONAL DRIVER · ALL DAY</div>${oj?.concierge?.itinerary?.length?`<div style="font-size:11px;color:var(--fg-dim);margin-top:4px">First stop: ${oj.concierge.itinerary[0].place}${oj.concierge.errands?.length?` · ${oj.concierge.errands.length} errand${oj.concierge.errands.length!==1?'s':''}`:''}</div>`:''}  </div>`:''}
       ${[['Pickup',oj?.pickup||'—'],['Drop-off',oj?.dropoff||'—'],['In',oj?.time||'Now']].map(([l,v])=>`<div style="display:flex;justify-content:space-between;margin-bottom:7px;font-size:13px"><span style="color:var(--fg-dim)">${l}</span><span style="font-weight:600">${v}</span></div>`).join('')}
       <div style="font-size:30px;font-weight:800;color:#C8A97E;margin:16px 0 4px">£${oj?.pay||95}</div>
@@ -1406,7 +1450,7 @@ home:()=>{
         </div>`:''}
 
         ${!S.online&&!S.activeJob?`<div onclick="goOnline()" style="background:rgba(212,168,67,.08);border:1px solid rgba(212,168,67,.25);border-radius:16px;padding:14px 16px;margin-bottom:12px;cursor:pointer;display:flex;align-items:center;gap:12px">
-          <div style="font-size:22px">⚡</div>
+          <div style="display:flex;align-items:center">${lineIcon('warn',22,'var(--gold)')}</div>
           <div>
             <div style="font-size:13px;font-weight:700;color:var(--gold)">You are offline</div>
             <div style="font-size:12px;color:var(--fg-dim);margin-top:2px">Tap here or the button above to go online and receive job offers</div>
@@ -1414,7 +1458,7 @@ home:()=>{
         </div>`:''}
 
         ${S.online&&S._openJobs?.length&&!S.activeJob?`<div style="background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.2);border-radius:16px;padding:14px 16px;margin-bottom:12px">
-          <div style="font-size:13px;font-weight:700;color:#22c55e">📢 ${S._openJobs.length} job offer${S._openJobs.length!==1?'s':''} waiting</div>
+          <div style="font-size:13px;font-weight:700;color:#22c55e;display:flex;align-items:center;gap:6px">${lineIcon('bell',14,'#22c55e')} ${S._openJobs.length} job offer${S._openJobs.length!==1?'s':''} waiting</div>
           <div style="font-size:12px;color:var(--fg-dim);margin-top:2px">A booking request is being offered to you now</div>
         </div>`:''}
 
@@ -1444,7 +1488,7 @@ home:()=>{
 active:()=>{
   const j=S.activeJob;
   if(!j) return`<div class="screen"><div class="back-row"><button class="back-btn" onclick="go('home')">‹ Home</button></div>
-    <div style="text-align:center;padding:70px 20px;color:var(--fg-subtle)"><div style="font-size:32px;margin-bottom:12px">🚗</div><div style="font-size:15px;font-weight:600">No active trip</div><div style="font-size:13px;color:var(--fg-ghost);margin-top:6px">Accept a job to start a trip.</div></div>${nav()}</div>`;
+    <div style="text-align:center;padding:70px 20px;color:var(--fg-subtle)"><div style="margin-bottom:12px;display:flex;justify-content:center">${lineIcon('car',32,'var(--fg-subtle)')}</div><div style="font-size:15px;font-weight:600">No active trip</div><div style="font-size:13px;color:var(--fg-ghost);margin-top:6px">Accept a job to start a trip.</div></div>${nav()}</div>`;
   const steps=[{l:'Confirmed'},{l:'En Route'},{l:'Arrived'},{l:'Onboard'},{l:'Complete'}];
   const btnLabels={2:'I Have Arrived',3:'Passenger Onboard',4:'Complete Trip',5:'Done'};
   return`<div class="screen">
@@ -1507,13 +1551,13 @@ active:()=>{
         <div style="width:9px;height:9px;border-radius:2px;background:var(--fg-dim);flex-shrink:0;margin-top:4px"></div>
         <div><div style="font-size:13px;font-weight:600">Drop-off</div><div style="font-size:13px;color:var(--fg-dim);margin-top:2px">${j.dropoff}</div></div>
       </div>
-      ${j.flight?`<div style="margin-top:10px;font-size:12px;color:var(--fg-dim)">✈ Flight ${j.flight}</div>`:''}
+      ${j.flight?`<div style="margin-top:10px;font-size:12px;color:var(--fg-dim);display:flex;align-items:center;gap:6px">${lineIcon('ticket',12,'var(--fg-dim)')} Flight ${j.flight}</div>`:''}
     </div>
     ${j.type==='day' ? `
     <!-- Personal Driver Brief Panel -->
     <div class="card" style="margin-bottom:12px;border-color:rgba(200,169,126,.25);background:linear-gradient(180deg,rgba(200,169,126,.06) 0%,transparent 100%)">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-        <div style="font-size:20px">&#x1F3CE;</div>
+        <div style="display:flex;align-items:center">${lineIcon('car',20,'var(--gold)')}</div>
         <div>
           <div style="font-size:11px;font-weight:700;color:#C8A97E;letter-spacing:1.5px">PERSONAL DRIVER</div>
           <div style="font-size:10px;color:var(--fg-subtle);margin-top:1px">ALL DAY SERVICE</div>
@@ -1612,7 +1656,7 @@ jobs:()=>{
       ${['available','upcoming'].map(s=>`<button onclick="S.jobsTab='${s}';render()" style="padding:8px 18px;border-radius:20px;font-size:13px;font-weight:600;border:1px solid ${t===s?'#C8A97E':'var(--border)'};background:${t===s?'rgba(200,169,126,.12)':'transparent'};color:${t===s?'#C8A97E':'var(--fg-dim)'};cursor:pointer">${s==='available'?`Available (${liveJobs.length})`:`Upcoming (${S.activeJob?1:0})`}</button>`).join('')}
     </div>
     ${t==='available'?(!liveJobs.length?`<div style="text-align:center;padding:48px 20px;color:var(--fg-subtle)">
-      <div style="font-size:32px;margin-bottom:12px">🔍</div>
+      <div style="margin-bottom:12px;display:flex;justify-content:center">${lineIcon('search',32,'var(--fg-subtle)')}</div>
       <div style="font-size:15px;font-weight:600;margin-bottom:6px">${S.online?'No open jobs right now':'You are offline'}</div>
       <div style="font-size:13px;color:var(--fg-ghost)">${S.online?'New bookings will appear here automatically — tap Refresh to check now':'Go online from the Home tab to receive jobs'}</div>
       ${S.online?`<button onclick="refreshJobs()" style="margin-top:20px;background:rgba(200,169,126,.12);border:1px solid rgba(200,169,126,.35);border-radius:20px;padding:10px 24px;color:#C8A97E;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Check for Jobs</button>`:''}
@@ -1632,7 +1676,7 @@ jobs:()=>{
       <div style="font-size:15px;font-weight:600;margin-bottom:4px">${S.activeJob.pickup||''}</div>
       <div style="font-size:13px;color:var(--fg-dim);margin-bottom:10px">→ ${S.activeJob.dropoff||''}</div>
       <div style="font-size:24px;font-weight:800;color:#C8A97E;margin-top:10px">£${S.activeJob.pay||''}</div>
-    </div>`:`<div style="text-align:center;padding:48px 20px;color:var(--fg-subtle)"><div style="font-size:32px;margin-bottom:12px">📅</div><div style="font-size:15px;font-weight:600">No upcoming trips</div></div>`):''}
+    </div>`:`<div style="text-align:center;padding:48px 20px;color:var(--fg-subtle)"><div style="margin-bottom:12px;display:flex;justify-content:center">${lineIcon('calendar',32,'var(--fg-subtle)')}</div><div style="font-size:15px;font-weight:600">No upcoming trips</div></div>`):''}
     ${nav()}
   </div>`;
 },
@@ -1690,7 +1734,7 @@ earnings:()=>{
     <div class="card" style="margin-top:12px">
       <div class="section-label" style="margin-bottom:14px">ApexCoin</div>
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
-        <span style="font-size:28px">🪙</span>
+        <span style="font-size:28px;color:var(--gold)">◈</span>
         <div style="flex:1"><div style="font-size:11px;color:var(--fg-subtle)">BALANCE</div><div style="font-size:28px;font-weight:800;color:#C8A97E">${S.apexcoin.toFixed(2)} AXC</div><div style="font-size:12px;color:rgba(200,169,126,.6)">≈ £${S.apexcoin.toFixed(2)}</div></div>
       </div>
       <div style="font-size:12px;color:var(--fg-dim);line-height:1.7">Drivers earn ${driverEarnPct()}% of every completed job in ApexCoin. AXC can be redeemed as cash or used within the ApexVIP ecosystem.</div>
@@ -1738,7 +1782,7 @@ history:()=>{
         <div><div style="font-size:14px;font-weight:600">${h.route||h.service}</div><div style="font-size:12px;color:var(--fg-dim);margin-top:3px">${h.service}${h.date?' · '+h.date:''}</div></div>
         <div style="text-align:right"><div style="font-size:18px;font-weight:800;color:#C8A97E">${payByRef[h.ref]!=null?'£'+payByRef[h.ref]:(h.price?'£'+h.price:'—')}</div><div style="font-size:13px;color:#C8A97E;margin-top:2px">${h.rating?stars(Math.round(h.rating)):''}</div></div>
       </div>
-    </div>`).join(''):`<div style="text-align:center;padding:48px 20px;color:var(--fg-subtle)"><div style="font-size:32px;margin-bottom:12px">🕐</div><div style="font-size:15px;font-weight:600">No trips yet</div><div style="font-size:13px;color:var(--fg-ghost);margin-top:6px">Completed trips will appear here.</div></div>`}
+    </div>`).join(''):`<div style="text-align:center;padding:48px 20px;color:var(--fg-subtle)"><div style="margin-bottom:12px;display:flex;justify-content:center">${lineIcon('clock',32,'var(--fg-subtle)')}</div><div style="font-size:15px;font-weight:600">No trips yet</div><div style="font-size:13px;color:var(--fg-ghost);margin-top:6px">Completed trips will appear here.</div></div>`}
     ${nav()}
   </div>`;
 },
@@ -1746,7 +1790,7 @@ history:()=>{
 profile:()=>`<div class="screen">
   <div class="top-bar">
     <div style="font-size:22px;font-weight:700">Profile</div>
-    <button onclick="toggleTheme()" style="background:var(--surface);border:1px solid var(--border);border-radius:50%;width:36px;height:36px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center">${S.theme==='light'?'🌙':'☀️'}</button>
+    <button onclick="toggleTheme()" style="background:var(--surface);border:1px solid var(--border);border-radius:50%;width:36px;height:36px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center">${S.theme==='light'?lineIcon('moon',16,'var(--fg)'):lineIcon('sun',16,'var(--fg)')}</button>
   </div>
   <div style="text-align:center;padding:12px 0 24px">
     <div style="width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,#C8A97E,#8B6020);display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:800;color:#000;margin:0 auto 14px">${S.profile.initials}</div>
@@ -1764,19 +1808,19 @@ profile:()=>`<div class="screen">
     <div><div style="font-size:15px;font-weight:600">${S.profile.model||S.profile.vehicle||'No vehicle assigned'}</div><div style="font-size:13px;color:var(--fg-dim);margin-top:2px">${S.profile.reg||'—'}</div></div>
   </div>
   <div class="card" onclick="go('axc-wallet')" style="margin-bottom:12px;display:flex;align-items:center;gap:14px;border-color:rgba(200,169,126,.22);background:rgba(200,169,126,.04);cursor:pointer">
-    <div style="width:44px;height:44px;border-radius:12px;background:rgba(200,169,126,.1);border:1px solid rgba(200,169,126,.2);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">🪙</div>
+    <div style="width:44px;height:44px;border-radius:12px;background:rgba(200,169,126,.1);border:1px solid rgba(200,169,126,.2);display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--gold);flex-shrink:0">◈</div>
     <div style="flex:1"><div style="font-size:12px;color:#C8A97E;font-weight:700;letter-spacing:1px">APEXCOIN BALANCE</div><div style="font-size:22px;font-weight:800;color:#C8A97E">${S.apexcoin.toFixed(2)} AXC</div></div>
     <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="rgba(200,169,126,.4)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
   </div>
   <div class="card" style="margin-bottom:12px">
-    ${[{icon:'📄',l:'Documents',a:"go('documents')"},{icon:'🏦',l:(S._payout&&S._payout.payoutsEnabled?'Payouts · active':'Set up payouts'),a:"setupPayouts()"},{icon:'📅',l:'Availability Schedule',a:"go('availability')"},{icon:'⭐',l:'Ratings & Reviews',a:"go('ratings')"}].map((r,i,a)=>`<div class="menu-row" onclick="${r.a}">
-      <div style="display:flex;align-items:center;gap:12px"><span style="font-size:18px">${r.icon}</span><span style="font-size:15px">${r.l}</span></div>
+    ${[{icon:'doc',l:'Documents',a:"go('documents')"},{icon:'landmark',l:(S._payout&&S._payout.payoutsEnabled?'Payouts · active':'Set up payouts'),a:"setupPayouts()"},{icon:'calendar',l:'Availability Schedule',a:"go('availability')"},{icon:'star',l:'Ratings & Reviews',a:"go('ratings')"}].map((r,i,a)=>`<div class="menu-row" onclick="${r.a}">
+      <div style="display:flex;align-items:center;gap:12px">${lineIcon(r.icon,18,'var(--gold)')}<span style="font-size:15px">${r.l}</span></div>
       <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
     </div>`).join('')}
   </div>
   <div class="card" style="margin-bottom:20px">
-    ${[{icon:'💬',l:'Help & Support',act:"window.open('mailto:support@apexvip.co.uk?subject=Chauffeur%20support','_blank')"},{icon:'📞',l:'Call Dispatch',act:"driverAIQuick('I need to reach dispatch')"}].map(r=>`<div class="menu-row" onclick="${r.act}" style="cursor:pointer">
-      <div style="display:flex;align-items:center;gap:12px"><span style="font-size:18px">${r.icon}</span><span style="font-size:15px">${r.l}</span></div>
+    ${[{icon:'chat',l:'Help & Support',act:"window.open('mailto:support@apexvip.co.uk?subject=Chauffeur%20support','_blank')"},{icon:'phone',l:'Call Dispatch',act:"driverAIQuick('I need to reach dispatch')"}].map(r=>`<div class="menu-row" onclick="${r.act}" style="cursor:pointer">
+      <div style="display:flex;align-items:center;gap:12px">${lineIcon(r.icon,18,'var(--gold)')}<span style="font-size:15px">${r.l}</span></div>
       <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
     </div>`).join('')}
   </div>
@@ -1788,7 +1832,7 @@ axcWallet:()=>`<div class="screen">
   <div class="back-row"><button class="back-btn" onclick="go('profile')">‹ Back</button></div>
   <div style="font-size:22px;font-weight:700;margin-bottom:20px">ApexCoin Wallet</div>
   <div style="background:linear-gradient(135deg,rgba(200,169,126,.1),rgba(200,169,126,.03));border:1px solid rgba(200,169,126,.25);border-radius:22px;padding:24px;margin-bottom:20px;text-align:center">
-    <div style="font-size:40px;margin-bottom:8px">🪙</div>
+    <div style="font-size:40px;margin-bottom:8px;color:var(--gold)">◈</div>
     <div style="font-size:11px;color:rgba(200,169,126,.6);letter-spacing:3px;margin-bottom:4px">BALANCE</div>
     <div style="font-size:48px;font-weight:800;color:#C8A97E;line-height:1">${S.apexcoin.toFixed(2)}</div>
     <div style="font-size:14px;color:rgba(200,169,126,.7);margin-top:4px">AXC · ≈ £${S.apexcoin.toFixed(2)}</div>
@@ -1972,12 +2016,12 @@ ratings:()=>{
 apexai:()=>{
   const msgs = S._aiMsgs;
   const examples = [
-    {icon:'🗺',text:'Best route to Heathrow avoiding M4 roadworks?'},
-    {icon:'🅿',text:'Where can I wait near The Ritz without a ticket?'},
-    {icon:'🤝',text:'How do I handle a client who wants to change destination mid-trip?'},
-    {icon:'💰',text:'How am I doing on earnings this week?'},
-    {icon:'✈',text:'Flight BA249 is delayed — what should I tell the client?'},
-    {icon:'🌆',text:'Best drop-off point for Annabel\'s in Berkeley Square?'},
+    {icon:'pin',text:'Best route to Heathrow avoiding M4 roadworks?'},
+    {icon:'car',text:'Where can I wait near The Ritz without a ticket?'},
+    {icon:'chat',text:'How do I handle a client who wants to change destination mid-trip?'},
+    {icon:'cardpay',text:'How am I doing on earnings this week?'},
+    {icon:'ticket',text:'Flight BA249 is delayed — what should I tell the client?'},
+    {icon:'building',text:'Best drop-off point for Annabel\'s in Berkeley Square?'},
   ];
   return`
 <div style="height:100dvh;display:flex;flex-direction:column;background:var(--bg)">
@@ -2000,7 +2044,7 @@ apexai:()=>{
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">
       ${examples.map(e=>`<div onclick="driverAIQuick('${e.text.replace(/'/g,"\\'")}')" style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:12px;cursor:pointer;transition:border-color .15s" ontouchstart="this.style.borderColor='var(--gold)'" ontouchend="this.style.borderColor='var(--border)'">
-        <div style="font-size:18px;margin-bottom:6px">${e.icon}</div>
+        <div style="margin-bottom:6px">${lineIcon(e.icon,18,'var(--gold)')}</div>
         <div style="font-size:12px;color:var(--fg-2);line-height:1.4">${e.text}</div>
       </div>`).join('')}
     </div>`
@@ -2048,7 +2092,7 @@ apexai:()=>{
     </div>
   </div>
   <div style="flex:1;overflow-y:auto;padding:0 22px calc(env(safe-area-inset-bottom)+90px)">
-    ${DRIVER_DEMO_FLIGHTS.length?'':`<div style="text-align:center;padding:60px 20px;color:var(--fg-subtle)"><div style="font-size:32px;margin-bottom:12px">✈️</div><div style="font-size:15px;font-weight:600">No tracked flights</div><div style="font-size:13px;color:var(--fg-ghost);margin-top:6px">Flights from your airport jobs will appear here.</div></div>`}
+    ${DRIVER_DEMO_FLIGHTS.length?'':`<div style="text-align:center;padding:60px 20px;color:var(--fg-subtle)"><div style="margin-bottom:12px;display:flex;justify-content:center">${lineIcon('ticket',32,'var(--fg-subtle)')}</div><div style="font-size:15px;font-weight:600">No tracked flights</div><div style="font-size:13px;color:var(--fg-ghost);margin-top:6px">Flights from your airport jobs will appear here.</div></div>`}
     ${DRIVER_DEMO_FLIGHTS.map(f=>{
       const early=f.status==='early',delayed=f.status==='delayed';
       const arrColor=early?'#4ade80':delayed?'#f87171':'var(--fg)';
@@ -2060,7 +2104,7 @@ apexai:()=>{
         </div>
         <div style="font-size:11px;color:var(--fg-dim);margin-bottom:12px">Pickup: ${f.pickup}</div>
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-          <div style="width:28px;height:28px;border-radius:8px;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;font-size:14px">✈</div>
+          <div style="width:28px;height:28px;border-radius:8px;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center">${lineIcon('ticket',14,'var(--gold)')}</div>
           <div style="font-size:13px;font-weight:700">${f.flight}</div>
           <div style="font-size:11px;color:var(--fg-dim)">· Arriving from ${f.from}</div>
         </div>
@@ -2086,7 +2130,7 @@ apexai:()=>{
       </div>`;
     }).join('')}
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px;text-align:center">
-      <div style="font-size:12px;color:var(--fg-dim)">✈ Airport jobs with flight numbers appear here automatically with live status updates</div>
+      <div style="font-size:12px;color:var(--fg-dim);display:flex;align-items:center;justify-content:center;gap:6px">${lineIcon('ticket',12,'var(--fg-dim)')} Airport jobs with flight numbers appear here automatically with live status updates</div>
     </div>
   </div>
   ${nav()}
@@ -2119,7 +2163,7 @@ apexai:()=>{
     <div style="text-align:center;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center">
       <div style="font-size:13px;font-weight:500;color:#999;letter-spacing:3px;text-transform:uppercase;margin-bottom:24px">Welcome</div>
       <div style="font-family:'Cormorant Garamond',Georgia,serif;font-size:clamp(48px,12vw,80px);font-weight:700;color:#1a1612;line-height:1.1;text-align:center;max-width:100%;word-break:break-word">${clientName}</div>
-      ${job.flight ? `<div style="margin-top:28px;display:flex;align-items:center;gap:8px;background:#f5f0e8;border-radius:12px;padding:10px 18px"><span style="font-size:16px">✈</span><span style="font-size:14px;font-weight:600;color:#555">${job.flight}</span></div>` : ''}
+      ${job.flight ? `<div style="margin-top:28px;display:flex;align-items:center;gap:8px;background:#f5f0e8;border-radius:12px;padding:10px 18px">${lineIcon('ticket',16,'#C8A97E')}<span style="font-size:14px;font-weight:600;color:#555">${job.flight}</span></div>` : ''}
     </div>
 
     <!-- Bottom strip -->
