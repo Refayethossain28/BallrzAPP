@@ -1,0 +1,599 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Axon — your own neural network</title>
+<meta name="description" content="A real neural network that lives in your browser — no ML library, no cloud. Shape its brain, teach it patterns (or dots you draw yourself), and watch every synapse learn, live. Offline-first.">
+<meta name="theme-color" content="#0a0d16">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Axon">
+<style>
+  :root {
+    --bg: #0a0d16; --bg2: #0d1220; --card: #101627; --card2: #141c33;
+    --line: #1e2947; --text: #e9edf9; --dim: #92a1c4; --faint: #5e6d8f;
+    --brand: #8f7cf7; --brand2: #4dd8ff; --gold: #e8b34c; --green: #3ecf8e;
+    --red: #ff6b6b;
+    --c0: #4dd8ff; --c1: #e8b34c; --c2: #8f7cf7;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    background: radial-gradient(1200px 700px at 50% -10%, #171236 0%, var(--bg) 55%) fixed, var(--bg);
+    color: var(--text);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    min-height: 100dvh;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 0 16px calc(44px + env(safe-area-inset-bottom)); }
+
+  header { display: flex; align-items: center; gap: 12px; padding: 22px 0 8px; flex-wrap: wrap; }
+  .logo { font-size: 30px; font-weight: 800; letter-spacing: -1px; user-select: none; }
+  .logo .g { background: linear-gradient(92deg, var(--brand2) 5%, var(--brand) 60%, var(--gold) 95%);
+             -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .tagline { color: var(--dim); font-size: 13px; flex: 1 1 100%; margin-top: -6px; }
+  .pill { margin-left: auto; font-size: 12px; color: var(--dim); border: 1px solid var(--line);
+          border-radius: 999px; padding: 4px 12px; background: var(--card); white-space: nowrap; }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px; margin: 14px 0; }
+  .card h2 { font-size: 15px; margin-bottom: 4px; }
+  .card h2 .em { color: var(--brand2); }
+  .sub { color: var(--faint); font-size: 12.5px; margin-bottom: 12px; }
+
+  button { background: var(--card2); color: var(--text); border: 1px solid var(--line);
+           border-radius: 10px; padding: 9px 15px; font-size: 13.5px; cursor: pointer; font-family: inherit; }
+  button:hover { border-color: var(--brand); }
+  button.primary { background: linear-gradient(92deg, #33306b, #14405c); border-color: #4c46a8; font-weight: 600; }
+  button.small { padding: 4px 10px; font-size: 12px; border-radius: 8px; }
+  button:disabled { opacity: 0.45; cursor: default; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 10px 0 2px; }
+  .row label { color: var(--dim); font-size: 13px; }
+
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+  .chip { border: 1px solid var(--line); background: var(--card2); color: var(--dim);
+          border-radius: 999px; padding: 5px 13px; font-size: 12.5px; cursor: pointer; font-family: inherit; }
+  .chip.on { color: var(--text); border-color: var(--brand); background: #1c1a3f; }
+  .chip .n { color: var(--faint); font-size: 11px; }
+  .chip.on .n { color: var(--dim); }
+
+  .mind { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .mind b { font-size: 21px; font-weight: 800;
+            background: linear-gradient(92deg, var(--brand2), var(--brand));
+            -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .mind span { color: var(--faint); font-size: 12.5px; }
+
+  canvas { display: block; width: 100%; border-radius: 12px; background: var(--bg2);
+           border: 1px solid var(--line); touch-action: none; }
+  #brain { margin-top: 10px; }
+  #map { margin-top: 4px; cursor: crosshair; }
+  #spark { margin-top: 10px; }
+
+  .probe { color: var(--dim); font-size: 13px; margin-top: 8px; min-height: 20px; }
+  .probe .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px;
+               margin: 0 4px -1px 2px; }
+
+  .stats { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .stat { background: var(--card2); border: 1px solid var(--line); border-radius: 12px;
+          padding: 8px 14px; text-align: center; flex: 1 1 90px; }
+  .stat b { display: block; font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat span { color: var(--faint); font-size: 11.5px; }
+
+  .coach { border-left: 3px solid var(--brand); padding: 2px 0 2px 10px; margin-top: 12px;
+           color: var(--dim); font-size: 13.5px; }
+  .warn { color: var(--gold); font-size: 12.5px; }
+
+  .klabel { font-weight: 600; }
+  .k0 { color: var(--c0); } .k1 { color: var(--c1); } .k2 { color: var(--c2); }
+
+  footer { color: var(--faint); font-size: 12px; text-align: center; padding: 24px 0 8px; }
+  footer a { color: var(--brand2); text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo"><span class="g">Axon</span></div>
+    <span class="pill" id="pill">…</span>
+    <div class="tagline">Your own neural network — every neuron, gradient and synapse computed right here, from raw math. Nothing leaves this device.</div>
+  </header>
+
+  <section class="card">
+    <h2>Meet <span class="em" id="m-name">your network</span></h2>
+    <div class="sub" id="m-desc">A brand-new mind with random synapses.</div>
+    <div class="chips" id="m-arch"></div>
+    <div class="chips" id="m-act"></div>
+    <div class="chips" id="m-sense"></div>
+    <canvas id="brain" width="640" height="230"></canvas>
+    <div class="row">
+      <button class="small" id="m-reroll">🎲 new brain (new name, new synapses)</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Teach it a <span class="em">pattern</span></h2>
+    <div class="sub" id="d-hint">Pick something to learn — or draw your own dots.</div>
+    <div class="chips" id="d-sets"></div>
+    <div class="chips" id="d-draw" style="display:none"></div>
+    <canvas id="map" width="640" height="640"></canvas>
+    <div class="probe" id="probe">Move a finger over the map to ask the network what it thinks is there.</div>
+  </section>
+
+  <section class="card">
+    <h2>Watch it <span class="em">learn</span></h2>
+    <div class="sub">Training is just this, thousands of times: guess, measure the miss, nudge every synapse downhill.</div>
+    <div class="row">
+      <button class="primary" id="t-go">▶ Train</button>
+      <button id="t-step" class="small">+1 epoch</button>
+      <button id="t-reset" class="small">forget everything</button>
+    </div>
+    <div class="row">
+      <label>Learning rate</label>
+      <span class="chips" id="t-lr" style="margin:0"></span>
+    </div>
+    <div class="warn" id="t-msg"></div>
+    <div class="stats">
+      <div class="stat"><b id="s-epochs">0</b><span>epochs</span></div>
+      <div class="stat"><b id="s-loss">—</b><span>loss</span></div>
+      <div class="stat"><b id="s-acc">—</b><span>accuracy</span></div>
+    </div>
+    <canvas id="spark" width="640" height="90"></canvas>
+    <div class="coach" id="coach"></div>
+  </section>
+
+  <footer>Axon is a concept prototype — a real multi-layer perceptron with softmax + cross-entropy backprop, no ML library. Siblings: <a href="../cortex/">Cortex</a> trains your brain, <a href="../neura/">Neura</a> mines by training one, <a href="../synapse/">Synapse</a> pays for inference.</footer>
+</div>
+
+<script src="engine.js"></script>
+<script>
+(function () {
+  'use strict';
+  var E = AxonEngine;
+  var $ = function (id) { return document.getElementById(id); };
+
+  var LS_MIND = 'axon.mind.v1';
+  var LS_STATE = 'axon.state.v1';
+
+  var MAP = 640, RES = 56, BRAIN_W = 640, BRAIN_H = 230;
+  var KCOLORS = ['#4dd8ff', '#e8b34c', '#8f7cf7'];
+  var KNAMES = ['A', 'B', 'C'];
+  var ARCHES = [
+    { key: 'tiny',    label: 'Tiny',    hidden: [4] },
+    { key: 'classic', label: 'Classic', hidden: [8] },
+    { key: 'deep',    label: 'Deep',    hidden: [10, 10] },
+    { key: 'grand',   label: 'Grand',   hidden: [16, 16] }
+  ];
+  var ACTS = [
+    { key: 'tanh', label: 'tanh' },
+    { key: 'relu', label: 'ReLU' },
+    { key: 'sigmoid', label: 'sigmoid' }
+  ];
+  var SENSES = [
+    { key: 'xy', label: 'raw senses (x, y)' },
+    { key: 'rich', label: 'extra senses (x², y², x·y)' }
+  ];
+  var LRS = [0.01, 0.03, 0.1, 0.3];
+
+  function loadJSON(key, fallback) {
+    try {
+      var raw = localStorage.getItem(key);
+      if (!raw) return fallback;
+      var v = JSON.parse(raw);
+      return v == null ? fallback : v;
+    } catch (e) { return fallback; }
+  }
+  function saveJSON(key, v) {
+    try { localStorage.setItem(key, JSON.stringify(v)); } catch (e) {}
+  }
+
+  /* ---------- state ---------- */
+  var state = loadJSON(LS_STATE, {});
+  if (typeof state !== 'object' || !state) state = {};
+  var archKey = typeof state.arch === 'string' ? state.arch : 'classic';
+  var actKey = typeof state.act === 'string' ? state.act : 'tanh';
+  var senseKey = typeof state.sense === 'string' ? state.sense : 'xy';
+  var lr = LRS.indexOf(state.lr) !== -1 ? state.lr : 0.1;
+  var datasetKey = typeof state.dataset === 'string' ? state.dataset : 'xor';
+  var drawClass = 0;
+  var customDots = Array.isArray(state.dots) ? state.dots.filter(function (p) {
+    // strict: real in-range numbers and an exact class id, or the dot is out —
+    // a poisoned coordinate would ride gradients all the way to NaN weights
+    return p && typeof p.x === 'number' && p.x >= -1 && p.x <= 1 &&
+           typeof p.y === 'number' && p.y >= -1 && p.y <= 1 &&
+           (p.k === 0 || p.k === 1 || p.k === 2);
+  }).slice(-400) : [];
+  var seed = typeof state.seed === 'string' ? state.seed : ('mind-' + Math.floor(Math.random() * 1e9));
+
+  function findArch(key) {
+    for (var i = 0; i < ARCHES.length; i++) if (ARCHES[i].key === key) return ARCHES[i];
+    return ARCHES[1];
+  }
+
+  function freshNet() {
+    return E.createNet({ hidden: findArch(archKey).hidden, activation: actKey, features: senseKey, seed: seed });
+  }
+
+  // Restore the saved mind only if it still matches the chosen shape.
+  var net = null;
+  var savedMind = loadJSON(LS_MIND, null);
+  if (typeof savedMind === 'string') {
+    try {
+      var back = E.deserialize(savedMind);
+      if (back.ok && back.net.activation === actKey && back.net.features === senseKey &&
+          JSON.stringify(back.net.sizes) === JSON.stringify(freshNet().sizes)) {
+        net = back.net;
+        seed = net.seed;
+      }
+    } catch (e) { net = null; }   // a poisoned save must never brick boot
+  }
+  if (!net) net = freshNet();
+
+  var training = false;
+  var lastStats = null;          // {loss, accuracy} from the latest epoch
+  var lossHistory = [];          // one entry per epoch, capped
+  var calmStreak = 0;            // epochs in a row with ~zero loss → auto-pause
+
+  function currentData() {
+    if (datasetKey === 'draw') return customDots;
+    return E.makeDataset(datasetKey, { n: 120, seed: seed });
+  }
+  function datasetMeta(key) {
+    for (var i = 0; i < E.DATASETS.length; i++) if (E.DATASETS[i].key === key) return E.DATASETS[i];
+    return null;
+  }
+
+  function persist() {
+    saveJSON(LS_MIND, E.serialize(net));
+    saveJSON(LS_STATE, { arch: archKey, act: actKey, sense: senseKey, lr: lr,
+                         dataset: datasetKey, dots: customDots, seed: seed });
+  }
+
+  /* ---------- chips ---------- */
+  function renderChips(el, items, isOn, extra) {
+    var html = '';
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      html += '<button class="chip' + (isOn(it) ? ' on' : '') + '" data-key="' + it.key + '">' +
+        (it.emoji ? it.emoji + ' ' : '') + E.escapeHTML(it.label) +
+        (extra ? ' <span class="n">' + extra(it) + '</span>' : '') + '</button>';
+    }
+    el.innerHTML = html;
+  }
+
+  function renderControls() {
+    renderChips($('m-arch'), ARCHES, function (a) { return a.key === archKey; },
+      function (a) { return a.hidden.join('·') + ' neurons'; });
+    renderChips($('m-act'), ACTS, function (a) { return a.key === actKey; });
+    renderChips($('m-sense'), SENSES, function (s) { return s.key === senseKey; });
+    renderChips($('d-sets'),
+      E.DATASETS.concat([{ key: 'draw', label: 'Your dots', emoji: '✏️' }]),
+      function (d) { return d.key === datasetKey; });
+    var lrItems = [];
+    for (var i = 0; i < LRS.length; i++) lrItems.push({ key: String(LRS[i]), label: String(LRS[i]) });
+    renderChips($('t-lr'), lrItems, function (it) { return Number(it.key) === lr; });
+    var meta = datasetMeta(datasetKey);
+    $('d-hint').textContent = meta ? meta.hint :
+      'Tap the map to place dots, switch colours below, and teach it a pattern only you know.';
+    var drawRow = $('d-draw');
+    if (datasetKey === 'draw') {
+      drawRow.style.display = '';
+      var html = '';
+      for (var k = 0; k < 3; k++) {
+        html += '<button class="chip' + (drawClass === k ? ' on' : '') + '" data-k="' + k + '">' +
+          '<span class="klabel k' + k + '">●</span> class ' + KNAMES[k] + '</button>';
+      }
+      html += '<button class="chip" data-k="clear">🧹 clear dots</button>';
+      drawRow.innerHTML = html;
+    } else {
+      drawRow.style.display = 'none';
+    }
+  }
+
+  /* ---------- painting ---------- */
+  var mapCv = $('map'), mapCtx = mapCv.getContext('2d');
+  var brainCv = $('brain'), brainCtx = brainCv.getContext('2d');
+  var sparkCv = $('spark'), sparkCtx = sparkCv.getContext('2d');
+
+  function toCanvas(p) { return { x: (p.x + 1) / 2 * MAP, y: (1 - p.y) / 2 * MAP }; }
+
+  function drawMap() {
+    var grid = E.decisionGrid(net, RES);
+    var cell = MAP / RES;
+    mapCtx.clearRect(0, 0, MAP, MAP);
+    mapCtx.fillStyle = '#0d1220';
+    mapCtx.fillRect(0, 0, MAP, MAP);
+    for (var gy = 0; gy < RES; gy++) {
+      for (var gx = 0; gx < RES; gx++) {
+        var i = gy * RES + gx;
+        var conf = Math.max(0, (grid.p[i] - 1 / 3) / (2 / 3)); // 1/3 = clueless, 1 = certain
+        mapCtx.globalAlpha = 0.06 + 0.32 * conf;
+        mapCtx.fillStyle = KCOLORS[grid.k[i]];
+        mapCtx.fillRect(gx * cell, gy * cell, cell + 0.5, cell + 0.5);
+      }
+    }
+    mapCtx.globalAlpha = 1;
+    // axes
+    mapCtx.strokeStyle = 'rgba(146,161,196,0.18)';
+    mapCtx.lineWidth = 1;
+    mapCtx.beginPath();
+    mapCtx.moveTo(MAP / 2, 0); mapCtx.lineTo(MAP / 2, MAP);
+    mapCtx.moveTo(0, MAP / 2); mapCtx.lineTo(MAP, MAP / 2);
+    mapCtx.stroke();
+    // the dots it is learning
+    var data = currentData();
+    for (var d = 0; d < data.length; d++) {
+      var c = toCanvas(data[d]);
+      mapCtx.beginPath();
+      mapCtx.arc(c.x, c.y, 6, 0, 2 * Math.PI);
+      mapCtx.fillStyle = KCOLORS[data[d].k];
+      mapCtx.fill();
+      mapCtx.lineWidth = 1.5;
+      mapCtx.strokeStyle = 'rgba(10,13,22,0.9)';
+      mapCtx.stroke();
+    }
+  }
+
+  function drawBrain() {
+    brainCtx.clearRect(0, 0, BRAIN_W, BRAIN_H);
+    var sizes = net.sizes;
+    var xs = [];
+    for (var l = 0; l < sizes.length; l++) xs.push(46 + (BRAIN_W - 92) * (sizes.length === 1 ? 0 : l / (sizes.length - 1)));
+    function ys(l) {
+      var n = sizes[l], out = [];
+      for (var i = 0; i < n; i++) out.push(BRAIN_H / 2 + (i - (n - 1) / 2) * Math.min(34, (BRAIN_H - 40) / Math.max(1, n - 1)));
+      return out;
+    }
+    var maxW = Math.max(1e-6, E.maxAbsW(net));
+    for (var lw = 0; lw < net.weights.length; lw++) {
+      var ya = ys(lw), yb = ys(lw + 1);
+      for (var i2 = 0; i2 < net.weights[lw].length; i2++) {
+        for (var j2 = 0; j2 < net.weights[lw][i2].length; j2++) {
+          var w = net.weights[lw][i2][j2];
+          var mag = Math.abs(w) / maxW;
+          brainCtx.globalAlpha = 0.12 + 0.55 * mag;
+          brainCtx.strokeStyle = w >= 0 ? '#4dd8ff' : '#ff6b6b';
+          brainCtx.lineWidth = 0.4 + 2.6 * mag;
+          brainCtx.beginPath();
+          brainCtx.moveTo(xs[lw], ya[j2]);
+          brainCtx.lineTo(xs[lw + 1], yb[i2]);
+          brainCtx.stroke();
+        }
+      }
+    }
+    brainCtx.globalAlpha = 1;
+    for (var ln = 0; ln < sizes.length; ln++) {
+      var yn = ys(ln);
+      for (var n2 = 0; n2 < sizes[ln]; n2++) {
+        brainCtx.beginPath();
+        brainCtx.arc(xs[ln], yn[n2], ln === 0 ? 7 : ln === sizes.length - 1 ? 9 : 8, 0, 2 * Math.PI);
+        brainCtx.fillStyle = ln === 0 ? '#123448' :
+          ln === sizes.length - 1 ? KCOLORS[n2] : '#221d4d';
+        brainCtx.fill();
+        brainCtx.lineWidth = 1.5;
+        brainCtx.strokeStyle = ln === 0 ? '#4dd8ff' : ln === sizes.length - 1 ? 'rgba(10,13,22,0.8)' : '#8f7cf7';
+        brainCtx.stroke();
+      }
+    }
+  }
+
+  function drawSpark() {
+    sparkCtx.clearRect(0, 0, 640, 90);
+    sparkCtx.fillStyle = '#0d1220';
+    sparkCtx.fillRect(0, 0, 640, 90);
+    if (lossHistory.length < 2) {
+      sparkCtx.fillStyle = '#5e6d8f';
+      sparkCtx.font = '13px -apple-system, sans-serif';
+      sparkCtx.fillText('the loss curve draws itself here as it learns', 14, 50);
+      return;
+    }
+    var peak = 1e-6;
+    for (var i = 0; i < lossHistory.length; i++) peak = Math.max(peak, lossHistory[i]);
+    sparkCtx.beginPath();
+    for (var j = 0; j < lossHistory.length; j++) {
+      var x = 6 + (640 - 12) * (lossHistory.length === 1 ? 0 : j / (lossHistory.length - 1));
+      var y = 8 + (90 - 16) * (1 - lossHistory[j] / peak); // peak loss at the top, zero at the floor
+      if (j === 0) sparkCtx.moveTo(x, y); else sparkCtx.lineTo(x, y);
+    }
+    sparkCtx.strokeStyle = '#8f7cf7';
+    sparkCtx.lineWidth = 2;
+    sparkCtx.stroke();
+  }
+
+  function renderStats() {
+    if (!lastStats && net.epochs > 0) {
+      // a restored mind knows things — measure it instead of calling it clueless
+      var d0 = currentData();
+      if (E.trainable(d0).ok) lastStats = E.evaluate(net, d0);
+    }
+    $('pill').textContent = E.describe(net);
+    $('m-name').textContent = E.netName(seed);
+    $('m-desc').textContent = 'This mind grew from seed “' + seed.slice(0, 18) + '” — same seed, same starting synapses, every time. ' +
+      'Blue links push, red links pull; thicker means stronger.';
+    $('s-epochs').textContent = E.fmtEpochs(net.epochs);
+    $('s-loss').textContent = lastStats ? E.fmtLoss(lastStats.loss) : '—';
+    $('s-acc').textContent = lastStats ? E.fmtPct(lastStats.accuracy) : '—';
+    $('coach').textContent = E.coachLine({ epochs: net.epochs, accuracy: lastStats ? lastStats.accuracy : 0 });
+    var check = E.trainable(currentData());
+    $('t-msg').textContent = check.ok ? '' : check.reason;
+    $('t-go').disabled = !check.ok;
+    $('t-step').disabled = !check.ok;
+    $('t-go').textContent = training ? '⏸ Pause' : '▶ Train';
+  }
+
+  function renderAll() {
+    renderControls();
+    drawMap();
+    drawBrain();
+    drawSpark();
+    renderStats();
+  }
+
+  /* ---------- the training loop ---------- */
+  function runEpochs(budgetMs) {
+    var data = currentData();
+    var start = Date.now();
+    var ran = 0;
+    do {
+      var r = E.trainEpoch(net, data, { lr: lr, momentum: 0.9 });
+      if (!r) return 0;
+      lastStats = r;
+      lossHistory.push(r.loss);
+      if (lossHistory.length > 400) lossHistory.shift();
+      calmStreak = r.loss < 0.015 && r.accuracy >= 0.999 ? calmStreak + 1 : 0;
+      ran++;
+    } while (Date.now() - start < budgetMs && ran < 80);
+    return ran;
+  }
+
+  var tickQueued = false;          // one loop, ever — a pause/resume inside a
+  var lastAutoSave = 0;            // frame gap must not stack a second one
+
+  function queueTick() {
+    if (tickQueued) return;
+    tickQueued = true;
+    requestAnimationFrame(tick);
+  }
+
+  function tick() {
+    tickQueued = false;
+    if (!training) return;
+    runEpochs(9);
+    if (calmStreak >= 40) {          // it has flatlined at perfect — let it rest
+      training = false;
+      persist();
+    } else if (Date.now() - lastAutoSave > 2000) {
+      persist();                     // a closed tab mid-training keeps its progress
+      lastAutoSave = Date.now();
+    }
+    drawMap();
+    drawBrain();
+    drawSpark();
+    renderStats();
+    if (training) queueTick();
+  }
+
+  function setTraining(on) {
+    if (on === training) return;
+    training = on;
+    calmStreak = 0;
+    if (training) queueTick();
+    else persist();
+    renderStats();
+  }
+
+  /* ---------- wiring ---------- */
+  function chipHandler(el, fn) {
+    el.addEventListener('click', function (ev) {
+      var t = ev.target;
+      while (t && t !== el && !(t.getAttribute && t.getAttribute('data-key'))) t = t.parentNode;
+      if (!t || t === el) return;
+      fn(t.getAttribute('data-key'));
+    });
+  }
+
+  function rebuild() {
+    setTraining(false);
+    net = freshNet();
+    lastStats = null;
+    lossHistory = [];
+    persist();
+    renderAll();
+  }
+
+  chipHandler($('m-arch'), function (key) { if (key !== archKey) { archKey = key; rebuild(); } });
+  chipHandler($('m-act'), function (key) { if (key !== actKey) { actKey = key; rebuild(); } });
+  chipHandler($('m-sense'), function (key) { if (key !== senseKey) { senseKey = key; rebuild(); } });
+  chipHandler($('d-sets'), function (key) {
+    if (key === datasetKey) return;
+    setTraining(false);
+    datasetKey = key;
+    lastStats = null;
+    lossHistory = [];
+    persist();
+    renderAll();
+  });
+  chipHandler($('t-lr'), function (key) { lr = Number(key); persist(); renderControls(); });
+
+  $('d-draw').addEventListener('click', function (ev) {
+    var t = ev.target;
+    while (t && t !== this && !(t.getAttribute && t.getAttribute('data-k'))) t = t.parentNode;
+    if (!t || t === this) return;
+    var k = t.getAttribute('data-k');
+    if (k === 'clear') {
+      customDots = [];
+      lastStats = null;
+      lossHistory = [];
+      setTraining(false);
+      persist();
+      renderAll();
+    } else {
+      drawClass = Number(k) || 0;
+      renderControls();
+    }
+  });
+
+  $('m-reroll').addEventListener('click', function () {
+    seed = 'mind-' + Math.floor(Math.random() * 1e9);
+    rebuild();
+  });
+
+  $('t-go').addEventListener('click', function () { setTraining(!training); });
+  $('t-step').addEventListener('click', function () {
+    setTraining(false);
+    runEpochs(0);
+    persist();
+    drawMap(); drawBrain(); drawSpark(); renderStats();
+  });
+  $('t-reset').addEventListener('click', function () {
+    setTraining(false);
+    net = freshNet();          // same seed → the exact synapses it was born with
+    lastStats = null;
+    lossHistory = [];
+    persist();
+    renderAll();
+  });
+
+  /* ---------- touching the map ---------- */
+  function mapPoint(ev) {
+    var rect = mapCv.getBoundingClientRect();
+    var w = rect.width || 1, h = rect.height || 1;
+    var x = (ev.clientX - rect.left) / w * 2 - 1;
+    var y = 1 - (ev.clientY - rect.top) / h * 2;
+    return { x: E.clamp(x, -1, 1), y: E.clamp(y, -1, 1) };
+  }
+
+  function probeAt(p) {
+    var pr = E.predict(net, p);
+    $('probe').innerHTML = 'At (' + p.x.toFixed(2) + ', ' + p.y.toFixed(2) + ') it says ' +
+      '<span class="sw" style="background:' + KCOLORS[pr.k] + '"></span>' +
+      '<span class="klabel k' + pr.k + '">class ' + KNAMES[pr.k] + '</span> — ' +
+      E.fmtPct(pr.p) + ' sure.';
+  }
+
+  mapCv.addEventListener('pointerdown', function (ev) {
+    var p = mapPoint(ev);
+    if (datasetKey === 'draw') {
+      customDots.push({ x: p.x, y: p.y, k: drawClass });
+      if (customDots.length > 400) customDots.shift();
+      persist();
+      drawMap();
+      renderStats();
+    }
+    probeAt(p);
+  });
+  mapCv.addEventListener('pointermove', function (ev) { probeAt(mapPoint(ev)); });
+
+  /* ---------- first paint ---------- */
+  renderAll();
+  persist();   // a first visit keeps its seed (and name) even if the tab closes now
+
+  /* ---------- offline ---------- */
+  if (typeof navigator !== 'undefined' && navigator.serviceWorker && navigator.serviceWorker.register) {
+    try { navigator.serviceWorker.register('sw.js'); } catch (e) {}
+  }
+})();
+</script>
+</body>
+</html>
