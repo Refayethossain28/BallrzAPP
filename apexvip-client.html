@@ -464,6 +464,8 @@ body.light .back-btn{background:rgba(0,0,0,.06);border-color:rgba(0,0,0,.08)}
   color:rgba(212,175,110,.55);text-transform:uppercase;
 }
 body.light .section-label{color:rgba(140,100,20,.5)}
+.desk-date{color:var(--gold)}
+body.light .desk-date{color:rgba(140,100,20,.75)}
 .err{
   background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.15);
   color:#f87171;padding:12px 16px;border-radius:var(--r-md);
@@ -970,6 +972,7 @@ function lineIcon(name,size=18,color='currentColor'){
     doc:'M5.1 2.6h6.8l3 3v11.8H5.1V2.6zM11.9 2.6v3.2h3M7.5 9.2h5M7.5 12.2h5M7.5 15h3.2',
     lock:'M5.1 9h9.8v8.4H5.1V9zM6.9 9V6.3a3.1 3.1 0 016.2 0V9M10 12.4v2.2',
     mail:'M2.6 5.2h14.8v9.6H2.6V5.2zM2.6 5.6l7.4 5.8 7.4-5.8',
+    bell:'M4.2 13.3v-.4a5.8 5.8 0 0111.6 0v.4M3.3 15.8h13.4M10 7.1V5.8',
     search:'M8.8 2.8a6 6 0 110 12 6 6 0 010-12zM13.2 13.2l4 4',
   };
   return `<svg width="${size}" height="${size}" viewBox="0 0 20 20" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="${P[name]||P.star}"/></svg>`;
@@ -3109,20 +3112,20 @@ home: () => {
           <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;color:#ef4444">Your trial has ended</div><div style="font-size:12px;color:var(--fg-3);margin-top:1px">Subscribe to keep booking with ApexVIP.</div></div>
           <button onclick="state._subOpen=true;render()" style="background:var(--gold);border:none;border-radius:10px;color:#0c0b09;font-size:12px;font-weight:800;padding:8px 12px;cursor:pointer;font-family:inherit;flex-shrink:0">Subscribe</button>
         </div>`;})()}
-            <!-- Two doors: tall side-by-side panels — everything above the fold -->
-      <div style="display:flex;gap:12px;margin-bottom:16px">
-        <button onclick="go('chauffeur')" style="flex:1;height:clamp(300px,44vh,420px);display:flex;flex-direction:column;justify-content:flex-end;align-items:flex-start;border:1px solid rgba(200,169,126,.25);border-radius:26px;padding:18px 16px;cursor:pointer;font-family:inherit;background:linear-gradient(to top,rgba(0,0,0,.78) 8%,rgba(0,0,0,.1) 55%),url('vehicles/s-class.jpg') center/cover;transition:transform .15s var(--ease-spring)">
-          <div style="font-family:var(--font-serif);font-size:26px;font-weight:500;color:#fff;letter-spacing:.5px">Chauffeur</div>
-          <div style="font-size:11px;color:rgba(255,255,255,.72);margin-top:4px;text-align:left;line-height:1.45">Airport · hourly · daily</div>
-        </button>
-        <button onclick="go('concierge')" style="flex:1;height:clamp(300px,44vh,420px);display:flex;flex-direction:column;justify-content:flex-end;align-items:flex-start;border:1px solid rgba(200,169,126,.28);border-radius:26px;padding:18px 16px;cursor:pointer;font-family:inherit;background:linear-gradient(to top,rgba(0,0,0,.78) 8%,rgba(0,0,0,.12) 55%),url('vehicles/concierge-bell.jpg') center/cover;transition:transform .15s var(--ease-spring)">
-          <div style="font-family:var(--font-serif);font-size:26px;font-weight:500;color:#fff;letter-spacing:.5px">Concierge</div>
-          <div style="font-size:11px;color:rgba(255,255,255,.72);margin-top:4px;text-align:left;line-height:1.45">Your personal desk</div>
-        </button>
+      <!-- The Desk: the day laid out like a concierge's ledger — dated
+           masthead, the appointment first, services as hairline-ruled rows -->
+      <div style="display:flex;align-items:baseline;justify-content:space-between;margin:2px 0 16px">
+        <div class="desk-date" style="font-size:10px;letter-spacing:3px;font-weight:600;text-transform:uppercase">${new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'})}</div>
+        <div style="font-size:10px;letter-spacing:2.5px;color:var(--fg-3);margin-right:-2.5px">THE DESK</div>
       </div>
 
+${upcoming.length===0?`
+      <button onclick="go('chauffeur')" style="display:block;width:100%;text-align:left;font-family:inherit;position:relative;border-radius:22px;overflow:hidden;border:1px solid rgba(200,169,126,.28);margin-bottom:22px;cursor:pointer;background:linear-gradient(to top,rgba(0,0,0,.82) 12%,rgba(0,0,0,.18) 60%),url('vehicles/s-class.jpg') center/cover;padding:88px 18px 16px">
+        <div style="font-family:var(--font-serif);font-size:23px;font-weight:400;color:#fff;letter-spacing:.4px">Nothing on the desk.</div>
+        <div style="font-size:12px;color:rgba(255,255,255,.75);margin-top:4px">The city is yours — arrange a journey.</div>
+      </button>`:''}
 ${upcoming.length ? `
-      <div class="section-label" style="margin-bottom:12px">Upcoming</div>
+      <div class="section-label" style="margin-bottom:12px">${upcoming[0]&&upcoming[0].date===new Date().toLocaleDateString('en-CA')?'On the desk today':'Next on the desk'}</div>
       ${upcoming.slice(0,1).map(t=>`
       <div onclick="go('trip-detail',TRIPS.find(x=>x.id==='${t.id}'))" style="display:flex;align-items:center;gap:14px;background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:15px 16px;cursor:pointer;margin-bottom:10px">
         <div style="width:42px;height:42px;border-radius:14px;background:rgba(212,175,110,.08);border:1px solid rgba(212,175,110,.22);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--gold)">
@@ -3138,6 +3141,26 @@ ${upcoming.length ? `
         </div>
       </div>
       ${t.flight ? flightStatusCard(t.flight) : ''}`).join('')}` : ''}
+
+      <!-- The ledger: services as ruled lines on the desk, not tiles -->
+      <div class="section-label" style="margin:22px 0 4px">Services</div>
+      <div>
+        ${[
+          {t:'Chauffeur',s:'Airport · hourly · daily',i:'car',a:"go('chauffeur')",img:'vehicles/s-class.jpg'},
+          {t:'Concierge',s:'Your personal desk · Velvet',i:'bell',a:"go('concierge')",img:'vehicles/concierge-bell.jpg'},
+          {t:'Flights',s:'Searched & booked for you',i:'ticket',a:"go('flight-search')"},
+          {t:'Hotels',s:'Four providers, compared',i:'bed',a:"go('hotel-search')"},
+        ].map((r,i,arr)=>`
+        <button onclick="haptic('light');${r.a}" style="display:flex;align-items:center;gap:14px;width:100%;text-align:left;background:none;font-family:inherit;color:var(--fg);padding:17px 2px;border:none;border-bottom:${i<arr.length-1?'1px solid var(--divider)':'none'};border-radius:0;cursor:pointer">
+          <span style="display:flex;color:var(--gold);flex-shrink:0">${lineIcon(r.i,19)}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-family:var(--font-serif);font-size:21px;font-weight:400;letter-spacing:.3px;line-height:1.15">${r.t}</div>
+            <div style="font-size:11.5px;color:var(--fg-3);margin-top:2px">${r.s}</div>
+          </div>
+          ${r.img?`<div style="width:52px;height:52px;border-radius:14px;background:url('${r.img}') center/cover;border:1px solid var(--border);flex-shrink:0"></div>`:`
+          <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="var(--fg-4)" stroke-width="1.8" style="flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>`}
+        </button>`).join('')}
+      </div>
     </div>
   </div>
   ${bottomNav('home')}
