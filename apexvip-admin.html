@@ -51,7 +51,7 @@ body.light{
 /* ── Aurora background (behind main content) ── */
 body::before,body::after{content:'';position:fixed;border-radius:50%;filter:blur(90px);pointer-events:none;z-index:-1}
 body::before{width:560px;height:560px;left:22%;top:-14%;background:radial-gradient(circle,rgba(200,169,126,.07),transparent 70%);animation:auroraA 26s ease-in-out infinite alternate}
-body::after{width:480px;height:480px;right:-8%;bottom:-12%;background:radial-gradient(circle,rgba(90,80,160,.06),transparent 70%);animation:auroraB 32s ease-in-out infinite alternate}
+body::after{width:480px;height:480px;right:-8%;bottom:-12%;background:radial-gradient(circle,rgba(190,150,90,.03),transparent 70%);animation:auroraB 32s ease-in-out infinite alternate}
 @keyframes auroraA{from{transform:translate(0,0) scale(1)}to{transform:translate(120px,90px) scale(1.18)}}
 @keyframes auroraB{from{transform:translate(0,0) scale(1.08)}to{transform:translate(-140px,-90px) scale(.92)}}
 
@@ -138,7 +138,7 @@ select option{background:#111}
 body.light select option{background:#f5f0e8}
 
 /* ── Tags ── */
-.tag{display:inline-flex;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.2px}
+.tag{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.2px}
 .tag-gold{background:rgba(200,169,126,.14);color:var(--gold)}
 .tag-green{background:rgba(34,197,94,.14);color:#22c55e}
 .tag-blue{background:rgba(59,130,246,.14);color:#3b82f6}
@@ -217,8 +217,8 @@ body.light .sidebar{background:rgba(240,235,226,.6)!important}
   <div style="padding:16px 20px calc(16px + env(safe-area-inset-bottom));border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0">
     <div class="avatar" style="background:linear-gradient(135deg,#C8A97E,#8B6020);width:36px;height:36px;font-size:13px">AD</div>
     <div style="flex:1"><div style="font-size:13px;font-weight:600">Admin</div><div style="font-size:11px;color:var(--fg-subtle)">admin@apexvip.com</div></div>
-    <button onclick="toggleLayout()" title="Switch layout" style="background:var(--surface);border:1px solid var(--border);border-radius:50%;width:32px;height:32px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center" id="layout-btn">🖥</button>
-    <button onclick="toggleTheme()" style="background:var(--surface);border:1px solid var(--border);border-radius:50%;width:32px;height:32px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center" id="theme-btn">☀️</button>
+    <button onclick="toggleLayout()" title="Switch layout" style="background:var(--surface);border:1px solid var(--border);border-radius:50%;width:32px;height:32px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center" id="layout-btn"></button>
+    <button onclick="toggleTheme()" style="background:var(--surface);border:1px solid var(--border);border-radius:50%;width:32px;height:32px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center" id="theme-btn"></button>
     <button onclick="adminSignOut()" title="Sign out" style="background:none;border:none;color:var(--fg-dim);cursor:pointer;font-size:20px;line-height:1">⏻</button>
   </div>
 </div>
@@ -240,6 +240,50 @@ function showToast(msg,type='info',dur=3200){
   const dismiss=()=>{if(!t.parentNode)return;t.classList.add('out');t.addEventListener('animationend',()=>t.remove(),{once:true});};
   t._timer=setTimeout(dismiss,dur);
   t.addEventListener('click',()=>{clearTimeout(t._timer);dismiss();});
+}
+
+// ── Line icons ─────────────────────────────────────────────────────────────
+// Hairline SVG marks wherever the UI needs a pictogram. Emoji render in each
+// platform's cartoon set and read as filler; a consistent 1.5px stroke reads
+// as drawn for this app.
+function lineIcon(name,size=18,color='currentColor'){
+  const P={
+    car:'M2.5 12.5l1.3-3.8A2 2 0 015.7 7.3h8.6a2 2 0 011.9 1.4l1.3 3.8M2.5 12.5h15M2.5 12.5V16h2.2M17.5 12.5V16h-2.2M7.2 16a1.35 1.35 0 11-2.7 0M15.5 16a1.35 1.35 0 11-2.7 0',
+    clock:'M10 6v4l2.8 1.8M10 2.5a7.5 7.5 0 110 15 7.5 7.5 0 010-15',
+    bed:'M2.5 15.5V5.5M2.5 12.5h15v3M2.5 9.5h15M5.2 9.5V8a1.5 1.5 0 011.5-1.5h1.8A1.5 1.5 0 0110 8v1.5',
+    dining:'M6.8 2.5h6.4l-.7 4.2a2.6 2.6 0 01-5 0l-.7-4.2zM10 9.4v5.4M7.2 17.5h5.6',
+    bag:'M4.8 6.5h10.4l-.9 9.2a1.6 1.6 0 01-1.6 1.4H7.3a1.6 1.6 0 01-1.6-1.4l-.9-9.2zM7.4 6.5V5a2.6 2.6 0 015.2 0v1.5',
+    landmark:'M3 17h14M4.6 17V9.2m3.6 7.8V9.2m3.6 7.8V9.2m3.6 7.8V9.2M3 9.2h14L10 3.4 3 9.2z',
+    ticket:'M3.5 6.5h13v2.6a1.9 1.9 0 000 3.8v2.6h-13v-2.6a1.9 1.9 0 000-3.8V6.5z',
+    star:'M10 3.2l2 4.2 4.6.6-3.4 3.2.9 4.6L10 13.6l-4.1 2.2.9-4.6-3.4-3.2 4.6-.6 2-4.2z',
+    phone:'M4.2 3.5h2.9l1.4 3.8-1.9 1.4a10.8 10.8 0 004.7 4.7l1.4-1.9 3.8 1.4v2.9a1.4 1.4 0 01-1.5 1.4A14.2 14.2 0 012.8 5 1.4 1.4 0 014.2 3.5z',
+    snow:'M10 2.8v14.4M4 6.2l12 7.6M16 6.2L4 13.8',
+    warn:'M10 3.6l7.4 12.9H2.6L10 3.6zM10 8.6v3.4m0 2.4v.01',
+    sun:'M10 6.2a3.8 3.8 0 110 7.6 3.8 3.8 0 010-7.6zM10 2v1.8M10 16.2V18M2 10h1.8M16.2 10H18M4.3 4.3l1.3 1.3M14.4 14.4l1.3 1.3M15.7 4.3l-1.3 1.3M5.6 14.4l-1.3 1.3',
+    moon:'M16.7 12.4A7 7 0 017.6 3.3a7 7 0 109.1 9.1z',
+    leaf:'M4.4 15.6C4.2 8.8 8.6 4.4 15.6 4.4c.2 6.8-4.2 11.2-11.2 11.2zM4.4 15.6c2.4-5 5.4-8 9.2-9.2',
+    sliders:'M3 6.2h8M14.8 6.2H17M13 4.6a1.6 1.6 0 100 3.2 1.6 1.6 0 000-3.2zM3 13.8h2.2M9 13.8H17M7.2 12.2a1.6 1.6 0 100 3.2 1.6 1.6 0 000-3.2z',
+    cardpay:'M2.5 5.5h15v9h-15v-9zM2.5 8.4h15M5 12h3.4',
+    pin:'M10 17.8S4.6 13.2 4.6 8.9a5.4 5.4 0 1110.8 0c0 4.3-5.4 8.9-5.4 8.9zM10 10.7a1.9 1.9 0 110-3.8 1.9 1.9 0 010 3.8z',
+    building:'M4.5 17V4.2a1.2 1.2 0 011.2-1.2h5.6a1.2 1.2 0 011.2 1.2V17M2.8 17h14.4M12.5 8.2h2.3a1.2 1.2 0 011.2 1.2V17M6.9 5.9h1.5M6.9 8.9h1.5M6.9 11.9h1.5',
+    gift:'M3.6 9.4h12.8V16a1.2 1.2 0 01-1.2 1.2H4.8A1.2 1.2 0 013.6 16V9.4zM2.9 6.4h14.2v3H2.9v-3zM10 6.4v10.8M10 6.4S8.9 3 7 3a1.7 1.7 0 000 3.4h3zM10 6.4s1.1-3.4 3-3.4a1.7 1.7 0 010 3.4h-3z',
+    calendar:'M3.6 5.6h12.8v10.8H3.6V5.6zM3.6 8.8h12.8M6.9 3.6v2.5M13.1 3.6v2.5',
+    chat:'M3.6 4.6h12.8v8.2h-7.2L5.8 15.9v-3.1H3.6V4.6z',
+    shield:'M10 2.6l6.4 2.3v4.5c0 4-2.6 6.7-6.4 7.9-3.8-1.2-6.4-3.9-6.4-7.9V4.9L10 2.6z',
+    cookie:'M17.2 10.7A7.3 7.3 0 1110 2.7a2.8 2.8 0 003 3.3 2.6 2.6 0 002.9 2.9c.5.5 1 1.1 1.3 1.8zM7.6 8.3h.01M11.2 12.5h.01M7.2 12.9h.01',
+    doc:'M5.1 2.6h6.8l3 3v11.8H5.1V2.6zM11.9 2.6v3.2h3M7.5 9.2h5M7.5 12.2h5M7.5 15h3.2',
+    lock:'M5.1 9h9.8v8.4H5.1V9zM6.9 9V6.3a3.1 3.1 0 016.2 0V9M10 12.4v2.2',
+    mail:'M2.6 5.2h14.8v9.6H2.6V5.2zM2.6 5.6l7.4 5.8 7.4-5.8',
+    bell:'M4.2 13.3v-.4a5.8 5.8 0 0111.6 0v.4M3.3 15.8h13.4M10 7.1V5.8',
+    search:'M8.8 2.8a6 6 0 110 12 6 6 0 010-12zM13.2 13.2l4 4',
+    camera:'M2.6 6.6h3.2l1.4-2h5.6l1.4 2h3.2v8.8H2.6V6.6zM10 13.2a2.8 2.8 0 110-5.6 2.8 2.8 0 010 5.6z',
+  };
+  return `<svg width="${size}" height="${size}" viewBox="0 0 20 20" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="${P[name]||P.star}"/></svg>`;
+}
+// Category → mark, for venue/experience data that used to carry an emoji.
+function catIcon(cat,size=18,color='currentColor'){
+  const m={Hotel:'bed',Dining:'dining',Shopping:'bag',Culture:'landmark',Events:'ticket'};
+  return lineIcon(m[cat]||'star',size,color);
 }
 
 // ── Firebase init ──────────────────────────────────────────────────────
@@ -281,25 +325,25 @@ function revenue7(){
 }
 const NAVITEMS=[
   {id:'dashboard',icon:'⊞',label:'Dashboard'},
-  {id:'bookings',icon:'📋',label:'Bookings'},
-  {id:'concierge',icon:'🛎',label:'Concierge'},
-  {id:'drivers',icon:'🚗',label:'Drivers'},
-  {id:'documents',icon:'📄',label:'Documents'},
-  {id:'clients',icon:'👤',label:'Clients'},
-  {id:'crm',icon:'🤝',label:'CRM'},
-  {id:'fleet',icon:'🚙',label:'Fleet'},
+  {id:'bookings',icon:lineIcon('calendar',16),label:'Bookings'},
+  {id:'concierge',icon:lineIcon('bell',16),label:'Concierge'},
+  {id:'drivers',icon:lineIcon('car',16),label:'Drivers'},
+  {id:'documents',icon:lineIcon('doc',16),label:'Documents'},
+  {id:'clients',icon:lineIcon('star',16),label:'Clients'},
+  {id:'crm',icon:lineIcon('chat',16),label:'CRM'},
+  {id:'fleet',icon:lineIcon('car',16),label:'Fleet'},
   {id:'pricing',icon:'£',label:'Pricing'},
-  {id:'analytics',icon:'📊',label:'Analytics'},
-  {id:'flights',icon:'✈',label:'Flights'},
-  {id:'settings',icon:'⚙',label:'Settings'},
-  {id:'apexcoin',icon:'🪙',label:'ApexCoin'},
-  {id:'corporate',icon:'🏢',label:'Corporate'},
+  {id:'analytics',icon:lineIcon('search',16),label:'Analytics'},
+  {id:'flights',icon:lineIcon('ticket',16),label:'Flights'},
+  {id:'settings',icon:lineIcon('sliders',16),label:'Settings'},
+  {id:'apexcoin',icon:'<span style="font-size:15px;line-height:1">&#9672;</span>',label:'ApexCoin'},
+  {id:'corporate',icon:lineIcon('building',16),label:'Corporate'},
   {id:'map',icon:'<svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/></svg>',label:'Live Map'},
-  {id:'payouts',icon:'💸',label:'Payouts'},
-  {id:'audit',icon:'🛡',label:'Audit Log'},
-  {id:'errors',icon:'🐞',label:'Errors'},
+  {id:'payouts',icon:lineIcon('cardpay',16),label:'Payouts'},
+  {id:'audit',icon:lineIcon('shield',16),label:'Audit Log'},
+  {id:'errors',icon:lineIcon('warn',16),label:'Errors'},
   {id:'waitlist',icon:'✦',label:'Waitlist'},
-  {id:'city-interest',icon:'🌍',label:'City Interest'},
+  {id:'city-interest',icon:lineIcon('pin',16),label:'City Interest'},
 ];
 
 const ADMIN_DEMO_FLIGHTS = []; // real tracked flights only
@@ -360,7 +404,7 @@ function applyLayout(){
       : 'width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover');
   }
   const btn=document.getElementById('layout-btn');
-  if(btn){ btn.textContent=mode==='mobile'?'📱':'🖥'; btn.title='Layout: '+mode+(S.layout==='auto'?' (auto)':'')+' — tap to switch'; }
+  if(btn){ btn.innerHTML=lineIcon(mode==='mobile'?'phone':'building',15); btn.title='Layout: '+mode+(S.layout==='auto'?' (auto)':'')+' — tap to switch'; }
 }
 function toggleLayout(){
   S.layout = effectiveLayout()==='mobile' ? 'desktop' : 'mobile';
@@ -375,7 +419,7 @@ function toggleTheme(){
   localStorage.setItem('apexvip_admin_theme',S.theme);
   document.body.classList.toggle('light',S.theme==='light');
   const btn=document.getElementById('theme-btn');
-  if(btn) btn.textContent=S.theme==='light'?'🌙':'☀️';
+  if(btn) btn.innerHTML=lineIcon(S.theme==='light'?'moon':'sun',15);
 }
 
 function go(s){S.screen=s;track('admin_screen_view',{screen:s,src:'admin'});render();document.getElementById('sidebar').classList.remove('open');window.scrollTo(0,0);if(s==='pricing')loadPricingAdmin();if(s==='analytics')ensureAnalyticsFeed();}
@@ -658,11 +702,11 @@ function safeUrl(u){return /^https?:\/\//i.test(String(u||''));}
 function badge(s){
   const m={
     pending:'tag-amber Pending',confirmed:'tag-blue Confirmed',active:'tag-green Active',
-    offered:'tag-gold 📢 Offered',accepted:'tag-green Accepted',
+    offered:'tag-gold Offered',accepted:'tag-green Accepted',
     en_route:'tag-green En Route',arrived:'tag-green Arrived',onboard:'tag-green On Board',
     completed:'tag-gray Completed',cancelled:'tag-red Cancelled',declined:'tag-red Declined',
     online:'tag-green Online',ontrip:'tag-amber On Trip',offline:'tag-gray Offline',
-    review:'tag-red ⚠ Review',
+    review:'tag-red Review',
     available:'tag-green Available',vip:'tag-gold VIP',vvip:'tag-purple VVIP',standard:'tag-gray Standard'
   };
   // Unknown values are client-writable — token-sanitize before they touch HTML.
@@ -717,7 +761,7 @@ function barChart(data,labels,height=70){
 
 function renderSidebar(){
   const btn=document.getElementById('theme-btn');
-  if(btn) btn.textContent=S.theme==='light'?'🌙':'☀️';
+  if(btn) btn.innerHTML=lineIcon(S.theme==='light'?'moon':'sun',15);
   if(S.screen==='login'){
     document.getElementById('sidebar').style.display='none';
     document.getElementById('main').style.marginLeft='0';
@@ -729,7 +773,7 @@ function renderSidebar(){
   const mt=document.querySelector('.menu-toggle');if(mt)mt.style.display='';
   document.getElementById('sidenav').innerHTML=NAVITEMS.map(i=>`
     <div class="s-nav-item${S.screen===i.id?' on':''}" onclick="go('${i.id}')">
-      <span style="font-size:16px">${i.icon}</span><span>${i.label}</span>
+      <span style="display:flex;align-items:center;font-size:16px">${i.icon}</span><span>${i.label}</span>
     </div>`).join('');
 }
 
@@ -775,11 +819,11 @@ dashboard:()=>`<div class="screen">
       const revToday=Math.round(todays.filter(b=>b.status!=='cancelled'&&(b.currency||'GBP')==='GBP').reduce((a,b)=>a+priceNum(b),0));
       const online=DRIVERS.filter(d=>['online','available','ontrip'].includes(d.status));
       const onTrip=DRIVERS.filter(d=>d.status==='ontrip').length;
-      return [["Today's Bookings",String(todays.length),todays.length?'live':'no bookings yet today','#3b82f6','📋'],
-        ['Active Rides',String(active.length),active.length?active.length+' in progress':'none right now','#22c55e','🚗'],
+      return [["Today's Bookings",String(todays.length),todays.length?'live':'no bookings yet today','#3b82f6',lineIcon('doc',44)],
+        ['Active Rides',String(active.length),active.length?active.length+' in progress':'none right now','#22c55e',lineIcon('car',44)],
         ['Revenue Today','£'+revToday.toLocaleString(),'from '+todays.length+' booking'+(todays.length===1?'':'s'),'#C8A97E','£'],
-        ['Drivers Online',String(online.length),onTrip+' on trip','#a855f7','👤'],
-        ['Total Bookings',String(BOOKINGS.length),'all time','#C8A97E','📈']];
+        ['Drivers Online',String(online.length),onTrip+' on trip','#a855f7',lineIcon('star',44)],
+        ['Total Bookings',String(BOOKINGS.length),'all time','#C8A97E',lineIcon('calendar',44)]];
     })().map(([l,v,s,c,ic])=>`<div class="stat-card" style="${l==='ApexCoin Supply'?'border-color:rgba(200,169,126,.25);background:rgba(200,169,126,.04)':''}">
       <div class="stat-watermark">${ic}</div>
       <div class="section-label" style="margin-bottom:12px">${l}</div>
@@ -805,7 +849,7 @@ dashboard:()=>`<div class="screen">
     }catch(e){recs=[];}
     const body=recs.length
       ? recs.map(r=>`<div style="display:flex;align-items:center;gap:14px;padding:11px 0;border-bottom:1px solid var(--divider);flex-wrap:wrap">
-          <div style="flex:2;min-width:170px"><div style="font-size:14px;font-weight:700">${r.event}</div><div style="font-size:12px;color:var(--fg-dim);margin-top:2px">📍 ${r.zone}</div></div>
+          <div style="flex:2;min-width:170px"><div style="font-size:14px;font-weight:700">${r.event}</div><div style="font-size:12px;color:var(--fg-dim);margin-top:2px;display:flex;align-items:center;gap:4px">${lineIcon('pin',12)} ${r.zone}</div></div>
           <span style="font-size:11px;color:var(--fg-subtle);min-width:60px">${r.when}</span>
           <span style="color:var(--gold);font-weight:800;font-size:14px" title="Expected surge">×${Number(r.expectedSurge).toFixed(2)}</span>
           <span class="tag tag-gold">${r.suggestedCars} car${r.suggestedCars===1?'':'s'}</span>
@@ -879,19 +923,19 @@ bookings:()=>{const f=S.bFilter;const list=f==='all'?BOOKINGS:BOOKINGS.filter(b=
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <div style="display:flex;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:3px;gap:2px">
         <button onclick="setDispatchMode('manual')" style="padding:7px 12px;border-radius:8px;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;background:${S.dispatchMode==='manual'?'var(--gold)':'transparent'};color:${S.dispatchMode==='manual'?'#000':'var(--fg-dim)'}">Manual dispatch</button>
-        <button onclick="setDispatchMode('broadcast')" style="padding:7px 12px;border-radius:8px;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;background:${S.dispatchMode==='broadcast'?'var(--gold)':'transparent'};color:${S.dispatchMode==='broadcast'?'#000':'var(--fg-dim)'}">📢 Instant broadcast</button>
+        <button onclick="setDispatchMode('broadcast')" style="padding:7px 12px;border-radius:8px;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;background:${S.dispatchMode==='broadcast'?'var(--gold)':'transparent'};color:${S.dispatchMode==='broadcast'?'#000':'var(--fg-dim)'};display:inline-flex;align-items:center;gap:5px">${lineIcon('bell',12)}Instant broadcast</button>
       </div>
-      <a href="apexvip-whatsapp.html" target="_blank" rel="noopener" class="btn btn-glass btn-sm" style="text-decoration:none;display:inline-flex;align-items:center" title="Paste a WhatsApp message — ApexAI turns it into a booking here">💬 WhatsApp Desk</a>
-      <button class="btn btn-glass btn-sm" onclick="openModal(quickIntakeForm())" style="margin-right:8px">⚡ Quick Intake</button>
+      <a href="apexvip-whatsapp.html" target="_blank" rel="noopener" class="btn btn-glass btn-sm" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px" title="Paste a WhatsApp message — ApexAI turns it into a booking here">${lineIcon('chat',13)}WhatsApp Desk</a>
+      <button class="btn btn-glass btn-sm" onclick="openModal(quickIntakeForm())" style="margin-right:8px;display:inline-flex;align-items:center;gap:6px">${lineIcon('clock',13)}Quick Intake</button>
       <button class="btn btn-gold btn-sm" onclick="openModal(newBookingForm())">+ New Booking</button>
     </div>
   </div>
-  ${S.dispatchMode==='broadcast'?`<div style="background:rgba(200,169,126,.07);border:1px solid rgba(200,169,126,.18);border-radius:12px;padding:10px 16px;margin-bottom:14px;font-size:12px;color:var(--fg-dim)">📢 <b style="color:var(--gold)">Instant broadcast on</b> — new bookings are offered to all online drivers the moment they land. First driver to accept gets the job. You can still assign manually below.</div>`:''}
+  ${S.dispatchMode==='broadcast'?`<div style="background:rgba(200,169,126,.07);border:1px solid rgba(200,169,126,.18);border-radius:12px;padding:10px 16px;margin-bottom:14px;font-size:12px;color:var(--fg-dim)"><span style="display:inline-flex;vertical-align:-3px;margin-right:4px;color:var(--gold)">${lineIcon('bell',14)}</span><b style="color:var(--gold)">Instant broadcast on</b> — new bookings are offered to all online drivers the moment they land. First driver to accept gets the job. You can still assign manually below.</div>`:''}
   ${tabRow([['all','All'],['pending','Pending'],['confirmed','Confirmed'],['active','Active'],['completed','Completed'],['cancelled','Cancelled']],f,"S.bFilter='__VAL__';render()")}
   <div class="card"><div style="overflow-x:auto"><table>
     <thead><tr><th>ID</th><th>Client</th><th>Route</th><th>Date</th><th>Vehicle</th><th>Driver</th><th>Status</th><th>Price</th><th></th></tr></thead>
     <tbody>${list.length===0?`<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--fg-subtle)">No bookings yet — new bookings appear here in real time</td></tr>`:list.map(b=>`<tr>
-      <td style="color:var(--gold);font-weight:600;font-size:12px">${b.id}${b.source==='whatsapp'?'<span title="Created from a pasted WhatsApp message" style="margin-left:5px;font-size:10px;background:rgba(37,211,102,.1);color:#25D366;border:1px solid rgba(37,211,102,.25);border-radius:6px;padding:1px 5px;font-weight:700">💬 WA</span>':''}${b.location==='dubai'?'<span style="margin-left:5px;font-size:10px;background:rgba(0,180,255,.12);color:#38bdf8;border:1px solid rgba(56,189,248,.25);border-radius:6px;padding:1px 5px;font-weight:700">AE</span>':b.location==='london'?'<span style="margin-left:5px;font-size:10px;background:rgba(200,169,126,.1);color:var(--gold);border:1px solid rgba(200,169,126,.2);border-radius:6px;padding:1px 5px;font-weight:700">GB</span>':''}</td>
+      <td style="color:var(--gold);font-weight:600;font-size:12px">${b.id}${b.source==='whatsapp'?'<span title="Created from a pasted WhatsApp message" style="margin-left:5px;font-size:10px;background:rgba(37,211,102,.1);color:#25D366;border:1px solid rgba(37,211,102,.25);border-radius:6px;padding:1px 5px;font-weight:700;display:inline-flex;align-items:center;gap:3px">'+lineIcon('chat',10)+'WA</span>':''}${b.location==='dubai'?'<span style="margin-left:5px;font-size:10px;background:rgba(0,180,255,.12);color:#38bdf8;border:1px solid rgba(56,189,248,.25);border-radius:6px;padding:1px 5px;font-weight:700">AE</span>':b.location==='london'?'<span style="margin-left:5px;font-size:10px;background:rgba(200,169,126,.1);color:var(--gold);border:1px solid rgba(200,169,126,.2);border-radius:6px;padding:1px 5px;font-weight:700">GB</span>':''}</td>
       <td style="font-weight:500">${b.client}</td>
       <td style="color:var(--fg-dim);font-size:13px">${b.pickup} → ${b.dropoff}</td>
       <td style="color:var(--fg-dim);font-size:12px">${b.date} ${b.time}</td>
@@ -908,7 +952,7 @@ bookings:()=>{const f=S.bFilter;const list=f==='all'?BOOKINGS:BOOKINGS.filter(b=
     <div style="font-size:16px;font-weight:700;margin-bottom:4px">Assign Driver</div>
     <div style="font-size:12px;color:var(--fg-dim);margin-bottom:14px">Booking ${S._dispatchRef||''}</div>
     <div onclick="broadcastDispatch()" style="display:flex;align-items:center;gap:14px;padding:14px;background:rgba(200,169,126,.08);border:1px solid rgba(200,169,126,.3);border-radius:14px;margin-bottom:12px;cursor:pointer">
-      <div style="width:42px;height:42px;border-radius:50%;background:rgba(200,169,126,.15);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">📢</div>
+      <div style="width:42px;height:42px;border-radius:50%;background:rgba(200,169,126,.15);display:flex;align-items:center;justify-content:center;flex-shrink:0">${lineIcon('bell',20,'var(--gold)')}</div>
       <div style="flex:1">
         <div style="font-size:14px;font-weight:700;color:var(--gold)">Broadcast to all drivers</div>
         <div style="font-size:12px;color:var(--fg-dim);margin-top:2px">Every online driver is offered this job — first to accept wins</div>
@@ -918,7 +962,7 @@ bookings:()=>{const f=S.bFilter;const list=f==='all'?BOOKINGS:BOOKINGS.filter(b=
     ${typeof ApexCore!=='undefined'?`
     <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--surface-b);border:1px solid ${S._discreteDispatch?'rgba(200,169,126,.3)':'var(--border)'};border-radius:12px;padding:10px 14px;margin-bottom:14px">
       <div>
-        <div style="font-size:13px;font-weight:600">🔒 Discrete dispatch</div>
+        <div style="font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px">${lineIcon('lock',13,'var(--gold)')}Discrete dispatch</div>
         ${S._discreteDispatch?`<div style="font-size:11px;color:var(--gold);margin-top:2px">Driver sees masked details until acceptance.</div>`:`<div style="font-size:11px;color:var(--fg-subtle);margin-top:2px">Privacy-weighted ranking for high-profile clients</div>`}
       </div>
       <div onclick="event.stopPropagation();S._discreteDispatch=!S._discreteDispatch;render()" style="width:42px;height:24px;border-radius:12px;background:${S._discreteDispatch?'var(--gold)':'var(--surface-c)'};border:1px solid var(--border);position:relative;cursor:pointer;flex-shrink:0;transition:background .2s">
@@ -952,10 +996,10 @@ bookings:()=>{const f=S.bFilter;const list=f==='all'?BOOKINGS:BOOKINGS.filter(b=
         const scored = avail.filter(d=>byId[d.id]).sort((a,b)=>byId[b.id].score-byId[a.id].score)
           .map(d=>({...d,_score:byId[d.id].score,_label:'ApexMatch™',
             _why:`perf ${(byId[d.id].factors.performance*100|0)} · fit ${(byId[d.id].factors.vehicleFit*100|0)}`
-              +(typeof computeCompliance==='function'&&!computeCompliance(d).ok?' · ⚠ compliance':'')}));
+              +(typeof computeCompliance==='function'&&!computeCompliance(d).ok?' · compliance issue':'')}));
         // Vehicle-unfit drivers (e.g. saloon vs a 6-passenger job) stay listed,
         // unranked, with the reason — never silently vanished.
-        const unfit = avail.filter(d=>!byId[d.id]).map(d=>({...d,_score:null,_why:'⚠ vehicle not suited to this job'}));
+        const unfit = avail.filter(d=>!byId[d.id]).map(d=>({...d,_score:null,_why:'vehicle not suited to this job'}));
         ranked = scored.concat(unfit);
       } else {
         ranked = avail.map(d=>({...d,_score:null}));
@@ -985,7 +1029,7 @@ drivers:()=>{const f=S.dFilter;const list=f==='all'?DRIVERS:DRIVERS.filter(d=>d.
   <div class="section-header"><div class="section-title">Drivers</div><button class="btn btn-gold btn-sm">+ Add Driver</button></div>
   ${filterBar([['all','All'],['online','Online'],['ontrip','On Trip'],['offline','Offline']],f,'dFilter')}
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px">
-    ${list.length===0?`<div style="text-align:center;padding:60px 20px;color:var(--fg-4);grid-column:1/-1"><div style="font-size:34px;margin-bottom:12px">🚗</div><div style="font-size:15px;font-weight:600;color:var(--fg-2)">No drivers yet</div><div style="font-size:13px;margin-top:6px">Drivers appear here after signing up in the driver app.</div></div>`:''}
+    ${list.length===0?`<div style="text-align:center;padding:60px 20px;color:var(--fg-4);grid-column:1/-1"><div style="margin-bottom:12px;color:var(--gold)">${lineIcon('car',34)}</div><div style="font-size:15px;font-weight:600;color:var(--fg-2)">No drivers yet</div><div style="font-size:13px;margin-top:6px">Drivers appear here after signing up in the driver app.</div></div>`:''}
     ${list.map(d=>`<div class="card" style="cursor:pointer" onclick="showDriver('${d.id}')">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
         ${av(d.initials,d.color,46)}<div style="flex:1"><div style="font-size:15px;font-weight:700">${d.name}</div><div style="font-size:12px;color:var(--gold);margin-top:2px">★ ${d.rating}</div></div>${badge(d.status)}
@@ -1012,9 +1056,9 @@ clients:()=>{const f=S.cFilter;const list=f==='all'?CLIENTS:CLIENTS.filter(c=>c.
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">${[['all','All'],['vvip','VVIP'],['vip','VIP'],['standard','Standard']].map(([val,lbl])=>`<button class="btn btn-sm ${f===val?'btn-gold':'btn-glass'}" onclick="S.cFilter='${val}';render()">${lbl}</button>`).join('')}</div>
   </div>
-  ${!isLive&&FIREBASE_ENABLED?`<div style="background:rgba(200,169,126,.07);border:1px solid rgba(200,169,126,.18);border-radius:12px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:var(--fg-dim)">⚠️ No registered users found in Firebase. Update Firestore rules to allow admin reads — see setup guide.</div>`:''}
+  ${!isLive&&FIREBASE_ENABLED?`<div style="background:rgba(200,169,126,.07);border:1px solid rgba(200,169,126,.18);border-radius:12px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:var(--fg-dim)"><span style="display:inline-flex;vertical-align:-3px;margin-right:5px;color:var(--gold)">${lineIcon('warn',14)}</span>No registered users found in Firebase. Update Firestore rules to allow admin reads — see setup guide.</div>`:''}
   ${hasCore?`<div class="stagger" style="display:flex;gap:14px;margin-bottom:20px;flex-wrap:wrap">
-    ${[['Total Accounts',CLIENTS.length,'registered clients','var(--fg)','👤'],['◆ Black Tier',counts.Black,'ApexLifetime™ top tier','#f0ece4','◆'],['◆ Gold Tier',counts.Gold,'high-value clients','#C8A97E','◆'],['Members',counts.Member,'standard tier','#8a8278','○']].map(([l,v,s,c,ic])=>`<div class="stat-card">
+    ${[['Total Accounts',CLIENTS.length,'registered clients','var(--fg)',lineIcon('star',44)],['◆ Black Tier',counts.Black,'ApexLifetime™ top tier','#f0ece4','◆'],['◆ Gold Tier',counts.Gold,'high-value clients','#C8A97E','◆'],['Members',counts.Member,'standard tier','#8a8278','○']].map(([l,v,s,c,ic])=>`<div class="stat-card">
       <div class="stat-watermark">${ic}</div>
       <div class="section-label" style="margin-bottom:12px">${l}</div>
       <div style="font-size:30px;font-weight:800;color:${c}">${v}</div>
@@ -1102,7 +1146,7 @@ fleet:()=>`<div class="screen">
         <div style="display:flex;justify-content:space-between"><span>Road tax</span><span style="color:${taxOk?'#22c55e':'#ef4444'}">${v.taxExpiry||'—'}</span></div>
       </div>
     </div>`;}).join('')}
-  </div>`:`<div style="text-align:center;padding:60px 20px;color:var(--fg-4)"><div style="font-size:34px;margin-bottom:12px">🚙</div><div style="font-size:15px;font-weight:600;color:var(--fg-2)">No vehicles registered</div><div style="font-size:13px;margin-top:6px">Open a driver profile and add their vehicle (reg, MOT, road tax).</div></div>`}
+  </div>`:`<div style="text-align:center;padding:60px 20px;color:var(--fg-4)"><div style="margin-bottom:12px;color:var(--gold)">${lineIcon('car',34)}</div><div style="font-size:15px;font-weight:600;color:var(--fg-2)">No vehicles registered</div><div style="font-size:13px;margin-top:6px">Open a driver profile and add their vehicle (reg, MOT, road tax).</div></div>`}
 </div>`,
 
 pricing:()=>{
@@ -1186,7 +1230,7 @@ concierge:()=>{
   })[r.status]||[];
   let html='<div class="screen">';
   html+='<div class="section-header"><div><div class="section-title">Concierge desk</div><div style="color:var(--fg-dim);font-size:13px;margin-top:2px">The ApexVIP Concierge app, staffed from this console — replies and status changes reach the member live.</div></div>'
-    +'<a class="btn btn-glass btn-sm" href="concierge/ops.html" target="_blank" rel="noopener" style="text-decoration:none">\uD83D\uDCF1 Mobile ops</a></div>';
+    +'<a class="btn btn-glass btn-sm" href="concierge/ops.html" target="_blank" rel="noopener" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px">'+lineIcon('phone',13)+'Mobile ops</a></div>';
   html+='<div class="stagger" style="display:flex;gap:14px;margin-bottom:24px;flex-wrap:wrap">';
   const kpi=(l,v,c,sub)=>'<div class="stat-card"><div class="section-label" style="margin-bottom:8px">'+l+'</div><div style="font-size:26px;font-weight:800;color:'+(c||'var(--fg)')+'">'+v+'</div>'+(sub?'<div style="font-size:11px;color:var(--fg-ghost);margin-top:4px">'+sub+'</div>':'')+'</div>';
   html+=kpi('Open requests',open.length,'var(--gold)',needsDesk+' need the desk');
@@ -1206,7 +1250,7 @@ concierge:()=>{
       const t=vcTier(r), m=vcMember(r.ownerUid);
       const sla=V.slaState(r.submittedAt,t,now,r.firstResponseAt);
       const sb=slaBadge(sla).split(' ');
-      const cat=(V.CATEGORIES.find(c=>c.id===r.category)||{}).emoji||'';
+      const cat=lineIcon(({travel:'ticket',dining:'dining',events:'ticket',chauffeur:'car',shopping:'bag',home:'building',wellness:'leaf',gifting:'gift'})[r.category]||'star',12,'var(--gold)');
       const acts=nextActions(r).map(([to,label])=>to==='options'
         ?'<button class="btn btn-glass btn-sm" onclick="vcCurateOptions(\''+r.docId+'\')">'+label+'</button>'
         :'<button class="btn btn-glass btn-sm" onclick="vcAdvance(\''+r.docId+'\',\''+to+'\')">'+label+'</button>').join(' ');
@@ -1351,13 +1395,13 @@ analytics:()=>{
 
   if(noData){
     html+='<div class="card" style="text-align:center;padding:60px 24px">';
-    html+='<div style="font-size:52px;margin-bottom:16px">📊</div>';
+    html+='<div style="margin-bottom:16px;color:var(--gold)">'+lineIcon('search',52)+'</div>';
     html+='<div style="font-size:20px;font-weight:700;margin-bottom:10px">No data yet</div>';
     html+='<div style="font-size:13px;color:var(--fg-subtle);line-height:1.7">Open the client or driver app and complete some actions.<br/>All interactions are tracked automatically and shown here in real time.</div></div>';
   } else {
     // ── Across the apps ──
     const bySrc={};raw.forEach(e=>{const k=e.src||'client';bySrc[k]=(bySrc[k]||0)+1;});
-    const SRC_META={client:['📱','Client app'],driver:['🚗','Driver app'],admin:['🖥','Admin console'],concierge:['🛎','Concierge']};
+    const SRC_META={client:[lineIcon('phone',11),'Client app'],driver:[lineIcon('car',11),'Driver app'],admin:[lineIcon('building',11),'Admin console'],concierge:[lineIcon('bell',11),'Concierge']};
     html+='<div class="section-label" style="margin:6px 0 12px">Across the apps</div><div class="stagger" style="display:flex;gap:14px;margin-bottom:24px;flex-wrap:wrap">';
     Object.keys(SRC_META).forEach(k=>{const[ic,label]=SRC_META[k];html+=kpi(ic+' '+label,(bySrc[k]||0).toLocaleString(),'var(--fg)','events collected');});
     html+='</div>';
@@ -1652,7 +1696,7 @@ map: () => `<div class="screen" style="padding:0;height:calc(100vh - 60px);posit
 
 errors: () => `<div class="screen">
   <div class="section-header"><div class="section-title">Errors</div>
-    <button class="btn btn-glass btn-sm" onclick="clearErrors()">🗑 Clear all</button>
+    <button class="btn btn-glass btn-sm" onclick="clearErrors()">✕ Clear all</button>
   </div>
   <div style="font-size:12px;color:var(--fg-subtle);margin:-6px 0 14px">Live error telemetry from the client, driver and admin apps — grouped by fingerprint, newest first. Errors land here the moment any app catches one.</div>
   <div style="display:flex;gap:8px;margin-bottom:14px">
@@ -1663,7 +1707,7 @@ errors: () => `<div class="screen">
 
 audit: () => `<div class="screen">
   <div class="section-header"><div class="section-title">Audit Log</div>
-    <button class="btn btn-glass btn-sm" onclick="exportAuditCsv()">⬇ Export CSV</button>
+    <button class="btn btn-glass btn-sm" onclick="exportAuditCsv()">↓ Export CSV</button>
   </div>
   <div style="font-size:12px;color:var(--fg-subtle);margin:-6px 0 14px">Append-only record of staff actions — dispatch, compliance, vehicles and payouts. Cannot be edited or deleted.</div>
   <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
@@ -1724,16 +1768,16 @@ waitlist: () => {
 
 'city-interest': () => {
   const CITIES = [
-    {city:'Paris',emoji:'🗼',quarter:'Q4 2026',count:38},
-    {city:'New York',emoji:'🗽',quarter:'Q1 2027',count:27},
-    {city:'Singapore',emoji:'🦁',quarter:'Q2 2027',count:19},
-    {city:'Riyadh',emoji:'🕌',quarter:'TBA',count:12},
+    {city:'Paris',icon:'landmark',quarter:'Q4 2026',count:38},
+    {city:'New York',icon:'building',quarter:'Q1 2027',count:27},
+    {city:'Singapore',icon:'leaf',quarter:'Q2 2027',count:19},
+    {city:'Riyadh',icon:'sun',quarter:'TBA',count:12},
   ];
   return `<div class="screen">
     <div class="section-header"><div class="section-title">City Expansion Interest</div></div>
     <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:24px">
       ${CITIES.map(c=>`<div style="flex:1;min-width:180px;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px;text-align:center">
-        <div style="font-size:32px;margin-bottom:8px">${c.emoji}</div>
+        <div style="margin-bottom:8px;color:var(--gold)">${lineIcon(c.icon,32)}</div>
         <div style="font-size:16px;font-weight:700;margin-bottom:4px">${c.city}</div>
         <div style="font-size:11px;color:var(--fg-subtle);margin-bottom:10px">${c.quarter}</div>
         <div style="font-size:28px;font-weight:800;color:var(--gold)">${c.count}</div>
@@ -1743,7 +1787,7 @@ waitlist: () => {
     <div class="card">
       <div style="font-size:14px;font-weight:600;margin-bottom:14px">Total registrations by city</div>
       ${CITIES.map(c=>`<div style="margin-bottom:14px">
-        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px"><span>${c.emoji} ${c.city}</span><span style="color:var(--gold);font-weight:700">${c.count}</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px"><span style="display:inline-flex;align-items:center;gap:6px">${lineIcon(c.icon,13,'var(--gold)')}${c.city}</span><span style="color:var(--gold);font-weight:700">${c.count}</span></div>
         <div style="height:6px;background:rgba(255,255,255,.05);border-radius:3px;overflow:hidden"><div style="height:100%;border-radius:3px;background:var(--gold);width:${Math.round(c.count/38*100)}%;transition:width .4s ease"></div></div>
       </div>`).join('')}
     </div>
@@ -1759,13 +1803,13 @@ documents:()=>{
   return`<div class="screen">
   <div class="section-header"><div class="section-title">Driver Documents</div></div>
   <div class="stagger" style="display:flex;gap:14px;margin-bottom:24px;flex-wrap:wrap">
-    ${[['Total',tot,'var(--fg)','📄'],['Pending',pend,'#f59e0b','⏳'],['Approved',appr,'#22c55e','✓'],['Rejected',rej,'#ef4444','✗']].map(([l,v,c,ic])=>`<div class="stat-card"><div class="stat-watermark">${ic}</div><div class="section-label" style="margin-bottom:10px">${l}</div><div style="font-size:30px;font-weight:800;color:${c}">${v}</div></div>`).join('')}
+    ${[['Total',tot,'var(--fg)',lineIcon('doc',44)],['Pending',pend,'#f59e0b',lineIcon('clock',44)],['Approved',appr,'#22c55e','✓'],['Rejected',rej,'#ef4444','✗']].map(([l,v,c,ic])=>`<div class="stat-card"><div class="stat-watermark">${ic}</div><div class="section-label" style="margin-bottom:10px">${l}</div><div style="font-size:30px;font-weight:800;color:${c}">${v}</div></div>`).join('')}
   </div>
   <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
-    ${[['all','All'],['pending','⏳ Pending'],['approved','✓ Approved'],['rejected','✗ Rejected']].map(([val,lbl])=>`<button class="btn btn-sm ${filt===val?'btn-gold':'btn-glass'}" onclick="S._docFilter='${val}';render()">${lbl}</button>`).join('')}
+    ${[['all','All'],['pending','Pending'],['approved','✓ Approved'],['rejected','✗ Rejected']].map(([val,lbl])=>`<button class="btn btn-sm ${filt===val?'btn-gold':'btn-glass'}" onclick="S._docFilter='${val}';render()">${lbl}</button>`).join('')}
   </div>
   ${withDocs.length===0?`<div class="card" style="text-align:center;padding:60px 24px">
-    <div style="font-size:52px;margin-bottom:16px">📄</div>
+    <div style="margin-bottom:16px;color:var(--gold)">${lineIcon('doc',52)}</div>
     <div style="font-size:18px;font-weight:700;margin-bottom:8px">No documents yet</div>
     <div style="font-size:13px;color:var(--fg-subtle)">Documents uploaded by drivers will appear here for review.</div>
   </div>`
@@ -1784,7 +1828,7 @@ documents:()=>{
           const lbl=DLABELS[type]||type;
           const dt=doc.uploadedAt?(new Date(doc.uploadedAt.seconds?doc.uploadedAt.seconds*1000:doc.uploadedAt)).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):'—';
           const sc=doc.status==='approved'?'tag-green':doc.status==='rejected'?'tag-red':'tag-amber';
-          const sl=doc.status==='approved'?'✓ Approved':doc.status==='rejected'?'✗ Rejected':'⏳ Pending';
+          const sl=doc.status==='approved'?'✓ Approved':doc.status==='rejected'?'✗ Rejected':lineIcon('clock',10)+'Pending';
           return`<div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--surface-b);border-radius:12px;border:1px solid var(--border);flex-wrap:wrap">
             <div style="flex:1;min-width:140px">
               <div style="font-size:13px;font-weight:700;margin-bottom:3px">${lbl}</div>
@@ -1867,7 +1911,7 @@ flights: () => `
   <div style="margin-bottom:28px">
     <h1 style="font-size:24px;font-weight:700;margin:0 0 4px">Travel Desk</h1>
     <div style="font-size:13px;color:var(--fg-subtle);margin-bottom:18px">${FLIGHT_REQS.filter(r=>r.status==='requested').length} awaiting action · ${FLIGHT_REQS.length} request${FLIGHT_REQS.length===1?'':'s'} total</div>
-    ${FLIGHT_REQS.length?'':`<div class="card" style="padding:24px;text-align:center;color:var(--fg-4)"><div style="font-size:26px;margin-bottom:8px">🎫</div><div style="font-size:14px;font-weight:600;color:var(--fg-2)">No flight requests yet</div><div style="font-size:12px;margin-top:4px">Clients file them from Flights → "Book it for me" in the app.</div></div>`}
+    ${FLIGHT_REQS.length?'':`<div class="card" style="padding:24px;text-align:center;color:var(--fg-4)"><div style="margin-bottom:8px;color:var(--gold)">${lineIcon('ticket',26)}</div><div style="font-size:14px;font-weight:600;color:var(--fg-2)">No flight requests yet</div><div style="font-size:12px;margin-top:4px">Clients file them from Flights → "Book it for me" in the app.</div></div>`}
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px">
     ${FLIGHT_REQS.map(r=>{
       const tag={requested:['REQUESTED','tag-gold'],quoted:['QUOTED','tag-blue'],booked:['BOOKED','tag-green'],ticketed:['TICKETED','tag-green'],cancelled:['CANCELLED','tag-red']}[r.status]||['REQUESTED','tag-gold'];
@@ -1878,7 +1922,7 @@ flights: () => `
           <span class="tag ${tag[1]}" style="font-size:10px">${tag[0]}</span>
         </div>
         ${r.type==='hotel'?`
-        <div style="font-size:20px;font-weight:700;margin-bottom:2px">🏨 ${esc(r.city||'?')}</div>
+        <div style="font-size:20px;font-weight:700;margin-bottom:2px;display:flex;align-items:center;gap:8px">${lineIcon('bed',20,'var(--gold)')}${esc(r.city||'?')}</div>
         <div style="font-size:13px;color:var(--fg-2);margin:6px 0 8px">${esc(r.checkIn||'')} – ${esc(r.checkOut||'')} · ${r.guests||1} guest${(r.guests||1)>1?'s':''} · ${r.rooms||1} room${(r.rooms||1)>1?'s':''}</div>`:`
         <div style="font-size:20px;font-weight:700;margin-bottom:2px">${esc(r.from||'?')} → ${esc(r.to||'?')}</div>
         <div style="font-size:12px;color:var(--fg-muted);margin-bottom:8px">${esc(r.fromName||'')} → ${esc(r.toName||'')}</div>
@@ -1903,7 +1947,7 @@ flights: () => `
     </button>
   </div>
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px">
-    ${ADMIN_DEMO_FLIGHTS.length?'':`<div style="text-align:center;padding:60px 20px;color:var(--fg-4)"><div style="font-size:34px;margin-bottom:12px">✈️</div><div style="font-size:15px;font-weight:600;color:var(--fg-2)">No tracked flights</div><div style="font-size:13px;margin-top:6px">Flights attached to live bookings will appear here.</div></div>`}
+    ${ADMIN_DEMO_FLIGHTS.length?'':`<div style="text-align:center;padding:60px 20px;color:var(--fg-4)"><div style="margin-bottom:12px;color:var(--gold)">${lineIcon('ticket',34)}</div><div style="font-size:15px;font-weight:600;color:var(--fg-2)">No tracked flights</div><div style="font-size:13px;margin-top:6px">Flights attached to live bookings will appear here.</div></div>`}
     ${ADMIN_DEMO_FLIGHTS.map(f=>{
       const early=f.status==='early',delayed=f.status==='delayed';
       const arrColor=early?'#4ade80':delayed?'#f87171':'var(--fg)';
@@ -1915,7 +1959,7 @@ flights: () => `
         </div>
         <div style="font-size:12px;color:var(--fg-muted);margin-bottom:4px">${f.client} · ${f.driver}</div>
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px">
-          <span style="font-size:12px">✈</span>
+          ${lineIcon('ticket',12,'var(--gold)')}
           <span style="font-size:13px;font-weight:700">${f.flight}</span>
           <span style="font-size:11px;color:var(--fg-dim)">from ${f.from}</span>
         </div>
@@ -1944,10 +1988,10 @@ function showBooking(id){const b=BOOKINGS.find(x=>x.id===id);if(!b)return;
   openModal(`<div>
     <div style="font-size:17px;font-weight:700;margin-bottom:18px">Booking ${b.id}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px">
-      ${[['Client',b.client],['Vehicle',b.vehicle],['Pickup',b.pickup],['Driver',b.driver],['Drop-off',b.dropoff],['Date & Time',b.date+' '+b.time],['Price',`<span style="color:var(--gold);font-weight:700">${b.price}</span>`],['Status',badge(b.status)],b.location?['Market',b.location==='dubai'?'🇦🇪 Dubai':'🇬🇧 London']:null].filter(Boolean).map(([l,v])=>`<div><div style="font-size:10px;color:var(--fg-subtle);margin-bottom:4px;letter-spacing:.5px">${l.toUpperCase()}</div><div style="font-size:14px;font-weight:500">${v}</div></div>`).join('')}
+      ${[['Client',b.client],['Vehicle',b.vehicle],['Pickup',b.pickup],['Driver',b.driver],['Drop-off',b.dropoff],['Date & Time',b.date+' '+b.time],['Price',`<span style="color:var(--gold);font-weight:700">${b.price}</span>`],['Status',badge(b.status)],b.location?['Market',b.location==='dubai'?'Dubai':'London']:null].filter(Boolean).map(([l,v])=>`<div><div style="font-size:10px;color:var(--fg-subtle);margin-bottom:4px;letter-spacing:.5px">${l.toUpperCase()}</div><div style="font-size:14px;font-weight:500">${v}</div></div>`).join('')}
     </div>
     ${b.source==='whatsapp'&&b._sourceText?`<div style="background:rgba(37,211,102,.06);border:1px solid rgba(37,211,102,.2);border-radius:12px;padding:12px 14px;margin-bottom:18px">
-      <div style="font-size:10px;color:#25D366;font-weight:700;letter-spacing:.5px;margin-bottom:6px">💬 ORIGINAL WHATSAPP MESSAGE</div>
+      <div style="font-size:10px;color:#25D366;font-weight:700;letter-spacing:.5px;margin-bottom:6px;display:flex;align-items:center;gap:5px">${lineIcon('chat',12)}ORIGINAL WHATSAPP MESSAGE</div>
       <div style="font-size:12px;color:var(--fg-dim);line-height:1.6;white-space:pre-wrap;max-height:160px;overflow-y:auto">${b._sourceText}</div>
     </div>`:''}
     <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -2012,10 +2056,10 @@ function computeCompliance(d){
 }
 function complianceChip(d){
   const c=computeCompliance(d);
-  if(c.ok&&!c.expiring.length)return '<span class="tag tag-green">✅ Compliant</span>';
-  if(c.ok&&c.expiring.length)return '<span class="tag tag-amber">⚠️ Expiring soon</span>';
-  if(c.expired.length)return '<span class="tag tag-red">⛔ Expired</span>';
-  return '<span class="tag tag-amber">⛔ Action needed</span>';
+  if(c.ok&&!c.expiring.length)return '<span class="tag tag-green">'+lineIcon('shield',11)+'Compliant</span>';
+  if(c.ok&&c.expiring.length)return '<span class="tag tag-amber">'+lineIcon('warn',11)+'Expiring soon</span>';
+  if(c.expired.length)return '<span class="tag tag-red">'+lineIcon('warn',11)+'Expired</span>';
+  return '<span class="tag tag-amber">'+lineIcon('warn',11)+'Action needed</span>';
 }
 // Persist the whole verdict from the review form in one write (avoids races) and
 // recompute the compliant flag.
@@ -2258,7 +2302,7 @@ function leadDelete(id){
 function quickIntakeForm(){
   const fld=(id,label,type,ph)=>`<div style="flex:1;min-width:130px"><label style="font-size:10px;color:var(--fg-subtle);display:block;margin-bottom:4px;letter-spacing:.5px">${label}</label><input id="${id}" type="${type||'text'}" placeholder="${ph||''}" style="width:100%"/></div>`;
   return`<div>
-  <div style="font-size:17px;font-weight:700;margin-bottom:6px">⚡ Quick Intake</div>
+  <div style="font-size:17px;font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:8px">${lineIcon('clock',16,'var(--gold)')}Quick Intake</div>
   <div style="font-size:12px;color:var(--fg-subtle);margin-bottom:12px">Paste an inbound message (call notes, SMS, email). ApexAI fills the booking — review and create.</div>
   <textarea id="qi-text" placeholder="e.g. Hi, need a car from 14 Park Lane Mayfair to Heathrow T5 tomorrow 9am for BA247, 2 passengers" style="width:100%;min-height:88px;background:var(--surface-b);border:1px solid var(--border);border-radius:10px;color:var(--fg);padding:11px;font:inherit;resize:vertical"></textarea>
   <button id="qi-parse-btn" class="btn btn-gold btn-sm" style="margin:10px 0" onclick="quickIntakeParse()">Parse with ApexAI</button>
@@ -2382,7 +2426,7 @@ function driverPayFor(amount){
 
 function broadcastDispatch(){
   const booking=BOOKINGS.find(b=>b.id===S._dispatchRef||b.ref===S._dispatchRef);
-  if(booking){booking.status='offered';booking.driver='📢 Broadcast…';}
+  if(booking){booking.status='offered';booking.driver='Broadcast…';}
   if(FIREBASE_ENABLED&&booking?.docId){
     const raw=booking._raw||{};
     // priceNum is the numeric fare in the booking's own currency — never parse
@@ -2557,7 +2601,7 @@ function adminSignOut(){
   const done=()=>{S.screen='login';location.reload();};
   if(FIREBASE_ENABLED&&auth.currentUser){auth.signOut().then(done,done);}else done();
 }
-const AUDIT_LABEL={business_model_update:'✦ Biz model',booking_create:'⚡ Booking',dispatch_broadcast:'📢 Broadcast',dispatch_assign:'🚗 Assigned',compliance_update:'🛡 Compliance',vehicle_add:'➕ Vehicle',vehicle_update:'🔧 Vehicle',vehicle_remove:'🗑 Vehicle',payout:'💸 Payout',payout_approve:'✅ Payout req',payout_reject:'❌ Payout req',pricing_update:'£ Pricing'};
+const AUDIT_LABEL={business_model_update:'✦ Biz model',booking_create:lineIcon('calendar',12)+' Booking',dispatch_broadcast:lineIcon('bell',12)+' Broadcast',dispatch_assign:lineIcon('car',12)+' Assigned',compliance_update:lineIcon('shield',12)+' Compliance',vehicle_add:'+ Vehicle',vehicle_update:lineIcon('sliders',12)+' Vehicle',vehicle_remove:'✕ Vehicle',payout:lineIcon('cardpay',12)+' Payout',payout_approve:'✓ Payout req',payout_reject:'✕ Payout req',pricing_update:'£ Pricing'};
 function loadAudit(){
   const el=document.getElementById('audit-list');
   if(!el) return;
@@ -2663,7 +2707,7 @@ function loadErrors(){
     });
     const list=Object.values(groups);
     S._errIds=rows.map(r=>r._id);
-    if(!list.length){ el.innerHTML='<div style="text-align:center;padding:40px;color:var(--fg-4);font-size:13px">🎉 No errors reported'+(appF!=='all'?' from the '+appF+' app':'')+'</div>'; return; }
+    if(!list.length){ el.innerHTML='<div style="text-align:center;padding:40px;color:var(--fg-4);font-size:13px">No errors reported'+(appF!=='all'?' from the '+appF+' app':'')+'</div>'; return; }
     el.innerHTML=list.map(g=>{
       const r=g.latest; const t=when(r);
       // errors/ create is world-writable (telemetry), so r.app is attacker
