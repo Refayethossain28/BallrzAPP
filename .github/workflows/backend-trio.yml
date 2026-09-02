@@ -1,0 +1,189 @@
+name: Backend trio (backups IAM, whatsappWebhook, Amadeus)
+
+# The three parked backend items, drivable from CI:
+#   1. iam      — grant the service account "Cloud Datastore Import Export
+#                 Admin" so the nightly Firestore backup stops 403ing.
+#   2. whatsapp — count real invocations of the orphan gen-1 whatsappWebhook;
+#                 in fix mode, back up its source and delete it when idle.
+#   3. amadeus  — test the AMADEUS_CLIENT_ID/SECRET against both Amadeus
+#                 hosts and say exactly which of key/tier/API is broken.
+#
+# mode=audit (default) only reads and reports. mode=fix also applies the IAM
+# grant and retires whatsappWebhook if (and only if) it had zero invocations
+# in the audit window.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "audit (read-only) or fix (grant IAM + retire idle webhook)"
+        required: true
+        default: "audit"
+
+env:
+  PROJECT: apexvip-1b4a9
+  SA_EMAIL: firebase-adminsdk-fbsvc@apexvip-1b4a9.iam.gserviceaccount.com
+  ROLE: roles/datastore.importExportAdmin
+  FN: whatsappWebhook
+  FN_REGION: us-central1
+  WINDOW_DAYS: "45"
+
+jobs:
+  trio:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require the service-account secret
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$SA" ]; then
+            echo "::error title=No credential::Add the FIREBASE_SERVICE_ACCOUNT repo secret first."
+            exit 1
+          fi
+          printf '%s' "$SA" > "$RUNNER_TEMP/sa.json"
+
+      - name: Repair smart quotes in the credential
+        run: |
+          python3 - <<'EOF'
+          import io, os
+          p = os.path.join(os.environ["RUNNER_TEMP"], "sa.json")
+          s = io.open(p, encoding="utf-8", errors="replace").read()
+          fixed = (s.replace(chr(0x201c), '"').replace(chr(0x201d), '"')
+                    .replace(chr(0x2018), "'").replace(chr(0x2019), "'")
+                    .replace(chr(0x00a0), " "))
+          io.open(p, "w", encoding="utf-8").write(fixed)
+          print("repaired" if fixed != s else "no repair needed")
+          EOF
+
+      - name: Authenticate gcloud
+        run: |
+          gcloud auth activate-service-account --key-file="$RUNNER_TEMP/sa.json"
+          gcloud config set project "$PROJECT" --quiet
+
+      # ── 1 · Backups IAM ────────────────────────────────────────────────────
+      - name: "IAM: current grant state"
+        id: iamstate
+        run: |
+          HAS=$(gcloud projects get-iam-policy "$PROJECT" \
+            --flatten="bindings[].members" \
+            --filter="bindings.role=$ROLE AND bindings.members=serviceAccount:$SA_EMAIL" \
+            --format="value(bindings.role)" | head -1 || true)
+          if [ -n "$HAS" ]; then
+            echo "granted=yes" >> "$GITHUB_OUTPUT"
+            echo "IAM: $ROLE already granted to $SA_EMAIL — backups should work."
+          else
+            echo "granted=no" >> "$GITHUB_OUTPUT"
+            echo "IAM: $ROLE NOT granted to $SA_EMAIL (this is why nightly backups 403)."
+          fi
+
+      - name: "IAM: grant the export role (fix mode)"
+        id: iamgrant
+        if: inputs.mode == 'fix' && steps.iamstate.outputs.granted == 'no'
+        continue-on-error: true
+        run: |
+          if gcloud projects add-iam-policy-binding "$PROJECT" \
+               --member="serviceAccount:$SA_EMAIL" --role="$ROLE" \
+               --condition=None --quiet > /dev/null; then
+            echo "result=granted" >> "$GITHUB_OUTPUT"
+            echo "IAM: grant applied. The nightly backup should now succeed."
+          else
+            echo "result=denied" >> "$GITHUB_OUTPUT"
+            echo "::warning title=IAM self-grant denied::The service account cannot change project IAM (expected for Editor)."
+            echo "Run this once in Cloud Shell (console.cloud.google.com, project $PROJECT):"
+            echo "  gcloud projects add-iam-policy-binding $PROJECT --member=serviceAccount:$SA_EMAIL --role=$ROLE"
+            echo "Or: IAM & Admin -> IAM -> edit $SA_EMAIL -> add role 'Cloud Datastore Import Export Admin'."
+          fi
+
+      # ── 2 · whatsappWebhook traffic ────────────────────────────────────────
+      - name: "whatsapp: count invocations in the window"
+        id: watraffic
+        run: |
+          COUNT=$(gcloud logging read \
+            "resource.type=cloud_function AND resource.labels.function_name=$FN AND textPayload:\"Function execution\"" \
+            --freshness="${WINDOW_DAYS}d" --limit=1000 --format="value(timestamp)" | wc -l | tr -d ' ')
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "whatsappWebhook: $COUNT execution log line(s) in the last $WINDOW_DAYS days."
+          if [ "$COUNT" = "0" ]; then
+            echo "No traffic — nothing (including Meta) is calling it; safe to retire."
+          else
+            echo "Recent invocations (up to 5):"
+            gcloud logging read \
+              "resource.type=cloud_function AND resource.labels.function_name=$FN AND textPayload:\"Function execution\"" \
+              --freshness="${WINDOW_DAYS}d" --limit=5 --format="value(timestamp)"
+          fi
+
+      - name: "whatsapp: back up source and retire (fix mode, idle only)"
+        if: inputs.mode == 'fix' && steps.watraffic.outputs.count == '0'
+        run: |
+          # Hard gate: only ever delete the gen-1 function of this exact name.
+          if ! gcloud functions describe "$FN" --region="$FN_REGION" --no-gen2 --format="value(name)" > /dev/null 2>&1; then
+            echo "Gen-1 $FN not found in $FN_REGION — nothing to retire (already gone?)."
+            exit 0
+          fi
+          # Source backup via the v1 generateDownloadUrl RPC (console-uploaded
+          # gen-1 functions have no sourceArchiveUrl) — same as consolidation.
+          TOKEN=$(gcloud auth print-access-token)
+          URL=$(curl -sf -X POST \
+            -H "Authorization: Bearer $TOKEN" -H "Content-Length: 0" \
+            "https://cloudfunctions.googleapis.com/v1/projects/$PROJECT/locations/$FN_REGION/functions/$FN:generateDownloadUrl" \
+            | python3 -c "import sys,json;print(json.load(sys.stdin).get('downloadUrl',''))" || true)
+          if [ -n "$URL" ]; then
+            curl -sf "$URL" -o "$RUNNER_TEMP/$FN-source.zip"
+            gsutil cp "$RUNNER_TEMP/$FN-source.zip" \
+              "gs://gcf-sources-254410067879-us-central1/consolidation-backup/$FN-retired.zip"
+            echo "Source backed up to gs://gcf-sources-254410067879-us-central1/consolidation-backup/$FN-retired.zip"
+          else
+            echo "::warning::Could not fetch a source download URL — proceeding without a fresh backup (consolidation already archived this codebase)."
+          fi
+          gcloud functions delete "$FN" --region="$FN_REGION" --no-gen2 --quiet
+          echo "whatsappWebhook retired. If WhatsApp booking is ever wanted, it will be rebuilt as a gen-2 function in the repo."
+
+      # ── 3 · Amadeus credentials ────────────────────────────────────────────
+      - name: "amadeus: test credentials against both hosts"
+        run: |
+          set +e
+          CID=$(gcloud secrets versions access latest --secret=AMADEUS_CLIENT_ID 2>/dev/null)
+          CSEC=$(gcloud secrets versions access latest --secret=AMADEUS_CLIENT_SECRET 2>/dev/null)
+          if [ -z "$CID" ] || [ -z "$CSEC" ]; then
+            echo "::warning title=Secret access denied::Cannot read the Amadeus secrets from CI."
+            echo "Run these two lines in Cloud Shell to test by hand (they print only a status):"
+            echo '  CID=$(gcloud secrets versions access latest --secret=AMADEUS_CLIENT_ID); CSEC=$(gcloud secrets versions access latest --secret=AMADEUS_CLIENT_SECRET)'
+            echo '  for H in test.api.amadeus.com api.amadeus.com; do echo -n "$H: "; curl -s -o /dev/null -w "%{http_code}\n" -X POST "https://$H/v1/security/oauth2/token" -d "grant_type=client_credentials&client_id=$CID&client_secret=$CSEC"; done'
+            exit 0
+          fi
+          echo "::add-mask::$CID"
+          echo "::add-mask::$CSEC"
+          probe() {
+            curl -s -o "$RUNNER_TEMP/am.json" -w "%{http_code}" -X POST \
+              "https://$1/v1/security/oauth2/token" \
+              -H "Content-Type: application/x-www-form-urlencoded" \
+              --data-urlencode "grant_type=client_credentials" \
+              --data-urlencode "client_id=$CID" \
+              --data-urlencode "client_secret=$CSEC"
+          }
+          T=$(probe test.api.amadeus.com); TERR=$(python3 -c "import json;d=json.load(open('$RUNNER_TEMP/am.json'));print(d.get('error') or d.get('title') or 'ok')" 2>/dev/null || echo "?")
+          P=$(probe api.amadeus.com);      PERR=$(python3 -c "import json;d=json.load(open('$RUNNER_TEMP/am.json'));print(d.get('error') or d.get('title') or 'ok')" 2>/dev/null || echo "?")
+          echo "test.api.amadeus.com -> HTTP $T ($TERR)"
+          echo "api.amadeus.com      -> HTTP $P ($PERR)"
+          echo ""
+          if [ "$T" = "200" ]; then
+            echo "VERDICT: credentials are VALID for the test tier the code already uses."
+            echo "The UNAVAILABLE from getHotelRates is not an auth failure — likely thin test-tier inventory for the probed geo. Re-run the backend smoke to confirm current behaviour."
+          elif [ "$P" = "200" ]; then
+            echo "VERDICT: PRODUCTION keys in the secrets, but the code calls the test host."
+            echo "Fix: add AMADEUS_HOST=https://api.amadeus.com to functions/.env and redeploy (say the word and it ships as a one-line PR)."
+          else
+            echo "VERDICT: the stored keys are invalid on BOTH hosts (revoked or mistyped)."
+            echo "Regenerate at developers.amadeus.com -> Self-Service -> your app, then update both secrets:"
+            echo "  firebase functions:secrets:set AMADEUS_CLIENT_ID   (paste the API Key)"
+            echo "  firebase functions:secrets:set AMADEUS_CLIENT_SECRET  (paste the API Secret)"
+            echo "then redeploy functions (merge to main does it)."
+          fi
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "mode=${{ inputs.mode }}"
+          echo "1 IAM granted-before-run: ${{ steps.iamstate.outputs.granted }} | grant attempt: ${{ steps.iamgrant.outputs.result || 'n/a' }}"
+          echo "2 whatsappWebhook invocations (${WINDOW_DAYS}d): ${{ steps.watraffic.outputs.count }}"
+          echo "3 Amadeus verdict: see the amadeus step above"
