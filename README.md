@@ -147,6 +147,16 @@ server once (Render / Fly / Cloud Run / a VPS) and paste its `/proxy` URL into
 Voyager → Settings — see [`voyager/DEPLOY.md`](./voyager/DEPLOY.md). YouTube
 *videos* already play with nothing running.
 
+**Live web search** in Sonar (the AI that searches the live web in real time —
+ask anything, watch it search, get a streamed answer with a numbered source
+pinned to every fact; the browsing happens server-side via the model's
+`web_search` tool, the key stays on the proxy, and with no key the app runs an
+honestly-labelled offline demo):
+
+```sh
+ANTHROPIC_API_KEY=sk-ant-... node sonar/server.mjs   # then open http://localhost:8797 (or: npm run sonar)
+```
+
 Live Claude tool-use in the concierge prototype:
 
 ```sh
