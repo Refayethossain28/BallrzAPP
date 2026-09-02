@@ -19,6 +19,8 @@ on:
         description: "audit (read-only) or fix (grant IAM + retire idle webhook)"
         required: true
         default: "audit"
+        type: choice
+        options: [audit, fix]
 
 env:
   PROJECT: apexvip-1b4a9
@@ -26,7 +28,9 @@ env:
   ROLE: roles/datastore.importExportAdmin
   FN: whatsappWebhook
   FN_REGION: us-central1
-  WINDOW_DAYS: "45"
+  # 30, not more: the _Default logging bucket retains 30 days, so a longer
+  # window would claim quiet it cannot actually attest to.
+  WINDOW_DAYS: "30"
 
 jobs:
   trio:
@@ -98,18 +102,25 @@ jobs:
       - name: "whatsapp: count invocations in the window"
         id: watraffic
         run: |
-          COUNT=$(gcloud logging read \
-            "resource.type=cloud_function AND resource.labels.function_name=$FN AND textPayload:\"Function execution\"" \
-            --freshness="${WINDOW_DAYS}d" --limit=1000 --format="value(timestamp)" | wc -l | tr -d ' ')
+          # Count only "execution started" lines (each run also logs a
+          # "finished" line — matching both would double-count). Write to a
+          # file and gate on gcloud's own exit status: a failed query must
+          # NEVER read as zero traffic, because zero is the delete go-signal.
+          FILTER="resource.type=cloud_function AND resource.labels.function_name=$FN AND textPayload:\"Function execution started\""
+          if ! gcloud logging read "$FILTER" \
+               --freshness="${WINDOW_DAYS}d" --limit=2000 --format="value(timestamp)" \
+               > "$RUNNER_TEMP/wa.txt"; then
+            echo "::error title=Log query failed::Cannot count $FN traffic — refusing to conclude anything (a failed query is not zero traffic)."
+            exit 1
+          fi
+          COUNT=$(wc -l < "$RUNNER_TEMP/wa.txt" | tr -d ' ')
           echo "count=$COUNT" >> "$GITHUB_OUTPUT"
-          echo "whatsappWebhook: $COUNT execution log line(s) in the last $WINDOW_DAYS days."
+          echo "whatsappWebhook: $COUNT invocation(s) in the last $WINDOW_DAYS days (query cap 2000)."
           if [ "$COUNT" = "0" ]; then
-            echo "No traffic — nothing (including Meta) is calling it; safe to retire."
+            echo "No traffic in the retention window — nothing (including Meta) is calling it; safe to retire."
           else
-            echo "Recent invocations (up to 5):"
-            gcloud logging read \
-              "resource.type=cloud_function AND resource.labels.function_name=$FN AND textPayload:\"Function execution\"" \
-              --freshness="${WINDOW_DAYS}d" --limit=5 --format="value(timestamp)"
+            echo "Most recent invocations:"
+            head -5 "$RUNNER_TEMP/wa.txt"
           fi
 
       - name: "whatsapp: back up source and retire (fix mode, idle only)"
@@ -127,14 +138,17 @@ jobs:
             -H "Authorization: Bearer $TOKEN" -H "Content-Length: 0" \
             "https://cloudfunctions.googleapis.com/v1/projects/$PROJECT/locations/$FN_REGION/functions/$FN:generateDownloadUrl" \
             | python3 -c "import sys,json;print(json.load(sys.stdin).get('downloadUrl',''))" || true)
-          if [ -n "$URL" ]; then
-            curl -sf "$URL" -o "$RUNNER_TEMP/$FN-source.zip"
-            gsutil cp "$RUNNER_TEMP/$FN-source.zip" \
-              "gs://gcf-sources-254410067879-us-central1/consolidation-backup/$FN-retired.zip"
-            echo "Source backed up to gs://gcf-sources-254410067879-us-central1/consolidation-backup/$FN-retired.zip"
-          else
-            echo "::warning::Could not fetch a source download URL — proceeding without a fresh backup (consolidation already archived this codebase)."
+          if [ -z "$URL" ]; then
+            # Fail CLOSED: this function's source exists nowhere else (it was
+            # the consolidation's deliberate survivor, so it was never
+            # archived). No backup, no delete.
+            echo "::error title=No source backup::generateDownloadUrl failed — refusing to delete the only copy of $FN's source."
+            exit 1
           fi
+          curl -sf "$URL" -o "$RUNNER_TEMP/$FN-source.zip"
+          gsutil cp "$RUNNER_TEMP/$FN-source.zip" \
+            "gs://gcf-sources-254410067879-us-central1/consolidation-backup/$FN-retired.zip"
+          echo "Source backed up to gs://gcf-sources-254410067879-us-central1/consolidation-backup/$FN-retired.zip"
           gcloud functions delete "$FN" --region="$FN_REGION" --no-gen2 --quiet
           echo "whatsappWebhook retired. If WhatsApp booking is ever wanted, it will be rebuilt as a gen-2 function in the repo."
 
@@ -151,6 +165,10 @@ jobs:
             echo '  for H in test.api.amadeus.com api.amadeus.com; do echo -n "$H: "; curl -s -o /dev/null -w "%{http_code}\n" -X POST "https://$H/v1/security/oauth2/token" -d "grant_type=client_credentials&client_id=$CID&client_secret=$CSEC"; done'
             exit 0
           fi
+          # Strip any stray CR/LF before masking — add-mask only masks the
+          # first line of a multiline value.
+          CID=$(printf %s "$CID" | tr -d '\r\n')
+          CSEC=$(printf %s "$CSEC" | tr -d '\r\n')
           echo "::add-mask::$CID"
           echo "::add-mask::$CSEC"
           probe() {
@@ -172,6 +190,9 @@ jobs:
           elif [ "$P" = "200" ]; then
             echo "VERDICT: PRODUCTION keys in the secrets, but the code calls the test host."
             echo "Fix: add AMADEUS_HOST=https://api.amadeus.com to functions/.env and redeploy (say the word and it ships as a one-line PR)."
+          elif [ "$T" = "000" ] || [ "$P" = "000" ] || [ "${T#5}" != "$T" ] || [ "${P#5}" != "$P" ]; then
+            echo "VERDICT: INCONCLUSIVE — network or Amadeus-side failure (test=$T, prod=$P)."
+            echo "This does NOT prove the keys are bad. Re-run this workflow later."
           else
             echo "VERDICT: the stored keys are invalid on BOTH hosts (revoked or mistyped)."
             echo "Regenerate at developers.amadeus.com -> Self-Service -> your app, then update both secrets:"
@@ -182,8 +203,13 @@ jobs:
 
       - name: Summary
         if: always()
+        env:
+          MODE: ${{ inputs.mode }}
+          IAM_STATE: ${{ steps.iamstate.outputs.granted }}
+          IAM_GRANT: ${{ steps.iamgrant.outputs.result }}
+          WA_COUNT: ${{ steps.watraffic.outputs.count }}
         run: |
-          echo "mode=${{ inputs.mode }}"
-          echo "1 IAM granted-before-run: ${{ steps.iamstate.outputs.granted }} | grant attempt: ${{ steps.iamgrant.outputs.result || 'n/a' }}"
-          echo "2 whatsappWebhook invocations (${WINDOW_DAYS}d): ${{ steps.watraffic.outputs.count }}"
+          echo "mode=$MODE"
+          echo "1 IAM granted-before-run: ${IAM_STATE:-unknown} | grant attempt: ${IAM_GRANT:-n/a}"
+          echo "2 whatsappWebhook invocations (${WINDOW_DAYS}d): ${WA_COUNT:-query failed}"
           echo "3 Amadeus verdict: see the amadeus step above"
