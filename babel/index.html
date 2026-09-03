@@ -125,6 +125,32 @@
   .vessel-panes { display: grid; grid-template-columns: 1fr; gap: 8px; }
   @media (min-width: 640px) { .vessel-panes { grid-template-columns: 1fr auto 1fr; align-items: center; } }
 
+  /* ---------- interpreter ---------- */
+  .duo-langs { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .duo-langs select { flex: 1; min-width: 0; background: var(--bg2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; font: inherit; font-size: 14px; }
+  .duo-langs select:focus { outline: none; border-color: var(--brand); }
+  #ab-swap { flex: 0 0 auto; }
+  .duo { display: flex; gap: 10px; }
+  .duo-mic { flex: 1; padding: 14px 6px; font-size: 24px; border-radius: 14px;
+    display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .duo-mic .duo-who { font-size: 11px; color: var(--dim); max-width: 100%;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .duo-mic .duo-flag { font-size: 17px; }
+  .duo-mic.auto { flex: 0 0 92px; background: linear-gradient(150deg, rgba(77,225,255,.12), rgba(159,107,255,.12)); }
+  .duo-mic.listening { border-color: var(--red); animation: pulse 1.1s ease infinite; }
+  .duo-mic:disabled { opacity: .45; }
+  #interp-status { margin-top: 9px; font-size: 12px; min-height: 16px; }
+  .bubble { background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 12px 14px; margin: 10px 0; max-width: 88%; animation: rise .25s ease both; }
+  .bubble.right { margin-left: auto; border-color: rgba(159,107,255,.35); }
+  .bubble .heard { font-size: 12px; color: var(--faint); margin-bottom: 4px; overflow-wrap: break-word; }
+  .bubble .said { font-size: 20px; line-height: 1.35; overflow-wrap: break-word; }
+  .bubble .said[dir="rtl"] { text-align: right; }
+  .bubble .rom { margin-top: 3px; font-size: 12px; color: var(--faint);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: break-word; }
+  .bubble .rowb { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+
   /* ---------- focus overlay ---------- */
   #focus { position: fixed; inset: 0; background: #04060d; z-index: 50; display: none;
     flex-direction: column; align-items: center; justify-content: center; text-align: center;
@@ -161,6 +187,7 @@
 
   <div class="tabs" id="tabs">
     <button data-tab="translate" class="on">🌍 Translate</button>
+    <button data-tab="interpreter">🎙️ Interpreter</button>
     <button data-tab="signals">📡 Signals</button>
   </div>
 
@@ -197,6 +224,30 @@
       (French vigesimals, Georgian scores, Chinese 零-insertion, the lakh/crore grouping), and computed romanization
       of Cyrillic, Greek, Hangul, kana and Georgian. No model, no network, no account. Engine unit-tested by
       <span class="mono">npm run test:babel</span>.
+    </footer>
+  </section>
+
+  <section class="view" id="view-interpreter">
+    <div class="card">
+      <h2>🎙️ Live interpreter <span class="n">— tap a side and speak; Babel answers out loud in the other language.</span></h2>
+      <div class="duo-langs">
+        <select id="lang-a" aria-label="Your language"></select>
+        <button class="small" id="ab-swap" title="swap languages" aria-label="Swap languages">⇄</button>
+        <select id="lang-b" aria-label="Their language"></select>
+      </div>
+      <div class="duo">
+        <button class="duo-mic" id="mic-a"><span class="duo-flag" id="flag-a"></span><span>🎙️</span><span class="duo-who" id="who-a"></span></button>
+        <button class="duo-mic auto" id="mic-auto"><span>🎙️</span><span class="duo-who" id="who-auto">Auto</span></button>
+        <button class="duo-mic" id="mic-b"><span class="duo-flag" id="flag-b"></span><span>🎙️</span><span class="duo-who" id="who-b"></span></button>
+      </div>
+      <div id="interp-status" class="empty" role="status"></div>
+    </div>
+    <div id="convo"></div>
+    <footer>
+      <b>Honest limits:</b> the browser can't identify a language from raw audio, so the interpreter listens
+      in the tapped side's language (Auto alternates turns and cross-checks each transcript with Babel's own
+      36-language detector). Speech recognition needs a connection on most phones — the Translate tab stays
+      fully offline. Babel only speaks what it can honestly translate: its 40-phrase book, numbers, times and dates.
     </footer>
   </section>
 
@@ -246,7 +297,7 @@
   </div>
 </div>
 
-<div id="toast"></div>
+<div id="toast" role="status"></div>
 
 <script src="engine.js"></script>
 <script>
@@ -258,7 +309,7 @@
   var esc = E.escapeHTML;
 
   /* ---------- tiny persistence (UI-only; the engine stays storage-free) ---------- */
-  var LS = { pinned: 'babel.pinned.v1', tab: 'babel.tab.v1' };
+  var LS = { pinned: 'babel.pinned.v1', tab: 'babel.tab.v1', interp: 'babel.interp.v1' };
   function lsGet(k, fallback) {
     try { var v = localStorage.getItem(k); return v == null ? fallback : JSON.parse(v); }
     catch (e) { return fallback; }
@@ -278,9 +329,11 @@
   }
 
   /* ---------- speech (UI owns all I/O; degrade silently when absent) ---------- */
+  // returns whether a voice for the language was actually found; an empty
+  // voice list means "unknown" (Chrome fills it asynchronously), reported true.
   function speak(text, lang, rate) {
     if (typeof speechSynthesis === 'undefined' || typeof SpeechSynthesisUtterance === 'undefined') {
-      toast('No speech voices on this device'); return;
+      toast('No speech voices on this device'); return false;
     }
     try {
       var u = new SpeechSynthesisUtterance(text);
@@ -298,7 +351,8 @@
       }
       speechSynthesis.cancel();
       speechSynthesis.speak(u);
-    } catch (e) { toast('Speech failed'); }
+      return voices.length ? !!u.voice : true;
+    } catch (e) { toast('Speech failed'); return false; }
   }
 
   function copyText(text) {
@@ -520,9 +574,225 @@
     });
   }
 
+  /* ---------- live interpreter ---------- */
+  function langOf(code) {
+    for (var i = 0; i < E.LANGS.length; i++) if (E.LANGS[i].code === code) return E.LANGS[i];
+    return null;
+  }
+  var interpState = lsGet(LS.interp, null);
+  if (!interpState || !langOf(interpState.a) || !langOf(interpState.b) || interpState.a === interpState.b) {
+    interpState = { a: 'en', b: pinned !== 'en' ? pinned : 'es' };
+  }
+  var nextSpeaker = 'a';
+  var convo = [];          // {side:'a'|'b', r: interpret() result} — UI memory only, never stored
+  var duoListening = false;
+  var holdStatus = '';     // sticky message (miss hint, missing voice) that outlives the recognizer's end event
+
+  function setStatus(msg) { $('interp-status').textContent = msg; }
+
+  function updateWho() {
+    var A = langOf(interpState.a), B = langOf(interpState.b);
+    $('flag-a').textContent = A.flag; $('who-a').textContent = A.native;
+    $('flag-b').textContent = B.flag; $('who-b').textContent = B.native;
+    var N = nextSpeaker === 'a' ? A : B;
+    $('who-auto').textContent = 'Auto · ' + N.flag;
+    if (!duoListening) {
+      setStatus(holdStatus ||
+        (SR ? 'Next up: ' + N.flag + ' ' + N.name + ' — tap Auto, or tap a side to pick who speaks.'
+            : 'This browser has no speech recognition — type in the Translate tab instead.'));
+    }
+  }
+
+  function fillInterpSelects() {
+    var html = '', i, l;
+    for (i = 0; i < E.LANGS.length; i++) {
+      l = E.LANGS[i];
+      html += '<option value="' + l.code + '">' + l.flag + ' ' + esc(l.native) + '</option>';
+    }
+    $('lang-a').innerHTML = html;
+    $('lang-b').innerHTML = html;
+    $('lang-a').value = interpState.a;
+    $('lang-b').value = interpState.b;
+    updateWho();
+  }
+
+  function fromLabel(r) {
+    var L = r.from ? langOf(r.from) : null;
+    return L ? L.flag + ' ' + L.name : 'heard';
+  }
+
+  // suggestion chips speak to the person who missed — show them in that person's language
+  function suggestionLabel(s, from) {
+    if (from && from !== 'en') {
+      for (var i = 0; i < E.PHRASES.length; i++) {
+        if (E.PHRASES[i].id === s.id) return E.PHRASES[i].t[from] || s.en;
+      }
+    }
+    return s.en;
+  }
+
+  function bubbleHTML(i) {
+    var e = convo[i], r = e.r, j;
+    var cls = 'bubble' + (e.side === 'b' ? ' right' : '');
+    if (r.ok) {
+      return '<div class="' + cls + '">' +
+        '<div class="heard">' + esc(fromLabel(r)) + ' — <bdi>' + esc(r.heardAs || r.heard) + '</bdi></div>' +
+        '<div class="said" dir="' + (r.dir === 'rtl' ? 'rtl' : 'ltr') + '" lang="' + esc(r.to) + '">' + esc(r.text) + '</div>' +
+        (r.roman ? '<div class="rom">' + esc(r.roman) + '</div>' : '') +
+        '<div class="rowb"><button class="small" data-say="' + i + '">🔊 again</button>' +
+        '<button class="small" data-cpy="' + i + '">⧉ copy</button></div></div>';
+    }
+    var sug = '';
+    for (j = 0; j < (r.suggestions || []).length; j++) {
+      sug += '<button class="small" dir="auto" data-retry="' + i + ':' + j + '">' +
+        esc(suggestionLabel(r.suggestions[j], r.from)) + '</button>';
+    }
+    return '<div class="' + cls + '">' +
+      '<div class="heard">' + esc(fromLabel(r)) + ' — <bdi>' + esc(r.heard) + '</bdi></div>' +
+      '<div class="said">🤔 Nothing in the book quite matches.</div>' +
+      (sug ? '<div class="rom">closest phrases — tap to say one:</div><div class="rowb">' + sug + '</div>' : '') +
+      '</div>';
+  }
+
+  function renderConvo(appendOnly) {
+    var el = $('convo'), html = '', i;
+    if (appendOnly && el.children && el.children.length === convo.length - 1) {
+      // the usual turn: keep the existing bubbles' DOM (no replayed entrance
+      // animation, no lost focus) and only add the new one
+      el.insertAdjacentHTML('beforeend', bubbleHTML(convo.length - 1));
+    } else {
+      // full rebuild — first paint, or the 60-turn cap just re-indexed convo
+      for (i = 0; i < convo.length; i++) html += bubbleHTML(i);
+      el.innerHTML = html;
+    }
+    try {
+      var last = el.lastChild;
+      if (last && last.scrollIntoView) last.scrollIntoView({ block: 'nearest' });
+    } catch (e2) {}
+  }
+
+  function doTurn(side, transcript) {
+    if (!transcript || !String(transcript).replace(/\s+/g, '')) return;
+    var from = side === 'a' ? interpState.a : interpState.b;
+    var to = side === 'a' ? interpState.b : interpState.a;
+    var r = E.interpret(transcript, to, from);
+    convo.push({ side: side, r: r });
+    if (convo.length > 60) convo = convo.slice(-60);
+    // a miss keeps the turn: the same person will want to retry
+    if (r.ok) nextSpeaker = side === 'a' ? 'b' : 'a';
+    renderConvo(true);
+    holdStatus = '';
+    if (r.ok) {
+      if (!speak(r.text, r.voice, 1)) {
+        holdStatus = 'No ' + langOf(r.to).name + ' voice on this device — the answer is text-only above.';
+      }
+    } else {
+      holdStatus = 'No confident match — tap a suggested phrase, or keep to the phrasebook, numbers and times.';
+    }
+    updateWho();
+  }
+
+  function setDuoLocked(locked) {
+    $('lang-a').disabled = locked; $('lang-b').disabled = locked; $('ab-swap').disabled = locked;
+  }
+
+  function listenAs(side, viaAuto) {
+    if (!SR) { toast('No speech recognition in this browser'); return; }
+    if (duoListening) return;
+    var L = langOf(side === 'a' ? interpState.a : interpState.b);
+    var btn = $(viaAuto ? 'mic-auto' : (side === 'a' ? 'mic-a' : 'mic-b'));
+    var base = btn.className;
+    var release = function () { duoListening = false; btn.className = base; setDuoLocked(false); updateWho(); };
+    try {
+      var rec = new SR();
+      rec.lang = L.voice || L.code;   // recognition needs the language up front — browsers can't guess it
+      rec.interimResults = false;
+      duoListening = true;
+      setDuoLocked(true);             // freeze the pair mid-listen so the turn can't invert under the speaker
+      btn.className = base + ' listening';
+      holdStatus = '';
+      setStatus('Listening in ' + L.name + '…');
+      rec.onresult = function (ev2) {
+        var text = ev2.results[0][0].transcript;
+        var s = side;
+        if (viaAuto) {
+          // cross-check the transcript with Babel's own detector: if it reads as the
+          // OTHER side's language, the turn order was wrong — flip it.
+          var d = E.detect(text);
+          var other = side === 'a' ? interpState.b : interpState.a;
+          if (d.best && d.best.lang === other) s = side === 'a' ? 'b' : 'a';
+        }
+        doTurn(s, text);
+      };
+      rec.onend = release;
+      rec.onerror = function (ev3) {
+        release();
+        var c = ev3 && ev3.error;
+        if (c === 'no-speech') toast('Didn’t hear anything — tap and try again');
+        else if (c === 'network') toast('Speech recognition needs a connection');
+        else if (c === 'language-not-supported') toast(L.name + ' speech recognition not available here');
+        else if (c === 'aborted' || c === 'canceled') { /* the user cancelled — stay quiet */ }
+        else toast('Mic unavailable');
+      };
+      rec.start();
+    } catch (e) { release(); toast('Mic unavailable'); }
+  }
+
+  $('mic-a').addEventListener('click', function () { listenAs('a', false); });
+  $('mic-b').addEventListener('click', function () { listenAs('b', false); });
+  $('mic-auto').addEventListener('click', function () { listenAs(nextSpeaker, true); });
+
+  $('ab-swap').addEventListener('click', function () {
+    var t = interpState.a; interpState.a = interpState.b; interpState.b = t;
+    lsSet(LS.interp, interpState);
+    fillInterpSelects();
+  });
+  function onPickLang(mine, theirs) {
+    return function () {
+      var v = $(mine === 'a' ? 'lang-a' : 'lang-b').value;
+      if (!langOf(v)) return;
+      if (v === interpState[theirs]) interpState[theirs] = interpState[mine]; // picked the other side's language — swap
+      interpState[mine] = v;
+      lsSet(LS.interp, interpState);
+      fillInterpSelects();
+    };
+  }
+  $('lang-a').addEventListener('change', onPickLang('a', 'b'));
+  $('lang-b').addEventListener('change', onPickLang('b', 'a'));
+
+  $('convo').addEventListener('click', function (ev) {
+    var el = ev.target;
+    if (!el || !el.getAttribute) return;
+    var i = el.getAttribute('data-say');
+    if (i != null && convo[+i]) { speak(convo[+i].r.text, convo[+i].r.voice, 1); return; }
+    i = el.getAttribute('data-cpy');
+    if (i != null && convo[+i]) { copyText(convo[+i].r.text); return; }
+    var rt = el.getAttribute('data-retry');
+    if (rt != null) {
+      var parts = rt.split(':');
+      var entry = convo[+parts[0]];
+      if (entry && entry.r.suggestions && entry.r.suggestions[+parts[1]]) {
+        // the speaker taps the phrase they meant, in their own words; say it in the other language
+        doTurn(entry.side, suggestionLabel(entry.r.suggestions[+parts[1]], entry.r.from));
+      }
+    }
+  });
+
+  function initInterp() {
+    fillInterpSelects();
+    if (!SR) {
+      var ids = ['mic-a', 'mic-auto', 'mic-b'], i, b;
+      for (i = 0; i < ids.length; i++) {
+        b = $(ids[i]);
+        b.disabled = true;
+        b.setAttribute('aria-disabled', 'true');
+      }
+    }
+  }
+
   /* ---------- tabs ---------- */
   var tab = lsGet(LS.tab, 'translate');
-  if (tab !== 'signals') tab = 'translate';
+  if (tab !== 'signals' && tab !== 'interpreter') tab = 'translate';
   function showTab(name) {
     tab = name;
     lsSet(LS.tab, name);
@@ -531,6 +801,7 @@
       btns[i].className = btns[i].getAttribute('data-tab') === name ? 'on' : '';
     }
     $('view-translate').className = name === 'translate' ? 'view on' : 'view';
+    $('view-interpreter').className = name === 'interpreter' ? 'view on' : 'view';
     $('view-signals').className = name === 'signals' ? 'view on' : 'view';
   }
   $('tabs').addEventListener('click', function (ev) {
@@ -633,6 +904,7 @@
   renderDaily();
   renderSignals();
   renderVessel();
+  initInterp();
   showTab(tab);
 })();
 
