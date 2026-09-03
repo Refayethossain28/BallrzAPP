@@ -344,7 +344,6 @@
 
     // 2) Latin scoring: stopwords + signature diacritics.
     var toks = normalize(text).split(' ');
-    var raw = text.toLowerCase();
     var scores = [], total = 0;
     var latin = ['en', 'es', 'fr', 'de', 'tr'];
     for (i = 0; i < latin.length; i++) {
@@ -355,8 +354,9 @@
       }
       var dia = DIACRITICS[code] || '';
       for (j = 0; j < text.length; j++) {
-        if (dia.indexOf(text.charAt(j)) !== -1 && (raw.charAt(j) !== text.charAt(j) || dia.indexOf(raw.charAt(j)) !== -1)) {
-          score += 3; evidence.push('char:' + text.charAt(j));
+        var sig = text.charAt(j);
+        if (dia.indexOf(sig) !== -1 || dia.indexOf(sig.toLowerCase()) !== -1) {
+          score += 3; evidence.push('char:' + sig);
         }
       }
       scores.push({ lang: code, raw: score, evidence: evidence });
@@ -625,9 +625,12 @@
     var s = h === 1 ? (r ? 'εκατόν' : 'εκατό') : EL_H[h];
     return s + (r ? ' ' + el100(r) : '');
   }
-  // χιλιάδες is feminine: trailing ένα/τρία/τέσσερα shift form.
+  // χιλιάδες is feminine: hundreds and trailing ένα/τρία/τέσσερα shift
+  // form (compound δεκατρία keeps its accent: δεκατρείς).
   function elFem(s) {
-    return s.replace(/ένα$/, 'μία').replace(/τρία$/, 'τρεις').replace(/τέσσερα$/, 'τέσσερις');
+    return s.replace(/όσια(?= |$)/g, 'όσιες')
+      .replace(/δεκατρία$/, 'δεκατρείς')
+      .replace(/ένα$/, 'μία').replace(/τρία$/, 'τρεις').replace(/τέσσερα$/, 'τέσσερις');
   }
   function spellEL(n) {
     if (!n) return 'μηδέν';
@@ -732,10 +735,12 @@
     if (yi) { toks = toks.concat(zhGroup(yi, n < 20)); toks.push(['亿', 'yì']); }
     if (wan) {
       if (yi && wan < 1000) toks.push(ZH_D[0]);
-      toks = toks.concat(zhGroup(wan, !yi && n < 20)); toks.push(['万', 'wàn']);
+      toks = toks.concat(zhGroup(wan, !yi && wan < 20)); toks.push(['万', 'wàn']);
     }
     if (low) {
-      if ((yi || wan) && low < 1000) toks.push(ZH_D[0]);
+      // a zero-digit gap before the low group needs 零 — either the low
+      // group starts below 千, or the 万 group itself ends in a zero digit
+      if ((yi || wan) && (low < 1000 || !(wan % 10))) toks.push(ZH_D[0]);
       toks = toks.concat(zhGroup(low, n < 20));
     }
     var text = '', roman = [];
@@ -748,19 +753,21 @@
   // rendaku/gemination irregulars: 300 sanbyaku, 600 roppyaku, 800 happyaku…
   var JA_SOUND = { '3hyaku': 'sanbyaku', '6hyaku': 'roppyaku', '8hyaku': 'happyaku', '3sen': 'sanzen', '8sen': 'hassen' };
 
-  function jaPair(d, unitGlyph, unitRead) {
+  function jaPair(d, unitGlyph, unitRead, high) {
+    // a 千 heading a 万/億 multiplier keeps its 一: 一千万 issen-man
+    if (d === 1 && unitRead === 'sen' && high) return ['一千', 'issen'];
     var glyph = (d === 1 && unitRead !== 'man' && unitRead !== 'oku' ? '' : JA_DG[d]) + unitGlyph;
     var read = JA_SOUND[d + unitRead] ||
       ((d === 1 && unitRead !== 'man' && unitRead !== 'oku' ? '' : JA_D[d]) + unitRead);
     return [glyph, read];
   }
-  function jaGroup(g) {
+  function jaGroup(g, high) {
     var toks = [], parts = [[Math.floor(g / 1000), '千', 'sen'], [Math.floor(g % 1000 / 100), '百', 'hyaku'], [Math.floor(g % 100 / 10), '十', 'juu'], [g % 10, '', '']];
     for (var i = 0; i < parts.length; i++) {
       var d = parts[i][0];
       if (!d) continue;
       if (!parts[i][1]) toks.push([JA_DG[d], JA_D[d]]);
-      else toks.push(jaPair(d, parts[i][1], parts[i][2]));
+      else toks.push(jaPair(d, parts[i][1], parts[i][2], high));
     }
     return toks;
   }
@@ -770,7 +777,7 @@
     var toks = [];
     if (oku === 1) toks.push(['一億', 'ichioku']);
     else if (oku) { toks = toks.concat(jaGroup(oku)); toks.push(['億', 'oku']); }
-    if (man) { toks = toks.concat(man === 1 ? [['一万', 'ichiman']] : jaGroup(man).concat([['万', 'man']])); }
+    if (man) { toks = toks.concat(man === 1 ? [['一万', 'ichiman']] : jaGroup(man, true).concat([['万', 'man']])); }
     if (low) toks = toks.concat(jaGroup(low));
     var text = '', roman = [];
     for (var i = 0; i < toks.length; i++) { text += toks[i][0]; roman.push(toks[i][1]); }
@@ -793,7 +800,7 @@
     if (!n) return { text: '영', roman: 'yeong' };
     var eok = Math.floor(n / 1e8), man = Math.floor(n % 1e8 / 1e4), low = n % 1e4, parts = [];
     if (eok) parts.push((eok === 1 ? '일' : koGroup(eok)) + '억');
-    if (man) parts.push((man === 1 ? '' : koGroup(man)) + '만');
+    if (man) parts.push((man === 1 ? (eok ? '일' : '') : koGroup(man)) + '만');
     if (low) parts.push(koGroup(low));
     var text = parts.join(' ');
     return { text: text, roman: romanize(text).roman };
@@ -836,6 +843,23 @@
     ar: ['yanayir', 'fibrayir', 'maris', 'abril', 'mayu', 'yuniyu', 'yuliyu', 'aghustus', 'sibtambir', 'uktubir', 'nufambir', 'disambir'],
     hi: ['janvari', 'farvari', 'march', 'april', 'mai', 'june', 'julai', 'agast', 'sitambar', 'october', 'navambar', 'disambar']
   };
+  // Arabic clock hours are feminine ordinals (الساعة الثالثة) on a
+  // 12-hour dial with a morning/evening marker for 24-hour input.
+  var AR_HOUR = ['الثانية عشرة', 'الواحدة', 'الثانية', 'الثالثة', 'الرابعة', 'الخامسة', 'السادسة', 'السابعة', 'الثامنة', 'التاسعة', 'العاشرة', 'الحادية عشرة'];
+  var AR_HOUR_R = ['ath-thaniya ashra', 'al-wahida', 'ath-thaniya', 'ath-thalitha', 'ar-rabi’a', 'al-khamisa', 'as-sadisa', 'as-sabi’a', 'ath-thamina', 'at-tasi’a', 'al-ashira', 'al-hadiya ashra'];
+  // the 時 counter forces irregular hour readings; 0時 is 零時 reiji
+  var JA_HOUR_R = { 0: 'rei', 4: 'yo', 7: 'shichi', 9: 'ku', 14: 'juu yo', 17: 'juu shichi', 19: 'juu ku' };
+  // the 分 counter geminates after 1/3/4/6/8 and a trailing 十: ippun, sanjuppun…
+  function jaMinuteRead(m) {
+    var r = spellJA(m).roman, u = m % 10;
+    if (u === 1) return r.replace(/ichi$/, 'ippun');
+    if (u === 3) return r.replace(/san$/, 'sanpun');
+    if (u === 4) return r.replace(/yon$/, 'yonpun');
+    if (u === 6) return r.replace(/roku$/, 'roppun');
+    if (u === 8) return r.replace(/hachi$/, 'happun');
+    if (u === 0) return r.replace(/juu$/, 'juppun');
+    return r + ' fun';
+  }
   // Korean hours use NATIVE numerals (한 시, 두 시), minutes Sino.
   var KO_NATIVE_H = ['영', '한', '두', '세', '네', '다섯', '여섯', '일곱', '여덟', '아홉', '열', '열한', '열두', '열세', '열네', '열다섯', '열여섯', '열일곱', '열여덟', '열아홉', '스무', '스물한', '스물두', '스물세'];
 
@@ -846,29 +870,41 @@
     var a, b, t;
     switch (lang) {
       case 'en': return { text: m ? spellEN(h) + ' ' + (m < 10 ? 'oh ' : '') + spellEN(m) : spellEN(h) + " o'clock", roman: null };
-      case 'es': return { text: (h === 1 ? 'la una' : 'las ' + spellES(h)) + (m ? ' y ' + spellES(m) : ' en punto'), roman: null };
-      case 'fr': return { text: 'il est ' + (h === 1 ? 'une heure' : spellFR(h) + ' heures') + (m ? ' ' + spellFR(m) : ''), roman: null };
+      case 'es':
+        t = h === 1 ? 'la una' : h === 0 ? 'las cero horas' : 'las ' + spellES(h).replace(/uno$/, 'una');
+        return { text: t + (m ? ' y ' + spellES(m) : h === 0 ? '' : ' en punto'), roman: null };
+      case 'fr': return { text: 'il est ' + (h === 1 ? 'une heure' : spellFR(h) + (h === 0 ? ' heure' : ' heures')) + (m ? ' ' + spellFR(m) : ''), roman: null };
       case 'de': return { text: (h === 1 ? 'ein' : spellDE(h)) + ' Uhr' + (m ? ' ' + spellDE(m) : ''), roman: null };
       case 'tr': return { text: 'saat ' + spellTR(h) + (m ? ' ' + spellTR(m) : ''), roman: null };
       case 'ru':
-        t = m ? spellRU(h) + ' ' + spellRU(m) : spellRU(h) + ' ' + ruPlural(h, ['час', 'часа', 'часов']);
+        t = m ? spellRU(h) + ' ' + (m < 10 ? 'ноль ' : '') + spellRU(m) : spellRU(h) + ' ' + ruPlural(h, ['час', 'часа', 'часов']);
         return { text: t, roman: romanize(t).roman };
       case 'el':
-        t = m ? spellEL(h) + ' και ' + spellEL(m) : spellEL(h) + ' η ώρα';
+        t = m ? elFem(spellEL(h)) + ' και ' + spellEL(m) : elFem(spellEL(h)) + ' η ώρα';
         return { text: t, roman: romanize(t).roman };
       case 'ar':
-        a = spellAR(h); b = m ? spellAR(m) : null;
-        return { text: 'الساعة ' + a.text + (b ? ' و' + b.text : ''), roman: 'as-sa’a ' + a.roman + (b ? ' wa-' + b.roman : '') };
+        b = m ? spellAR(m) : null;
+        return {
+          text: 'الساعة ' + AR_HOUR[h % 12] + (b ? ' و' + b.text + ' دقيقة' : '') + (h < 12 ? ' صباحا' : ' مساء'),
+          roman: 'as-sa’a ' + AR_HOUR_R[h % 12] + (b ? ' wa-' + b.roman + ' daqiqa' : '') + (h < 12 ? ' sabahan' : ' masa’an')
+        };
       case 'hi':
         a = spellHI(h); b = m ? spellHI(m) : null;
         return b ? { text: a.text + ' बजकर ' + b.text + ' मिनट', roman: a.roman + ' bajkar ' + b.roman + ' minute' }
           : { text: a.text + ' बजे', roman: a.roman + ' baje' };
       case 'zh':
-        a = spellZH(h); b = m ? spellZH(m) : null;
-        return { text: a.text + '点' + (b ? b.text + '分' : ''), roman: a.roman + ' diǎn' + (b ? ' ' + b.roman + ' fēn' : '') };
+        a = h === 2 ? { text: '两', roman: 'liǎng' } : spellZH(h);
+        b = m ? spellZH(m) : null;
+        return {
+          text: a.text + '点' + (b ? (m < 10 ? '零' : '') + b.text + '分' : ''),
+          roman: a.roman + ' diǎn' + (b ? ' ' + (m < 10 ? 'líng ' : '') + b.roman + ' fēn' : '')
+        };
       case 'ja':
-        a = spellJA(h); b = m ? spellJA(m) : null;
-        return { text: a.text + '時' + (b ? b.text + '分' : ''), roman: a.roman + ' ji' + (b ? ' ' + b.roman + ' fun' : '') };
+        a = h === 0 ? { text: '零', roman: 'rei' } : spellJA(h);
+        return {
+          text: a.text + '時' + (m ? spellJA(m).text + '分' : ''),
+          roman: (JA_HOUR_R[h] || a.roman) + ' ji' + (m ? ' ' + jaMinuteRead(m) : '')
+        };
       case 'ko':
         t = KO_NATIVE_H[h] + ' 시' + (m ? ' ' + spellKO(m).text + ' 분' : '');
         return { text: t, roman: romanize(t).roman };
@@ -943,10 +979,14 @@
   var RR_VOW = ['a', 'ae', 'ya', 'yae', 'eo', 'e', 'yeo', 'ye', 'o', 'wa', 'wae', 'oe', 'yo', 'u', 'wo', 'we', 'wi', 'yu', 'eu', 'ui', 'i'];
   var RR_FIN = ['', 'k', 'k', 'k', 'n', 'n', 'n', 't', 'l', 'k', 'm', 'l', 'l', 'l', 'p', 'l', 'm', 'p', 'p', 't', 't', 'ng', 't', 't', 'k', 't', 'p', 't'];
   // when the next syllable starts with silent ㅇ, the final carries over
-  var RR_LIAISON = { 1: 'g', 2: 'kk', 4: 'n', 7: 'd', 8: 'r', 16: 'm', 17: 'b', 19: 's', 20: 'ss', 22: 'j', 23: 'ch', 25: 't', 26: 'p', 27: 'h' };
+  var RR_LIAISON = { 1: 'g', 2: 'kk', 4: 'n', 7: 'd', 8: 'r', 16: 'm', 17: 'b', 19: 's', 20: 'ss', 22: 'j', 23: 'ch', 25: 't', 26: 'p', 27: '' };
 
   function stripAccents(s) {
-    try { return s.normalize('NFD').replace(/[̀-ͯ]/g, '').normalize('NFC'); } catch (e) { return s; }
+    // й and ё decompose under NFD into и/е + a combining mark that the
+    // strip would eat — shelter them so the CYR table still sees them.
+    s = String(s).replace(/й/g, '\uE000').replace(/Й/g, '\uE001').replace(/ё/g, '\uE002').replace(/Ё/g, '\uE003');
+    try { s = s.normalize('NFD').replace(/[̀-ͯ]/g, '').normalize('NFC'); } catch (e) {}
+    return s.replace(/\uE000/g, 'й').replace(/\uE001/g, 'Й').replace(/\uE002/g, 'ё').replace(/\uE003/g, 'Ё');
   }
 
   function isVowelChar(c) { return 'aeiou'.indexOf(c) !== -1; }
@@ -955,8 +995,9 @@
     var src = stripAccents(String(text == null ? '' : text));
     // katakana → hiragana so one kana table serves both
     src = src.replace(/[ァ-ヶ]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0x60); });
-    // particle は at a word boundary is pronounced wa
-    src = src.replace(/は(?=\s|$)/g, 'わ');
+    // the topic particle は is pronounced wa; treat any は that ends a
+    // kana run (space, punctuation, …, end) as the particle
+    src = src.replace(/は(?![ぁ-ゖー])/g, 'わ');
     var out = '', covered = 0, total = 0, i = 0, n = src.length;
     while (i < n) {
       var c = src.charAt(i), lower = c.toLowerCase(), code = src.charCodeAt(i);
@@ -967,14 +1008,26 @@
       if (CYR[lower] !== undefined) {
         piece = CYR[lower]; i++;
       } else if (GRK2[src.substr(i, 2).toLowerCase()] !== undefined && i + 1 < n) {
-        piece = GRK2[src.substr(i, 2).toLowerCase()]; covered++; total++; i += 2;
+        var g2 = src.substr(i, 2).toLowerCase();
+        piece = GRK2[g2];
+        var nx = i + 2 < n ? src.charAt(i + 2).toLowerCase() : '';
+        var nxGreek = GRK1[nx] !== undefined;
+        if (g2 === 'αυ' || g2 === 'ευ') {
+          // af/ef before voiceless consonants and word-finally (ELOT 743)
+          if (!nxGreek || 'θκξπστφχψς'.indexOf(nx) !== -1) piece = g2 === 'αυ' ? 'af' : 'ef';
+        } else if (g2 === 'μπ') {
+          // b at word edges, mp inside a word (λάμπα → lampa)
+          var pv = i > 0 ? src.charAt(i - 1).toLowerCase() : '';
+          if (GRK1[pv] !== undefined && nxGreek) piece = 'mp';
+        }
+        covered++; total++; i += 2;
       } else if (GRK1[lower] !== undefined) {
         piece = GRK1[lower]; i++;
       } else if (code >= 0xAC00 && code <= 0xD7A3) {
         var idx = code - 0xAC00, ini = Math.floor(idx / 588), vow = Math.floor((idx % 588) / 28), fin = idx % 28;
         var nc = i + 1 < n ? src.charCodeAt(i + 1) : 0;
         var nextSilent = nc >= 0xAC00 && nc <= 0xD7A3 && Math.floor((nc - 0xAC00) / 588) === 11;
-        var finR = fin && nextSilent && RR_LIAISON[fin] ? RR_LIAISON[fin] : RR_FIN[fin];
+        var finR = fin && nextSilent && RR_LIAISON[fin] !== undefined ? RR_LIAISON[fin] : RR_FIN[fin];
         piece = RR_INIT[ini] + RR_VOW[vow] + finR;
         i++;
       } else if (c === 'っ') {

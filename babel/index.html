@@ -154,7 +154,7 @@
 <div class="wrap">
   <header>
     <div class="logo">🐟 <span class="g">Babel</span></div>
-    <span class="pill on" id="offline">● offline-ready</span>
+    <span class="pill" id="offline">○ caching…</span>
     <select id="pin" aria-label="Your language (spoken first)"></select>
     <div class="tagline">The universal translator that never phones home — say anything, twelve languages answer at once.</div>
   </header>
@@ -215,12 +215,12 @@
       <h2>🛸 Vessel <span class="n">— a constructed language with a proof: decode(encode(x)) is exactly x, always.</span></h2>
       <div class="vessel-panes">
         <div>
-          <div class="lang-head"><span class="who">Human</span></div>
+          <div class="lang-head"><span class="who" id="vlabel-in">Human</span></div>
           <textarea id="vin" rows="2">Take me to your leader</textarea>
         </div>
         <button id="vswap" class="small" title="swap direction">⇄</button>
         <div>
-          <div class="lang-head"><span class="who">Vessel</span><button class="small" id="vspeak">🔊 speak</button><button class="small" id="vcopy">⧉ copy</button></div>
+          <div class="lang-head"><span class="who" id="vlabel-out">Vessel</span><button class="small" id="vspeak">🔊 speak</button><button class="small" id="vcopy">⧉ copy</button></div>
           <div class="sig-out" id="vout"></div>
         </div>
       </div>
@@ -266,6 +266,7 @@
   function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
 
   var pinned = lsGet(LS.pinned, 'es');
+  if (!E.LANGS.some(function (l) { return l.code === pinned; })) pinned = 'es';
   var lastResult = null;   // last translate() result rendered on the wall
   var lastCards = [];      // cards in render order (for focus mode)
 
@@ -401,7 +402,11 @@
     $('focus-text').setAttribute('dir', focusCard.dir);
     $('focus-rom').textContent = focusCard.roman || '';
     $('focus').className = 'on';
+    try { $('focus-close').focus(); } catch (e) {}
   }
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape') $('focus').className = '';
+  });
   $('focus-close').addEventListener('click', function () { $('focus').className = ''; });
   $('focus-speak').addEventListener('click', function () { if (focusCard) speak(focusCard.text, focusCard.voice, 1); });
   $('focus-slow').addEventListener('click', function () { if (focusCard) speak(focusCard.text, focusCard.voice, 0.6); });
@@ -435,6 +440,9 @@
   $('q').addEventListener('input', function () {
     if (debounce) clearTimeout(debounce);
     debounce = setTimeout(function () { runTranslate(false); }, 160);
+  });
+  $('q').addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); runTranslate(true); }
   });
 
   document.addEventListener('click', function (ev) {
@@ -508,6 +516,7 @@
 
   /* ---------- tabs ---------- */
   var tab = lsGet(LS.tab, 'translate');
+  if (tab !== 'signals') tab = 'translate';
   function showTab(name) {
     tab = name;
     lsSet(LS.tab, name);
@@ -548,6 +557,9 @@
     $('codecs').innerHTML = html;
   }
   $('sq').addEventListener('input', renderSignals);
+  $('sq').addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); renderSignals(); }
+  });
   $('sig-mode').addEventListener('click', function () {
     sigMode = sigMode === 'encode' ? 'decode' : 'encode';
     $('sig-mode').textContent = sigMode === 'encode' ? 'mode: encode → decode back' : 'mode: decode (paste code in the box)';
@@ -601,6 +613,8 @@
     var current = $('vout').textContent;
     vesselFlip = !vesselFlip;
     $('vin').value = current;
+    $('vlabel-in').textContent = vesselFlip ? 'Vessel' : 'Human';
+    $('vlabel-out').textContent = vesselFlip ? 'Human' : 'Vessel';
     renderVessel();
     toast(vesselFlip ? 'Decoding Vessel → human' : 'Encoding human → Vessel');
   });
@@ -616,10 +630,23 @@
   showTab(tab);
 })();
 
-if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator &&
-    typeof location !== 'undefined' && String(location.protocol).indexOf('http') === 0) {
-  try { navigator.serviceWorker.register('sw.js'); } catch (e) {}
-}
+(function () {
+  var pill = typeof document !== 'undefined' && document.getElementById ? document.getElementById('offline') : null;
+  if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator &&
+      typeof location !== 'undefined' && String(location.protocol).indexOf('http') === 0) {
+    try {
+      navigator.serviceWorker.register('sw.js');
+      var ready = navigator.serviceWorker.ready;
+      if (ready && typeof ready.then === 'function') {
+        ready.then(function () {
+          if (pill) { pill.className = 'pill on'; pill.textContent = '● offline-ready'; }
+        });
+      }
+    } catch (e) {}
+  } else if (pill) {
+    pill.style.display = 'none';
+  }
+})();
 </script>
 <script>
 

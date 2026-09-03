@@ -389,7 +389,7 @@ test('spellTime goldens and range errors', () => {
   assert.equal(E.spellTime(14, 30, 'de').text, 'vierzehn Uhr dreißig');
   assert.equal(E.spellTime(9, 0, 'en').text, "nine o'clock");
   assert.equal(E.spellTime(9, 5, 'en').text, 'nine oh five');
-  deepEq(E.spellTime(14, 30, 'ja'), { text: '十四時三十分', roman: 'juu yon ji sanjuu fun' });
+  deepEq(E.spellTime(14, 30, 'ja'), { text: '十四時三十分', roman: 'juu yo ji sanjuppun' });
   assert.equal(E.spellTime(14, 30, 'ko').text, '열네 시 삼십 분');
   assert.equal(E.spellTime(1, 5, 'es').text, 'la una y cinco');
   assert.equal(E.spellTime(14, 0, 'ru').text, 'четырнадцать часов');
@@ -562,6 +562,66 @@ test('translate: never throws on weird input', () => {
     const t = E.translate(input, NOW);
     assert.ok(t.kind, JSON.stringify(input));
   }
+});
+
+/* ---------- review regressions ---------- */
+
+test('Chinese myriad boundaries: 零 gaps, no leading 一十', () => {
+  assert.equal(E.spellNumber(100005000, 'zh').text, '一亿零五千');
+  assert.equal(E.spellNumber(10001000, 'zh').text, '一千万零一千');
+  assert.equal(E.spellNumber(20003000, 'zh').text, '二千万零三千');
+  assert.equal(E.spellNumber(100000, 'zh').text, '十万');
+  assert.equal(E.spellNumber(110000, 'zh').text, '十一万');
+  assert.equal(E.spellNumber(12345678, 'zh').text, '一千二百三十四万五千六百七十八');
+});
+
+test('Japanese 一千万 and Korean 일억 일만', () => {
+  deepEq(E.spellNumber(10000000, 'ja'), { text: '一千万', roman: 'issen man' });
+  deepEq(E.spellNumber(15000000, 'ja'), { text: '一千五百万', roman: 'issen gohyaku man' });
+  deepEq(E.spellNumber(100010000, 'ko'), { text: '일억 일만', roman: 'ireok ilman' });
+});
+
+test('Greek feminine agreement before χιλιάδες, with accents kept', () => {
+  assert.equal(E.spellNumber(200000, 'el').text, 'διακόσιες χιλιάδες');
+  assert.equal(E.spellNumber(13000, 'el').text, 'δεκατρείς χιλιάδες');
+  assert.equal(E.spellNumber(14000, 'el').text, 'δεκατέσσερις χιλιάδες');
+});
+
+test('romanize: й/ё survive accent-stripping; Greek af/ef and medial mp; silent ㅎ', () => {
+  assert.equal(E.romanize('Здравствуйте').roman, 'Zdravstvuyte');
+  assert.equal(E.romanize('ёлка').roman, 'yolka');
+  assert.equal(E.romanize('Ευχαριστώ').roman, 'Efcharisto');
+  assert.equal(E.romanize('Ευθεία').roman, 'Eftheia');
+  assert.equal(E.romanize('αυτοκίνητο').roman, 'aftokinito');
+  assert.equal(E.romanize('Μπορείτε').roman, 'Boreite');
+  assert.equal(E.romanize('λάμπα').roman, 'lampa');
+  assert.equal(E.romanize('좋은').roman, 'joeun');
+});
+
+test('romanize: particle は before punctuation and ellipsis', () => {
+  assert.equal(E.romanize('こんにちは!').roman, 'konnichiwa!');
+  assert.ok(E.phraseIn('my-name-is', 'ja').roman.indexOf('namaewa') !== -1);
+  assert.equal(E.romanize('はい').roman, 'hai');
+});
+
+test('clock grammar: 两点, 零-minutes, feminine hours, ноль, 零時, geminated 分', () => {
+  deepEq(E.spellTime(2, 0, 'zh'), { text: '两点', roman: 'liǎng diǎn' });
+  assert.equal(E.spellTime(14, 5, 'zh').text, '十四点零五分');
+  assert.equal(E.spellTime(21, 0, 'es').text, 'las veintiuna en punto');
+  assert.equal(E.spellTime(0, 5, 'fr').text, 'il est zéro heure cinq');
+  assert.equal(E.spellTime(14, 5, 'ru').text, 'четырнадцать ноль пять');
+  assert.equal(E.spellTime(3, 0, 'el').text, 'τρεις η ώρα');
+  assert.equal(E.spellTime(1, 0, 'el').text, 'μία η ώρα');
+  deepEq(E.spellTime(0, 30, 'ja'), { text: '零時三十分', roman: 'rei ji sanjuppun' });
+  assert.equal(E.spellTime(9, 0, 'ja').roman, 'ku ji');
+  assert.equal(E.spellTime(6, 1, 'ja').roman, 'roku ji ippun');
+  assert.ok(E.spellTime(14, 30, 'ar').text.indexOf('الثانية') !== -1, E.spellTime(14, 30, 'ar').text);
+  assert.ok(E.spellTime(14, 30, 'ar').roman.indexOf('masa’an') !== -1);
+});
+
+test('detect: uppercase signature diacritics still score', () => {
+  assert.equal(E.detect('NEREDE BİR TAKSİ LÜTFEN').best.lang, 'tr');
+  assert.equal(E.detect('À bientôt les amis').best.lang, 'fr');
 });
 
 /* ---------- run ---------- */
