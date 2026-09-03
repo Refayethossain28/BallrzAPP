@@ -739,12 +739,18 @@
           msg = 'This device’s recognizer doesn’t support ' + L.name +
             ' — type it in the Translate tab instead, or swap which side speaks.';
         } else if (c === 'not-allowed' || c === 'service-not-allowed') {
+          // iPadOS 13+ masquerades as "Macintosh" — the touch check separates
+          // real Macs (who must not be sent to iOS settings) from iPads
+          var ua = navigator.userAgent || '';
+          var iosFamily = /iPhone|iPad/.test(ua) ||
+            (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
           brief = 'Mic permission needed';
           msg = 'Speech needs permission: allow the microphone for this site' +
-            (/iPhone|iPad|Macintosh/.test(navigator.userAgent || '')
-              ? ', and make sure Enable Dictation is on (iPhone: Settings → General → Keyboard).' : '.');
+            (iosFamily ? ', and make sure Enable Dictation is on (Settings → General → Keyboard).' : '.');
         } else if (c === 'audio-capture') {
-          brief = msg = 'No microphone found on this device';
+          brief = 'Couldn’t access a microphone';
+          msg = 'Couldn’t access a microphone — none may be connected, or another app or a system ' +
+            'setting may be blocking it. Free up the mic and try again, or type in the Translate tab.';
         } else if (c === 'aborted' || c === 'canceled') {
           // the user cancelled — stay quiet
         } else {
