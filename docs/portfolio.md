@@ -68,6 +68,7 @@ payments, deploy workflows, iOS wrappers.
 | Charter | Mint preferred convertible stock: term sheets, exit waterfalls, anti-dilution lab | `charter/` | None | `test:charter` (20) |
 | Drip | Passive-income engine: compounding simulator, freedom date | `drip/` | None | `test:drip` (23) |
 | Graft | Active-income engine: side-hustle matcher, planner, invoicing | `graft/` | None | `test:graft` (19) |
+| Reckon | UK self-assessment companion: the whole tax bill line by line, per-payment set-aside, payments on account, deadline countdown | `reckon/` | None | `test:reckon` (24) |
 | FX Signal Pro | Currency-pair trading signals (single file + earlier Next.js build) | `trading-app/` | None | in-folder |
 
 ## Consumer apps

@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Reckon — know what the taxman gets</title>
+<meta name="description" content="A UK self-assessment companion for the self-employed — type what you earn and spend, see your whole tax bill line by line, exactly how much of every payment to set aside, what's due on 31 January and 31 July, and every deadline counting down. Offline-first, everything on your device.">
+<meta name="theme-color" content="#0a0d16">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Reckon">
+<style>
+  :root {
+    --bg: #0a0d16; --card: #101627; --card2: #141c33;
+    --line: #1e2947; --text: #e9edf9; --dim: #92a1c4; --faint: #5e6d8f;
+    --brand: #4dd8ff; --brand2: #8f7cf7; --gold: #e8b34c; --green: #3ecf8e;
+    --red: #ff6b6b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    background: radial-gradient(1200px 700px at 50% -10%, #121b36 0%, var(--bg) 55%) fixed, var(--bg);
+    color: var(--text);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    min-height: 100dvh;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 16px calc(44px + env(safe-area-inset-bottom)); }
+
+  header { display: flex; align-items: center; gap: 12px; padding: 22px 0 8px; flex-wrap: wrap; }
+  .logo { font-size: 30px; font-weight: 800; letter-spacing: -1px; user-select: none; }
+  .logo .g { background: linear-gradient(92deg, var(--brand) 5%, var(--brand2) 55%, var(--gold) 95%);
+             -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .tagline { color: var(--dim); font-size: 13px; flex: 1 1 100%; margin-top: -6px; }
+  select.year { margin-left: auto; font-size: 13px; color: var(--text); border: 1px solid var(--line);
+          border-radius: 999px; padding: 5px 12px; background: var(--card); }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+          padding: 16px; margin-top: 14px; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--faint);
+             margin-bottom: 12px; font-weight: 700; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  @media (max-width: 480px) { .grid { grid-template-columns: 1fr; } }
+  label { display: block; font-size: 12px; color: var(--dim); margin-bottom: 4px; }
+  .field input { width: 100%; background: var(--card2); border: 1px solid var(--line); color: var(--text);
+          border-radius: 10px; padding: 10px 12px; font-size: 16px; outline: none; }
+  .field input:focus { border-color: var(--brand); }
+
+  .verdict { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 14px; }
+  @media (max-width: 480px) { .verdict { grid-template-columns: 1fr; } }
+  .stat { background: linear-gradient(180deg, var(--card2), var(--card)); border: 1px solid var(--line);
+          border-radius: 16px; padding: 14px 16px; }
+  .stat .k { font-size: 12px; color: var(--dim); }
+  .stat .v { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; margin-top: 2px; }
+  .stat .s { font-size: 12px; color: var(--faint); margin-top: 2px; }
+  .v.bill { color: var(--gold); } .v.keep { color: var(--green); } .v.rate { color: var(--brand); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  td { padding: 7px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  td.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td .sub { color: var(--faint); font-size: 12px; }
+  tr.total td { font-weight: 800; color: var(--gold); border-top: 2px solid var(--line); }
+  .note { font-size: 12.5px; color: var(--dim); background: var(--card2); border: 1px dashed var(--line);
+          border-radius: 10px; padding: 9px 12px; margin-top: 10px; }
+  .note.warn { color: var(--gold); border-color: #4a3b1c; }
+
+  .dl { display: flex; align-items: baseline; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .dl:last-child { border-bottom: 0; }
+  .dl .days { min-width: 74px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--brand); }
+  .dl .days.soon { color: var(--red); }
+  .dl .what { flex: 1; }
+  .dl .what .d { color: var(--faint); font-size: 12px; }
+  .dl .when { color: var(--dim); font-size: 13px; white-space: nowrap; }
+
+  .split { display: flex; gap: 10px; margin-top: 12px; }
+  .split .part { flex: 1; border-radius: 12px; padding: 10px 12px; text-align: center; }
+  .split .keep { background: rgba(62,207,142,.1); border: 1px solid rgba(62,207,142,.35); color: var(--green); }
+  .split .aside { background: rgba(232,179,76,.1); border: 1px solid rgba(232,179,76,.35); color: var(--gold); }
+  .split b { display: block; font-size: 20px; }
+  .split span { font-size: 12px; opacity: .85; }
+
+  footer { color: var(--faint); font-size: 12px; margin-top: 22px; line-height: 1.6; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo"><span class="g">Reckon</span></div>
+    <select class="year" id="year" aria-label="Tax year"></select>
+    <div class="tagline">Self-employed in the UK? Know what's yours and what's the taxman's — before the letter arrives.</div>
+  </header>
+
+  <section class="card">
+    <h2>Your year so far</h2>
+    <div class="grid">
+      <div class="field"><label for="income">Money in (gross, £)</label><input id="income" type="number" inputmode="decimal" min="0" placeholder="36000"></div>
+      <div class="field"><label for="expenses">Business expenses (£)</label><input id="expenses" type="number" inputmode="decimal" min="0" placeholder="6000"></div>
+      <div class="field"><label for="miles">Business miles driven</label><input id="miles" type="number" inputmode="numeric" min="0" placeholder="0"></div>
+      <div class="field"><label for="prior">Last year's tax bill (£)</label><input id="prior" type="number" inputmode="decimal" min="0" placeholder="0"></div>
+    </div>
+    <div class="note" id="dednote"></div>
+  </section>
+
+  <div class="verdict">
+    <div class="stat"><div class="k">Set aside for HMRC</div><div class="v bill" id="vbill">£0</div><div class="s" id="vperpound"></div></div>
+    <div class="stat"><div class="k">Actually yours</div><div class="v keep" id="vkeep">£0</div><div class="s" id="veff"></div></div>
+    <div class="stat"><div class="k">Your next £1</div><div class="v rate" id="vmarg">0%</div><div class="s">goes to tax + NI at the margin</div></div>
+  </div>
+
+  <section class="card">
+    <h2>The bill, line by line</h2>
+    <table id="bill"></table>
+    <div class="note warn" id="trapnote" hidden>You're in the £100k–£125k <b>60% trap</b>: every £2 over £100,000 also burns £1 of personal allowance, so the real marginal rate here is 62%. Pension contributions are the classic escape hatch.</div>
+    <div class="note" id="ni2note"></div>
+  </section>
+
+  <section class="card">
+    <h2>When you actually pay</h2>
+    <table id="schedule"></table>
+    <div class="note" id="poanote"></div>
+  </section>
+
+  <section class="card">
+    <h2>One payment just landed?</h2>
+    <div class="grid">
+      <div class="field"><label for="pay">Payment amount (£)</label><input id="pay" type="number" inputmode="decimal" min="0" placeholder="1000"></div>
+    </div>
+    <div class="split">
+      <div class="part keep"><b id="pkeep">£0</b><span>spend freely</span></div>
+      <div class="part aside"><b id="paside">£0</b><span>into the tax pot</span></div>
+    </div>
+    <div class="note">Marginal, not average: this uses your year-to-date above, so January's payments are cheap (allowance) and November's cost 40p+ in the pound.</div>
+  </section>
+
+  <section class="card">
+    <h2>Deadlines</h2>
+    <div id="deadlines"></div>
+  </section>
+
+  <footer>
+    Estimates for a sole trader whose only income is the trade — student loans,
+    employment income, dividends and Scottish rates aren't modelled. Everything
+    stays on your device; nothing is sent anywhere. Not tax advice — the number
+    HMRC sends is the number.
+  </footer>
+</div>
+
+<script src="engine.js"></script>
+<script>
+(function () {
+  'use strict';
+  var E = ReckonEngine;
+  var $ = function (id) { return document.getElementById(id); };
+  var KEY = 'reckon-v1';
+
+  function load() {
+    try { return JSON.parse(localStorage.getItem(KEY) || '{}') || {}; }
+    catch (e) { return {}; }
+  }
+  function save(s) { try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) {} }
+
+  var state = load();
+
+  /* tax-year picker */
+  var yearSel = $('year');
+  var years = E.taxYears();
+  for (var i = 0; i < years.length; i++) {
+    var o = document.createElement('option');
+    o.value = years[i]; o.textContent = years[i].replace('-', '/');
+    yearSel.appendChild(o);
+  }
+  yearSel.value = state.taxYear || E.taxYearFor(Date.now());
+
+  var fields = ['income', 'expenses', 'miles', 'prior', 'pay'];
+  for (var f = 0; f < fields.length; f++) {
+    var el = $(fields[f]);
+    if (state[fields[f]] != null) el.value = state[fields[f]];
+    el.addEventListener('input', render);
+  }
+  yearSel.addEventListener('change', render);
+
+  function num(id) { var v = parseFloat($(id).value); return isFinite(v) && v > 0 ? v : 0; }
+  function row(label, value, sub, cls) {
+    return '<tr' + (cls ? ' class="' + cls + '"' : '') + '><td>' + label +
+      (sub ? '<div class="sub">' + sub + '</div>' : '') + '</td><td class="n">' + value + '</td></tr>';
+  }
+
+  var BAND_LABEL = { basic: 'Basic rate', higher: 'Higher rate', additional: 'Additional rate' };
+
+  function render() {
+    var taxYear = yearSel.value;
+    var input = { income: num('income'), expenses: num('expenses'), miles: num('miles'), taxYear: taxYear };
+    var b = E.computeBill(input);
+
+    /* verdict */
+    $('vbill').textContent = E.fmtGBP(b.total);
+    $('vkeep').textContent = E.fmtGBP(b.takeHome);
+    $('vmarg').textContent = E.fmtPct(b.marginalRate);
+    $('vperpound').textContent = b.income > 0 ? Math.round(b.setAsidePerPound * 100) + 'p of every £1 you’re paid' : 'type your income above';
+    $('veff').textContent = b.profit > 0 ? E.fmtPct(b.effectiveRate) + ' effective rate on profit' : '';
+
+    /* deduction note */
+    $('dednote').innerHTML = b.deductionMethod === 'trading-allowance'
+      ? 'Reckon claimed the <b>£1,000 trading allowance</b> instead of your expenses — it’s bigger, so your bill is lower. (You can’t claim both.)'
+      : 'Deducting <b>' + E.fmtGBP(b.deduction) + '</b> of real costs' +
+        (num('miles') > 0 ? ' (incl. ' + E.fmtGBP(E.mileageDeduction(num('miles'), E.rateCard(taxYear))) + ' HMRC mileage)' : '') +
+        ' — better than the £1,000 trading allowance.';
+
+    /* bill table */
+    var h = row('Money in', E.fmtGBP(b.income));
+    h += row('Deduction', '−' + E.fmtGBP(b.deduction), b.deductionMethod === 'trading-allowance' ? 'trading allowance' : 'expenses + mileage');
+    h += row('Profit', E.fmtGBP(b.profit));
+    h += row('Personal allowance', '−' + E.fmtGBP(b.allowance), b.allowance < E.rateCard(taxYear).personalAllowance ? 'tapered — you earn over £100k' : 'tax-free');
+    for (var i = 0; i < b.bands.length; i++) {
+      var bd = b.bands[i];
+      h += row(BAND_LABEL[bd.name] + ' · ' + Math.round(bd.rate * 100) + '%', E.fmtGBP(bd.tax), 'on ' + E.fmtGBP(bd.amount));
+    }
+    h += row('Class 4 National Insurance', E.fmtGBP(b.class4), '6% then 2% on profit over £12,570');
+    h += row('Total owed to HMRC', E.fmtGBP(b.total), '', 'total');
+    $('bill').innerHTML = h;
+
+    $('trapnote').hidden = !(b.profit > 100000 && b.profit < 125140);
+    $('ni2note').textContent = 'Class 2 NI: ' + b.class2.note;
+
+    /* payment schedule */
+    var p = E.paymentSchedule(b.total, num('prior'), taxYear);
+    var dls = E.deadlines(Date.now());
+    var jan = '', jul = '';
+    for (var d = 0; d < dls.length; d++) {
+      if (dls[d].id === 'online') jan = fmtDate(dls[d].ts);
+      if (dls[d].id === 'poa2') jul = fmtDate(dls[d].ts);
+    }
+    var sh = row('31 January (' + jan + ')', E.fmtGBP(p.january),
+      p.poaNext > 0 ? 'balancing ' + E.fmtGBP(Math.max(0, p.balancing)) + ' + first payment on account ' + E.fmtGBP(p.poaNext) : 'the whole bill — small enough to skip instalments');
+    sh += row('31 July (' + jul + ')', E.fmtGBP(p.july), p.july > 0 ? 'second payment on account' : 'nothing due');
+    $('schedule').innerHTML = sh;
+    $('poanote').textContent = p.refund > 0
+      ? 'You already paid ' + E.fmtGBP(p.paidOnAccount) + ' on account against a bigger year — HMRC owes you ' + E.fmtGBP(p.refund) + ' back.'
+      : p.paidOnAccount > 0
+        ? 'Your two payments on account (' + E.fmtGBP(p.paidOnAccount) + ' total) are already netted off.'
+        : p.poaNext > 0
+          ? 'First year over £1,000 stings: January bundles this year’s bill AND half of next year’s, up front.'
+          : 'Bills of £1,000 or less don’t trigger payments on account.';
+
+    /* one payment */
+    var s = E.setAsideForPayment(num('pay'), { income: num('income'), expenses: num('expenses'), miles: num('miles') }, taxYear);
+    $('pkeep').textContent = E.fmtGBP(s.keep);
+    $('paside').textContent = E.fmtGBP(s.setAside);
+
+    /* deadlines */
+    var dh = '';
+    for (var k = 0; k < dls.length; k++) {
+      var x = dls[k];
+      dh += '<div class="dl"><div class="days' + (x.daysLeft <= 30 ? ' soon' : '') + '">' +
+        (x.daysLeft === 0 ? 'today' : x.daysLeft + 'd') + '</div><div class="what">' + x.label +
+        '<div class="d">' + x.detail + '</div></div><div class="when">' + fmtDate(x.ts) + '</div></div>';
+    }
+    $('deadlines').innerHTML = dh;
+
+    save({ taxYear: taxYear, income: $('income').value, expenses: $('expenses').value,
+           miles: $('miles').value, prior: $('prior').value, pay: $('pay').value });
+  }
+
+  var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  function fmtDate(ts) {
+    var d = new Date(ts);
+    return d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()] + ' ' + d.getUTCFullYear();
+  }
+
+  render();
+
+  if (typeof navigator !== 'undefined' && navigator.serviceWorker && navigator.serviceWorker.register &&
+      typeof location !== 'undefined' && /^https?:$/.test(location.protocol)) {
+    try { navigator.serviceWorker.register('sw.js'); } catch (e) {}
+  }
+})();
+</script>
+</body>
+</html>
