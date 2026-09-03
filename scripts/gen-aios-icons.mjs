@@ -47,8 +47,11 @@ const lerp = (a, b, f) => a + (b - a) * f;
 const mix = (a, b, f) => [lerp(a[0], b[0], f), lerp(a[1], b[1], f), lerp(a[2], b[2], f)];
 const smooth = (e0, e1, x) => { const t = clamp((x - e0) / (e1 - e0)); return t * t * (3 - 2 * t); };
 
-/* ---- the artwork (geometry in 512-space, scaled to N) ---- */
-function render(N) {
+/* ---- the artwork (geometry in 512-space, scaled to N) ----
+ * fullBleed: iOS composites apple-touch-icon transparency over BLACK and
+ * applies its own corner mask, so icon-180 must be an opaque full square —
+ * the dark background extends to the edges instead of transparent corners. */
+function render(N, fullBleed) {
   const buf = Buffer.alloc(N * N * 4);
   const s = N / 512, c = N / 2;
   const RING = 150 * s, RINGW = 10 * s;
@@ -71,7 +74,7 @@ function render(N) {
       const ex = Math.max(Math.abs(x - c) - (c - corner), 0);
       const ey = Math.max(Math.abs(y - c) - (c - corner), 0);
       const dCorner = Math.hypot(ex, ey) - corner;
-      const alpha = 1 - smooth(-1.5 * s, 1.5 * s, dCorner);
+      const alpha = fullBleed ? 1 : 1 - smooth(-1.5 * s, 1.5 * s, dCorner);
       if (alpha <= 0) { buf[i + 3] = 0; continue; }
 
       // radial-dark background
@@ -115,6 +118,6 @@ function render(N) {
 }
 
 for (const N of [180, 192, 512]) {
-  writeFileSync(join(OUT, `icon-${N}.png`), encodePNG(N, render(N)));
-  console.log(`aios/icon-${N}.png`);
+  writeFileSync(join(OUT, `icon-${N}.png`), encodePNG(N, render(N, N === 180)));
+  console.log(`aios/icon-${N}.png` + (N === 180 ? ' (full-bleed for iOS)' : ''));
 }

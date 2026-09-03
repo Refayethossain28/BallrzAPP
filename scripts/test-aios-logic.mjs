@@ -9,7 +9,8 @@
  * the assistant's real side effects on OS state).
  * Loaded in a vm sandbox (repo is type:module). Run: node scripts/test-aios-logic.mjs
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync, statSync } from 'node:fs';
+import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import vm from 'node:vm';
@@ -1156,6 +1157,84 @@ test('notices: survive serialize, hostile snapshots sanitized, shell command', (
   assert.ok(out[0].includes('● Fresh') && out[1].includes('  Hello'));
   assert.equal(K.execCommand(st, 'notices clear', T0).error, false);
   deq(K.execCommand(st, 'notices', T0).out, ['no notifications']);
+});
+
+/* ══════════ v5.0: App Store 2.0 + the phone layout guard ══════════ */
+
+test('catalog integrity: every url resolves in the repo (deploy aliases known), cats valid, featured curated', () => {
+  // These paths exist only on the published site — pages.yml builds them
+  // (rentmatch → /apex/, llm-from-scratch/web → /llm/). Anything else must
+  // resolve inside the checkout, so a typo'd url can never ship again.
+  const DEPLOY_ALIASES = { '../apex/': 'rentmatch.html', '../llm/': 'llm-from-scratch/web/index.html' };
+  const apps = JSON.parse(JSON.stringify(K.BALLRZ_APPS));
+  assert.ok(apps.length >= 49, 'the whole repo is in the store, got ' + apps.length);
+  const catIds = JSON.parse(JSON.stringify(K.BALLRZ_CATEGORIES)).map((c) => c.id);
+  assert.equal(new Set(catIds).size, catIds.length, 'category ids unique');
+  const emojis = apps.map((a) => a.emoji);
+  assert.equal(new Set(emojis).size, emojis.length, 'icon emojis unique across the store');
+  for (const a of apps) {
+    assert.ok(catIds.includes(a.cat), a.id + ' has a real category (got ' + a.cat + ')');
+    const target = DEPLOY_ALIASES[a.url] || a.url.replace(/^\.\.\//, '');
+    const p = join(ROOT, target);
+    assert.ok(existsSync(p), a.id + ': url target missing in repo: ' + a.url);
+    if (!/\.html$/.test(target)) assert.ok(existsSync(join(p, 'index.html')), a.id + ': dir has no index.html');
+    else assert.ok(statSync(p).isFile(), a.id + ': not a file');
+  }
+  const feat = JSON.parse(JSON.stringify(K.FEATURED_APPS));
+  assert.ok(feat.length >= 6, 'a real featured shelf');
+  feat.forEach((id) => assert.ok(K.ballrzAppById(id), 'featured id exists: ' + id));
+  // the 5.0 additions are actually present
+  ['ballrz', 'ultra', 'orbit', 'babel', 'bloom', 'sonar', 'lifeline', 'dealsapp', 'appsuite', 'console'].forEach((id) =>
+    assert.ok(K.ballrzAppById(id), id + ' joined the store'));
+});
+
+test('searchCatalog: ranked, case-folded, resilient to junk', () => {
+  const hit = (q) => JSON.parse(JSON.stringify(K.searchCatalog(q))).map((a) => a.id);
+  assert.equal(hit('babel')[0], 'babel', 'exact id wins');
+  assert.equal(hit('BALLRZ')[0], 'ballrz', 'case folded');
+  assert.ok(hit('translator').includes('babel'), 'desc text matches');
+  assert.ok(hit('games').length >= 5, 'bare category name lists the shelf');
+  assert.ok(hit('bank').includes('vault'), 'desc search finds the bank');
+  deq(K.searchCatalog(''), [], 'empty query → empty');
+  deq(K.searchCatalog('   '), [], 'whitespace → empty');
+  deq(K.searchCatalog('zqxjkvbn'), [], 'no match → empty');
+  assert.ok(Array.isArray(K.searchCatalog(null)) && K.searchCatalog(null).length === 0, 'null-safe');
+  const v = hit('v');
+  assert.ok(v.indexOf('vault') < v.indexOf('voyager') || v.indexOf('volley') !== -1, 'prefix hits rank above later matches');
+});
+
+test('icon-180 is full-bleed opaque (iOS renders transparent corners as black squares)', () => {
+  // Our own zero-dep encoder writes filter-0 rows, so decoding is trivial:
+  // sig(8) → chunks; inflate the IDAT, then row y = raw[y*(stride+1)+1 ...].
+  const png = readFileSync(join(ROOT, 'aios', 'icon-180.png'));
+  let off = 8; const idat = [];
+  let n = 0;
+  while (off < png.length) {
+    const len = png.readUInt32BE(off), type = png.toString('latin1', off + 4, off + 8);
+    if (type === 'IHDR') n = png.readUInt32BE(off + 8);
+    if (type === 'IDAT') idat.push(png.slice(off + 8, off + 8 + len));
+    off += 12 + len;
+  }
+  assert.equal(n, 180);
+  const raw = zlib.inflateSync(Buffer.concat(idat));
+  const stride = n * 4;
+  const alphaAt = (x, y) => raw[y * (stride + 1) + 1 + x * 4 + 3];
+  for (const [x, y] of [[0, 0], [n - 1, 0], [0, n - 1], [n - 1, n - 1], [0, 90], [90, 0]]) {
+    assert.equal(alphaAt(x, y), 255, `corner/edge pixel (${x},${y}) must be opaque`);
+  }
+});
+
+test('decideLayout: an installed iPhone never becomes a desktop', () => {
+  const L = K.decideLayout;
+  assert.equal(L(390, true, true, 'auto'), 'phone', 'portrait installed');
+  assert.equal(L(844, true, true, 'auto'), 'phone', 'LANDSCAPE installed iPhone stays a phone');
+  assert.equal(L(932, true, true, 'auto'), 'phone', 'landscape Pro Max stays a phone');
+  assert.equal(L(844, true, false, 'auto'), 'desktop', 'wide coarse browser tab may go desktop');
+  assert.equal(L(600, false, false, 'auto'), 'phone', 'narrow window is a phone');
+  assert.equal(L(700, true, false, 'auto'), 'phone', 'coarse + <820 is a phone');
+  assert.equal(L(1280, false, false, 'auto'), 'desktop');
+  assert.equal(L(1280, false, false, 'phone'), 'phone', 'forced phone wins');
+  assert.equal(L(390, true, true, 'desktop'), 'desktop', 'forced desktop wins even installed');
 });
 
 console.log('── aios kernel unit tests ──');

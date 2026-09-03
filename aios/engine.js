@@ -44,7 +44,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var VERSION = '4.9.0';
+  var VERSION = '5.0.0';
   var JOURNAL_CAP = 300;
   var RUN_DEPTH_CAP = 8;
   var SCRIPT_STEP_CAP = 100000; // total statements one `run` may execute — kills infinite loops
@@ -598,44 +598,117 @@
   }
 
   /* ══════════════════════════ Ballrz catalog ══════════════════════════
-   * Every app in the Ballrz Hub, launchable from inside AIOS: the App Store
+   * Every app in the Ballrz repo, launchable from inside AIOS: the App Store
    * lists them and each opens as a `webapp` window/sheet hosting the real
    * app in a sandboxed frame. URLs are relative to /aios/ so they resolve on
-   * the published site, the custom domain and a local checkout alike. */
+   * the published site, the custom domain and a local checkout alike.
+   * NOTE: '../apex/' and '../llm/' exist only on the published site — the
+   * pages workflow builds rentmatch → /apex/ and llm-from-scratch → /llm/
+   * (see .github/workflows/pages.yml); the integrity test knows the aliases.
+   * `cat` groups apps into App Store shelves (see BALLRZ_CATEGORIES). */
 
   var BALLRZ_APPS = [
-    { id: 'apexvip',    name: 'ApexVIP',        emoji: '✨', url: '../apexvip/',            desc: 'The cinematic luxury chauffeur site.' },
-    { id: 'client',     name: 'ApexVIP Client', emoji: '🚘', url: '../apexvip-client.html', desc: 'Book a chauffeur, track your driver live.' },
-    { id: 'driver',     name: 'ApexVIP Driver', emoji: '🛞', url: '../apexvip-driver.html', desc: 'Accept & manage jobs, live GPS, earnings.' },
-    { id: 'ops',        name: 'ApexVIP Ops',    emoji: '🎛️', url: '../apexvip-admin.html',  desc: 'Dispatch, fleet, analytics & payouts.' },
-    { id: 'concierge',  name: 'Concierge',      emoji: '🛎️', url: '../concierge/',          desc: 'One membership, everything handled.' },
-    { id: 'founding',   name: 'Founding',       emoji: '🎟️', url: '../apexvip-join/',       desc: 'Founding memberships — join ApexVIP.' },
-    { id: 'drivewithus', name: 'Drive with us', emoji: '🤝', url: '../drivers/',            desc: 'Recruiting — keep 80% of every fare.' },
-    { id: 'apex',       name: 'Apex',           emoji: '🏘️', url: '../apex/',               desc: 'The UK landlord OS.' },
-    { id: 'apexsite',   name: 'Apex Site',      emoji: '🏠', url: '../apex-site/',          desc: 'The landlord OS marketing site.' },
-    { id: 'imposter',   name: 'Imposter',       emoji: '🕵️', url: '../imposter/',           desc: 'Pass-and-play social deduction.' },
-    { id: 'flow',       name: 'Flow',           emoji: '🌊', url: '../concepts/prototypes/flow-game/', desc: 'Adaptive tap arcade.' },
-    { id: 'ripple',     name: 'Ripple',         emoji: '💬', url: '../ripple/',             desc: 'The private messenger that puts you in control.' },
-    { id: 'intro',      name: 'Intro',          emoji: '🎴', url: '../intro/',              desc: 'Your digital business card — QR, NFC, Wallet.' },
-    { id: 'vault',      name: 'Vault',          emoji: '🏦', url: '../vault/',              desc: 'A full digital bank with a crypto desk.' },
-    { id: 'drip',       name: 'Drip',           emoji: '💧', url: '../drip/',               desc: 'The passive income engine.' },
-    { id: 'graft',      name: 'Graft',          emoji: '⚒️', url: '../graft/',              desc: 'The income engine — hustle, plan, invoice.' },
-    { id: 'timecoin',   name: 'TimeCoin',       emoji: '🪙', url: '../coin/',               desc: 'A Bitcoin built from raw bytes — mine in-browser.' },
-    { id: 'neura',      name: 'Neura',          emoji: '🧠', url: '../neura/',              desc: 'The chain that thinks — Proof of Intelligence.' },
-    { id: 'automaton',  name: 'Automaton',      emoji: '🤖', url: '../automaton/',          desc: 'The AI that dies if it doesn’t earn.' },
-    { id: 'fxsignal',   name: 'FX Signal Pro',  emoji: '📈', url: '../trading-app/fx-signal-pro.html', desc: 'Currency-pair trading signals.' },
-    { id: 'voyager',    name: 'Voyager',        emoji: '🧭', url: '../voyager/',            desc: 'The internet browser — tabs, omnibox, memory.' },
-    { id: 'seeker',     name: 'Seeker',         emoji: '🔎', url: '../seeker/',             desc: 'The search engine — BM25 ranking, instant answers.' },
-    { id: 'magpie',     name: 'Magpie',         emoji: '🐦‍⬛', url: '../magpie/',             desc: 'The web scraper — point it at a page, it finds the lists.' },
-    { id: 'cortex',     name: 'Cortex',         emoji: '🧩', url: '../cortex/',             desc: 'The daily brain gym — five adaptive drills.' },
-    { id: 'cusp',       name: 'Cusp',           emoji: '🎯', url: '../cusp/',               desc: 'What to do right now — the salience engine.' },
-    { id: 'atlas',      name: 'Atlas',          emoji: '🗺️', url: '../atlas/',              desc: 'Your own satnav — voice turn-by-turn.' },
-    { id: 'omni',       name: 'Omni',           emoji: '🧰', url: '../omni/',               desc: 'The do-everything app.' },
-    { id: 'lingua',     name: 'Lingua',         emoji: '🗣️', url: '../lingua/',             desc: 'The fluency engine — every language.' },
-    { id: 'myownai',    name: 'ApexAI',      emoji: '⚡', url: '../llm/',                desc: 'A GPT built from first principles, on-device.' },
-    { id: 'splitbill',  name: 'Split the bill', emoji: '🧾', url: '../concepts/prototypes/concierge-split/', desc: 'AI concierge — agree a split, fire requests.' },
-    { id: 'fixr',       name: 'Fixr',           emoji: '🛎️', url: '../fixr/',               desc: 'Luxury transport + concierge — the static demo.' }
+    { id: 'apexvip',    name: 'ApexVIP',        emoji: '✨', cat: 'apexvip', url: '../apexvip/',            desc: 'The cinematic luxury chauffeur site.' },
+    { id: 'client',     name: 'ApexVIP Client', emoji: '🚘', cat: 'apexvip', url: '../apexvip-client.html', desc: 'Book a chauffeur, track your driver live.' },
+    { id: 'driver',     name: 'ApexVIP Driver', emoji: '🛞', cat: 'apexvip', url: '../apexvip-driver.html', desc: 'Accept & manage jobs, live GPS, earnings.' },
+    { id: 'ops',        name: 'ApexVIP Ops',    emoji: '🎛️', cat: 'apexvip', url: '../apexvip-admin.html',  desc: 'Dispatch, fleet, analytics & payouts.' },
+    { id: 'concierge',  name: 'Concierge',      emoji: '🛎️', cat: 'apexvip', url: '../concierge/',          desc: 'One membership, everything handled.' },
+    { id: 'founding',   name: 'Founding',       emoji: '🎟️', cat: 'apexvip', url: '../apexvip-join/',       desc: 'Founding memberships — join ApexVIP.' },
+    { id: 'drivewithus', name: 'Drive with us', emoji: '🤝', cat: 'apexvip', url: '../drivers/',            desc: 'Recruiting — keep 80% of every fare.' },
+    { id: 'fixr',       name: 'Fixr',           emoji: '🚙', cat: 'apexvip', url: '../fixr/',               desc: 'Luxury transport + concierge — the static demo.' },
+    { id: 'ballrz',     name: 'Ballrz',         emoji: '⚽', cat: 'games',   url: '../ballrz/',             desc: 'Football, all of it — a full career mode plus real live scores.' },
+    { id: 'console',    name: 'Console',        emoji: '👾', cat: 'games',   url: '../arcade/',             desc: 'A pocket console — Serpent, 2048 and Breaker, plus emulator slots.' },
+    { id: 'ultra',      name: 'Ultra',          emoji: '🎮', cat: 'games',   url: '../ultra/',              desc: 'N64 & Dreamcast emulation — real CPU interpreters in the browser.' },
+    { id: 'volley',     name: 'Volley',         emoji: '🏐', cat: 'games',   url: '../volley/',             desc: 'Reflex training in two-minute bursts — drills, ranks, bests.' },
+    { id: 'imposter',   name: 'Imposter',       emoji: '🕵️', cat: 'games',   url: '../imposter/',           desc: 'Pass-and-play social deduction.' },
+    { id: 'flow',       name: 'Flow',           emoji: '🌊', cat: 'games',   url: '../concepts/prototypes/flow-game/', desc: 'Adaptive tap arcade.' },
+    { id: 'cortex',     name: 'Cortex',         emoji: '🧩', cat: 'games',   url: '../cortex/',             desc: 'The daily brain gym — five adaptive drills.' },
+    { id: 'automaton',  name: 'Automaton',      emoji: '🤖', cat: 'ai',      url: '../automaton/',          desc: 'The AI that dies if it doesn’t earn.' },
+    { id: 'myownai',    name: 'ApexAI',         emoji: '⚡', cat: 'ai',      url: '../llm/',                desc: 'A GPT built from first principles, on-device.' },
+    { id: 'sonar',      name: 'Sonar',          emoji: '📡', cat: 'ai',      url: '../sonar/',              desc: 'AI web search — every fact pinned to a numbered source.' },
+    { id: 'tokens',     name: 'Tokens',         emoji: '🧮', cat: 'ai',      url: '../tokens/',             desc: 'The AI token meter — count a prompt, price it, budget it.' },
+    { id: 'axon',       name: 'Axon',           emoji: '🕸️', cat: 'ai',      url: '../axon/',               desc: 'Train your own neural network — watch every synapse learn.' },
+    { id: 'synapse',    name: 'Synapse',        emoji: '🧬', cat: 'ai',      url: '../synapse/',            desc: 'The AI cryptocurrency — asking is a transaction, answering is mining.' },
+    { id: 'vault',      name: 'Vault',          emoji: '🏦', cat: 'money',   url: '../vault/',              desc: 'A full digital bank with a crypto desk.' },
+    { id: 'drip',       name: 'Drip',           emoji: '💧', cat: 'money',   url: '../drip/',               desc: 'The passive income engine.' },
+    { id: 'graft',      name: 'Graft',          emoji: '⚒️', cat: 'money',   url: '../graft/',              desc: 'The income engine — hustle, plan, invoice.' },
+    { id: 'timecoin',   name: 'TimeCoin',       emoji: '🪙', cat: 'money',   url: '../coin/',               desc: 'A Bitcoin built from raw bytes — mine in-browser.' },
+    { id: 'neura',      name: 'Neura',          emoji: '🧠', cat: 'money',   url: '../neura/',              desc: 'The chain that thinks — Proof of Intelligence.' },
+    { id: 'fxsignal',   name: 'FX Signal Pro',  emoji: '📈', cat: 'money',   url: '../trading-app/fx-signal-pro.html', desc: 'Currency-pair trading signals.' },
+    { id: 'charter',    name: 'Charter',        emoji: '📜', cat: 'money',   url: '../charter/',            desc: 'Mint preferred stock — term sheet, certificate, cap table.' },
+    { id: 'apex',       name: 'Apex',           emoji: '🏘️', cat: 'money',   url: '../apex/',               desc: 'The UK landlord OS.' },
+    { id: 'apexsite',   name: 'Apex Site',      emoji: '🏠', cat: 'money',   url: '../apex-site/',          desc: 'The landlord OS marketing site.' },
+    { id: 'voyager',    name: 'Voyager',        emoji: '🧭', cat: 'web',     url: '../voyager/',            desc: 'The internet browser — tabs, omnibox, memory.' },
+    { id: 'seeker',     name: 'Seeker',         emoji: '🔎', cat: 'web',     url: '../seeker/',             desc: 'The search engine — BM25 ranking, instant answers.' },
+    { id: 'magpie',     name: 'Magpie',         emoji: '🐦‍⬛', cat: 'web',     url: '../magpie/',             desc: 'The web scraper — point it at a page, it finds the lists.' },
+    { id: 'ripple',     name: 'Ripple',         emoji: '💬', cat: 'social',  url: '../ripple/',             desc: 'The private messenger that puts you in control.' },
+    { id: 'bloom',      name: 'Bloom',          emoji: '🌸', cat: 'social',  url: '../bloom/',              desc: 'The social network that’s on your side — you own the algorithm.' },
+    { id: 'glimpse',    name: 'Glimpse',        emoji: '🔭', cat: 'social',  url: '../glimpse/',            desc: 'Share what you’re seeing — a feed that hops the globe.' },
+    { id: 'intro',      name: 'Intro',          emoji: '🎴', cat: 'social',  url: '../intro/',              desc: 'Your digital business card — QR, NFC, Wallet.' },
+    { id: 'atlas',      name: 'Atlas',          emoji: '🗺️', cat: 'travel',  url: '../atlas/',              desc: 'Your own satnav — voice turn-by-turn.' },
+    { id: 'orbit',      name: 'Orbit',          emoji: '🪐', cat: 'travel',  url: '../orbit/',              desc: 'The everything app — rides, food, parcels, wallet.' },
+    { id: 'dealsapp',   name: 'TravelDeals',    emoji: '✈️', cat: 'travel',  url: '../deals-app/',          desc: 'Flights & hotels — forecasts, deal scores, e-tickets.' },
+    { id: 'cusp',       name: 'Cusp',           emoji: '🎯', cat: 'life',    url: '../cusp/',               desc: 'What to do right now — the salience engine.' },
+    { id: 'lifeline',   name: 'Lifeline',       emoji: '🚨', cat: 'life',    url: '../lifeline/',           desc: 'Emergency first aid that works offline.' },
+    { id: 'peak',       name: 'Peak',           emoji: '⛰️', cat: 'life',    url: '../peak/',               desc: 'Training, fuel and sleep in one honest daily score.' },
+    { id: 'lingua',     name: 'Lingua',         emoji: '🗣️', cat: 'life',    url: '../lingua/',             desc: 'The fluency engine — every language.' },
+    { id: 'babel',      name: 'Babel',          emoji: '🐟', cat: 'life',    url: '../babel/',              desc: 'The universal translator — 36 languages, fully offline.' },
+    { id: 'parrot',     name: 'Parrot',         emoji: '🦜', cat: 'life',    url: '../parrot/',             desc: 'Your pocket voice board — record once, play forever.' },
+    { id: 'omni',       name: 'Omni',           emoji: '🧰', cat: 'tools',   url: '../omni/',               desc: 'The do-everything app.' },
+    { id: 'splitbill',  name: 'Split the bill', emoji: '🧾', cat: 'tools',   url: '../concepts/prototypes/concierge-split/', desc: 'AI concierge — agree a split, fire requests.' },
+    { id: 'appsuite',   name: 'App Suite',      emoji: '🗂️', cat: 'tools',   url: '../apps/',               desc: '13 self-contained demo apps, one per category.' }
   ];
+
+  /** App Store shelves, in display order. Every entry's `cat` must be one of
+   *  these ids — the integrity test enforces it. */
+  var BALLRZ_CATEGORIES = [
+    { id: 'games',   name: 'Games & Arcade' },
+    { id: 'ai',      name: 'AI & Frontier' },
+    { id: 'money',   name: 'Money & Markets' },
+    { id: 'travel',  name: 'Travel & Places' },
+    { id: 'social',  name: 'Social' },
+    { id: 'life',    name: 'Life & Health' },
+    { id: 'web',     name: 'Internet' },
+    { id: 'tools',   name: 'Tools' },
+    { id: 'apexvip', name: 'ApexVIP Fleet' }
+  ];
+
+  /** The Store's curated front shelf — hand-picked, order matters. */
+  var FEATURED_APPS = ['ballrz', 'ultra', 'orbit', 'voyager', 'vault', 'babel', 'atlas', 'bloom'];
+
+  /** Case-folded catalog search: matches id/name/desc/category, best first.
+   *  Pure and deterministic — shared by the Store search field and Ask AIOS. */
+  function searchCatalog(query) {
+    var q = String(query || '').toLowerCase().trim();
+    if (!q) return [];
+    var scored = [];
+    for (var i = 0; i < BALLRZ_APPS.length; i++) {
+      var a = BALLRZ_APPS[i];
+      var name = a.name.toLowerCase(), id = a.id.toLowerCase();
+      var s = 0;
+      if (id === q || name === q) s = 5;
+      else if (name.indexOf(q) === 0 || id.indexOf(q) === 0) s = 4;
+      else if (name.indexOf(q) !== -1) s = 3;
+      else if (a.desc.toLowerCase().indexOf(q) !== -1) s = 2;
+      else if (a.cat === q) s = 1;
+      if (s) scored.push({ s: s, i: i, a: a });
+    }
+    scored.sort(function (x, y) { return y.s - x.s || x.i - y.i; });
+    return scored.map(function (e) { return e.a; });
+  }
+
+  /** Which shell to show — pure so the "iPhone rotated to landscape must NOT
+   *  become a macOS desktop" rule is unit-testable. `forced` is the user's
+   *  explicit layout choice ('phone'|'desktop'|anything else = auto). */
+  function decideLayout(width, coarsePointer, standalone, forced) {
+    if (forced === 'phone') return 'phone';
+    if (forced === 'desktop') return 'desktop';
+    if (standalone && coarsePointer) return 'phone'; // an installed phone stays a phone, even in landscape
+    if (width <= 640) return 'phone';
+    if (coarsePointer && width < 820) return 'phone';
+    return 'desktop';
+  }
+
   function ballrzAppById(id) {
     for (var i = 0; i < BALLRZ_APPS.length; i++) if (BALLRZ_APPS[i].id === id) return BALLRZ_APPS[i];
     return null;
@@ -2322,6 +2395,10 @@
     deserialize: deserialize,
     // ballrz catalog
     BALLRZ_APPS: BALLRZ_APPS,
+    BALLRZ_CATEGORIES: BALLRZ_CATEGORIES,
+    FEATURED_APPS: FEATURED_APPS,
+    searchCatalog: searchCatalog,
+    decideLayout: decideLayout,
     ballrzAppById: ballrzAppById,
     installWebapp: installWebapp,
     uninstallWebapp: uninstallWebapp,
