@@ -287,8 +287,14 @@
       u.lang = lang || 'en-GB';
       u.rate = rate || 1;
       var voices = speechSynthesis.getVoices() || [];
-      for (var i = 0; i < voices.length; i++) {
-        if (String(voices[i].lang).slice(0, 2) === String(lang).slice(0, 2)) { u.voice = voices[i]; break; }
+      var want = String(lang), wantBase = want.split('-')[0].toLowerCase(), i;
+      for (i = 0; i < voices.length; i++) {
+        if (String(voices[i].lang).toLowerCase() === want.toLowerCase()) { u.voice = voices[i]; break; }
+      }
+      if (!u.voice) {
+        for (i = 0; i < voices.length; i++) {
+          if (String(voices[i].lang).split(/[-_]/)[0].toLowerCase() === wantBase) { u.voice = voices[i]; break; }
+        }
       }
       speechSynthesis.cancel();
       speechSynthesis.speak(u);

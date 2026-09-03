@@ -684,6 +684,49 @@ test('extended languages: every phrase cell renders with the roman invariant', (
   }
 });
 
+test('36-language review regressions: composer edges', () => {
+  assert.equal(E.spellNumber(103, 'it').text, 'centotré');
+  assert.equal(E.spellNumber(1003, 'it').text, 'milletré');
+  assert.equal(E.spellNumber(23003, 'it').text, 'ventitremilatré');
+  assert.equal(E.spellNumber(103000, 'it').text, 'centotremila');
+  assert.equal(E.spellNumber(2500000, 'pt').text, 'dois milhões e quinhentos mil');
+  assert.equal(E.spellNumber(1020000, 'pt').text, 'um milhão e vinte mil');
+  assert.equal(E.spellNumber(2340000, 'pt').text, 'dois milhões trezentos e quarenta mil');
+  deepEq(E.spellNumber(12000, 'he'), { text: 'שנים עשר אלף', roman: 'shneim asar elef' });
+  deepEq(E.spellTime(21, 0, 'ta'), { text: 'இருபத்து ஒரு மணி', roman: 'irubaththu oru mani' });
+  deepEq(E.spellTime(11, 0, 'ta'), { text: 'பதினொரு மணி', roman: 'padhinoru mani' });
+});
+
+test('detection: honest nulls on ties and weak evidence, refined shared scripts', () => {
+  assert.equal(E.detect('de la gare').best, null);
+  assert.equal(E.detect('van').best, null);
+  assert.equal(E.detect('Guten Morgen bitte').best.lang, 'de');
+  assert.equal(E.detect('God kväll').best.lang, 'sv');
+  assert.equal(E.detect('Дякую').best.lang, 'uk');
+  assert.equal(E.detect('Спасибо большое').best.lang, 'ru');
+  assert.equal(E.detect('سلام').best.lang, 'fa');
+  assert.equal(E.detect('مرحبا كيف الحال').best.lang, 'ar');
+  assert.equal(E.detect('شکریہ آپ کا').best.lang, 'ur');
+  assert.equal(E.detect('सर्व काही ठीक आहे').best.lang, 'mr');
+  assert.equal(E.detect('यह बहुत अच्छा है').best.lang, 'hi');
+});
+
+test('detection floor: the wall recognises its own phrases', () => {
+  let right = 0, wrongConfident = 0, total = 0;
+  for (const l of E.LANGS) {
+    for (const p of E.PHRASES) {
+      const text = l.code === 'en' ? p.en : p.t[l.code];
+      const d = E.detect(text);
+      total++;
+      if (d.best && d.best.lang === l.code) right++;
+      else if (d.best && d.best.confidence > 0.3) wrongConfident++;
+    }
+  }
+  assert.equal(total, 1296);
+  assert.ok(right >= 880, `only ${right}/1296 self-detected`);
+  assert.ok(wrongConfident <= 40, `${wrongConfident} confidently wrong`);
+});
+
 /* ---------- run ---------- */
 for (const [name, fn] of tests) {
   try { fn(); passed++; console.log(`  ✓ ${name}`); }
