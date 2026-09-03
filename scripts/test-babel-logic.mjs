@@ -107,10 +107,10 @@ test('LANGS: exactly 36, unique codes, RTL exactly for ar/fa/ur/he', () => {
   }
 });
 
-test('PHRASES: 36 unique ids, every cell filled in all 12 languages', () => {
-  assert.equal(E.PHRASES.length, 36);
+test('PHRASES: 40 unique ids, every cell filled in every language', () => {
+  assert.equal(E.PHRASES.length, 40);
   const ids = new Set(E.PHRASES.map((p) => p.id));
-  assert.equal(ids.size, 36);
+  assert.equal(ids.size, 40);
   const cats = new Set(E.CATEGORIES.map((c) => c.id));
   for (const p of E.PHRASES) {
     assert.ok(cats.has(p.cat), `${p.id}: bad category ${p.cat}`);
@@ -147,7 +147,7 @@ test('every category id resolves and Emergency is pinned first', () => {
     assert.ok(list.length >= 5, `${c.id}: only ${list.length}`);
     total += list.length;
   }
-  assert.equal(total, 36);
+  assert.equal(total, 40);
   assert.throws(() => E.phrasesByCategory('nope'), /unknown category/);
 });
 
@@ -722,8 +722,8 @@ test('detection floor: the wall recognises its own phrases', () => {
       else if (d.best && d.best.confidence > 0.3) wrongConfident++;
     }
   }
-  assert.equal(total, 1296);
-  assert.ok(right >= 880, `only ${right}/1296 self-detected`);
+  assert.equal(total, 1440);
+  assert.ok(right >= 950, `only ${right}/1440 self-detected`);
   assert.ok(wrongConfident <= 40, `${wrongConfident} confidently wrong`);
 });
 
