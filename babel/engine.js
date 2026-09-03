@@ -967,6 +967,10 @@
   // は→wa at word end). Latin passes through; Han/kanji pass through
   // verbatim and lower the honesty `coverage` fraction.
 
+  // Ukrainian-only letters are unique codepoints — safe in the shared map;
+  // г/и differ between Russian and Ukrainian, handled by ukMode below.
+  var CYR_UK = { 'і': 'i', 'ї': 'yi', 'є': 'ye', 'ґ': 'g' };
+  var CYR_UK_MODE = { 'г': 'h', 'и': 'y' };
   var CYR = { 'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo', 'ж': 'zh', 'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u', 'ф': 'f', 'х': 'kh', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'shch', 'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya' };
 
   var GRK2 = { 'ου': 'ou', 'αι': 'ai', 'ει': 'ei', 'οι': 'oi', 'αυ': 'av', 'ευ': 'ev', 'γγ': 'ng', 'γκ': 'gk', 'μπ': 'b', 'ντ': 'nt' };
@@ -974,6 +978,8 @@
 
   var KANA2 = { 'きゃ': 'kya', 'きゅ': 'kyu', 'きょ': 'kyo', 'しゃ': 'sha', 'しゅ': 'shu', 'しょ': 'sho', 'ちゃ': 'cha', 'ちゅ': 'chu', 'ちょ': 'cho', 'にゃ': 'nya', 'にゅ': 'nyu', 'にょ': 'nyo', 'ひゃ': 'hya', 'ひゅ': 'hyu', 'ひょ': 'hyo', 'みゃ': 'mya', 'みゅ': 'myu', 'みょ': 'myo', 'りゃ': 'rya', 'りゅ': 'ryu', 'りょ': 'ryo', 'ぎゃ': 'gya', 'ぎゅ': 'gyu', 'ぎょ': 'gyo', 'じゃ': 'ja', 'じゅ': 'ju', 'じょ': 'jo', 'びゃ': 'bya', 'びゅ': 'byu', 'びょ': 'byo', 'ぴゃ': 'pya', 'ぴゅ': 'pyu', 'ぴょ': 'pyo' };
   var KANA1 = { 'あ': 'a', 'い': 'i', 'う': 'u', 'え': 'e', 'お': 'o', 'か': 'ka', 'き': 'ki', 'く': 'ku', 'け': 'ke', 'こ': 'ko', 'さ': 'sa', 'し': 'shi', 'す': 'su', 'せ': 'se', 'そ': 'so', 'た': 'ta', 'ち': 'chi', 'つ': 'tsu', 'て': 'te', 'と': 'to', 'な': 'na', 'に': 'ni', 'ぬ': 'nu', 'ね': 'ne', 'の': 'no', 'は': 'ha', 'ひ': 'hi', 'ふ': 'fu', 'へ': 'he', 'ほ': 'ho', 'ま': 'ma', 'み': 'mi', 'む': 'mu', 'め': 'me', 'も': 'mo', 'や': 'ya', 'ゆ': 'yu', 'よ': 'yo', 'ら': 'ra', 'り': 'ri', 'る': 'ru', 'れ': 're', 'ろ': 'ro', 'わ': 'wa', 'を': 'o', 'ん': 'n', 'ぁ': 'a', 'ぃ': 'i', 'ぅ': 'u', 'ぇ': 'e', 'ぉ': 'o', 'が': 'ga', 'ぎ': 'gi', 'ぐ': 'gu', 'げ': 'ge', 'ご': 'go', 'ざ': 'za', 'じ': 'ji', 'ず': 'zu', 'ぜ': 'ze', 'ぞ': 'zo', 'だ': 'da', 'ぢ': 'ji', 'づ': 'zu', 'で': 'de', 'ど': 'do', 'ば': 'ba', 'び': 'bi', 'ぶ': 'bu', 'べ': 'be', 'ぼ': 'bo', 'ぱ': 'pa', 'ぴ': 'pi', 'ぷ': 'pu', 'ぺ': 'pe', 'ぽ': 'po', 'ゔ': 'vu' };
+
+  var GEO = { 'ა': 'a', 'ბ': 'b', 'გ': 'g', 'დ': 'd', 'ე': 'e', 'ვ': 'v', 'ზ': 'z', 'თ': 't', 'ი': 'i', 'კ': 'k', 'ლ': 'l', 'მ': 'm', 'ნ': 'n', 'ო': 'o', 'პ': 'p', 'ჟ': 'zh', 'რ': 'r', 'ს': 's', 'ტ': 't', 'უ': 'u', 'ფ': 'p', 'ქ': 'k', 'ღ': 'gh', 'ყ': 'q', 'შ': 'sh', 'ჩ': 'ch', 'ც': 'ts', 'ძ': 'dz', 'წ': 'ts', 'ჭ': 'ch', 'ხ': 'kh', 'ჯ': 'j', 'ჰ': 'h' };
 
   var RR_INIT = ['g', 'kk', 'n', 'd', 'tt', 'r', 'm', 'b', 'pp', 's', 'ss', '', 'j', 'jj', 'ch', 'k', 't', 'p', 'h'];
   var RR_VOW = ['a', 'ae', 'ya', 'yae', 'eo', 'e', 'yeo', 'ye', 'o', 'wa', 'wae', 'oe', 'yo', 'u', 'wo', 'we', 'wi', 'yu', 'eu', 'ui', 'i'];
@@ -998,6 +1004,8 @@
     // the topic particle は is pronounced wa; treat any は that ends a
     // kana run (space, punctuation, …, end) as the particle
     src = src.replace(/は(?![ぁ-ゖー])/g, 'わ');
+    // a Ukrainian marker letter anywhere switches г/и to their Ukrainian values
+    var ukMode = /[іїєґІЇЄҐ]/.test(src);
     var out = '', covered = 0, total = 0, i = 0, n = src.length;
     while (i < n) {
       var c = src.charAt(i), lower = c.toLowerCase(), code = src.charCodeAt(i);
@@ -1005,8 +1013,14 @@
       if (!isSpace) total++;
       var piece = null;
 
-      if (CYR[lower] !== undefined) {
+      if (CYR_UK[lower] !== undefined) {
+        piece = CYR_UK[lower]; i++;
+      } else if (ukMode && CYR_UK_MODE[lower] !== undefined) {
+        piece = CYR_UK_MODE[lower]; i++;
+      } else if (CYR[lower] !== undefined) {
         piece = CYR[lower]; i++;
+      } else if (GEO[c] !== undefined) {
+        piece = GEO[c]; i++;
       } else if (GRK2[src.substr(i, 2).toLowerCase()] !== undefined && i + 1 < n) {
         var g2 = src.substr(i, 2).toLowerCase();
         piece = GRK2[g2];
