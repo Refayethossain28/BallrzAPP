@@ -726,16 +726,41 @@
       };
       rec.onend = release;
       rec.onerror = function (ev3) {
+        // name the real failure and keep it in the sticky status line — a
+        // 1.6s toast is too short for anything the user must act on
+        var c = ev3 && ev3.error, msg = null, brief = null;
+        if (c === 'no-speech') {
+          brief = msg = 'Didn’t hear anything — tap and try again';
+        } else if (c === 'network') {
+          brief = 'Speech recognition needs a connection';
+          msg = 'Speech recognition needs a connection on this device — the Translate tab still works offline.';
+        } else if (c === 'language-not-supported') {
+          brief = 'No ' + L.name + ' speech recognition here';
+          msg = 'This device’s recognizer doesn’t support ' + L.name +
+            ' — type it in the Translate tab instead, or swap which side speaks.';
+        } else if (c === 'not-allowed' || c === 'service-not-allowed') {
+          brief = 'Mic permission needed';
+          msg = 'Speech needs permission: allow the microphone for this site' +
+            (/iPhone|iPad|Macintosh/.test(navigator.userAgent || '')
+              ? ', and make sure Enable Dictation is on (iPhone: Settings → General → Keyboard).' : '.');
+        } else if (c === 'audio-capture') {
+          brief = msg = 'No microphone found on this device';
+        } else if (c === 'aborted' || c === 'canceled') {
+          // the user cancelled — stay quiet
+        } else {
+          brief = 'Mic unavailable';
+          msg = 'Speech recognition failed' + (c ? ' (' + c + ')' : '') + ' — try again, or type in the Translate tab.';
+        }
+        if (msg) holdStatus = msg;
         release();
-        var c = ev3 && ev3.error;
-        if (c === 'no-speech') toast('Didn’t hear anything — tap and try again');
-        else if (c === 'network') toast('Speech recognition needs a connection');
-        else if (c === 'language-not-supported') toast(L.name + ' speech recognition not available here');
-        else if (c === 'aborted' || c === 'canceled') { /* the user cancelled — stay quiet */ }
-        else toast('Mic unavailable');
+        if (brief) toast(brief);
       };
       rec.start();
-    } catch (e) { release(); toast('Mic unavailable'); }
+    } catch (e) {
+      holdStatus = 'Speech recognition failed to start — try again, or type in the Translate tab.';
+      release();
+      toast('Mic unavailable');
+    }
   }
 
   $('mic-a').addEventListener('click', function () { listenAs('a', false); });
