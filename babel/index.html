@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Babel — the universal translator</title>
-<meta name="description" content="A real universal translator built from scratch — type or say anything and a wall of 12 languages answers at once, fully offline: a typo-tolerant phrasebook across 8 writing systems, real-grammar number/time/date spelling, computed romanization, Morse, NATO, Braille, runes and a round-trippable alien language.">
+<meta name="description" content="A real universal translator built from scratch — type or say anything and a wall of 36 languages answers at once, fully offline: a typo-tolerant phrasebook across 16 writing systems, real-grammar number/time/date spelling, computed romanization, Morse, NATO, Braille, runes and a round-trippable alien language.">
 <meta name="theme-color" content="#0b0e1a">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
@@ -156,7 +156,7 @@
     <div class="logo">🐟 <span class="g">Babel</span></div>
     <span class="pill" id="offline">○ caching…</span>
     <select id="pin" aria-label="Your language (spoken first)"></select>
-    <div class="tagline">The universal translator that never phones home — say anything, twelve languages answer at once.</div>
+    <div class="tagline">The universal translator that never phones home — say anything, thirty-six languages answer at once.</div>
   </header>
 
   <div class="tabs" id="tabs">
@@ -192,10 +192,10 @@
 
     <footer>
       <b>How it works, honestly:</b> everything on this page is deterministic logic running on your device —
-      a hand-checked 36-phrase traveller phrasebook across 12 languages and 8 writing systems (typo-tolerant,
-      reachable from any of the 12), real-grammar spelling of numbers, clock times and dates
-      (French vigesimals, German compounds, Chinese 零-insertion, Hindi lakh/crore), and computed romanization
-      of Cyrillic, Greek, Hangul and kana. No model, no network, no account. Engine unit-tested by
+      a hand-checked 36-phrase traveller phrasebook across 36 languages and 16 writing systems (typo-tolerant,
+      reachable from any of them), real-grammar spelling of numbers, clock times and dates
+      (French vigesimals, Georgian scores, Chinese 零-insertion, the lakh/crore grouping), and computed romanization
+      of Cyrillic, Greek, Hangul, kana and Georgian. No model, no network, no account. Engine unit-tested by
       <span class="mono">npm run test:babel</span>.
     </footer>
   </section>
@@ -287,8 +287,14 @@
       u.lang = lang || 'en-GB';
       u.rate = rate || 1;
       var voices = speechSynthesis.getVoices() || [];
-      for (var i = 0; i < voices.length; i++) {
-        if (String(voices[i].lang).slice(0, 2) === String(lang).slice(0, 2)) { u.voice = voices[i]; break; }
+      var want = String(lang), wantBase = want.split('-')[0].toLowerCase(), i;
+      for (i = 0; i < voices.length; i++) {
+        if (String(voices[i].lang).toLowerCase() === want.toLowerCase()) { u.voice = voices[i]; break; }
+      }
+      if (!u.voice) {
+        for (i = 0; i < voices.length; i++) {
+          if (String(voices[i].lang).split(/[-_]/)[0].toLowerCase() === wantBase) { u.voice = voices[i]; break; }
+        }
       }
       speechSynthesis.cancel();
       speechSynthesis.speak(u);
@@ -358,7 +364,7 @@
     var html = '';
     for (var i = 0; i < cards.length; i++) {
       var c = cards[i];
-      html += '<div class="lang-card' + (c.lang === pinned ? ' pinned' : '') + '" data-i="' + i + '" style="animation-delay:' + (i * 45) + 'ms">' +
+      html += '<div class="lang-card' + (c.lang === pinned ? ' pinned' : '') + '" data-i="' + i + '" style="animation-delay:' + Math.min(i * 45, 900) + 'ms">' +
         '<div class="lang-head"><span>' + c.flag + '</span><span class="who">' + esc(c.native) + '</span>' +
         '<button class="small" data-speak="' + i + '" title="speak">🔊</button>' +
         '<button class="small" data-copy="' + i + '" title="copy">⧉</button></div>' +
@@ -367,11 +373,11 @@
         '</div>';
     }
     // two punchline cards: the alien language and the signal wire
-    html += '<div class="lang-card special" style="animation-delay:' + (cards.length * 45) + 'ms">' +
+    html += '<div class="lang-card special" style="animation-delay:' + Math.min(cards.length * 45, 945) + 'ms">' +
       '<div class="lang-head"><span>🛸</span><span class="who">Vessel</span>' +
       '<button class="small" data-vspeak="1" title="speak">🔊</button></div>' +
       '<div class="lang-text">' + esc(t.vessel.text) + '</div></div>';
-    html += '<div class="lang-card signalcard" style="animation-delay:' + ((cards.length + 1) * 45) + 'ms">' +
+    html += '<div class="lang-card signalcard" style="animation-delay:' + Math.min((cards.length + 1) * 45, 990) + 'ms">' +
       '<div class="lang-head"><span>📡</span><span class="who">Signal</span></div>' +
       '<div class="lang-text">' + esc(t.signal.morse) + '</div>' +
       '<div class="lang-roman">' + esc(t.signal.nato) + '</div></div>';
