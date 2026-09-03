@@ -756,6 +756,11 @@ test('interpret: fromHint fills in when detection is unsure, junk yields suggest
   const hinted = E.interpret('hello', 'fr', 'en');
   assert.equal(hinted.ok, true);
   assert.equal(hinted.from, 'en');
+  const hintedTr = E.interpret('hello', 'ja', 'tr');
+  assert.equal(hintedTr.from, 'tr', 'fromHint must win over the phrase match sourceLang');
+  const hintBeatsDetect = E.interpret('Lütfen', 'en', 'tr');
+  assert.equal(hintBeatsDetect.from, 'tr', 'an explicit hint outranks a low-confidence detection');
+  assert.equal(hintBeatsDetect.heardAs, 'Lütfen', 'the echo stays in the speaker\'s own language');
   const miss = E.interpret('purple monkey dishwasher', 'fr');
   assert.equal(miss.ok, false);
   assert.equal(miss.kind, 'none');

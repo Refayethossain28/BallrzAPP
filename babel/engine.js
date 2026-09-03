@@ -2325,8 +2325,11 @@
     var to = LANG_BY_CODE[toLang];
     if (!to) throw new Error('unknown lang: ' + toLang);
     if (fromHint && !LANG_BY_CODE[fromHint]) throw new Error('unknown lang: ' + fromHint);
+    // an explicit hint outranks detection: the caller knows which language the
+    // recognizer transcribed in, and detection can be confidently wrong on
+    // near-twin scripts (uk/ru, tr/hu) even for exact phrasebook renderings.
     var detected = detect(input);
-    var from = detected.best ? detected.best.lang : (fromHint || null);
+    var from = fromHint || (detected.best ? detected.best.lang : null);
     var parsed = parseInput(input), v;
     if (parsed.kind === 'number') v = spellNumber(parsed.n, toLang);
     else if (parsed.kind === 'time') v = spellTime(parsed.h, parsed.m, toLang);
