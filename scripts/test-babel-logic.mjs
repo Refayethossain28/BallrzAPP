@@ -727,6 +727,56 @@ test('detection floor: the wall recognises its own phrases', () => {
   assert.ok(wrongConfident <= 40, `${wrongConfident} confidently wrong`);
 });
 
+/* ---------- interpret: one heard utterance → one spoken answer ---------- */
+test('interpret: Spanish speech becomes spoken Japanese, with the echo in Spanish', () => {
+  const r = E.interpret('¿dónde está el baño?', 'ja');
+  assert.equal(r.ok, true);
+  assert.equal(r.kind, 'phrase');
+  assert.equal(r.from, 'es');
+  assert.equal(r.to, 'ja');
+  assert.equal(r.text, 'トイレは どこですか');
+  assert.equal(r.roman, 'toirewa dokodesuka');
+  assert.equal(r.voice, 'ja-JP');
+  assert.equal(r.heardAs, '¿Dónde está el baño?');
+});
+
+test('interpret: numbers and times work as turns, and RTL targets carry dir', () => {
+  const n = E.interpret('42', 'de');
+  assert.equal(n.ok, true);
+  assert.equal(n.kind, 'number');
+  assert.equal(n.text, 'zweiundvierzig');
+  const t = E.interpret('kumusta po kayo', 'ar');
+  assert.equal(t.ok, true);
+  assert.equal(t.from, 'fil');
+  assert.equal(t.dir, 'rtl');
+  assert.equal(t.voice, 'ar-SA');
+});
+
+test('interpret: fromHint fills in when detection is unsure, junk yields suggestions', () => {
+  const hinted = E.interpret('hello', 'fr', 'en');
+  assert.equal(hinted.ok, true);
+  assert.equal(hinted.from, 'en');
+  const miss = E.interpret('purple monkey dishwasher', 'fr');
+  assert.equal(miss.ok, false);
+  assert.equal(miss.kind, 'none');
+  assert.ok(Array.isArray(miss.suggestions) && miss.suggestions.length >= 1, 'no suggestions on a miss');
+  for (const s of miss.suggestions) {
+    assert.ok(E.PHRASES.some((p) => p.id === s.id), `unknown suggestion id ${s.id}`);
+    assert.ok(typeof s.en === 'string' && s.en.length > 0, 'suggestion lacks English text');
+  }
+});
+
+test('interpret: unknown target or hint throws; deterministic; identity target still answers', () => {
+  assert.throws(() => E.interpret('hello', 'xx'), (e) => /unknown lang/.test(e.message));
+  assert.throws(() => E.interpret('hello', 'fr', 'xx'), (e) => /unknown lang/.test(e.message));
+  deepEq(E.interpret('где вокзал?', 'ko'), E.interpret('где вокзал?', 'ko'), 'non-deterministic');
+  const same = E.interpret('merci', 'fr');
+  assert.equal(same.ok, true);
+  assert.equal(same.from, 'fr');
+  assert.equal(same.to, 'fr');
+  assert.equal(same.text, 'Merci');
+});
+
 /* ---------- run ---------- */
 for (const [name, fn] of tests) {
   try { fn(); passed++; console.log(`  ✓ ${name}`); }

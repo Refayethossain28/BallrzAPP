@@ -2318,6 +2318,42 @@
     };
   }
 
+  // One interpreter turn: work out what was said (and by whom), then
+  // hand back the target-language rendering ready to be spoken aloud.
+  // Pure like everything else — the UI owns the microphone and voices.
+  function interpret(input, toLang, fromHint) {
+    var to = LANG_BY_CODE[toLang];
+    if (!to) throw new Error('unknown lang: ' + toLang);
+    if (fromHint && !LANG_BY_CODE[fromHint]) throw new Error('unknown lang: ' + fromHint);
+    var detected = detect(input);
+    var from = detected.best ? detected.best.lang : (fromHint || null);
+    var parsed = parseInput(input), v;
+    if (parsed.kind === 'number') v = spellNumber(parsed.n, toLang);
+    else if (parsed.kind === 'time') v = spellTime(parsed.h, parsed.m, toLang);
+    else if (parsed.kind === 'date') v = spellDate(parsed.y, parsed.m, parsed.d, toLang);
+    if (v) {
+      return { ok: true, kind: parsed.kind, from: from, heard: input, heardAs: input,
+        text: v.text, roman: v.roman, dir: to.dir, voice: to.voice, to: toLang };
+    }
+    var ranked = rankPhrases(input);
+    if (!ranked.length || ranked[0].score < MATCH_THRESHOLD) {
+      return {
+        ok: false, kind: 'none', from: from, heard: input, to: toLang,
+        suggestions: ranked.slice(0, 3).map(function (r) { return { id: r.id, en: PHRASE_BY_ID[r.id].en, score: r.score }; })
+      };
+    }
+    var top = ranked[0], p = PHRASE_BY_ID[top.id];
+    if (!from) from = top.sourceLang;
+    var cell = phraseIn(top.id, toLang);
+    // what Babel understood, echoed in the speaker's own language
+    var heardAs = from && from !== 'en' && p.t[from] ? p.t[from] : p.en;
+    return {
+      ok: true, kind: 'phrase', id: p.id, en: p.en, score: top.score,
+      from: from, heard: input, heardAs: heardAs,
+      text: cell.text, roman: cell.roman, dir: cell.dir, voice: to.voice, to: toLang
+    };
+  }
+
   // Deterministic phrase-of-the-day: same UTC day, same phrase — and
   // never a plain-English feature card. The only clock-derived entry point.
   function dailyPhrase(now) {
@@ -2342,7 +2378,7 @@
     parseInput: parseInput, romanize: romanize,
     canonical: canonical, encode: encode, decode: decode,
     vesselEncode: vesselEncode, vesselDecode: vesselDecode,
-    translate: translate, dailyPhrase: dailyPhrase
+    translate: translate, interpret: interpret, dailyPhrase: dailyPhrase
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = E;
