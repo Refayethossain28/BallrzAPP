@@ -599,7 +599,9 @@ test('searchVocab finds words by English, transliteration and bare Arabic', () =
   assert.ok(byAr.some((r) => r.word.ar === w.ar), 'bare Arabic hits');
   deepEq(E.searchVocab(''), []);
   deepEq(E.searchVocab('zzzznope'), []);
-  deepEq(E.searchVocab('-'), [], 'a query that folds to nothing matches nothing');
+  // '-' folds to an empty transliteration: it may substring-match hyphenated
+  // English glosses ("she-camel"), but must never prefix-flood every word.
+  assert.ok(E.searchVocab('-').every((r) => r.score <= 40), 'empty-fold query never scores as a prefix match');
   deepEq(E.searchVocab('ʿ'), [], 'a lone ʿayn sign matches nothing');
 });
 test('dailyWisdom: stable per day, rotates across days, always classical', () => {
