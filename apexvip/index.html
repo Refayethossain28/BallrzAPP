@@ -73,7 +73,7 @@ html{scroll-snap-type:y proximity}
 }
 #main > section::before{
   content:'';position:absolute;top:0;left:50%;transform:translateX(-50%);
-  width:min(1100px,88%);height:1px;
+  width:min(1100px,88%);height:1px;z-index:1;
   background:linear-gradient(90deg,transparent,rgba(212,175,110,.5),transparent);
 }
 /* The hairline draws itself as each chapter arrives (fx only) */
@@ -426,8 +426,11 @@ html.js .tier.in .price.priced sup,html.js .tier.in .price.priced small{opacity:
 .member-note p{color:var(--fg-2);font-size:14.5px;max-width:640px}
 .member-note .btn{margin-left:auto}
 
-/* ── Voices ────────────────────────────────────────────────────────── */
-.voices{background:var(--bg-2)}
+/* ── Voices — a photographic interlude: quotes float over night film ── */
+.voices{background:var(--bg-2);overflow:hidden}
+.voices .vbg{position:absolute;inset:0;z-index:0}
+.voices .vbg img{width:100%;height:100%;object-fit:cover;opacity:.34;filter:saturate(.8) brightness(.72)}
+.voices .vbg::after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,var(--bg-2) 0%,rgba(10,8,6,.30) 32%,rgba(10,8,6,.42) 68%,var(--bg-2) 100%)}
 .quote-grid{margin-top:64px;display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
 .quote{
   border:1px solid var(--border-2);border-radius:22px;padding:38px 34px;
@@ -462,7 +465,13 @@ html.js .tier.in .price.priced sup,html.js .tier.in .price.priced small{opacity:
     radial-gradient(60% 80% at 50% 110%,rgba(212,175,110,.14),transparent 70%),
     var(--bg);
   border-top:1px solid var(--border-2);
+  position:relative;overflow:hidden;
 }
+/* The film returns for the closing line — the page ends as it began */
+.final .fbg{position:absolute;inset:0;z-index:0}
+.final .fbg video{width:100%;height:100%;object-fit:cover;opacity:.42;filter:saturate(.9) brightness(.78)}
+.final .fbg::after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,var(--bg) 0%,rgba(5,4,3,.34) 38%,rgba(5,4,3,.66) 100%)}
+.final h2,.final p,.final > div{position:relative;z-index:1}
 .final h2{font-size:clamp(44px,6.4vw,90px);line-height:1.04;max-width:14ch;margin:0 auto 22px}
 .final h2 em{font-style:italic;color:var(--gold)}
 .final p{color:var(--fg-2);max-width:480px;margin:0 auto 44px;font-size:17px}
@@ -825,11 +834,14 @@ html.light .stat b{background:linear-gradient(180deg,#b98e33 5%,#96701f 60%,#7a5
 html.light .enquiry::after{box-shadow:inset 0 1px 0 rgba(255,255,255,.85),inset 0 3px 10px rgba(255,255,255,.35),inset 0 -1px 0 rgba(0,0,0,.10),inset 0 -16px 30px -20px rgba(0,0,0,.10)}
 html.light #main > section::after{-webkit-text-stroke-color:rgba(138,106,42,.16)}
 html.light .qrtile{box-shadow:0 0 0 .35mm rgba(184,144,42,.6)}
-/* The cinema stays dark: hero (film + scrim) and the phone mockups */
+/* The cinema stays dark: hero, the photographic interlude, the closing
+   film and the phone mockups */
 html.light .hero{background:#050403}
+html.light .voices{--bg-2:#0a0806;background:var(--bg-2)}
+html.light .final{--bg:#050403}
 /* Nav floats over the dark hero until it scrolls: keep its text cream there */
 html.light nav:not(.scrolled){--fg:#f5f0e8;--fg-2:rgba(245,240,232,.70);--border:rgba(255,248,235,.10);color:var(--fg)}
-html.light .hero,html.light .device{
+html.light .hero,html.light .voices,html.light .final,html.light .device{
   --fg:#f5f0e8;--fg-2:rgba(245,240,232,.70);--fg-3:rgba(245,240,232,.45);--fg-4:rgba(245,240,232,.26);
   --surface:rgba(255,248,235,.045);--surface-2:rgba(255,248,235,.085);
   --border:rgba(255,248,235,.10);--border-2:rgba(255,248,235,.06);
@@ -1256,6 +1268,7 @@ html.light .device .glass{background:linear-gradient(160deg,rgba(255,248,235,.07
 
 <!-- ═════════ THE EXPERIENCE ═════════ -->
 <section class="voices">
+  <div class="vbg" aria-hidden="true"><img src="../vehicles/v-class.jpg" alt="" loading="lazy"/></div>
   <div class="wrap">
     <div class="kicker rv">The experience</div>
     <h2 class="section-title rv">Quietly <em>extraordinary.</em></h2>
@@ -1379,6 +1392,11 @@ html.light .device .glass{background:linear-gradient(160deg,rgba(255,248,235,.07
 
 <!-- ═════════ FINAL CTA ═════════ -->
 <section class="final">
+  <div class="fbg" aria-hidden="true">
+    <video id="finalVideo" muted loop playsinline preload="none">
+      <source src="../splash-advert.mp4" type="video/mp4"/>
+    </video>
+  </div>
   <h2 class="rv">Your chauffeur is <em>already nearby.</em></h2>
   <p class="rv rv-d1">Reserve your place today — your invitation to the ApexVIP app arrives the day it launches.</p>
   <div class="rv rv-d2" style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap">
@@ -1560,6 +1578,15 @@ html.light .device .glass{background:linear-gradient(160deg,rgba(255,248,235,.07
   /* Hero video: skip on reduced motion or data saver */
   const v = document.getElementById('heroVideo');
   if (reduced || navigator.connection?.saveData) { v.removeAttribute('autoplay'); v.pause(); v.remove(); }
+
+  /* Closing film — plays only while the final call is on screen */
+  const fv = document.getElementById('finalVideo');
+  if (fv) {
+    if (reduced || navigator.connection?.saveData) { fv.remove(); }
+    else new IntersectionObserver((es) => {
+      if (es[0].isIntersecting) fv.play().catch(() => {}); else fv.pause();
+    }, { threshold: 0.12 }).observe(fv.parentElement);
+  }
 
   /* ── Apple-style scroll behaviour ────────────────────────────────────
      A pinned section whose row of app screens scrubs sideways as you
