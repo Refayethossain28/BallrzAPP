@@ -130,9 +130,9 @@ test('MARKS: full set of signs, vocalized names, examples', () => {
 });
 
 /* ---------- vocabulary data integrity ---------- */
-test('UNITS: ten themed units, 12–16 words each, all vocalized, no duplicates', () => {
-  assert.equal(E.UNITS.length, 10);
-  deepEq(E.UNITS.map((u) => u.id), ['u1', 'u2', 'u3', 'u4', 'u5', 'u6', 'u7', 'u8', 'u9', 'u10']);
+test('UNITS: thirty themed units, 12–16 words each, all vocalized, no duplicates', () => {
+  assert.equal(E.UNITS.length, 30);
+  deepEq(E.UNITS.map((u) => u.id), Array.from({ length: 30 }, (_, i) => 'u' + (i + 1)));
   const seen = new Set();
   const POS = new Set(['noun', 'verb', 'adj', 'particle', 'pronoun']);
   for (const u of E.UNITS) {
@@ -147,7 +147,7 @@ test('UNITS: ten themed units, 12–16 words each, all vocalized, no duplicates'
       seen.add(key);
     }
   }
-  assert.ok(E.allWords().length >= 120, 'a real vocabulary');
+  assert.ok(E.allWords().length >= 380, 'a real vocabulary across all three marḥalas');
 });
 
 /* ---------- morphology data integrity ---------- */
@@ -170,9 +170,9 @@ test('MORPH: pronouns, suffixes, paradigm, the ten forms, derived nouns', () => 
 });
 
 /* ---------- grammar data integrity ---------- */
-test('GRAMMAR: twelve lessons, each teachable and quizzable', () => {
-  assert.equal(E.GRAMMAR.length, 12);
-  deepEq(E.GRAMMAR.map((g) => g.id), ['g1', 'g2', 'g3', 'g4', 'g5', 'g6', 'g7', 'g8', 'g9', 'g10', 'g11', 'g12']);
+test('GRAMMAR: twenty-eight lessons, each teachable and quizzable', () => {
+  assert.equal(E.GRAMMAR.length, 28);
+  deepEq(E.GRAMMAR.map((g) => g.id), Array.from({ length: 28 }, (_, i) => 'g' + (i + 1)));
   for (const g of E.GRAMMAR) {
     assert.ok(g.title && g.titleAr && g.tagline, `${g.id} header incomplete`);
     assert.ok(g.body.length >= 2, `${g.id} body too thin`);
@@ -192,12 +192,23 @@ test('GRAMMAR: twelve lessons, each teachable and quizzable', () => {
 });
 
 /* ---------- reader data integrity ---------- */
-test('TEXTS: Fātiḥa (7), Ikhlāṣ (4), proverbs, wisdom — glossed line by line', () => {
-  deepEq(E.TEXTS.map((t) => t.id), ['fatiha', 'ikhlas', 'proverbs', 'wisdom']);
+test('TEXTS: the full thirteen-text library, glossed line by line', () => {
+  deepEq(E.TEXTS.map((t) => t.id),
+    ['fatiha', 'ikhlas', 'proverbs', 'wisdom', 'kursi', 'asr', 'falaq', 'nas', 'hadith',
+     'muallaqa', 'mutanabbi', 'shafii', 'kalila']);
   assert.equal(E.textById('fatiha').lines.length, 7);
   assert.equal(E.textById('ikhlas').lines.length, 4);
   assert.ok(E.textById('proverbs').lines.length >= 8);
   assert.ok(E.textById('wisdom').lines.length >= 4);
+  assert.ok(E.textById('kursi').lines.length >= 5, 'Āyat al-Kursī split into readable lines');
+  assert.equal(E.textById('asr').lines.length, 3);
+  assert.equal(E.textById('falaq').lines.length, 5);
+  assert.equal(E.textById('nas').lines.length, 6);
+  assert.ok(E.textById('hadith').lines.length >= 6);
+  assert.ok(E.textById('muallaqa').lines.length >= 3);
+  assert.ok(E.textById('mutanabbi').lines.length >= 4);
+  assert.ok(E.textById('shafii').lines.length >= 4);
+  assert.ok(E.textById('kalila').lines.length >= 4);
   for (const t of E.TEXTS) {
     assert.ok(t.title && t.titleAr && t.source && t.intro, `${t.id} header incomplete`);
     for (const [i, ln] of t.lines.entries()) {
@@ -217,6 +228,48 @@ test('TEXTS: the Fātiḥa and Ikhlāṣ read like themselves', () => {
   assert.ok(fatiha.includes('العالمين'), 'Lord of the Worlds present');
   const ikhlas = E.normalizeAr(E.textById('ikhlas').lines.map((l) => l.ar).join(' '));
   assert.ok(ikhlas.includes('احد'), 'aḥad present');
+});
+
+/* ---------- weak verbs & patterns ---------- */
+test('WEAK: nine classes, 13-row paradigms, the famous tricky forms right', () => {
+  deepEq(E.WEAK.map((c) => c.id),
+    ['hollow-waw', 'hollow-ya', 'hollow-a', 'doubled', 'assimilated',
+     'defective-u', 'defective-i', 'defective-a', 'hamzated']);
+  for (const c of E.WEAK) {
+    assert.ok(c.name && c.nameAr && c.desc && c.model && c.model.ar, `${c.id} header incomplete`);
+    assert.equal(c.paradigm.length, 13, `${c.id} needs the full 13-row paradigm`);
+    for (const r of c.paradigm) {
+      assert.ok(r.pronoun && r.past && r.present && r.en && r.pastTranslit && r.presentTranslit, `${c.id} row incomplete`);
+      assert.ok(vocalized(r.past) && vocalized(r.present), `${c.id} ${r.en} not vocalized`);
+    }
+  }
+  // Consonant skeletons of the forms every grammar drills hardest
+  // (row order: ana, naḥnu, anta, anti, antumā, antum, antunna, huwa, hiya, humā m, humā f, hum, hunna).
+  const skel = (cls, i, f) => E.stripTashkil(E.weakClassById(cls).paradigm[i][f]);
+  assert.equal(skel('hollow-waw', 0, 'past'), 'قلت', 'qultu shortens the stem');
+  assert.equal(skel('hollow-waw', 7, 'past'), 'قال');
+  assert.equal(skel('hollow-ya', 0, 'past'), 'بعت', 'biʿtu');
+  assert.equal(skel('hollow-a', 0, 'past'), 'خفت', 'khiftu');
+  assert.equal(skel('doubled', 0, 'past'), 'مددت', 'the geminate breaks open');
+  assert.equal(skel('defective-u', 8, 'past'), 'دعت', 'daʿat');
+  assert.equal(skel('defective-i', 8, 'past'), 'رمت', 'ramat');
+  assert.equal(skel('defective-a', 11, 'past'), 'نسوا', 'nasū');
+  assert.equal(skel('hamzated', 7, 'present'), 'ياخذ', 'yaʾkhudhu');
+});
+test('PATTERNS: ten broken-plural moulds, masdars I–X, the quadriliteral', () => {
+  const skels = E.PATTERNS.plurals.map((p) => E.stripTashkil(p.pattern));
+  deepEq(skels, ['افعال', 'فعول', 'فعال', 'افعل', 'فعل', 'فعلاء', 'افعلاء', 'فواعل', 'مفاعل', 'مفاعيل']);
+  for (const p of E.PATTERNS.plurals) {
+    assert.ok(p.patternTranslit && p.desc, `${p.pattern} incomplete`);
+    assert.equal(p.examples.length, 3, `${p.pattern} needs 3 examples`);
+    for (const ex of p.examples) {
+      assert.ok(ex.sing && ex.pl && ex.en && ex.singTranslit && ex.plTranslit, `${p.pattern} example incomplete`);
+      assert.ok(vocalized(ex.sing) && vocalized(ex.pl), `${p.pattern} example not vocalized`);
+    }
+  }
+  deepEq(E.PATTERNS.masdars.map((m) => m.form), ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X']);
+  for (const m of E.PATTERNS.masdars) assert.ok(m.patterns && m.example && m.example.ar, `masdar ${m.form} incomplete`);
+  assert.ok(E.PATTERNS.quad && E.PATTERNS.quad.model && E.PATTERNS.quad.model.ar, 'quadriliteral present');
 });
 
 /* ---------- quiz builders ---------- */
@@ -255,6 +308,30 @@ test('conjQuiz: the marked answer really is that pronoun’s form', () => {
     const row = E.MORPH.paradigm.find((r) => r.pronoun === q.promptAr && q.prompt.includes('“' + r.en + '”'));
     assert.ok(row, `paradigm row for ${q.promptAr}`);
     assert.equal(q.options[q.answer].ar, row.past, 'answer is the right conjugation');
+  }
+});
+test('weakQuiz: the marked answer really is that pronoun’s form', () => {
+  for (const cls of E.WEAK) {
+    const qs = E.weakQuiz(cls.id, 'wk:' + cls.id, 8);
+    checkQuiz(qs, 8, 'weakQuiz ' + cls.id);
+    deepEq(qs, E.weakQuiz(cls.id, 'wk:' + cls.id, 8), 'deterministic');
+    for (const q of qs) {
+      const tense = q.prompt.includes('present') ? 'present' : 'past';
+      const row = cls.paradigm.find((r) => r.pronoun === q.promptAr && q.prompt.includes('“' + r.en + '”'));
+      assert.ok(row, `paradigm row for ${q.promptAr}`);
+      assert.equal(q.options[q.answer].ar, row[tense], 'answer is the right conjugation');
+    }
+  }
+  deepEq(E.weakQuiz('no-such-class', 'x', 8), []);
+});
+test('pluralQuiz: singular → its own attested plural, never another’s', () => {
+  const qs = E.pluralQuiz('pl:1', 10);
+  checkQuiz(qs, 10, 'pluralQuiz');
+  deepEq(qs, E.pluralQuiz('pl:1', 10), 'deterministic');
+  const byS = {};
+  for (const p of E.PATTERNS.plurals) for (const ex of p.examples) byS[ex.sing] = ex.pl;
+  for (const q of qs) {
+    assert.equal(q.options[q.answer].ar, byS[q.promptAr], `plural of ${q.promptAr}`);
   }
 });
 test('grammarQuiz: reshuffles options but keeps the truth', () => {
@@ -396,7 +473,7 @@ test('bumpStreak: a clock that walks backwards cannot wipe a streak', () => {
   assert.equal(s.last, '2026-09-05', 'watermark never moves backwards');
   assert.ok(E.streakAlive({ count: 50, last: '2026-09-05', best: 50 }, '2026-09-04'));
 });
-test('rankFor: the ladder from Mubtadiʾ to Faṣīḥ', () => {
+test('rankFor: the ladder from Mubtadiʾ to Lisān al-ʿArab', () => {
   const first = E.rankFor(0);
   assert.equal(first.name, 'Mubtadiʾ');
   assert.equal(first.next.name, 'Qāriʾ');
@@ -404,10 +481,10 @@ test('rankFor: the ladder from Mubtadiʾ to Faṣīḥ', () => {
   assert.equal(mid.name, 'Qāriʾ');
   assert.ok(mid.progress > 0 && mid.progress < 1);
   const top = E.rankFor(99999);
-  assert.equal(top.name, 'Faṣīḥ');
+  assert.equal(top.name, 'Lisān al-ʿArab');
   assert.equal(top.next, null);
   let lastIdx = -1;
-  for (const xp of [0, 119, 120, 349, 350, 800, 2000, 5000]) {
+  for (const xp of [0, 119, 120, 349, 350, 800, 2000, 5000, 7000, 9500]) {
     const idx = E.RANKS.findIndex((r) => r.name === E.rankFor(xp).name);
     assert.ok(idx >= lastIdx, `rank never regresses (xp=${xp})`);
     lastIdx = idx;
@@ -429,10 +506,31 @@ test('coursePath: one unbroken road, every stage resolvable, ids unique', () => 
     if (st.kind === 'grammar') assert.ok(E.lessonById(st.ref), `${st.id} lesson missing`);
     if (st.kind === 'read') assert.ok(E.textById(st.ref), `${st.id} text missing`);
   }
-  const vocabStages = path.filter((s) => s.kind === 'vocab').length;
-  const grammarStages = path.filter((s) => s.kind === 'grammar').length;
-  assert.equal(vocabStages, 10, 'all ten units on the path');
-  assert.equal(grammarStages, 12, 'all twelve lessons on the path');
+  const kinds = {};
+  for (const s of path) kinds[s.kind] = (kinds[s.kind] || 0) + 1;
+  assert.equal(kinds.vocab, 30, 'all thirty units on the path');
+  assert.equal(kinds.grammar, 28, 'all twenty-eight lessons on the path');
+  assert.equal(kinds.weak, 9, 'all nine weak-verb classes on the path');
+  assert.equal(kinds.read, 13, 'all thirteen texts on the path');
+  assert.equal(kinds.plurals, 1);
+  assert.equal(path.length, 90, 'the full ninety-stage road');
+  for (const st of path.filter((s) => s.kind === 'weak')) {
+    assert.ok(E.weakClassById(st.ref), `${st.id} weak class missing`);
+  }
+});
+test('coursePath: three marḥalas in order, every stage claimed by one', () => {
+  const path = E.coursePath();
+  deepEq(E.SECTIONS.map((s) => s.id), ['foundation', 'intermediate', 'advanced']);
+  const order = { foundation: 0, intermediate: 1, advanced: 2 };
+  let last = 0;
+  const seen = new Set();
+  for (const st of path) {
+    assert.ok(st.section in order, `${st.id} has no section`);
+    assert.ok(order[st.section] >= last, `${st.id} jumps back a marḥala`);
+    last = order[st.section];
+    seen.add(st.section);
+  }
+  assert.equal(seen.size, 3, 'all three marḥalas populated');
 });
 test('unlocking: each stage opens when the previous is starred', () => {
   const path = E.coursePath();

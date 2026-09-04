@@ -4437,6 +4437,10 @@
    }
   ];
 
+  var WEAK = /*@DATA:WEAK*/[];
+
+  var PATTERNS = /*@DATA:PATTERNS*/{ plurals: [], masdars: [], quad: null };
+
   /* ---------------- alphabet helpers ---------------- */
 
   function letterByChar(ch) {
@@ -4737,6 +4741,82 @@
     return qs;
   }
 
+  /* ---------------- weak verbs & patterns (the intermediate ṣarf) ---------------- */
+
+  function weakClassById(id) {
+    for (var i = 0; i < WEAK.length; i++) if (WEAK[i].id === id) return WEAK[i];
+    return null;
+  }
+
+  // Drill one weak-verb class: pronoun → correct form, past and present mixed.
+  function weakQuiz(classId, seed, n) {
+    n = n || 8;
+    var qs = [];
+    var cls = weakClassById(classId);
+    if (!cls || !cls.paradigm || !cls.paradigm.length) return qs;
+    var rows = cls.paradigm;
+    var order = seededShuffle(rows, seed + ':order');
+    for (var i = 0; i < n; i++) {
+      var row = order[i % order.length];
+      var tense = hashStr(seed + ':tense:' + i) % 2 === 0 ? 'past' : 'present';
+      var field = tense === 'present' ? 'present' : 'past';
+      var trField = tense === 'present' ? 'presentTranslit' : 'pastTranslit';
+      var seen = {}, uniq = [];
+      seen[row[field]] = 1;
+      var others = seededShuffle(rows, seed + ':' + i);
+      for (var k = 0; k < others.length && uniq.length < 3; k++) {
+        if (!seen[others[k][field]]) { seen[others[k][field]] = 1; uniq.push(others[k]); }
+      }
+      var q = {
+        kind: 'weak',
+        prompt: '“' + row.en + '” — pick the ' + tense + ' of ' + cls.model.translit + ' (' + cls.model.en + ')',
+        promptAr: row.pronoun,
+        why: row.pronoun + ' → ' + row[field] + ' (' + row[trField] + ')'
+      };
+      var correct = { label: row[trField], ar: row[field] };
+      qs.push(finishQuestion(q, correct, uniq.map(function (x) {
+        return { label: x[trField], ar: x[field] };
+      }), seed + ':' + i));
+    }
+    return qs;
+  }
+
+  // Drill the broken plurals: singular → its attested plural, distractors
+  // drawn from other patterns' plurals so the pattern is what's tested.
+  function pluralQuiz(seed, n) {
+    n = n || 8;
+    var qs = [];
+    var pool = [];
+    for (var i = 0; i < (PATTERNS.plurals || []).length; i++) {
+      var pat = PATTERNS.plurals[i];
+      for (var j = 0; j < pat.examples.length; j++) {
+        pool.push({ pat: pat, ex: pat.examples[j] });
+      }
+    }
+    if (pool.length < 4) return qs;
+    var order = seededShuffle(pool, seed + ':order');
+    for (var k = 0; k < n; k++) {
+      var it = order[k % order.length];
+      var seen = {}, d = [];
+      seen[it.ex.pl] = 1;
+      var others = seededShuffle(pool, seed + ':' + k);
+      for (var m = 0; m < others.length && d.length < 3; m++) {
+        if (!seen[others[m].ex.pl]) { seen[others[m].ex.pl] = 1; d.push(others[m].ex); }
+      }
+      var q = {
+        kind: 'plural',
+        prompt: 'Pick the plural of ' + it.ex.singTranslit + ' “' + it.ex.en + '”',
+        promptAr: it.ex.sing,
+        why: it.ex.sing + ' → ' + it.ex.pl + ' (' + it.ex.plTranslit + ', pattern ' + it.pat.patternTranslit + ')'
+      };
+      var correct = { label: it.ex.plTranslit, ar: it.ex.pl };
+      qs.push(finishQuestion(q, correct, d.map(function (x) {
+        return { label: x.plTranslit, ar: x.pl };
+      }), seed + ':' + k));
+    }
+    return qs;
+  }
+
   // Reading comprehension: after meeting a text, the learner is quizzed on
   // the words inside it — glosses come straight from the text's own
   // word-by-word apparatus, distractors from its other words.
@@ -4910,7 +4990,9 @@
     { min: 1300, name: 'Adīb',      ar: 'أَدِيب',        en: 'Man of Letters' },
     { min: 2000, name: 'ʿĀlim',     ar: 'عَالِم',        en: 'Scholar' },
     { min: 3000, name: 'Ḥakīm',     ar: 'حَكِيم',        en: 'Sage' },
-    { min: 4500, name: 'Faṣīḥ',     ar: 'فَصِيح',        en: 'Master of Eloquence' }
+    { min: 4500, name: 'Faṣīḥ',     ar: 'فَصِيح',        en: 'Master of Eloquence' },
+    { min: 6500, name: 'ʿAllāma',   ar: 'عَلَّامَة',      en: 'Great Scholar' },
+    { min: 9000, name: 'Lisān al-ʿArab', ar: 'لِسَان الْعَرَب', en: 'The Tongue of the Arabs' }
   ];
 
   function rankFor(xp) {
@@ -4952,19 +5034,17 @@
     return null;
   }
 
-  function coursePath() {
-    var path = [];
-    var groups = letterGroups();
-    for (var i = 0; i < groups.length; i++) {
-      path.push({
-        id: 'alpha' + (i + 1), kind: 'letters', ref: i, icon: '🔤',
-        title: 'The Alphabet ' + ['I', 'II', 'III', 'IV', 'V'][i],
-        titleAr: groups[i].label
-      });
-    }
-    path.push({ id: 'marks', kind: 'marks', ref: null, icon: '🎯', title: 'The Signs', titleAr: 'الْحَرَكَات' });
+  // The road has three marḥalas: Foundation (letters → the Fātiḥa),
+  // Intermediate (weak verbs, the harder naḥw, more Qurʾān and ḥadīth),
+  // Advanced (the literary lexicon, balāgha, ʿarūḍ, the canon itself).
+  var SECTIONS = [
+    { id: 'foundation',   title: 'Foundation',   titleAr: 'الْأَسَاس' },
+    { id: 'intermediate', title: 'Intermediate', titleAr: 'الْمَرْحَلَة الْمُتَوَسِّطَة' },
+    { id: 'advanced',     title: 'Advanced',     titleAr: 'الْمَرْحَلَة الْمُتَقَدِّمَة' }
+  ];
 
-    var braid = [
+  var BRAIDS = {
+    foundation: [
       ['grammar', 'g1'], ['vocab', 'u1'], ['grammar', 'g2'], ['vocab', 'u2'],
       ['grammar', 'g3'], ['vocab', 'u3'], ['grammar', 'g4'], ['conj', 'past'],
       ['vocab', 'u4'], ['grammar', 'g5'], ['vocab', 'u5'], ['grammar', 'g6'],
@@ -4973,28 +5053,76 @@
       ['forms', null], ['vocab', 'u9'], ['grammar', 'g10'], ['grammar', 'g11'],
       ['vocab', 'u10'], ['grammar', 'g12'], ['read', 'ikhlas'], ['read', 'fatiha'],
       ['read', 'wisdom']
-    ];
+    ],
+    intermediate: [
+      ['grammar', 'g13'], ['vocab', 'u11'], ['weak', 'hollow-waw'], ['vocab', 'u12'],
+      ['grammar', 'g14'], ['weak', 'hollow-ya'], ['vocab', 'u13'], ['grammar', 'g15'],
+      ['weak', 'hollow-a'], ['vocab', 'u14'], ['grammar', 'g16'], ['weak', 'doubled'],
+      ['read', 'asr'], ['vocab', 'u15'], ['grammar', 'g17'], ['weak', 'assimilated'],
+      ['vocab', 'u16'], ['grammar', 'g18'], ['weak', 'defective-u'], ['vocab', 'u17'],
+      ['grammar', 'g19'], ['weak', 'defective-i'], ['vocab', 'u18'], ['grammar', 'g20'],
+      ['weak', 'defective-a'], ['vocab', 'u19'], ['weak', 'hamzated'], ['vocab', 'u20'],
+      ['read', 'falaq'], ['read', 'nas'], ['read', 'hadith'], ['read', 'kursi']
+    ],
+    advanced: [
+      ['grammar', 'g21'], ['vocab', 'u21'], ['plurals', null], ['vocab', 'u22'],
+      ['grammar', 'g22'], ['vocab', 'u23'], ['grammar', 'g23'], ['vocab', 'u24'],
+      ['grammar', 'g24'], ['vocab', 'u25'], ['read', 'shafii'], ['vocab', 'u26'],
+      ['grammar', 'g25'], ['vocab', 'u27'], ['grammar', 'g26'], ['vocab', 'u28'],
+      ['read', 'kalila'], ['vocab', 'u29'], ['grammar', 'g27'], ['vocab', 'u30'],
+      ['read', 'mutanabbi'], ['grammar', 'g28'], ['read', 'muallaqa']
+    ]
+  };
+
+  var READ_ICONS = { quran: '📖', poetry: '🪶', hadith: '🌙', prose: '🏺', proverbs: '📜' };
+
+  function pushBraid(path, braid, section) {
     for (var b = 0; b < braid.length; b++) {
       var kind = braid[b][0], ref = braid[b][1];
       if (kind === 'vocab') {
         var u = unitById(ref);
-        if (u) path.push({ id: ref, kind: 'vocab', ref: ref, icon: u.icon, title: u.title, titleAr: u.titleAr });
+        if (u) path.push({ id: ref, kind: 'vocab', ref: ref, icon: u.icon, title: u.title, titleAr: u.titleAr, section: section });
       } else if (kind === 'grammar') {
         var g = lessonById(ref);
-        if (g) path.push({ id: ref, kind: 'grammar', ref: ref, icon: '🧭', title: g.title, titleAr: g.titleAr });
+        if (g) path.push({ id: ref, kind: 'grammar', ref: ref, icon: '🧭', title: g.title, titleAr: g.titleAr, section: section });
       } else if (kind === 'read') {
         var t = textById(ref);
-        if (t) path.push({ id: 'read-' + ref, kind: 'read', ref: ref, icon: t.kind === 'quran' ? '📖' : t.kind === 'poetry' ? '🪶' : '📜', title: t.title, titleAr: t.titleAr });
+        if (t) path.push({ id: 'read-' + ref, kind: 'read', ref: ref, icon: READ_ICONS[t.kind] || '📜', title: t.title, titleAr: t.titleAr, section: section });
       } else if (kind === 'conj') {
         path.push({
           id: 'sarf-' + ref, kind: 'conj', ref: ref, icon: '⚙️',
           title: ref === 'past' ? 'Conjugation: the Past' : 'Conjugation: the Present',
-          titleAr: ref === 'past' ? 'الْفِعْل الْمَاضِي' : 'الْفِعْل الْمُضَارِع'
+          titleAr: ref === 'past' ? 'الْفِعْل الْمَاضِي' : 'الْفِعْل الْمُضَارِع',
+          section: section
         });
       } else if (kind === 'forms') {
-        path.push({ id: 'sarf-forms', kind: 'forms', ref: null, icon: '🏛️', title: 'The Ten Verb Forms', titleAr: 'أَوْزَان الْفِعْل' });
+        path.push({ id: 'sarf-forms', kind: 'forms', ref: null, icon: '🏛️', title: 'The Ten Verb Forms', titleAr: 'أَوْزَان الْفِعْل', section: section });
+      } else if (kind === 'weak') {
+        var w = weakClassById(ref);
+        if (w) path.push({ id: 'weak-' + ref, kind: 'weak', ref: ref, icon: '🌊', title: w.name, titleAr: w.nameAr, section: section });
+      } else if (kind === 'plurals') {
+        if ((PATTERNS.plurals || []).length) {
+          path.push({ id: 'sarf-plurals', kind: 'plurals', ref: null, icon: '🧩', title: 'The Broken Plurals', titleAr: 'جُمُوع التَّكْسِير', section: section });
+        }
       }
     }
+  }
+
+  function coursePath() {
+    var path = [];
+    var groups = letterGroups();
+    for (var i = 0; i < groups.length; i++) {
+      path.push({
+        id: 'alpha' + (i + 1), kind: 'letters', ref: i, icon: '🔤',
+        title: 'The Alphabet ' + ['I', 'II', 'III', 'IV', 'V'][i],
+        titleAr: groups[i].label,
+        section: 'foundation'
+      });
+    }
+    path.push({ id: 'marks', kind: 'marks', ref: null, icon: '🎯', title: 'The Signs', titleAr: 'الْحَرَكَات', section: 'foundation' });
+    pushBraid(path, BRAIDS.foundation, 'foundation');
+    pushBraid(path, BRAIDS.intermediate, 'intermediate');
+    pushBraid(path, BRAIDS.advanced, 'advanced');
     return path;
   }
 
@@ -5126,6 +5254,7 @@
   var E = {
     SECOND: SECOND, MINUTE: MINUTE, HOUR: HOUR, DAY: DAY,
     LETTERS: LETTERS, MARKS: MARKS, UNITS: UNITS, MORPH: MORPH, GRAMMAR: GRAMMAR, TEXTS: TEXTS,
+    WEAK: WEAK, PATTERNS: PATTERNS, SECTIONS: SECTIONS,
     RANKS: RANKS, XP: XP, SIMILAR: SIMILAR,
     hashStr: hashStr, rand01: rand01, escapeHTML: escapeHTML,
     seededShuffle: seededShuffle, pickN: pickN,
@@ -5133,6 +5262,7 @@
     letterByChar: letterByChar, letterById: letterById, similarLetters: similarLetters, letterGroups: letterGroups,
     letterQuiz: letterQuiz, markQuiz: markQuiz, vocabQuiz: vocabQuiz, conjQuiz: conjQuiz,
     formsQuiz: formsQuiz, grammarQuiz: grammarQuiz, readQuiz: readQuiz, quizScore: quizScore,
+    weakClassById: weakClassById, weakQuiz: weakQuiz, pluralQuiz: pluralQuiz,
     newCard: newCard, gradeCard: gradeCard, isDue: isDue, dueCards: dueCards,
     srsStats: srsStats, nextDueLabel: nextDueLabel,
     isoDayDiff: isoDayDiff, bumpStreak: bumpStreak, streakAlive: streakAlive, rankFor: rankFor,

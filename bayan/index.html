@@ -85,6 +85,11 @@
   .s-title { font-weight: 650; font-size: 14.5px; }
   .s-ar { color: var(--dim); font-size: 15px; }
   .s-stars { color: var(--gold2); font-size: 13px; letter-spacing: 1px; white-space: nowrap; }
+  .section-head { display: flex; align-items: center; gap: 12px; margin: 20px 0 10px; }
+  .section-head .sh-line { flex: 1; height: 1px; background: var(--line2); }
+  .sh-body { text-align: center; }
+  .sh-title { color: var(--gold2); font-weight: 700; font-size: 14px; }
+  .btn.on { border-color: var(--gold); color: var(--gold2); }
 
   /* ---------- alphabet ---------- */
   .abc-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
@@ -364,6 +369,11 @@
   }
 
   /* ---------------- LEARN ---------------- */
+  function sectionMeta(id) {
+    for (var i = 0; i < E.SECTIONS.length; i++) if (E.SECTIONS[i].id === id) return E.SECTIONS[i];
+    return null;
+  }
+
   function starsGlyph(n) {
     var out = '';
     for (var i = 0; i < 3; i++) out += i < n ? '★' : '☆';
@@ -407,8 +417,25 @@
     h.push('<div class="bar" style="margin-top:8px"><i style="width:' + prog.pct + '%"></i></div></div>');
 
     var nextFound = false;
+    var lastSection = '';
     for (var i = 0; i < state.path.length; i++) {
       var st = state.path[i];
+      if (st.section && st.section !== lastSection) {
+        lastSection = st.section;
+        var meta = sectionMeta(st.section);
+        if (meta) {
+          var sDone = 0, sTotal = 0;
+          for (var s2 = 0; s2 < state.path.length; s2++) {
+            if (state.path[s2].section !== st.section) continue;
+            sTotal++;
+            if (E.stageStars(state.profile, state.path[s2].id) >= 1) sDone++;
+          }
+          h.push('<div class="section-head"><div class="sh-line"></div><div class="sh-body">');
+          h.push('<div class="sh-title">' + esc(meta.title) + ' ' + ar(meta.titleAr) + '</div>');
+          h.push('<div class="faint">' + sDone + ' / ' + sTotal + ' stages</div>');
+          h.push('</div><div class="sh-line"></div></div>');
+        }
+      }
       var unlocked = E.isUnlocked(state.path, state.profile, i);
       var stars = E.stageStars(state.profile, st.id);
       var isNext = unlocked && stars === 0 && !nextFound;
@@ -589,6 +616,29 @@
     }
     h.push('</table></div>');
 
+    if (E.WEAK.length) {
+      var sel = state.weakSel || E.WEAK[0].id;
+      var cls = E.weakClassById(sel) || E.WEAK[0];
+      h.push('<div class="card"><h2>The weak verbs ' + ar('الْفِعْل الْمُعْتَلّ') + '</h2>');
+      h.push('<div class="muted" style="margin-bottom:8px">Where the neat paradigm bends — the verbs with wāw, yāʾ or hamza in the root.</div>');
+      h.push('<div class="row" style="margin-bottom:10px">');
+      for (var wc = 0; wc < E.WEAK.length; wc++) {
+        var c = E.WEAK[wc];
+        h.push('<button class="btn ghost' + (c.id === cls.id ? ' on' : '') + '" style="padding:6px 10px;font-size:12.5px" data-act="weak-sel" data-id="' + esc(c.id) + '">' + esc(c.model.translit.split(' ')[0]) + '</button>');
+      }
+      h.push('</div>');
+      h.push('<div class="row spread" style="margin-bottom:4px"><b>' + esc(cls.name) + '</b><span class="ar" dir="rtl" style="font-size:20px;color:var(--gold2)">' + esc(cls.model.ar) + '</span></div>');
+      h.push('<div class="faint" style="margin-bottom:8px">' + esc(cls.desc) + '</div>');
+      h.push('<table class="tbl"><tr><th>person</th><th style="text-align:right">past</th><th style="text-align:right">present</th></tr>');
+      for (var wr = 0; wr < cls.paradigm.length; wr++) {
+        var wrow = cls.paradigm[wr];
+        h.push('<tr><td class="muted">' + esc(wrow.en) + '</td>');
+        h.push('<td style="text-align:right"><span class="ar" dir="rtl">' + esc(wrow.past) + '</span> <span class="faint">' + esc(wrow.pastTranslit) + '</span></td>');
+        h.push('<td style="text-align:right"><span class="ar" dir="rtl">' + esc(wrow.present) + '</span> <span class="faint">' + esc(wrow.presentTranslit) + '</span></td></tr>');
+      }
+      h.push('</table></div>');
+    }
+
     h.push('<div class="card"><h2>The ten verb forms ' + ar('الْأَوْزَان') + '</h2>');
     h.push('<div class="muted" style="margin-bottom:6px">One root, ten machines: each pattern re-tools the meaning.</div>');
     for (var f = 0; f < E.MORPH.forms.length; f++) {
@@ -617,6 +667,41 @@
       h.push('<div style="text-align:right"><span class="ar" dir="rtl" style="font-size:19px">' + esc(D.example.ar) + '</span><br><span class="faint">' + esc(D.example.translit) + ' · ' + esc(D.example.en) + '</span></div></div>');
     }
     h.push('</div>');
+
+    if (E.PATTERNS.plurals.length) {
+      h.push('<div class="card"><h2>Broken plurals ' + ar('جُمُوع التَّكْسِير') + '</h2>');
+      h.push('<div class="muted" style="margin-bottom:6px">Ten shapes that cover most of the plurals you will ever meet.</div>');
+      for (var bp = 0; bp < E.PATTERNS.plurals.length; bp++) {
+        var pat = E.PATTERNS.plurals[bp];
+        h.push('<div class="form-row"><div class="f-num ar" dir="rtl" style="font-size:18px">' + esc(pat.pattern) + '</div>');
+        h.push('<div><div class="faint">' + esc(pat.patternTranslit) + ' — ' + esc(pat.desc) + '</div>');
+        var exs = [];
+        for (var be = 0; be < pat.examples.length; be++) {
+          var bex = pat.examples[be];
+          exs.push('<span class="ar" dir="rtl">' + esc(bex.sing) + ' ← ' + esc(bex.pl) + '</span>');
+        }
+        h.push('<div style="margin-top:3px;font-size:14px">' + exs.join(' · ') + '</div>');
+        h.push('</div><div></div></div>');
+      }
+      h.push('</div>');
+    }
+
+    if (E.PATTERNS.masdars.length) {
+      h.push('<div class="card"><h2>The maṣdars ' + ar('الْمَصَادِر') + '</h2>');
+      h.push('<div class="muted" style="margin-bottom:6px">Every verb form casts its action-noun in a predictable mould.</div>');
+      h.push('<table class="tbl"><tr><th>form</th><th style="text-align:right">pattern</th><th style="text-align:right">example</th></tr>');
+      for (var md = 0; md < E.PATTERNS.masdars.length; md++) {
+        var M2 = E.PATTERNS.masdars[md];
+        h.push('<tr><td class="muted">' + esc(M2.form) + '</td>');
+        h.push('<td style="text-align:right"><span class="ar" dir="rtl">' + esc(M2.patterns) + '</span><br><span class="faint">' + esc(M2.patternsTranslit) + '</span></td>');
+        h.push('<td style="text-align:right"><span class="ar" dir="rtl">' + esc(M2.example.ar) + '</span><br><span class="faint">' + esc(M2.example.translit) + ' · ' + esc(M2.example.en) + '</span></td></tr>');
+      }
+      h.push('</table>');
+      if (E.PATTERNS.quad) {
+        h.push('<div class="faint" style="margin-top:10px">☞ ' + esc(E.PATTERNS.quad.desc) + ' ' + ar(E.PATTERNS.quad.model.ar) + ' <i>' + esc(E.PATTERNS.quad.model.translit) + '</i> “' + esc(E.PATTERNS.quad.model.en) + '”; ' + esc(E.PATTERNS.quad.paradigmNote) + '</div>');
+      }
+      h.push('</div>');
+    }
     $('view-sarf').innerHTML = h.join('');
   }
 
@@ -710,6 +795,8 @@
     if (stage.kind === 'grammar') return E.grammarQuiz(E.lessonById(stage.ref), seed);
     if (stage.kind === 'conj') return E.conjQuiz(stage.ref, seed, 8);
     if (stage.kind === 'forms') return E.formsQuiz(seed, 8);
+    if (stage.kind === 'weak') return E.weakQuiz(stage.ref, seed, 8);
+    if (stage.kind === 'plurals') return E.pluralQuiz(seed, 8);
     if (stage.kind === 'read') return E.readQuiz(E.textById(stage.ref), seed, 6);
     return [];
   }
@@ -730,7 +817,7 @@
       stage: stage,
       teach: teach,
       teachIdx: 0,
-      phase: teach.length || stage.kind === 'grammar' || stage.kind === 'conj' || stage.kind === 'forms' || stage.kind === 'read' ? 'teach' : 'quiz',
+      phase: teach.length || stage.kind === 'grammar' || stage.kind === 'conj' || stage.kind === 'forms' || stage.kind === 'read' || stage.kind === 'weak' || stage.kind === 'plurals' ? 'teach' : 'quiz',
       quiz: null, qIdx: 0, answers: [], picked: -1, score: null, xpBefore: state.profile.xp
     };
     if (state.play.phase === 'quiz') beginQuiz();
@@ -847,6 +934,42 @@
         h.push('<div class="form-row"><div class="f-num">' + esc(F.form) + '</div>');
         h.push('<div><div class="f-wazn ar" dir="rtl">' + esc(F.wazn) + '</div><div class="faint">' + esc(F.waznTranslit) + ' — ' + esc(F.meaning) + '</div></div>');
         h.push('<div style="text-align:right"><span class="ar" dir="rtl" style="font-size:19px">' + esc(F.example.ar) + '</span><br><span class="faint">' + esc(F.example.en) + '</span></div></div>');
+      }
+      h.push('</div><div class="teach-nav"><button class="btn primary" data-act="start-quiz">Drill it 🎯</button></div>');
+      return h.join('');
+    }
+
+    if (stage.kind === 'weak') {
+      var cls = E.weakClassById(stage.ref);
+      if (!cls) return '';
+      h.push('<div class="card">');
+      h.push('<div class="row spread" style="margin-bottom:6px"><b>' + esc(cls.model.translit) + ' — ' + esc(cls.model.en) + '</b><span class="ar" dir="rtl" style="font-size:22px;color:var(--gold2)">' + esc(cls.model.ar) + '</span></div>');
+      h.push('<div class="muted" style="margin-bottom:10px">' + esc(cls.desc) + '</div>');
+      h.push('<table class="tbl"><tr><th>person</th><th style="text-align:right">past</th><th style="text-align:right">present</th></tr>');
+      for (var wr = 0; wr < cls.paradigm.length; wr++) {
+        var row = cls.paradigm[wr];
+        h.push('<tr><td class="muted">' + esc(row.en) + '</td>');
+        h.push('<td style="text-align:right"><span class="ar" dir="rtl">' + esc(row.past) + '</span><br><span class="faint">' + esc(row.pastTranslit) + '</span></td>');
+        h.push('<td style="text-align:right"><span class="ar" dir="rtl">' + esc(row.present) + '</span><br><span class="faint">' + esc(row.presentTranslit) + '</span></td></tr>');
+      }
+      h.push('</table></div>');
+      h.push('<div class="teach-nav"><button class="btn primary" data-act="start-quiz">Drill it 🎯</button></div>');
+      return h.join('');
+    }
+
+    if (stage.kind === 'plurals') {
+      h.push('<div class="card"><div class="muted" style="margin-bottom:8px">Most Classical plurals are not endings but whole new shapes — the pattern is what you learn.</div>');
+      for (var pp = 0; pp < E.PATTERNS.plurals.length; pp++) {
+        var pat = E.PATTERNS.plurals[pp];
+        h.push('<div class="form-row"><div class="f-num ar" dir="rtl" style="font-size:18px">' + esc(pat.pattern) + '</div>');
+        h.push('<div><div class="faint">' + esc(pat.patternTranslit) + ' — ' + esc(pat.desc) + '</div>');
+        var exs = [];
+        for (var pe = 0; pe < pat.examples.length; pe++) {
+          var ex = pat.examples[pe];
+          exs.push('<span class="ar" dir="rtl">' + esc(ex.sing) + ' ← ' + esc(ex.pl) + '</span> <span class="faint">' + esc(ex.plTranslit) + '</span>');
+        }
+        h.push('<div style="margin-top:3px;font-size:14px">' + exs.join(' · ') + '</div>');
+        h.push('</div><div></div></div>');
       }
       h.push('</div><div class="teach-nav"><button class="btn primary" data-act="start-quiz">Drill it 🎯</button></div>');
       return h.join('');
@@ -1021,6 +1144,7 @@
     else if (act === 'text-tr') { state.textOpen.showTr = !state.textOpen.showTr; renderText(); }
     else if (act === 'text-en') { state.textOpen.showEn = !state.textOpen.showEn; renderText(); }
     else if (act === 'tense') { state.sarfTense = t.getAttribute('data-t'); renderSarf(); }
+    else if (act === 'weak-sel') { state.weakSel = t.getAttribute('data-id'); renderSarf(); }
     else if (act === 'drill-abc') startStage({ id: 'drill-abc', kind: 'letters-all', ref: null, icon: '🎯', title: 'Alphabet drill', titleAr: 'كُلّ الْحُرُوف' });
     else if (act === 'drill-marks') startStage({ id: 'drill-marks', kind: 'marks-all', ref: null, icon: '🎯', title: 'Signs drill', titleAr: 'الْحَرَكَات' });
     else if (act === 'say') speak(t.getAttribute('data-say'));
