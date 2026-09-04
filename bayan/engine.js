@@ -92,7 +92,7 @@
    * Orthography: modern typographic (imlāʾī) Arabic, fully vocalized.
    * ===================================================================== */
 
-  var LETTERS = [
+  var LETTERS = /*@DATA:LETTERS*/[
    {
     "id": "alif",
     "ar": "ا",
@@ -675,7 +675,7 @@
    }
   ];
 
-  var MARKS = [
+  var MARKS = /*@DATA:MARKS*/[
    {
     "id": "fatha",
     "symbol": "َ",
@@ -888,7 +888,7 @@
    }
   ];
 
-  var UNITS = [
+  var UNITS = /*@DATA:UNITS*/[
    {
     "id": "u1",
     "title": "Faith & the Divine",
@@ -990,7 +990,7 @@
       "en": "religion; judgment",
       "root": "د ي ن",
       "pos": "noun",
-      "note": "pl. أَدْيَان adyān; يَوْمُ الدِّين yawmu d-dīn 'the Day of Judgment'"
+      "note": "pl. أَدْيَان adyān; يَوْمُ الدِّينِ yawmu d-dīni 'the Day of Judgment'"
      },
      {
       "ar": "إِيمَان",
@@ -1394,7 +1394,7 @@
       "en": "from, of",
       "root": "—",
       "pos": "particle",
-      "note": "preposition; takes the genitive; مِنَ mina before hamzat al-waṣl"
+      "note": "preposition; takes the genitive; مِنَ mina before the definite article (مِنَ الرَّجُلِ mina r-rajuli)"
      },
      {
       "ar": "إِلَى",
@@ -1425,7 +1425,7 @@
       "translit": "maʿa",
       "en": "with, together with",
       "root": "—",
-      "pos": "particle",
+      "pos": "noun",
       "note": "strictly a noun of accompaniment; the following word is genitive: مَعَ الرَّجُلِ maʿa r-rajuli"
      },
      {
@@ -2133,7 +2133,7 @@
    }
   ];
 
-  var MORPH = {
+  var MORPH = /*@DATA:MORPH*/{
    "pronouns": [
     {
      "ar": "أَنَا",
@@ -2565,16 +2565,16 @@
    ]
   };
 
-  var GRAMMAR = [
+  var GRAMMAR = /*@DATA:GRAMMAR*/[
    {
     "id": "g1",
     "title": "Roots & Patterns",
-    "titleAr": "الجِذْرُ وَالوَزْنُ",
+    "titleAr": "الْجِذْرُ وَالْوَزْنُ",
     "tagline": "Three little consonants hide inside almost every Arabic word - learn to see them and the whole language opens up.",
     "body": [
      "Arabic is built on a system of breathtaking elegance: almost every word grows from a root of three consonants that carries a core meaning. The root ك-ت-ب carries the idea of writing. Pour it into different molds and you get كَتَبَ (he wrote), كِتَاب (book), كَاتِب (writer), مَكْتُوب (written), and مَكْتَب (place of writing). One root, one idea, a whole family of words.",
      "These molds are called patterns (أَوْزَان, singular وَزْن). Each pattern has its own job: the pattern of كَاتِب names the doer of an action, the pattern of مَكْتُوب names the thing the action was done to, and the pattern of مَكْتَب names the place where it happens. Once you know a pattern, you can often guess the meaning of a brand-new word on sight.",
-     "The grammarians invented a wonderful convention for naming patterns: they use the root ف-ع-ل, from فَعَلَ 'to do', as a stand-in. The فاء marks the first root consonant, the عَيْن the second, and the لام the third. So كَاتِب is said to be on the pattern فَاعِل, and مَكْتُوب on the pattern مَفْعُول. Learn to hear roots and patterns separately, and Arabic vocabulary stops being a list to memorize and becomes a system to enjoy."
+     "The grammarians invented a wonderful convention for naming patterns: they use the root ف-ع-ل, from فَعَلَ 'to do', as a stand-in. The فَاء marks the first root consonant, the عَيْن the second, and the لَام the third. So كَاتِب is said to be on the pattern فَاعِل, and مَكْتُوب on the pattern مَفْعُول. Learn to hear roots and patterns separately, and Arabic vocabulary stops being a list to memorize and becomes a system to enjoy."
     ],
     "examples": [
      {
@@ -2651,7 +2651,7 @@
        "The three short vowels"
       ],
       "answer": 1,
-      "why": "فَعَلَ 'to do' serves as the model: فاء = first radical, عَيْن = second, لام = third."
+      "why": "فَعَلَ 'to do' serves as the model: فَاء = first radical, عَيْن = second, لَام = third."
      },
      {
       "q": "مَكْتَب follows the pattern مَفْعَل. What does this pattern usually indicate?",
@@ -2662,7 +2662,7 @@
        "A diminutive"
       ],
       "answer": 2,
-      "why": "مَفْعَل is the noun of place: مَكْتَب is where writing is done, as مَسْجِد is where prostration is done."
+      "why": "مَفْعَل is the noun of place: مَكْتَب is where writing is done, as مَدْخَل is where entering happens (مَسْجِد uses the variant place-pattern مَفْعِل)."
      }
     ]
    },
@@ -2769,7 +2769,7 @@
    {
     "id": "g3",
     "title": "Masculine & Feminine",
-    "titleAr": "المُذَكَّرُ وَالمُؤَنَّثُ",
+    "titleAr": "الْمُذَكَّرُ وَالْمُؤَنَّثُ",
     "tagline": "Every Arabic noun has a gender - and a small round letter usually gives the secret away.",
     "body": [
      "Every noun in Arabic is either masculine (مُذَكَّر) or feminine (مُؤَنَّث) - there is no neuter. The usual badge of the feminine is the tāʾ marbūṭa, the 'tied tāʾ' ة at the end of a word: مَدِينَة 'city', طَالِبَة 'female student', جَنَّة 'garden'. If you see ة, you are almost always looking at a feminine noun.",
@@ -2869,10 +2869,10 @@
    {
     "id": "g4",
     "title": "The Nominal Sentence",
-    "titleAr": "الجُمْلَةُ الاِسْمِيَّةُ",
+    "titleAr": "الْجُمْلَةُ الِاسْمِيَّةُ",
     "tagline": "Two nouns, no verb, a complete thought - the most economical sentence in any language.",
     "body": [
-     "Here is one of the great surprises of Arabic: to say 'The house is big', you need no word for 'is'. You simply place two elements side by side: الْبَيْتُ كَبِيرٌ - literally 'the-house big'. This is the nominal sentence, الْجُمْلَة الاِسْمِيَّة, and it begins with a noun rather than a verb.",
+     "Here is one of the great surprises of Arabic: to say 'The house is big', you need no word for 'is'. You simply place two elements side by side: الْبَيْتُ كَبِيرٌ - literally 'the-house big'. This is the nominal sentence, الْجُمْلَة الِاسْمِيَّة, and it begins with a noun rather than a verb.",
      "Its two parts have names you will use forever. The مُبْتَدَأ (mubtadaʾ) is the starting point, the thing you are talking about: الْبَيْتُ. The خَبَر (khabar) is the news you deliver about it: كَبِيرٌ. Both stand in the rafʿ case, ending in -u (with tanwīn -un when indefinite) - the case of sentence pillars.",
      "Notice the elegant division of labor in definiteness: the mubtadaʾ is normally definite (you announce what you are talking about) while the khabar is normally indefinite (the new information). That very contrast is what makes الْبَيْتُ كَبِيرٌ a complete sentence, 'The house is big', rather than a mere phrase 'the big house' - which would be الْبَيْتُ الْكَبِيرُ, with both parts definite. Watch the ال and the tanwīn, and you will never confuse the two."
     ],
@@ -2969,10 +2969,10 @@
    {
     "id": "g5",
     "title": "The Three Cases",
-    "titleAr": "الإِعْرَابُ",
+    "titleAr": "الْإِعْرَابُ",
     "tagline": "Three little vowels - u, a, i - are the melody of Classical Arabic, singing each word's role in the sentence.",
     "body": [
-     "Listen to any recitation of Classical Arabic and you will hear the ends of words dancing between -u, -a, and -i. This is الإِعْرَاب, the case system, and it is not decoration: those final vowels announce each noun's job in the sentence. Word order can then flex freely, because the grammar rides on the vowels.",
+     "Listen to any recitation of Classical Arabic and you will hear the ends of words dancing between -u, -a, and -i. This is الْإِعْرَاب, the case system, and it is not decoration: those final vowels announce each noun's job in the sentence. Word order can then flex freely, because the grammar rides on the vowels.",
      "The three cases are simple to state. Rafʿ, marked by damma (-u), is the case of sentence pillars: the subject of a verb and both parts of a nominal sentence. Naṣb, marked by fatha (-a), is above all the case of the direct object. Jarr, marked by kasra (-i), appears after prepositions and on the second term of the iḍāfa possessive construction you will soon meet.",
      "Indefinite nouns double the vowel as tanwīn: رَجُلٌ (rajulun), رَجُلًا (rajulan), رَجُلٍ (rajulin) - and in naṣb an alif is usually written after the tanwīn: كِتَابًا. So one sentence can show the whole system: جَاءَ الرَّجُلُ 'the man came' (rafʿ), رَأَيْتُ الرَّجُلَ 'I saw the man' (naṣb), مَرَرْتُ بِالرَّجُلِ 'I passed by the man' (jarr). Master this trio and you hold the key that unlocks every page of classical literature."
     ],
@@ -3069,10 +3069,10 @@
    {
     "id": "g6",
     "title": "Iḍāfa - Possession",
-    "titleAr": "الإِضَافَةُ",
+    "titleAr": "الْإِضَافَةُ",
     "tagline": "No word for 'of' needed: Arabic chains nouns together, and the case endings do all the work.",
     "body": [
-     "How do you say 'the student's book'? Arabic simply places the two nouns together: كِتَابُ الطَّالِبِ - 'book-of the-student'. This construction is the iḍāfa (الْإِضَافَة, 'annexation'), and it is everywhere: in titles, in names, in the Qurʾān's opening words رَبُّ الْعَالَمِينَ 'Lord of the worlds'.",
+     "How do you say 'the student's book'? Arabic simply places the two nouns together: كِتَابُ الطَّالِبِ - 'book-of the-student'. This construction is the iḍāfa (الْإِضَافَة, 'annexation'), and it is everywhere: in titles, in names, in the Qurʾān's opening words رَبِّ الْعَالَمِينَ 'Lord of the worlds'.",
      "The rules are strict and beautiful. The first term, the thing possessed, takes NO ال and NO tanwīn - ever. It carries whatever case the sentence assigns it, but its ending stays a single bare vowel. The second term, the possessor, always stands in jarr: كِتَابُ الطَّالِبِ, with kasra on الطَّالِبِ. And though the first term wears no ال, it is understood as definite through its partner: كِتَابُ الطَّالِبِ means THE book of the student.",
      "Best of all, iḍāfa chains. 'The door of the teacher's house' is بَابُ بَيْتِ الْمُعَلِّمِ: each middle link is at once possessed and possessor, so it drops its ال and stands in jarr, and only the final noun may carry the article. Once your eye learns to spot a noun stripped of both ال and tanwīn, you will read these chains as effortlessly as any native of Baghdad or Cordoba once did."
     ],
@@ -3770,7 +3770,7 @@
    }
   ];
 
-  var TEXTS = [
+  var TEXTS = /*@DATA:TEXTS*/[
    {
     "id": "fatiha",
     "title": "The Opening",
@@ -4181,7 +4181,7 @@
      },
      {
       "ar": "رُبَّ أَخٍ لَكَ لَمْ تَلِدْهُ أُمُّكَ",
-      "translit": "rubba akhin laka lam talidhu ummuka",
+      "translit": "rubba akhin laka lam talid-hu ummuka",
       "en": "Many a brother you have whom your mother did not bear.",
       "ref": "proverb",
       "words": [
@@ -4939,7 +4939,7 @@
         titleAr: groups[i].label
       });
     }
-    path.push({ id: 'marks', kind: 'marks', ref: null, icon: '🎯', title: 'The Signs', titleAr: 'الحَرَكَات' });
+    path.push({ id: 'marks', kind: 'marks', ref: null, icon: '🎯', title: 'The Signs', titleAr: 'الْحَرَكَات' });
 
     var braid = [
       ['grammar', 'g1'], ['vocab', 'u1'], ['grammar', 'g2'], ['vocab', 'u2'],
@@ -4966,10 +4966,10 @@
         path.push({
           id: 'sarf-' + ref, kind: 'conj', ref: ref, icon: '⚙️',
           title: ref === 'past' ? 'Conjugation: the Past' : 'Conjugation: the Present',
-          titleAr: ref === 'past' ? 'الفِعْل المَاضِي' : 'الفِعْل المُضَارِع'
+          titleAr: ref === 'past' ? 'الْفِعْل الْمَاضِي' : 'الْفِعْل الْمُضَارِع'
         });
       } else if (kind === 'forms') {
-        path.push({ id: 'sarf-forms', kind: 'forms', ref: null, icon: '🏛️', title: 'The Ten Verb Forms', titleAr: 'أَوْزَان الفِعْل' });
+        path.push({ id: 'sarf-forms', kind: 'forms', ref: null, icon: '🏛️', title: 'The Ten Verb Forms', titleAr: 'أَوْزَان الْفِعْل' });
       }
     }
     return path;
