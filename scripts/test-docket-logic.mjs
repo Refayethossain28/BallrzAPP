@@ -5,7 +5,10 @@
  * amount/due-date/reference extraction, the importance-ordered pile and
  * its triage bands, deadline states, the per-document briefing with
  * play-it-in-your-favour tips and discount-window savings, the drafted
- * letters that act on a document, and the assistant's pile digest).
+ * letters that act on a document, and the assistant's pile digest) —
+ * plus the pure helpers of docket/ai.js (tolerant JSON extraction from a
+ * live model reply, clamping an AI reading into fields the engine can
+ * trust, letter parsing, image-block encoding).
  * Loaded in a vm sandbox (repo is type:module).
  * Run: node scripts/test-docket-logic.mjs
  */
@@ -21,6 +24,12 @@ sandbox.self = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(readFileSync(join(ROOT, 'docket', 'engine.js'), 'utf8'), sandbox, { filename: 'docket/engine.js' });
 const E = sandbox.module.exports;
+
+const aiSandbox = { module: { exports: {} } };
+aiSandbox.self = aiSandbox;
+vm.createContext(aiSandbox);
+vm.runInContext(readFileSync(join(ROOT, 'docket', 'ai.js'), 'utf8'), aiSandbox, { filename: 'docket/ai.js' });
+const AI = aiSandbox.module.exports;
 
 const NOW = Date.UTC(2026, 8, 4, 12, 0, 0); // 2026-09-04 12:00 UTC
 const { DAY } = E;
@@ -248,6 +257,58 @@ test('assistantDigest counts the pile and points at the top item', () => {
 test('assistantDigest: empty pile and fully-cleared pile speak differently', () => {
   assert.ok(E.assistantDigest([], NOW).headline.includes('first document'));
   assert.ok(E.assistantDigest([doc({ status: 'done' })], NOW).headline.includes('Pile clear'));
+});
+
+/* ---------- Docket AI: pure helpers ---------- */
+test('AI extractJSON survives fences, prose and nested braces; garbage → null', () => {
+  deepEq(AI.extractJSON('{"a":1}'), { a: 1 });
+  deepEq(AI.extractJSON('Here you go:\n```json\n{"a":{"b":2}}\n```\nHope that helps!'), { a: { b: 2 } });
+  deepEq(AI.extractJSON('prefix {"summary":"a fine","amount":60} suffix'), { summary: 'a fine', amount: 60 });
+  assert.equal(AI.extractJSON('no json here at all'), null);
+  assert.equal(AI.extractJSON(''), null);
+});
+test('AI normalizeAnalysis passes a clean reading through', () => {
+  const n = AI.normalizeAnalysis({
+    summary: 'A parking fine from Camden Council.', sender: ' Camden Council ',
+    category: 'fine', amount: 130, currency: '£', due_date: '2026-09-18',
+    reference: 'PCN/48291073', key_lines: 'Penalty Charge Notice…',
+    advice: ['Pay within 14 days for 50% off', 'Check the signage'], scam_risk: 'none', scam_why: ''
+  });
+  assert.equal(n.category, 'fine');
+  assert.equal(n.amount, 130);
+  assert.equal(n.dueDate, '2026-09-18');
+  assert.equal(n.sender, 'Camden Council');
+  assert.equal(n.advice.length, 2);
+  assert.equal(n.scamRisk, 'none');
+});
+test('AI normalizeAnalysis clamps junk: bad category/date/amount/enums, capped advice', () => {
+  const n = AI.normalizeAnalysis({
+    category: 'spaceship', amount: -5, currency: '¥', due_date: '2026-02-31',
+    advice: ['ok', 42, '', 'a', 'b', 'c', 'd', 'e', 'f'], scam_risk: 'certain', reference: null
+  });
+  assert.equal(n.category, null);
+  assert.equal(n.amount, null);
+  assert.equal(n.currency, '£');
+  assert.equal(n.dueDate, null);
+  assert.equal(n.ref, null);
+  assert.equal(n.scamRisk, 'none');
+  assert.equal(n.advice.length, 6, 'advice capped and junk-filtered');
+  assert.ok(!n.advice.includes(''));
+  assert.equal(AI.normalizeAnalysis(null).summary, '', 'null-safe');
+});
+test('AI parseLetter splits the SUBJECT line; falls back without one', () => {
+  const l = AI.parseLetter('SUBJECT: Formal challenge — PCN/1\n\nDear Sir,\n\nBody here.');
+  assert.equal(l.subject, 'Formal challenge — PCN/1');
+  assert.ok(l.body.startsWith('Dear Sir,'));
+  assert.equal(AI.parseLetter('just a body').subject, 'Regarding your recent letter');
+});
+test('AI docContext carries the document facts; imageBlock encodes only real data URLs', () => {
+  const ctx = AI.docContext(doc());
+  assert.ok(ctx.includes('Camden Council') && ctx.includes('£120') && ctx.includes('PCN/12345678') && ctx.includes('2026-09-18'));
+  const b = AI.imageBlock('data:image/jpeg;base64,abc123');
+  deepEq(b, { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'abc123' } });
+  assert.equal(AI.imageBlock('http://x/y.jpg'), null);
+  assert.equal(AI.imageBlock(null), null);
 });
 
 /* ---------- run ---------- */

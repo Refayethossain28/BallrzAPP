@@ -30,11 +30,15 @@
   a { color: var(--brand); text-decoration: none; }
   .wrap { max-width: 720px; margin: 0 auto; padding: 0 16px calc(50px + env(safe-area-inset-bottom)); }
 
-  header { display: flex; align-items: baseline; gap: 10px; padding: 22px 0 4px; flex-wrap: wrap; }
+  header { display: flex; align-items: center; gap: 10px; padding: 22px 0 4px; flex-wrap: wrap; }
   .logo { font-size: 30px; font-weight: 800; letter-spacing: -1px; user-select: none; }
   .logo .g { background: linear-gradient(92deg, var(--brand) 10%, var(--brand2) 90%);
              -webkit-background-clip: text; background-clip: text; color: transparent; }
   .tagline { color: var(--dim); font-size: 13px; flex: 1 1 100%; margin-top: -4px; }
+  .pill { margin-left: auto; font-size: 12px; color: var(--dim); border: 1px solid var(--line);
+          border-radius: 999px; padding: 4px 12px; background: var(--card); cursor: pointer;
+          font-family: inherit; white-space: nowrap; }
+  .pill.on { color: var(--green); border-color: rgba(88,207,142,.45); }
 
   .assistant { display: flex; gap: 12px; background: linear-gradient(160deg, var(--card2), var(--card));
                border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; margin: 14px 0 10px; }
@@ -133,6 +137,18 @@
   .brief li::marker { color: var(--brand); }
   .savebanner { margin-top: 10px; padding: 10px 12px; border-radius: 10px; font-size: 13.5px;
                 background: rgba(88,207,142,.09); border: 1px solid rgba(88,207,142,.35); color: #bdeccf; }
+  .scambanner { margin-top: 10px; padding: 10px 12px; border-radius: 10px; font-size: 13.5px;
+                background: rgba(255,111,111,.1); border: 1px solid rgba(255,111,111,.45); color: #ffc9c9; }
+  .aisay { margin-top: 8px; padding: 10px 12px; border-radius: 10px; font-size: 13.5px;
+           background: rgba(78,205,196,.07); border: 1px solid rgba(78,205,196,.3); color: var(--text); }
+  .aisay .who { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--teal); margin-bottom: 3px; }
+  .taskrow { display: flex; gap: 8px; margin-top: 8px; }
+  .taskrow input { flex: 1; }
+  .airesult { margin-top: 8px; padding: 10px 12px; border-radius: 10px; font-size: 13.5px;
+              background: var(--bg2); border: 1px solid var(--line); white-space: pre-wrap;
+              max-height: 320px; overflow-y: auto; }
+  .spin { display: inline-block; animation: docketspin 1s linear infinite; }
+  @keyframes docketspin { to { transform: rotate(360deg); } }
   .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
   .draftbox { margin-top: 12px; }
   .draftbox .subj { font-weight: 700; font-size: 14px; margin-bottom: 6px; }
@@ -155,6 +171,7 @@
 <div class="wrap">
   <header>
     <div class="logo">🗂️ <span class="g">Docket</span></div>
+    <button class="pill" id="ai-pill" type="button">🤖 AI: checking…</button>
     <div class="tagline">Snap the paperwork. Docket reads it, ranks it, and fights your corner.</div>
   </header>
 
@@ -195,7 +212,13 @@
     <b>How Docket works:</b> everything stays on this device — photos and text live in your browser only.
     Docket reads the lines you give it, sorts the pile by what genuinely matters (deadlines, money at stake,
     escalation language), briefs you on each document, and drafts the letters — appeals, prove-it demands,
-    disputes, cancellations — that deal with it. Its tips are practical starting points, not legal advice.
+    disputes, cancellations — that deal with it.
+    <b>Docket AI (optional):</b> link your own Anthropic API key (🔑 above) and the assistant gets a real brain —
+    it reads the photo itself, fills in the details, judges scam risk, answers “what should I do?”, does tasks
+    you type in plain English, and writes finished letters with the real names, amounts and dates filled in.
+    The key lives only in this browser; with AI linked, the photo and text of a document are sent to
+    api.anthropic.com when you use an AI feature — nothing else, nowhere else.
+    Everything it says is a practical starting point, not legal advice.
   </footer>
 </div>
 
@@ -205,10 +228,12 @@
 <div class="toast" id="toast"></div>
 
 <script src="engine.js"></script>
+<script src="ai.js"></script>
 <script>
 (function () {
   'use strict';
   var E = DocketEngine;
+  var AI = DocketAI;
   var LS_KEY = 'docket-v1';
 
   /* ---------------- state ---------------- */
@@ -251,6 +276,27 @@
     t.className = 'toast on';
     if (toastTimer) clearTimeout(toastTimer);
     toastTimer = setTimeout(function () { t.className = 'toast'; }, 3200);
+  }
+
+  /* ---------------- Live AI: link a key, show the state ---------------- */
+  function renderAIPill() {
+    var p = el('ai-pill');
+    if (AI.ready()) { p.textContent = '🤖 AI on'; p.className = 'pill on'; }
+    else { p.textContent = '🔑 Link AI'; p.className = 'pill'; }
+    p.title = 'Docket AI reads your photos, gives tailored advice and writes your letters. ' +
+      'Your Anthropic API key is stored only in this browser and sent only to api.anthropic.com.';
+  }
+
+  function toggleAIKey() {
+    var cur = AI.getKey();
+    var k = prompt(cur
+      ? 'Docket AI is linked. Paste a new Anthropic API key to replace it, or clear the box and press OK to unlink.'
+      : 'Paste your Anthropic API key (sk-ant-…).\nIt is stored ONLY in this browser and sent ONLY to api.anthropic.com — that’s what lets Docket AI read your photos and write your letters, no server needed.', cur);
+    if (k === null) return;
+    AI.setKey(k.trim());
+    renderAIPill();
+    toast(AI.ready() ? 'Docket AI linked — snap a document and it will read the photo itself. 🤖'
+                     : 'Docket AI unlinked — the offline assistant keeps working.');
   }
 
   /* ---------------- the digest (the assistant speaking) ---------------- */
@@ -318,21 +364,49 @@
   /* ---------------- add flow ---------------- */
   var pendingPhoto = null;
   var pickedCategory = null;
+  var pendingAI = null;      // last successful DocketAI reading of the pending photo
+  var aiReading = false;
 
   function openAdd(photo) {
     pendingPhoto = photo || null;
     pickedCategory = null;
+    pendingAI = null;
+    aiReading = false;
     el('add-sender').value = '';
     el('add-text').value = '';
     el('add-photo-wrap').style.display = photo ? 'block' : 'none';
     if (photo) el('add-photo').src = photo;
     el('add-panel').style.display = 'block';
     renderAddReadout();
-    var ta = el('add-text');
-    if (ta.focus) ta.focus();
+    if (photo && AI.ready()) runPhotoAnalysis();
+    else { var ta = el('add-text'); if (ta.focus) ta.focus(); }
   }
 
-  function closeAdd() { el('add-panel').style.display = 'none'; pendingPhoto = null; }
+  function closeAdd() { el('add-panel').style.display = 'none'; pendingPhoto = null; pendingAI = null; aiReading = false; }
+
+  // The AI reads the snapped photo and pre-fills the form; the human stays
+  // in charge — everything it writes can be edited or overridden before save.
+  function runPhotoAnalysis() {
+    var photoAtStart = pendingPhoto;
+    aiReading = true;
+    renderAddReadout();
+    AI.analyzeDocument({ photo: pendingPhoto, text: el('add-text').value, sender: el('add-sender').value })
+      .then(function (a) {
+        if (pendingPhoto !== photoAtStart) return;   // the sheet moved on
+        aiReading = false;
+        pendingAI = a;
+        if (a.keyLines && !el('add-text').value.trim()) el('add-text').value = a.keyLines;
+        if (a.sender && !el('add-sender').value.trim()) el('add-sender').value = a.sender;
+        if (a.category && !pickedCategory) pickedCategory = a.category;
+        renderAddReadout();
+      })
+      .catch(function (err) {
+        if (pendingPhoto !== photoAtStart) return;
+        aiReading = false;
+        renderAddReadout();
+        toast('Docket AI couldn’t read the photo (' + err.message + ') — type the key lines instead.');
+      });
+  }
 
   function renderAddReadout() {
     var text = el('add-text').value || '';
@@ -347,9 +421,13 @@
     if (amt) bits.push('<b>' + esc(amt.label) + '</b>');
     if (due) bits.push('due <b>' + esc(E.formatDateISO(due)) + '</b>');
     if (ref) bits.push('ref <b>' + esc(ref) + '</b>');
-    el('add-readout').innerHTML = text.trim() || pendingPhoto
+    var line = text.trim() || pendingPhoto
       ? 'Docket reads: ' + bits.join(' · ')
       : 'Docket will read what you type and work out what it is…';
+    if (aiReading) line = '<span class="spin">🤖</span> Docket AI is reading your photo… ' + line;
+    else if (pendingAI && pendingAI.summary) line = '🤖 <b>AI:</b> ' + esc(pendingAI.summary) + '<br>' + line;
+    else if (pendingPhoto && !AI.ready()) line += '<br>🔑 Link Docket AI (top right) and it reads the photo for you.';
+    el('add-readout').innerHTML = line;
     // category chips
     var chips = '';
     for (var i = 0; i < E.CATEGORIES.length; i++) {
@@ -369,6 +447,14 @@
     if (!v.ok) { toast(v.reason); return; }
     var d = v.doc;
     d.id = newId();
+    // Fold in whatever the AI read that the local engine didn't find itself.
+    if (pendingAI) {
+      if (!d.amount && pendingAI.amount) { d.amount = pendingAI.amount; d.currency = pendingAI.currency; }
+      if (!d.dueDate && pendingAI.dueDate) d.dueDate = pendingAI.dueDate;
+      if (!d.ref && pendingAI.ref) d.ref = pendingAI.ref;
+      d.ai = { summary: pendingAI.summary, advice: pendingAI.advice,
+               scamRisk: pendingAI.scamRisk, scamWhy: pendingAI.scamWhy };
+    }
     state.docs.push(d);
     save();
     closeAdd();
@@ -419,9 +505,29 @@
       '<h4>Why it matters</h4><p>' + esc(b.why) + '</p>';
     if (b.deadlineLine) html += '<div class="dl' + (b.deadlineLine.indexOf('passed') !== -1 ? ' overdue' : '') + '">' + esc(b.deadlineLine) + '</div>';
     if (b.saving) html += '<div class="savebanner">💰 ' + esc(b.saving.line) + '</div>';
+    if (d.ai && d.ai.summary) {
+      html += '<div class="aisay"><div class="who">🤖 Docket AI read this</div>' + esc(d.ai.summary) + '</div>';
+      if (d.ai.scamRisk && d.ai.scamRisk !== 'none') {
+        html += '<div class="scambanner">🚩 <b>Scam risk: ' + esc(d.ai.scamRisk) + '.</b> ' + esc(d.ai.scamWhy || 'Verify the sender independently before paying or sharing anything.') + '</div>';
+      }
+    }
     html += '<h4>In your favour</h4><ul>';
     for (var i = 0; i < b.favour.length; i++) html += '<li>' + esc(b.favour[i]) + '</li>';
+    if (d.ai && d.ai.advice) {
+      for (var ai2 = 0; ai2 < d.ai.advice.length; ai2++) html += '<li>🤖 ' + esc(d.ai.advice[ai2]) + '</li>';
+    }
     html += '</ul>';
+    if (d.status === 'open') {
+      html += '<h4>Ask Docket AI</h4>';
+      if (AI.ready()) {
+        html += '<div class="taskrow"><input type="text" id="ai-task" maxlength="500" ' +
+          'placeholder="Do a task: “appeal this”, “offer £30/month”, “is this a scam?”…" enterkeyhint="go">' +
+          '<button type="button" id="ai-go">Go</button></div>' +
+          '<div class="airesult" id="ai-out" hidden></div>';
+      } else {
+        html += '<p style="font-size:13px;color:var(--faint)">Link Docket AI (🔑, top of the app) and it reads photos, judges scams, and does tasks on this document — “appeal this”, “write a reply offering a payment plan”…</p>';
+      }
+    }
     if (b.suggested.length && d.status === 'open') {
       html += '<h4>Let Docket deal with it</h4><div class="actions">';
       for (var j = 0; j < b.suggested.length; j++) {
@@ -441,6 +547,25 @@
     html += '<button type="button" class="danger" data-act="remove">🗑 Remove</button></div>';
     el('sheet').innerHTML = html;
     el('overlay').className = 'overlay on';
+    var goEl = el('ai-go');
+    if (goEl && goEl.addEventListener) {
+      goEl.addEventListener('click', runAITask);
+      var taskEl = el('ai-task');
+      if (taskEl.addEventListener) taskEl.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') runAITask(); });
+    }
+  }
+
+  function runAITask() {
+    var d = byId(openDocId);
+    if (!d) return;
+    var q = (el('ai-task').value || '').trim();
+    if (!q) { toast('Tell Docket AI what to do with this document.'); return; }
+    var out = el('ai-out');
+    out.hidden = false;
+    out.textContent = '🤖 Docket AI is on it…';
+    AI.doTask(d, q, state.me)
+      .then(function (t) { out.textContent = String(t).trim() || 'Docket AI came back empty — try rewording the task.'; })
+      .catch(function (err) { out.textContent = 'Docket AI hit a problem: ' + err.message; });
   }
 
   function closeDetail() { el('overlay').className = 'overlay'; openDocId = null; }
@@ -452,10 +577,11 @@
     if (!draft) return;
     var out = el('draft-out');
     out.innerHTML = '<div class="draftbox">' +
-      '<div class="subj">✉️ ' + esc(draft.subject) + '</div>' +
+      '<div class="subj" id="draft-subj">✉️ ' + esc(draft.subject) + '</div>' +
       '<textarea id="draft-body"></textarea>' +
       '<div class="signrow"><span style="font-size:12.5px;color:var(--faint)">Sign as</span>' +
       '<input type="text" id="sign-name" placeholder="Your name" maxlength="40"></div>' +
+      (AI.ready() ? '<div class="rowbtns"><button type="button" id="draft-aiwrite">✨ Have Docket AI write it properly</button></div>' : '') +
       '<div class="rowbtns">' +
       '<button type="button" id="draft-copy">📋 Copy letter</button>' +
       '<a id="draft-mail" class="mailbtn">📨 Open in email</a>' +
@@ -463,13 +589,34 @@
     el('draft-body').value = draft.body;
     el('sign-name').value = state.me.name || '';
     el('draft-mail').href = E.mailtoLink(draft, '');
+    var aiWritten = false;
     var signEl = el('sign-name');
     if (signEl.addEventListener) signEl.addEventListener('input', function () {
       state.me.name = signEl.value;
       save();
+      if (aiWritten) return; // don't clobber an AI-written letter; the name is in it already or editable in place
       var re = E.draftAction(d, kind, state.me, Date.now());
       el('draft-body').value = re.body;
       el('draft-mail').href = E.mailtoLink(re, '');
+    });
+    var aiwEl = el('draft-aiwrite');
+    if (aiwEl && aiwEl.addEventListener) aiwEl.addEventListener('click', function () {
+      aiwEl.disabled = true;
+      aiwEl.textContent = '🤖 Docket AI is writing…';
+      AI.writeLetter(d, draft.label, state.me, el('draft-body').value)
+        .then(function (letter) {
+          el('draft-subj').textContent = '✉️ ' + letter.subject;
+          el('draft-body').value = letter.body;
+          el('draft-mail').href = E.mailtoLink(letter, '');
+          aiWritten = true;
+          aiwEl.textContent = '✨ Written by Docket AI — edit as you like';
+          toast('Letter written with the real details filled in. Read it before sending.');
+        })
+        .catch(function (err) {
+          aiwEl.disabled = false;
+          aiwEl.textContent = '✨ Have Docket AI write it properly';
+          toast('Docket AI hit a problem: ' + err.message);
+        });
     });
     var copyEl = el('draft-copy');
     if (copyEl.addEventListener) copyEl.addEventListener('click', function () {
@@ -535,6 +682,8 @@
   });
   var addTypedEl = el('add-typed');
   if (addTypedEl.addEventListener) addTypedEl.addEventListener('click', function () { openAdd(null); });
+  var aiPillEl = el('ai-pill');
+  if (aiPillEl.addEventListener) aiPillEl.addEventListener('click', toggleAIKey);
   var addTextEl = el('add-text');
   if (addTextEl.addEventListener) addTextEl.addEventListener('input', renderAddReadout);
   var addCancelEl = el('add-cancel');
@@ -568,6 +717,7 @@
     }
   });
 
+  renderAIPill();
   renderAll();
 
   /* ---------------- offline ---------------- */
