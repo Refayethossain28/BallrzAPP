@@ -1,0 +1,1032 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bayan — learn Classical Arabic</title>
+<meta name="description" content="Bayan (بيان) teaches Classical Arabic — the Arabic of the Qurʾān and the classical canon — from the first letter to real glossed texts: alphabet, ḥarakāt, vocabulary with roots, ṣarf tables, naḥw lessons, spaced repetition and a word-by-word reader. Works offline.">
+<meta name="theme-color" content="#0e1220">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<style>
+  :root {
+    --bg: #0e1220; --card: #171d33; --card2: #1e2540; --deep: #0a0d18;
+    --line: rgba(217, 164, 65, .16); --line2: rgba(217, 164, 65, .34);
+    --ink: #f0ead9; --dim: #97a3af; --faint: #6d7787;
+    --gold: #d9a441; --gold2: #e8c476; --green: #34d399; --red: #f87171;
+    --teal: #38bdf8;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  [hidden] { display: none !important; }
+  html, body { background: var(--bg); color: var(--ink); }
+  body {
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    max-width: 560px; margin: 0 auto; padding: 16px 14px 92px; min-height: 100vh;
+  }
+  .ar {
+    font-family: "Amiri", "Scheherazade New", "Noto Naskh Arabic", "Al Bayan", "Geeza Pro", "Times New Roman", serif;
+    direction: rtl; unicode-bidi: isolate;
+  }
+
+  /* ---------- header ---------- */
+  header.top { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .logo {
+    width: 52px; height: 52px; border-radius: 15px; flex: none;
+    background: radial-gradient(circle at 35% 25%, #232c52, #0c101e);
+    border: 1px solid var(--line2);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--gold2); font-size: 27px; line-height: 1;
+  }
+  .brand h1 { font-size: 22px; letter-spacing: -.02em; }
+  .brand .tag { color: var(--dim); font-size: 12.5px; }
+  .chips { margin-left: auto; display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }
+  .chip { font-size: 13px; color: var(--gold2); background: rgba(217,164,65,.1); border: 1px solid var(--line); border-radius: 20px; padding: 3px 10px; white-space: nowrap; }
+
+  /* ---------- cards & common ---------- */
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 16px; margin-bottom: 12px; }
+  .card h2 { font-size: 16px; margin-bottom: 8px; }
+  .kicker { font-size: 11.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--gold); margin-bottom: 6px; }
+  .muted { color: var(--dim); font-size: 13.5px; }
+  .faint { color: var(--faint); font-size: 12.5px; }
+  .btn {
+    display: inline-block; border: 1px solid var(--line2); background: var(--card2); color: var(--ink);
+    border-radius: 13px; padding: 10px 16px; font-size: 14.5px; cursor: pointer; font-weight: 600;
+  }
+  .btn.primary { background: linear-gradient(135deg, var(--gold2), var(--gold)); border-color: transparent; color: #241a05; }
+  .btn.ghost { background: transparent; }
+  .btn:active { transform: scale(.97); }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .spread { justify-content: space-between; }
+  .bar { height: 8px; background: var(--deep); border-radius: 6px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--gold), var(--gold2)); border-radius: 6px; }
+  .pill { font-size: 12px; border: 1px solid var(--line); border-radius: 14px; padding: 2px 9px; color: var(--dim); }
+  .pill.sun { color: #fbbf24; border-color: rgba(251,191,36,.35); }
+  .pill.moon { color: #93c5fd; border-color: rgba(147,197,253,.35); }
+
+  /* ---------- learn path ---------- */
+  .rankcard { display: flex; gap: 14px; align-items: center; }
+  .rank-ar { font-size: 34px; color: var(--gold2); flex: none; min-width: 92px; text-align: center; }
+  .rank-info { flex: 1; min-width: 0; }
+  .rank-name { font-weight: 700; }
+  .wisdom .w-ar { font-size: 24px; line-height: 2; text-align: right; margin: 6px 0 4px; }
+  .wisdom .w-en { color: var(--dim); font-size: 14px; }
+  .wisdom .w-ref { color: var(--faint); font-size: 12px; margin-top: 4px; }
+  .stage {
+    display: grid; grid-template-columns: 44px 1fr auto; gap: 12px; align-items: center;
+    background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+    padding: 12px 14px; margin-bottom: 8px; cursor: pointer;
+  }
+  .stage.locked { opacity: .45; }
+  .stage.next { border-color: var(--line2); box-shadow: 0 0 0 1px var(--line2), 0 6px 22px rgba(217,164,65,.07); }
+  .s-icon { width: 44px; height: 44px; border-radius: 13px; background: var(--deep); display: flex; align-items: center; justify-content: center; font-size: 21px; }
+  .s-title { font-weight: 650; font-size: 14.5px; }
+  .s-ar { color: var(--dim); font-size: 15px; }
+  .s-stars { color: var(--gold2); font-size: 13px; letter-spacing: 1px; white-space: nowrap; }
+
+  /* ---------- alphabet ---------- */
+  .abc-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .abc-tile {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 10px 4px 8px; text-align: center; cursor: pointer;
+  }
+  .abc-tile .g { font-size: 30px; line-height: 1.35; }
+  .abc-tile .n { color: var(--dim); font-size: 11px; margin-top: 2px; }
+  .marks-list .mrow { display: grid; grid-template-columns: 56px 1fr; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .marks-list .mrow:last-child { border-bottom: none; }
+  .m-glyph { font-size: 30px; text-align: center; color: var(--gold2); }
+  .m-name { font-weight: 650; font-size: 14px; }
+  .m-desc { color: var(--dim); font-size: 12.5px; }
+
+  /* ---------- sarf tables ---------- */
+  .tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .tbl th { text-align: left; color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: .1em; padding: 6px 8px; }
+  .tbl td { padding: 7px 8px; border-top: 1px solid var(--line); vertical-align: middle; }
+  .tbl .ar { font-size: 19px; }
+  .seg { display: inline-flex; border: 1px solid var(--line2); border-radius: 12px; overflow: hidden; }
+  .seg button { border: none; background: transparent; color: var(--dim); padding: 8px 14px; font-size: 13.5px; cursor: pointer; font-weight: 600; }
+  .seg button.on { background: var(--gold); color: #241a05; }
+  .form-row { display: grid; grid-template-columns: 44px 1fr auto; gap: 10px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--line); }
+  .form-row:last-child { border-bottom: none; }
+  .f-num { color: var(--gold); font-weight: 700; font-size: 13px; }
+  .f-wazn { font-size: 21px; }
+
+  /* ---------- reader ---------- */
+  .text-card { cursor: pointer; }
+  .text-card .t-ar { font-size: 25px; color: var(--gold2); text-align: right; }
+
+  /* ---------- review ---------- */
+  .rev-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px; }
+  .stat { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 10px 6px; text-align: center; }
+  .stat b { display: block; font-size: 19px; }
+  .stat span { color: var(--faint); font-size: 11px; }
+  .flash { text-align: center; padding: 26px 16px; }
+  .flash .f-ar { font-size: 46px; line-height: 1.8; }
+  .flash .f-back { margin-top: 10px; }
+  .flash .f-tr { color: var(--gold2); font-size: 17px; }
+  .flash .f-en { font-size: 17px; margin-top: 2px; }
+  .grade-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 16px; }
+  .grade-row button { border-radius: 13px; border: 1px solid var(--line); background: var(--card2); color: var(--ink); padding: 11px 4px; font-size: 13.5px; cursor: pointer; font-weight: 650; }
+  .grade-row .g0 { color: var(--red); } .grade-row .g3 { color: var(--green); }
+
+  /* ---------- overlay ---------- */
+  #overlay {
+    position: fixed; inset: 0; z-index: 20; background: var(--bg);
+    overflow-y: auto; -webkit-overflow-scrolling: touch;
+  }
+  .ov-wrap { max-width: 560px; margin: 0 auto; padding: 14px 14px 40px; }
+  .ov-top { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .ov-top .x { border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 11px; width: 38px; height: 38px; font-size: 16px; cursor: pointer; flex: none; }
+  .ov-title { font-weight: 700; font-size: 16px; }
+  .ov-sub { color: var(--dim); font-size: 13px; }
+  .dots { display: flex; gap: 5px; margin: 4px 0 14px; }
+  .dots i { flex: 1; height: 4px; border-radius: 3px; background: var(--card2); }
+  .dots i.done { background: var(--gold); }
+  .dots i.bad { background: var(--red); }
+
+  .teach { text-align: center; padding: 8px 0 4px; }
+  .teach .big-ar { font-size: 88px; line-height: 1.6; color: var(--gold2); }
+  .teach .word-ar { font-size: 52px; line-height: 1.8; }
+  .teach .t-name { font-size: 20px; font-weight: 700; margin-top: 2px; }
+  .teach .t-sub { color: var(--dim); margin-top: 2px; font-size: 14.5px; }
+  .forms-row { display: flex; gap: 6px; justify-content: center; margin: 16px 0 4px; flex-direction: row-reverse; }
+  .fcell { background: var(--deep); border: 1px solid var(--line); border-radius: 12px; padding: 8px 4px 6px; width: 74px; }
+  .fcell .fg { font-size: 30px; line-height: 1.5; }
+  .fcell .fl { color: var(--faint); font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; }
+  .ex-box { background: var(--deep); border: 1px solid var(--line); border-radius: 14px; padding: 12px; margin-top: 14px; }
+  .ex-box .e-ar { font-size: 26px; line-height: 1.9; }
+  .ex-box .e-tr { color: var(--gold2); font-size: 13.5px; }
+  .ex-box .e-en { color: var(--dim); font-size: 13.5px; }
+  .ex-box .e-note { color: var(--faint); font-size: 12.5px; margin-top: 5px; }
+  .say { border: 1px solid var(--line2); background: transparent; color: var(--gold2); border-radius: 20px; padding: 6px 14px; font-size: 13px; cursor: pointer; margin-top: 12px; }
+  .teach-nav { display: flex; gap: 8px; margin-top: 20px; }
+  .teach-nav .btn { flex: 1; text-align: center; }
+
+  .lesson-body p { margin-bottom: 12px; font-size: 15px; line-height: 1.65; }
+  .lesson-body .ar { font-size: 1.2em; }
+
+  .quiz .q-prompt { font-size: 16px; font-weight: 650; margin-bottom: 6px; }
+  .quiz .q-ar { font-size: 54px; line-height: 1.7; text-align: center; margin: 8px 0 14px; }
+  .opts { display: grid; gap: 8px; }
+  .opts button {
+    border: 1px solid var(--line); background: var(--card); color: var(--ink);
+    border-radius: 14px; padding: 13px 14px; font-size: 15.5px; cursor: pointer; text-align: left;
+  }
+  .opts button .ar { display: block; font-size: 27px; line-height: 1.7; text-align: right; }
+  .opts button.good { border-color: var(--green); background: rgba(52,211,153,.12); }
+  .opts button.bad { border-color: var(--red); background: rgba(248,113,113,.12); }
+  .why { margin-top: 12px; padding: 11px 13px; border-radius: 13px; background: var(--deep); border: 1px solid var(--line); color: var(--dim); font-size: 14px; }
+  .quiz-next { margin-top: 14px; width: 100%; text-align: center; }
+
+  .result { text-align: center; padding: 30px 10px; }
+  .result .r-stars { font-size: 44px; letter-spacing: 6px; color: var(--gold2); }
+  .result .r-pct { font-size: 22px; font-weight: 800; margin-top: 8px; }
+  .result .r-xp { color: var(--green); margin-top: 4px; font-weight: 650; }
+
+  .line-block { border-bottom: 1px solid var(--line); padding: 14px 0; }
+  .line-block:last-child { border-bottom: none; }
+  .l-ar { font-size: 28px; line-height: 2; text-align: right; }
+  .l-tr { color: var(--gold2); font-size: 13.5px; margin-top: 3px; }
+  .l-en { color: var(--dim); font-size: 14px; margin-top: 2px; }
+  .l-ref { color: var(--faint); font-size: 11.5px; margin-top: 3px; }
+  .w-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; flex-direction: row-reverse; }
+  .w-chips button { border: 1px solid var(--line); background: var(--deep); color: var(--ink); border-radius: 11px; padding: 4px 9px; font-size: 19px; cursor: pointer; }
+
+  /* ---------- tab bar ---------- */
+  nav#tabbar {
+    position: fixed; left: 50%; transform: translateX(-50%); bottom: 0; z-index: 10;
+    width: 100%; max-width: 560px; display: flex;
+    background: rgba(10, 13, 24, .96); border-top: 1px solid var(--line);
+    padding: 6px 4px calc(8px + env(safe-area-inset-bottom));
+  }
+  nav#tabbar button {
+    flex: 1; border: none; background: transparent; color: var(--faint);
+    font-size: 10.5px; cursor: pointer; padding: 4px 0; line-height: 1.25;
+  }
+  nav#tabbar button .ic { display: block; font-size: 19px; margin-bottom: 1px; }
+  nav#tabbar button.on { color: var(--gold2); }
+  nav#tabbar .badge { display: inline-block; min-width: 16px; background: var(--gold); color: #241a05; border-radius: 9px; font-size: 10px; font-weight: 800; padding: 0 4px; margin-left: 3px; }
+
+  .toast {
+    position: fixed; left: 50%; transform: translateX(-50%); bottom: 86px; z-index: 30;
+    background: #232b47; color: var(--ink); border: 1px solid var(--line2);
+    border-radius: 13px; padding: 10px 16px; font-size: 15px; max-width: 88%;
+    opacity: 0; pointer-events: none; transition: opacity .22s;
+  }
+  .toast.on { opacity: 1; }
+  .empty { text-align: center; color: var(--dim); padding: 40px 16px; }
+  .empty .big { font-size: 46px; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="logo ar">بيان</div>
+  <div class="brand">
+    <h1>Bayan</h1>
+    <div class="tag">Classical Arabic, beautifully taught</div>
+  </div>
+  <div class="chips">
+    <span class="chip" id="streakChip">🔥 0</span>
+    <span class="chip" id="xpChip">0 XP</span>
+  </div>
+</header>
+
+<main>
+  <section id="view-learn"></section>
+  <section id="view-review" hidden></section>
+  <section id="view-abc" hidden></section>
+  <section id="view-sarf" hidden></section>
+  <section id="view-read" hidden></section>
+</main>
+
+<nav id="tabbar">
+  <button data-tab="learn" class="on"><span class="ic">🕌</span>Learn</button>
+  <button data-tab="review"><span class="ic">🔁</span>Review<span class="badge" id="dueBadge" hidden>0</span></button>
+  <button data-tab="abc"><span class="ic">🔤</span>Alphabet</button>
+  <button data-tab="sarf"><span class="ic">🏛️</span>Ṣarf</button>
+  <button data-tab="read"><span class="ic">📖</span>Read</button>
+</nav>
+
+<div id="overlay" hidden></div>
+<div id="toast" class="toast"></div>
+
+<script src="engine.js"></script>
+<script>
+(function () {
+  'use strict';
+  var E = BayanEngine;
+
+  /* ---------------- tiny DOM helpers ---------------- */
+  function $(id) { return document.getElementById(id); }
+  function esc(s) { return E.escapeHTML(s); }
+  function ar(s, cls) { return '<span class="ar ' + (cls || '') + '" dir="rtl">' + esc(s) + '</span>'; }
+
+  /* ---------------- state ---------------- */
+  var PROFILE_KEY = 'bayan-profile-v1';
+  var state = {
+    tab: 'learn',
+    profile: loadProfile(),
+    path: E.coursePath(),
+    sarfTense: 'past',
+    wisdomOpen: false,
+    play: null,          // active stage session
+    review: null,        // active review session
+    overlayType: ''      // 'stage' | 'letter' | 'text'
+  };
+
+  function loadProfile() {
+    try {
+      var raw = localStorage.getItem(PROFILE_KEY);
+      if (raw) {
+        var p = JSON.parse(raw);
+        if (p && typeof p === 'object') return p;
+      }
+    } catch (e) {}
+    return E.defaultProfile();
+  }
+  function saveProfile() {
+    try { localStorage.setItem(PROFILE_KEY, JSON.stringify(state.profile)); } catch (e) {}
+  }
+
+  function todayISO() {
+    var d = new Date();
+    var m = d.getMonth() + 1, day = d.getDate();
+    return d.getFullYear() + '-' + (m < 10 ? '0' : '') + m + '-' + (day < 10 ? '0' : '') + day;
+  }
+  function now() { return Date.now(); }
+
+  /* ---------------- speech (graceful everywhere) ---------------- */
+  function speak(text) {
+    try {
+      if (typeof speechSynthesis === 'undefined' || typeof SpeechSynthesisUtterance === 'undefined') return;
+      var u = new SpeechSynthesisUtterance(String(text));
+      u.lang = 'ar-SA'; u.rate = 0.75;
+      speechSynthesis.cancel();
+      speechSynthesis.speak(u);
+    } catch (e) {}
+  }
+
+  var toastTimer = 0;
+  function toast(html) {
+    var t = $('toast');
+    t.innerHTML = html;
+    t.className = 'toast on';
+    try { clearTimeout(toastTimer); } catch (e) {}
+    toastTimer = setTimeout(function () { t.className = 'toast'; }, 2600);
+  }
+
+  /* ---------------- header + tabs ---------------- */
+  function renderHeader() {
+    var alive = E.streakAlive(state.profile.streak, todayISO());
+    $('streakChip').innerHTML = '🔥 ' + (alive ? state.profile.streak.count : 0);
+    $('xpChip').innerHTML = (state.profile.xp || 0) + ' XP';
+    var due = E.srsStats(state.profile.cards, now()).due;
+    var b = $('dueBadge');
+    b.hidden = !due;
+    b.innerHTML = String(due);
+  }
+
+  function setTab(tab) {
+    state.tab = tab;
+    var tabs = ['learn', 'review', 'abc', 'sarf', 'read'];
+    for (var i = 0; i < tabs.length; i++) {
+      var sec = $('view-' + tabs[i]);
+      if (sec) sec.hidden = tabs[i] !== tab;
+    }
+    var btns = document.querySelectorAll('#tabbar button');
+    for (var j = 0; j < btns.length; j++) {
+      var bt = btns[j];
+      if (bt.className !== undefined && bt.getAttribute) {
+        bt.className = bt.getAttribute('data-tab') === tab ? 'on' : '';
+      }
+    }
+    renderTab();
+  }
+
+  function renderTab() {
+    if (state.tab === 'learn') renderLearn();
+    else if (state.tab === 'review') renderReview();
+    else if (state.tab === 'abc') renderAbc();
+    else if (state.tab === 'sarf') renderSarf();
+    else if (state.tab === 'read') renderRead();
+    renderHeader();
+  }
+
+  /* ---------------- LEARN ---------------- */
+  function starsGlyph(n) {
+    var out = '';
+    for (var i = 0; i < 3; i++) out += i < n ? '★' : '☆';
+    return out;
+  }
+
+  function renderLearn() {
+    var h = [];
+    var rank = E.rankFor(state.profile.xp);
+    var prog = E.courseProgress(state.profile, state.path);
+
+    h.push('<div class="card rankcard">');
+    h.push('<div class="rank-ar ar" dir="rtl">' + esc(rank.ar) + '</div>');
+    h.push('<div class="rank-info">');
+    h.push('<div class="rank-name">' + esc(rank.name) + ' · <span class="muted">' + esc(rank.en) + '</span></div>');
+    if (rank.next) {
+      var pctToNext = Math.round(rank.progress * 100);
+      h.push('<div class="bar" style="margin:7px 0 4px"><i style="width:' + pctToNext + '%"></i></div>');
+      h.push('<div class="faint">' + rank.next.needed + ' XP to ' + esc(rank.next.name) + '</div>');
+    } else {
+      h.push('<div class="faint" style="margin-top:6px">The highest rank. The classics are yours.</div>');
+    }
+    h.push('</div></div>');
+
+    var wisdom = E.dailyWisdom(todayISO());
+    if (wisdom) {
+      h.push('<div class="card wisdom" data-act="toggle-wisdom" style="cursor:pointer">');
+      h.push('<div class="kicker">Wisdom of the day</div>');
+      h.push('<div class="w-ar ar" dir="rtl">' + esc(wisdom.ar) + '</div>');
+      if (state.wisdomOpen) {
+        h.push('<div class="w-en">' + esc(wisdom.translit) + '</div>');
+        h.push('<div class="w-en" style="margin-top:3px">' + esc(wisdom.en) + '</div>');
+        h.push('<div class="w-ref">' + esc(wisdom.ref) + '</div>');
+      } else {
+        h.push('<div class="faint">Tap to reveal the meaning</div>');
+      }
+      h.push('</div>');
+    }
+
+    h.push('<div class="card"><div class="row spread"><h2>The Path</h2><span class="muted">' + prog.done + ' / ' + prog.total + ' · ' + prog.stars + '★</span></div>');
+    h.push('<div class="bar" style="margin-top:8px"><i style="width:' + prog.pct + '%"></i></div></div>');
+
+    var nextFound = false;
+    for (var i = 0; i < state.path.length; i++) {
+      var st = state.path[i];
+      var unlocked = E.isUnlocked(state.path, state.profile, i);
+      var stars = E.stageStars(state.profile, st.id);
+      var isNext = unlocked && stars === 0 && !nextFound;
+      if (isNext) nextFound = true;
+      h.push('<div class="stage' + (unlocked ? '' : ' locked') + (isNext ? ' next' : '') + '" data-act="open-stage" data-i="' + i + '">');
+      h.push('<div class="s-icon">' + (unlocked ? st.icon : '🔒') + '</div>');
+      h.push('<div><div class="s-title">' + esc(st.title) + '</div><div class="s-ar ar" dir="rtl">' + esc(st.titleAr) + '</div></div>');
+      h.push('<div class="s-stars">' + starsGlyph(stars) + '</div>');
+      h.push('</div>');
+    }
+    $('view-learn').innerHTML = h.join('');
+  }
+
+  /* ---------------- REVIEW (SRS) ---------------- */
+  function renderReview() {
+    var h = [];
+    var stats = E.srsStats(state.profile.cards, now());
+    h.push('<div class="rev-stats">');
+    h.push('<div class="stat"><b>' + stats.due + '</b><span>due</span></div>');
+    h.push('<div class="stat"><b>' + stats.learning + '</b><span>learning</span></div>');
+    h.push('<div class="stat"><b>' + stats.young + '</b><span>young</span></div>');
+    h.push('<div class="stat"><b>' + stats.mature + '</b><span>mature</span></div>');
+    h.push('</div>');
+
+    if (!stats.total) {
+      h.push('<div class="card empty"><div class="big">🌙</div><b>No cards yet.</b><br>Clear a vocabulary stage on the Path and its words join your review deck.</div>');
+      $('view-review').innerHTML = h.join('');
+      return;
+    }
+
+    var sess = state.review;
+    if (!sess || !sess.queue.length) {
+      var due = E.dueCards(state.profile.cards, now(), 20);
+      if (!due.length) {
+        h.push('<div class="card empty"><div class="big">☀️</div><b>All caught up.</b><br>Next review ' + esc(E.nextDueLabel(state.profile.cards, now()) || 'soon') + '.</div>');
+        $('view-review').innerHTML = h.join('');
+        return;
+      }
+      h.push('<div class="card flash"><div class="big" style="font-size:40px">🔁</div>');
+      h.push('<b>' + due.length + ' word' + (due.length === 1 ? '' : 's') + ' ready for review.</b>');
+      h.push('<div class="muted" style="margin:6px 0 14px">Old friends fade — greet them again.</div>');
+      h.push('<button class="btn primary" data-act="start-review">Start reviewing</button></div>');
+      $('view-review').innerHTML = h.join('');
+      return;
+    }
+
+    var card = sess.queue[0];
+    var word = E.cardWord(card);
+    if (!word) { sess.queue.shift(); renderReview(); return; }
+    h.push('<div class="muted" style="margin-bottom:8px">' + sess.queue.length + ' left in this session</div>');
+    h.push('<div class="card flash">');
+    h.push('<div class="f-ar ar" dir="rtl">' + esc(word.ar) + '</div>');
+    h.push('<button class="say" data-act="say" data-say="' + esc(word.ar) + '">🔊 hear it</button>');
+    if (sess.revealed) {
+      h.push('<div class="f-back"><div class="f-tr">' + esc(word.translit) + '</div><div class="f-en">' + esc(word.en) + '</div>');
+      if (word.note) h.push('<div class="muted" style="margin-top:4px">' + esc(word.note) + '</div>');
+      if (word.root && word.root !== '—') h.push('<div class="faint" style="margin-top:4px">root ' + ar(word.root) + '</div>');
+      h.push('</div>');
+      h.push('<div class="grade-row">');
+      h.push('<button class="g0" data-act="grade" data-g="0">Again<br><span class="faint">10m</span></button>');
+      h.push('<button class="g1" data-act="grade" data-g="1">Hard</button>');
+      h.push('<button class="g2" data-act="grade" data-g="2">Good</button>');
+      h.push('<button class="g3" data-act="grade" data-g="3">Easy</button>');
+      h.push('</div>');
+    } else {
+      h.push('<div style="margin-top:16px"><button class="btn primary" data-act="reveal">Show answer</button></div>');
+    }
+    h.push('</div>');
+    $('view-review').innerHTML = h.join('');
+  }
+
+  function startReview() {
+    state.review = { queue: E.dueCards(state.profile.cards, now(), 20), revealed: false };
+    renderReview();
+  }
+
+  function gradeCurrent(g) {
+    var sess = state.review;
+    if (!sess || !sess.queue.length) return;
+    var card = sess.queue.shift();
+    var graded = E.gradeCard(card, g, now());
+    state.profile = E.recordReview(state.profile, graded, todayISO());
+    if (g === 0) sess.queue.push(graded); // failed cards come back this session
+    sess.revealed = false;
+    saveProfile();
+    renderReview();
+    renderHeader();
+  }
+
+  /* ---------------- ALPHABET reference ---------------- */
+  function renderAbc() {
+    var h = [];
+    h.push('<div class="card"><div class="row spread"><h2>The 28 letters ' + ar('الحُرُوف') + '</h2></div>');
+    h.push('<div class="muted" style="margin-bottom:10px">Tap a letter for its forms, sound and story.</div>');
+    h.push('<div class="abc-grid">');
+    for (var i = 0; i < E.LETTERS.length; i++) {
+      var L = E.LETTERS[i];
+      h.push('<div class="abc-tile" data-act="open-letter" data-id="' + esc(L.id) + '">');
+      h.push('<div class="g ar" dir="rtl">' + esc(L.ar) + '</div><div class="n">' + esc(L.nameEn) + '</div></div>');
+    }
+    h.push('</div>');
+    h.push('<div class="row" style="margin-top:12px"><button class="btn" data-act="drill-abc">🎯 Drill all letters</button>');
+    h.push('<button class="btn" data-act="drill-marks">🎯 Drill the signs</button></div>');
+    h.push('</div>');
+
+    h.push('<div class="card marks-list"><h2>The signs ' + ar('الحَرَكَات') + '</h2>');
+    for (var j = 0; j < E.MARKS.length; j++) {
+      var M = E.MARKS[j];
+      h.push('<div class="mrow"><div class="m-glyph ar" dir="rtl">' + esc(M.display) + '</div>');
+      h.push('<div><div class="m-name">' + esc(M.nameEn) + ' ' + ar(M.name) + ' · <span class="muted">' + esc(M.makes) + '</span></div>');
+      h.push('<div class="m-desc">' + esc(M.desc) + '</div>');
+      if (M.example && M.example.ar) h.push('<div class="m-desc">e.g. ' + ar(M.example.ar) + ' <i>' + esc(M.example.translit) + '</i> — ' + esc(M.example.en) + '</div>');
+      h.push('</div></div>');
+    }
+    h.push('</div>');
+    $('view-abc').innerHTML = h.join('');
+  }
+
+  function letterCardHTML(L, withDrill) {
+    var h = [];
+    h.push('<div class="teach">');
+    h.push('<div class="big-ar ar" dir="rtl">' + esc(L.ar) + '</div>');
+    h.push('<div class="t-name">' + esc(L.nameEn) + ' ' + ar(L.name) + '</div>');
+    h.push('<div class="t-sub">' + esc(L.sound) + '</div>');
+    h.push('<div class="t-sub faint">Articulation: ' + esc(L.makhraj) + '</div>');
+    h.push('<div class="row" style="justify-content:center;margin-top:8px">');
+    h.push('<span class="pill ' + (L.sun ? 'sun">☀️ sun letter' : 'moon">🌙 moon letter') + '</span>');
+    h.push('<span class="pill">' + (L.connects ? 'connects onward' : 'never connects onward') + '</span>');
+    h.push('</div>');
+    h.push('<div class="forms-row">');
+    h.push('<div class="fcell"><div class="fg ar" dir="rtl">' + esc(L.isolated) + '</div><div class="fl">alone</div></div>');
+    h.push('<div class="fcell"><div class="fg ar" dir="rtl">' + esc(L.initial) + '</div><div class="fl">start</div></div>');
+    h.push('<div class="fcell"><div class="fg ar" dir="rtl">' + esc(L.medial) + '</div><div class="fl">middle</div></div>');
+    h.push('<div class="fcell"><div class="fg ar" dir="rtl">' + esc(L.final) + '</div><div class="fl">end</div></div>');
+    h.push('</div>');
+    if (L.example && L.example.ar) {
+      h.push('<div class="ex-box"><div class="e-ar ar" dir="rtl">' + esc(L.example.ar) + '</div>');
+      h.push('<div class="e-tr">' + esc(L.example.translit) + '</div><div class="e-en">' + esc(L.example.en) + '</div></div>');
+      h.push('<button class="say" data-act="say" data-say="' + esc(L.example.ar) + '">🔊 hear ' + esc(L.example.translit) + '</button>');
+    }
+    h.push('</div>');
+    return h.join('');
+  }
+
+  function openLetter(id) {
+    var L = E.letterById(id);
+    if (!L) return;
+    state.overlayType = 'letter';
+    var h = ['<div class="ov-wrap">'];
+    h.push('<div class="ov-top"><button class="x" data-act="close-ov">✕</button><div><div class="ov-title">' + esc(L.nameEn) + '</div><div class="ov-sub">letter ' + ar(L.ar) + '</div></div></div>');
+    h.push('<div class="card">' + letterCardHTML(L, true) + '</div>');
+    h.push('</div>');
+    showOverlay(h.join(''));
+  }
+
+  /* ---------------- SARF tables ---------------- */
+  function renderSarf() {
+    var h = [];
+    var tense = state.sarfTense;
+    h.push('<div class="card"><div class="row spread"><h2>Conjugation ' + ar('تَصْرِيف') + '</h2>');
+    h.push('<span class="seg"><button data-act="tense" data-t="past" class="' + (tense === 'past' ? 'on' : '') + '">Past</button><button data-act="tense" data-t="present" class="' + (tense === 'present' ? 'on' : '') + '">Present</button></span></div>');
+    h.push('<div class="muted" style="margin:6px 0 8px">The model verb ' + ar('كَتَبَ') + ' <i>kataba</i>, “to write”.</div>');
+    h.push('<table class="tbl"><tr><th>person</th><th></th><th style="text-align:right">form</th></tr>');
+    for (var i = 0; i < E.MORPH.paradigm.length; i++) {
+      var r = E.MORPH.paradigm[i];
+      var form = tense === 'past' ? r.past : r.present;
+      var tr = tense === 'past' ? r.pastTranslit : r.presentTranslit;
+      h.push('<tr><td class="muted">' + esc(r.en) + '</td><td class="ar" dir="rtl">' + esc(r.pronoun) + '</td>');
+      h.push('<td style="text-align:right"><span class="ar" dir="rtl">' + esc(form) + '</span><br><span class="faint">' + esc(tr) + '</span></td></tr>');
+    }
+    h.push('</table></div>');
+
+    h.push('<div class="card"><h2>The ten verb forms ' + ar('الأَوْزَان') + '</h2>');
+    h.push('<div class="muted" style="margin-bottom:6px">One root, ten machines: each pattern re-tools the meaning.</div>');
+    for (var f = 0; f < E.MORPH.forms.length; f++) {
+      var F = E.MORPH.forms[f];
+      h.push('<div class="form-row"><div class="f-num">' + esc(F.form) + '</div>');
+      h.push('<div><div class="f-wazn ar" dir="rtl">' + esc(F.wazn) + '</div><div class="faint">' + esc(F.waznTranslit) + ' — ' + esc(F.meaning) + '</div></div>');
+      h.push('<div style="text-align:right"><span class="ar" dir="rtl" style="font-size:19px">' + esc(F.example.ar) + '</span><br><span class="faint">' + esc(F.example.translit) + ' · ' + esc(F.example.en) + '</span></div></div>');
+    }
+    h.push('</div>');
+
+    h.push('<div class="card"><h2>Pronouns ' + ar('الضَّمَائِر') + '</h2><table class="tbl"><tr><th>meaning</th><th style="text-align:right">independent</th><th style="text-align:right">attached</th></tr>');
+    var n = Math.max(E.MORPH.pronouns.length, E.MORPH.suffixes.length);
+    for (var p = 0; p < n; p++) {
+      var pr = E.MORPH.pronouns[p], sx = E.MORPH.suffixes[p];
+      h.push('<tr><td class="muted">' + esc(pr ? pr.en : (sx ? sx.en : '')) + '</td>');
+      h.push('<td style="text-align:right">' + (pr ? '<span class="ar" dir="rtl">' + esc(pr.ar) + '</span> <span class="faint">' + esc(pr.translit) + '</span>' : '') + '</td>');
+      h.push('<td style="text-align:right">' + (sx ? '<span class="ar" dir="rtl">' + esc(sx.ar) + '</span> <span class="faint">' + esc(sx.translit) + '</span>' : '') + '</td></tr>');
+    }
+    h.push('</table></div>');
+
+    h.push('<div class="card"><h2>Derived nouns ' + ar('المُشْتَقَّات') + '</h2>');
+    for (var d = 0; d < E.MORPH.derived.length; d++) {
+      var D = E.MORPH.derived[d];
+      h.push('<div class="form-row"><div class="f-num ar" dir="rtl" style="font-size:18px">' + esc(D.pattern) + '</div>');
+      h.push('<div><div style="font-weight:650;font-size:14px">' + esc(D.name) + ' ' + ar(D.nameAr) + '</div><div class="faint">' + esc(D.desc) + '</div></div>');
+      h.push('<div style="text-align:right"><span class="ar" dir="rtl" style="font-size:19px">' + esc(D.example.ar) + '</span><br><span class="faint">' + esc(D.example.translit) + ' · ' + esc(D.example.en) + '</span></div></div>');
+    }
+    h.push('</div>');
+    $('view-sarf').innerHTML = h.join('');
+  }
+
+  /* ---------------- READER ---------------- */
+  function renderRead() {
+    var h = [];
+    h.push('<div class="muted" style="margin-bottom:10px">Real Classical texts, glossed word by word. Tap any word inside.</div>');
+    for (var i = 0; i < E.TEXTS.length; i++) {
+      var t = E.TEXTS[i];
+      h.push('<div class="card text-card" data-act="open-text" data-id="' + esc(t.id) + '">');
+      h.push('<div class="kicker">' + esc(t.source) + '</div>');
+      h.push('<div class="row spread"><h2>' + esc(t.title) + '</h2><span class="muted">' + t.lines.length + ' lines</span></div>');
+      h.push('<div class="t-ar ar" dir="rtl">' + esc(t.titleAr) + '</div>');
+      h.push('</div>');
+    }
+    $('view-read').innerHTML = h.join('');
+  }
+
+  function openText(id) {
+    var t = E.textById(id);
+    if (!t) return;
+    state.overlayType = 'text';
+    state.textOpen = { id: id, showTr: true, showEn: true };
+    renderText();
+  }
+
+  function renderText() {
+    var t = E.textById(state.textOpen.id);
+    if (!t) { closeOverlay(); return; }
+    var h = ['<div class="ov-wrap">'];
+    h.push('<div class="ov-top"><button class="x" data-act="close-ov">✕</button>');
+    h.push('<div><div class="ov-title">' + esc(t.title) + ' ' + ar(t.titleAr) + '</div><div class="ov-sub">' + esc(t.source) + '</div></div></div>');
+    h.push('<div class="muted" style="margin-bottom:8px">' + esc(t.intro) + '</div>');
+    h.push('<div class="row" style="margin-bottom:6px">');
+    h.push('<button class="btn ghost" data-act="text-tr">' + (state.textOpen.showTr ? 'Hide' : 'Show') + ' transliteration</button>');
+    h.push('<button class="btn ghost" data-act="text-en">' + (state.textOpen.showEn ? 'Hide' : 'Show') + ' translation</button>');
+    h.push('</div><div class="card">');
+    for (var i = 0; i < t.lines.length; i++) {
+      var ln = t.lines[i];
+      h.push('<div class="line-block">');
+      h.push('<div class="l-ar ar" dir="rtl">' + esc(ln.ar) + '</div>');
+      if (state.textOpen.showTr) h.push('<div class="l-tr">' + esc(ln.translit) + '</div>');
+      if (state.textOpen.showEn) h.push('<div class="l-en">' + esc(ln.en) + '</div>');
+      h.push('<div class="l-ref">' + esc(ln.ref) + ' · <button class="say" style="margin:0;padding:2px 10px" data-act="say" data-say="' + esc(ln.ar) + '">🔊</button></div>');
+      if (ln.words && ln.words.length) {
+        h.push('<div class="w-chips">');
+        for (var w = 0; w < ln.words.length; w++) {
+          h.push('<button class="ar" dir="rtl" data-act="gloss" data-t="' + esc(t.id) + '" data-l="' + i + '" data-w="' + w + '">' + esc(ln.words[w].ar) + '</button>');
+        }
+        h.push('</div>');
+      }
+      h.push('</div>');
+    }
+    h.push('</div></div>');
+    showOverlay(h.join(''));
+  }
+
+  /* ---------------- STAGE play (teach → drill → stars) ---------------- */
+  function stageSeed(stage) {
+    var st = state.profile.stages[stage.id];
+    return stage.id + ':' + (st ? st.tries : 0);
+  }
+
+  function buildTeach(stage) {
+    var cards = [];
+    var i;
+    if (stage.kind === 'letters') {
+      var group = E.letterGroups()[stage.ref];
+      if (group) for (i = 0; i < group.letters.length; i++) cards.push({ letter: group.letters[i] });
+    } else if (stage.kind === 'marks') {
+      for (i = 0; i < E.MARKS.length; i++) cards.push({ mark: E.MARKS[i] });
+    } else if (stage.kind === 'vocab') {
+      var unit = E.unitById(stage.ref);
+      if (unit) for (i = 0; i < unit.words.length; i++) cards.push({ word: unit.words[i] });
+    }
+    return cards;
+  }
+
+  function buildQuiz(stage, seed) {
+    if (stage.kind === 'letters') {
+      var group = E.letterGroups()[stage.ref];
+      return E.letterQuiz(group ? group.letters : E.LETTERS, seed, 8);
+    }
+    if (stage.kind === 'letters-all') return E.letterQuiz(E.LETTERS, seed, 12);
+    if (stage.kind === 'marks') return E.markQuiz(seed, 8);
+    if (stage.kind === 'vocab') {
+      var unit = E.unitById(stage.ref);
+      return E.vocabQuiz(unit ? unit.words : [], seed, 10);
+    }
+    if (stage.kind === 'grammar') return E.grammarQuiz(E.lessonById(stage.ref), seed);
+    if (stage.kind === 'conj') return E.conjQuiz(stage.ref, seed, 8);
+    if (stage.kind === 'forms') return E.formsQuiz(seed, 8);
+    if (stage.kind === 'read') return E.readQuiz(E.textById(stage.ref), seed, 6);
+    return [];
+  }
+
+  function openStage(idx) {
+    var stage = state.path[idx];
+    if (!stage || !E.isUnlocked(state.path, state.profile, idx)) {
+      if (stage) toast('Clear the previous stage first 🔒');
+      return;
+    }
+    startStage(stage);
+  }
+
+  function startStage(stage) {
+    var teach = buildTeach(stage);
+    state.overlayType = 'stage';
+    state.play = {
+      stage: stage,
+      teach: teach,
+      teachIdx: 0,
+      phase: teach.length || stage.kind === 'grammar' || stage.kind === 'conj' || stage.kind === 'forms' || stage.kind === 'read' ? 'teach' : 'quiz',
+      quiz: null, qIdx: 0, answers: [], picked: -1, score: null, xpBefore: state.profile.xp
+    };
+    if (state.play.phase === 'quiz') beginQuiz();
+    renderStage();
+  }
+
+  function beginQuiz() {
+    var play = state.play;
+    play.quiz = buildQuiz(play.stage, stageSeed(play.stage));
+    play.phase = play.quiz.length ? 'quiz' : 'done';
+    play.qIdx = 0; play.answers = []; play.picked = -1;
+    if (play.phase === 'done') finishStage();
+  }
+
+  function renderStage() {
+    var play = state.play;
+    if (!play) return;
+    var stage = play.stage;
+    var h = ['<div class="ov-wrap">'];
+    h.push('<div class="ov-top"><button class="x" data-act="close-ov">✕</button>');
+    h.push('<div><div class="ov-title">' + esc(stage.title) + '</div><div class="ov-sub ar" dir="rtl">' + esc(stage.titleAr) + '</div></div></div>');
+
+    if (play.phase === 'teach') h.push(renderTeach(play));
+    else if (play.phase === 'quiz') h.push(renderQuiz(play));
+    else h.push(renderResult(play));
+
+    h.push('</div>');
+    showOverlay(h.join(''));
+  }
+
+  function renderTeach(play) {
+    var stage = play.stage;
+    var h = [];
+    if (stage.kind === 'letters' || stage.kind === 'marks' || stage.kind === 'vocab') {
+      var cards = play.teach;
+      var c = cards[play.teachIdx] || {};
+      h.push('<div class="dots">');
+      for (var i = 0; i < cards.length; i++) h.push('<i class="' + (i <= play.teachIdx ? 'done' : '') + '"></i>');
+      h.push('</div><div class="card">');
+      if (c.letter) h.push(letterCardHTML(c.letter));
+      else if (c.mark) {
+        var M = c.mark;
+        h.push('<div class="teach"><div class="big-ar ar" dir="rtl">' + esc(M.display) + '</div>');
+        h.push('<div class="t-name">' + esc(M.nameEn) + ' ' + ar(M.name) + '</div>');
+        h.push('<div class="t-sub">' + esc(M.makes) + '</div>');
+        h.push('<div class="t-sub" style="margin-top:8px">' + esc(M.desc) + '</div>');
+        if (M.example && M.example.ar) {
+          h.push('<div class="ex-box"><div class="e-ar ar" dir="rtl">' + esc(M.example.ar) + '</div>');
+          h.push('<div class="e-tr">' + esc(M.example.translit) + '</div><div class="e-en">' + esc(M.example.en) + '</div></div>');
+          h.push('<button class="say" data-act="say" data-say="' + esc(M.example.ar) + '">🔊 hear it</button>');
+        }
+        h.push('</div>');
+      } else if (c.word) {
+        var W = c.word;
+        h.push('<div class="teach"><div class="word-ar ar" dir="rtl">' + esc(W.ar) + '</div>');
+        h.push('<div class="t-name">' + esc(W.translit) + '</div>');
+        h.push('<div class="t-sub" style="font-size:17px">' + esc(W.en) + '</div>');
+        h.push('<div class="row" style="justify-content:center;margin-top:10px">');
+        h.push('<span class="pill">' + esc(W.pos) + '</span>');
+        if (W.root && W.root !== '—') h.push('<span class="pill">root ' + ar(W.root) + '</span>');
+        h.push('</div>');
+        if (W.note) h.push('<div class="t-sub" style="margin-top:8px">' + esc(W.note) + '</div>');
+        h.push('<button class="say" data-act="say" data-say="' + esc(W.ar) + '">🔊 hear it</button></div>');
+      }
+      h.push('</div>');
+      h.push('<div class="teach-nav">');
+      if (play.teachIdx > 0) h.push('<button class="btn" data-act="teach-prev">← Back</button>');
+      if (play.teachIdx < cards.length - 1) h.push('<button class="btn primary" data-act="teach-next">Next →</button>');
+      else h.push('<button class="btn primary" data-act="start-quiz">Start the drill 🎯</button>');
+      h.push('</div>');
+      return h.join('');
+    }
+
+    if (stage.kind === 'grammar') {
+      var g = E.lessonById(stage.ref);
+      if (!g) return '';
+      h.push('<div class="card lesson-body">');
+      h.push('<div class="kicker">' + esc(g.tagline) + '</div>');
+      for (var b = 0; b < g.body.length; b++) h.push('<p>' + esc(g.body[b]) + '</p>');
+      h.push('</div>');
+      for (var e = 0; e < g.examples.length; e++) {
+        var ex = g.examples[e];
+        h.push('<div class="ex-box" style="margin-top:10px"><div class="e-ar ar" dir="rtl">' + esc(ex.ar) + '</div>');
+        h.push('<div class="e-tr">' + esc(ex.translit) + '</div><div class="e-en">' + esc(ex.en) + '</div>');
+        h.push('<div class="e-note">☞ ' + esc(ex.note) + '</div>');
+        h.push('<button class="say" style="margin-top:8px" data-act="say" data-say="' + esc(ex.ar) + '">🔊</button></div>');
+      }
+      h.push('<div class="teach-nav"><button class="btn primary" data-act="start-quiz">I’ve got it — quiz me 🎯</button></div>');
+      return h.join('');
+    }
+
+    if (stage.kind === 'conj') {
+      var tense = stage.ref;
+      h.push('<div class="card"><div class="muted" style="margin-bottom:8px">Study the pattern, then the drill hides it. The model verb: ' + ar('كَتَبَ') + ' <i>kataba</i>, “to write”.</div>');
+      h.push('<table class="tbl">');
+      for (var r = 0; r < E.MORPH.paradigm.length; r++) {
+        var row = E.MORPH.paradigm[r];
+        var form = tense === 'present' ? row.present : row.past;
+        var tr = tense === 'present' ? row.presentTranslit : row.pastTranslit;
+        h.push('<tr><td class="muted">' + esc(row.en) + '</td><td class="ar" dir="rtl">' + esc(row.pronoun) + '</td>');
+        h.push('<td style="text-align:right"><span class="ar" dir="rtl">' + esc(form) + '</span> <span class="faint">' + esc(tr) + '</span></td></tr>');
+      }
+      h.push('</table></div>');
+      h.push('<div class="teach-nav"><button class="btn primary" data-act="start-quiz">Drill it 🎯</button></div>');
+      return h.join('');
+    }
+
+    if (stage.kind === 'forms') {
+      h.push('<div class="card"><div class="muted" style="margin-bottom:8px">Ten patterns that turn one root into a whole family of meanings.</div>');
+      for (var f = 0; f < E.MORPH.forms.length; f++) {
+        var F = E.MORPH.forms[f];
+        h.push('<div class="form-row"><div class="f-num">' + esc(F.form) + '</div>');
+        h.push('<div><div class="f-wazn ar" dir="rtl">' + esc(F.wazn) + '</div><div class="faint">' + esc(F.waznTranslit) + ' — ' + esc(F.meaning) + '</div></div>');
+        h.push('<div style="text-align:right"><span class="ar" dir="rtl" style="font-size:19px">' + esc(F.example.ar) + '</span><br><span class="faint">' + esc(F.example.en) + '</span></div></div>');
+      }
+      h.push('</div><div class="teach-nav"><button class="btn primary" data-act="start-quiz">Drill it 🎯</button></div>');
+      return h.join('');
+    }
+
+    if (stage.kind === 'read') {
+      var t = E.textById(stage.ref);
+      if (!t) return '';
+      h.push('<div class="card"><div class="muted" style="margin-bottom:4px">' + esc(t.intro) + '</div>');
+      for (var l = 0; l < t.lines.length; l++) {
+        var ln = t.lines[l];
+        h.push('<div class="line-block"><div class="l-ar ar" dir="rtl">' + esc(ln.ar) + '</div>');
+        h.push('<div class="l-tr">' + esc(ln.translit) + '</div><div class="l-en">' + esc(ln.en) + '</div>');
+        h.push('<div class="l-ref">' + esc(ln.ref) + ' · <button class="say" style="margin:0;padding:2px 10px" data-act="say" data-say="' + esc(ln.ar) + '">🔊</button></div></div>');
+      }
+      h.push('</div><div class="teach-nav"><button class="btn primary" data-act="start-quiz">Test my reading 🎯</button></div>');
+      return h.join('');
+    }
+    return '';
+  }
+
+  function renderQuiz(play) {
+    var q = play.quiz[play.qIdx];
+    if (!q) return '';
+    var h = [];
+    h.push('<div class="dots">');
+    for (var i = 0; i < play.quiz.length; i++) {
+      var cls = '';
+      if (i < play.answers.length) cls = play.answers[i] === play.quiz[i].answer ? 'done' : 'bad';
+      h.push('<i class="' + cls + '"></i>');
+    }
+    h.push('</div>');
+    h.push('<div class="card quiz">');
+    h.push('<div class="q-prompt">' + esc(q.prompt) + '</div>');
+    if (q.promptAr) h.push('<div class="q-ar ar" dir="rtl">' + esc(q.promptAr) + '</div>');
+    h.push('<div class="opts">');
+    for (var o = 0; o < q.options.length; o++) {
+      var opt = q.options[o];
+      var oc = '';
+      if (play.picked >= 0) {
+        if (o === q.answer) oc = 'good';
+        else if (o === play.picked) oc = 'bad';
+      }
+      h.push('<button class="' + oc + '" data-act="answer" data-i="' + o + '">');
+      if (opt.ar) h.push('<span class="ar" dir="rtl">' + esc(opt.ar) + '</span>');
+      if (opt.label) h.push(esc(opt.label));
+      h.push('</button>');
+    }
+    h.push('</div>');
+    if (play.picked >= 0) {
+      h.push('<div class="why">' + (play.picked === q.answer ? '✅ ' : '❌ ') + esc(q.why) + '</div>');
+      h.push('<button class="btn primary quiz-next" data-act="quiz-next">' + (play.qIdx < play.quiz.length - 1 ? 'Next →' : 'See my result') + '</button>');
+    }
+    h.push('</div>');
+    return h.join('');
+  }
+
+  function renderResult(play) {
+    var s = play.score;
+    if (!s) return '';
+    var h = ['<div class="card result">'];
+    h.push('<div class="r-stars">' + starsGlyph(s.stars) + '</div>');
+    h.push('<div class="r-pct">' + s.correct + ' / ' + s.total + ' · ' + s.pct + '%</div>');
+    var gained = state.profile.xp - play.xpBefore;
+    if (gained > 0) h.push('<div class="r-xp">+' + gained + ' XP</div>');
+    h.push('<div class="muted" style="margin-top:8px">' + resultLine(s) + '</div>');
+    if (play.newCards) h.push('<div class="muted" style="margin-top:6px">📇 ' + play.newCards + ' words joined your review deck.</div>');
+    h.push('<div class="row" style="justify-content:center;margin-top:18px">');
+    h.push('<button class="btn" data-act="retry-stage">Try again</button>');
+    h.push('<button class="btn primary" data-act="close-ov">Continue</button>');
+    h.push('</div></div>');
+    return h.join('');
+  }
+
+  function resultLine(s) {
+    if (s.stars === 3) return 'أَحْسَنْتَ — excellent! The stage is yours.';
+    if (s.stars === 2) return 'Strong. One more run for the third star?';
+    if (s.stars === 1) return 'Cleared — the road ahead is open.';
+    return 'Not yet — walk through the cards once more.';
+  }
+
+  function answerCurrent(i) {
+    var play = state.play;
+    if (!play || play.phase !== 'quiz' || play.picked >= 0) return;
+    play.picked = i;
+    play.answers.push(i);
+    var q = play.quiz[play.qIdx];
+    if (q && q.promptAr && i === q.answer) speak(q.promptAr);
+    renderStage();
+  }
+
+  function quizNext() {
+    var play = state.play;
+    if (!play) return;
+    if (play.qIdx < play.quiz.length - 1) {
+      play.qIdx++; play.picked = -1;
+      renderStage();
+    } else {
+      finishStage();
+    }
+  }
+
+  function finishStage() {
+    var play = state.play;
+    play.score = E.quizScore(play.answers, play.quiz);
+    var hadStars = E.stageStars(state.profile, play.stage.id);
+    state.profile = E.recordStage(state.profile, play.stage.id, play.score, todayISO());
+    if (play.stage.kind === 'vocab' && play.score.stars >= 1 && hadStars === 0) {
+      var unit = E.unitById(play.stage.ref);
+      if (unit) {
+        var before = E.srsStats(state.profile.cards, now()).total;
+        state.profile = E.seedCards(state.profile, unit.words, now());
+        play.newCards = E.srsStats(state.profile.cards, now()).total - before;
+      }
+    }
+    play.phase = 'done';
+    saveProfile();
+    renderStage();
+    renderHeader();
+  }
+
+  /* ---------------- overlay plumbing ---------------- */
+  function showOverlay(html) {
+    var ov = $('overlay');
+    ov.innerHTML = html;
+    ov.hidden = false;
+    try { ov.scrollTop = 0; } catch (e) {}
+  }
+  function closeOverlay() {
+    $('overlay').hidden = true;
+    $('overlay').innerHTML = '';
+    state.play = null;
+    state.overlayType = '';
+    renderTab();
+  }
+
+  /* ---------------- one delegated click handler ---------------- */
+  function findAct(t) {
+    while (t && t !== document) {
+      if (t.getAttribute && t.getAttribute('data-act')) return t;
+      t = t.parentNode;
+    }
+    return null;
+  }
+
+  document.addEventListener('click', function (ev) {
+    var t = findAct(ev.target);
+    if (!t) {
+      // tab bar
+      var n = ev.target;
+      while (n && n !== document) {
+        if (n.getAttribute && n.getAttribute('data-tab')) { setTab(n.getAttribute('data-tab')); return; }
+        n = n.parentNode;
+      }
+      return;
+    }
+    var act = t.getAttribute('data-act');
+    if (act === 'open-stage') openStage(+t.getAttribute('data-i'));
+    else if (act === 'toggle-wisdom') { state.wisdomOpen = !state.wisdomOpen; renderLearn(); }
+    else if (act === 'close-ov') closeOverlay();
+    else if (act === 'teach-next') { state.play.teachIdx++; renderStage(); }
+    else if (act === 'teach-prev') { state.play.teachIdx--; renderStage(); }
+    else if (act === 'start-quiz') { beginQuiz(); renderStage(); }
+    else if (act === 'answer') answerCurrent(+t.getAttribute('data-i'));
+    else if (act === 'quiz-next') quizNext();
+    else if (act === 'retry-stage') startStage(state.play.stage);
+    else if (act === 'start-review') startReview();
+    else if (act === 'reveal') { if (state.review) { state.review.revealed = true; renderReview(); } }
+    else if (act === 'grade') gradeCurrent(+t.getAttribute('data-g'));
+    else if (act === 'open-letter') openLetter(t.getAttribute('data-id'));
+    else if (act === 'open-text') openText(t.getAttribute('data-id'));
+    else if (act === 'text-tr') { state.textOpen.showTr = !state.textOpen.showTr; renderText(); }
+    else if (act === 'text-en') { state.textOpen.showEn = !state.textOpen.showEn; renderText(); }
+    else if (act === 'tense') { state.sarfTense = t.getAttribute('data-t'); renderSarf(); }
+    else if (act === 'drill-abc') startStage({ id: 'drill-abc', kind: 'letters-all', ref: null, icon: '🎯', title: 'Alphabet drill', titleAr: 'كُلّ الحُرُوف' });
+    else if (act === 'drill-marks') startStage({ id: 'drill-marks', kind: 'marks', ref: null, icon: '🎯', title: 'Signs drill', titleAr: 'الحَرَكَات' });
+    else if (act === 'say') speak(t.getAttribute('data-say'));
+    else if (act === 'gloss') {
+      var txt = E.textById(t.getAttribute('data-t'));
+      if (txt) {
+        var line = txt.lines[+t.getAttribute('data-l')];
+        var word = line && line.words[+t.getAttribute('data-w')];
+        if (word) {
+          toast('<span class="ar" dir="rtl" style="font-size:21px">' + esc(word.ar) + '</span> — ' + esc(word.en));
+          speak(word.ar);
+        }
+      }
+    }
+  });
+
+  /* ---------------- boot ---------------- */
+  // #review / #abc / #sarf / #read deep-link straight to a tab.
+  var bootTab = String((location && location.hash) || '').replace('#', '');
+  setTab(['learn', 'review', 'abc', 'sarf', 'read'].indexOf(bootTab) !== -1 ? bootTab : 'learn');
+
+  try {
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function () {});
+  } catch (e) {}
+})();
+</script>
+</body>
+</html>
