@@ -254,11 +254,11 @@ test('WEAK: nine classes, 13-row paradigms, the famous tricky forms right', () =
   assert.equal(skel('defective-u', 8, 'past'), 'دعت', 'daʿat');
   assert.equal(skel('defective-i', 8, 'past'), 'رمت', 'ramat');
   assert.equal(skel('defective-a', 11, 'past'), 'نسوا', 'nasū');
-  assert.equal(skel('hamzated', 7, 'present'), 'ياخذ', 'yaʾkhudhu');
+  assert.equal(skel('hamzated', 7, 'present'), 'يأخذ', 'yaʾkhudhu');
 });
 test('PATTERNS: ten broken-plural moulds, masdars I–X, the quadriliteral', () => {
   const skels = E.PATTERNS.plurals.map((p) => E.stripTashkil(p.pattern));
-  deepEq(skels, ['افعال', 'فعول', 'فعال', 'افعل', 'فعل', 'فعلاء', 'افعلاء', 'فواعل', 'مفاعل', 'مفاعيل']);
+  deepEq(skels, ['أفعال', 'فعول', 'فعال', 'أفعل', 'فعل', 'فعلاء', 'أفعلاء', 'فواعل', 'مفاعل', 'مفاعيل']);
   for (const p of E.PATTERNS.plurals) {
     assert.ok(p.patternTranslit && p.desc, `${p.pattern} incomplete`);
     assert.equal(p.examples.length, 3, `${p.pattern} needs 3 examples`);
