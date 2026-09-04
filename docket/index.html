@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Docket — your paperwork, dealt with</title>
+<meta name="description" content="A virtual assistant for the paper that lands on your doormat: snap a photo of a document, Docket reads it, ranks the pile by importance, explains what each one is for, tells you how to play it in your favour — and drafts the letters that deal with it.">
+<meta name="theme-color" content="#12100c">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Docket">
+<style>
+  :root {
+    --bg: #12100c; --bg2: #17140e; --card: #1c1812; --card2: #241f16;
+    --line: #33291b; --text: #f2ead9; --dim: #b3a488; --faint: #7d7059;
+    --brand: #f2b04a; --brand2: #e8825a; --teal: #4ecdc4; --green: #58cf8e;
+    --red: #ff6f6f; --amber: #ffc966;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    background: radial-gradient(1100px 600px at 50% -10%, #26200f 0%, var(--bg) 58%) fixed, var(--bg);
+    color: var(--text);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    min-height: 100dvh;
+  }
+  a { color: var(--brand); text-decoration: none; }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 0 16px calc(50px + env(safe-area-inset-bottom)); }
+
+  header { display: flex; align-items: baseline; gap: 10px; padding: 22px 0 4px; flex-wrap: wrap; }
+  .logo { font-size: 30px; font-weight: 800; letter-spacing: -1px; user-select: none; }
+  .logo .g { background: linear-gradient(92deg, var(--brand) 10%, var(--brand2) 90%);
+             -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .tagline { color: var(--dim); font-size: 13px; flex: 1 1 100%; margin-top: -4px; }
+
+  .assistant { display: flex; gap: 12px; background: linear-gradient(160deg, var(--card2), var(--card));
+               border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; margin: 14px 0 10px; }
+  .assistant .face { font-size: 26px; line-height: 1.2; }
+  .assistant .speech { flex: 1; min-width: 0; }
+  .assistant .who { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--faint); margin-bottom: 3px; }
+  .assistant .say { font-size: 14.5px; }
+  .stats { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 4px; }
+  .stat { font-size: 12px; color: var(--dim); border: 1px solid var(--line); border-radius: 999px;
+          padding: 3px 11px; background: var(--card); }
+  .stat b { color: var(--text); font-weight: 700; }
+  .stat.bad b { color: var(--red); } .stat.win b { color: var(--green); } .stat.money b { color: var(--amber); }
+
+  .addbar { display: flex; gap: 10px; margin: 12px 0 6px; }
+  .bigbtn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px;
+            background: linear-gradient(92deg, #4a3413, #4d2c1c); border: 1px solid #6b4a1e;
+            color: var(--text); border-radius: 14px; padding: 15px 10px; font-size: 15px; font-weight: 700;
+            cursor: pointer; font-family: inherit; }
+  .bigbtn.alt { background: var(--card); border-color: var(--line); font-weight: 600; }
+  .bigbtn:active { transform: scale(.98); }
+  input[type=file] { display: none; }
+
+  button { background: var(--card); color: var(--text); border: 1px solid var(--line);
+           border-radius: 10px; padding: 9px 15px; font-size: 13.5px; cursor: pointer; font-family: inherit; }
+  button:hover { border-color: var(--brand); }
+  button.primary { background: linear-gradient(92deg, #4a3413, #4d2c1c); border-color: #6b4a1e; font-weight: 700; }
+  button.small { padding: 5px 11px; font-size: 12.5px; border-radius: 8px; }
+  button.danger:hover { border-color: var(--red); color: var(--red); }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; margin: 12px 0; }
+  .lab { color: var(--faint); font-size: 11.5px; text-transform: uppercase; letter-spacing: .7px; margin: 10px 0 5px; }
+  input[type=text], textarea {
+    width: 100%; background: var(--bg2); border: 1px solid var(--line); border-radius: 10px;
+    padding: 10px 12px; color: var(--text); font-size: 14.5px; outline: none; font-family: inherit;
+  }
+  input[type=text]:focus, textarea:focus { border-color: var(--brand); }
+  textarea { min-height: 96px; resize: vertical; line-height: 1.5; }
+  ::placeholder { color: var(--faint); }
+  .readout { background: rgba(242,176,74,.06); border: 1px dashed #4a3a1f; border-radius: 10px;
+             padding: 9px 12px; font-size: 13px; color: var(--dim); margin-top: 8px; min-height: 38px; }
+  .readout b { color: var(--text); }
+  .chips { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 8px; }
+  .chip { background: var(--bg2); border: 1px solid var(--line); color: var(--dim);
+          border-radius: 999px; padding: 4px 12px; font-size: 12.5px; cursor: pointer; user-select: none; }
+  .chip.on { color: var(--text); border-color: var(--brand); background: rgba(242,176,74,.13); }
+  .rowbtns { display: flex; gap: 8px; margin-top: 12px; }
+  .rowbtns button { flex: 1; }
+  .mailbtn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
+             background: linear-gradient(92deg, #4a3413, #4d2c1c); border: 1px solid #6b4a1e;
+             color: var(--text); border-radius: 10px; padding: 9px 15px; font-size: 13.5px;
+             font-weight: 700; cursor: pointer; }
+  .mailbtn:hover { border-color: var(--brand); text-decoration: none; }
+  .photoprev { max-width: 130px; max-height: 130px; border-radius: 10px; border: 1px solid var(--line); display: block; }
+
+  .band { margin-top: 18px; }
+  .band h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .8px; color: var(--dim); margin-bottom: 6px; }
+  .band h2 .n { color: var(--faint); font-weight: 400; }
+  .empty { color: var(--faint); font-size: 13.5px; padding: 6px 0 2px; }
+
+  .doc { display: flex; gap: 12px; align-items: center; background: var(--card); border: 1px solid var(--line);
+         border-radius: 14px; padding: 11px 13px; margin: 8px 0; cursor: pointer; }
+  .doc:hover { border-color: #4a3a1f; }
+  .doc.done { opacity: .55; }
+  .doc .thumb { width: 52px; height: 52px; border-radius: 10px; background: var(--bg2); border: 1px solid var(--line);
+                display: flex; align-items: center; justify-content: center; font-size: 24px; flex: none;
+                overflow: hidden; }
+  .doc .thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .doc .mid { flex: 1; min-width: 0; }
+  .doc .t { font-weight: 700; font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .doc .badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+  .badge { font-size: 11.5px; border-radius: 999px; padding: 2px 9px; border: 1px solid var(--line); color: var(--dim); }
+  .badge.overdue, .badge.today { color: #ffb0b0; border-color: rgba(255,111,111,.5); background: rgba(255,111,111,.08); }
+  .badge.urgent, .badge.soon { color: var(--amber); border-color: rgba(255,201,102,.4); }
+  .badge.money { color: var(--amber); }
+  .badge.win { color: var(--green); border-color: rgba(88,207,142,.4); }
+  .doc .score { flex: none; text-align: right; color: var(--faint); font-size: 11px; }
+  .doc .score b { display: block; font-size: 17px; color: var(--dim); font-weight: 800; }
+
+  .overlay { position: fixed; inset: 0; background: rgba(8,6,3,.7); backdrop-filter: blur(3px);
+             display: none; align-items: flex-end; justify-content: center; z-index: 20; }
+  .overlay.on { display: flex; }
+  .sheet { background: var(--bg2); border: 1px solid var(--line); border-bottom: 0;
+           border-radius: 20px 20px 0 0; width: 100%; max-width: 720px; max-height: 88dvh;
+           overflow-y: auto; padding: 16px 18px calc(24px + env(safe-area-inset-bottom)); }
+  .sheet .grab { width: 42px; height: 4px; border-radius: 2px; background: var(--line); margin: 0 auto 12px; }
+  .sheet h3 { font-size: 18px; margin-bottom: 2px; }
+  .sheet .sub { color: var(--faint); font-size: 12.5px; margin-bottom: 10px; }
+  .sheet .photo { width: 100%; border-radius: 12px; border: 1px solid var(--line); margin: 8px 0; }
+  .brief h4 { font-size: 12px; text-transform: uppercase; letter-spacing: .7px; color: var(--brand); margin: 14px 0 4px; }
+  .brief p { font-size: 14px; color: var(--text); }
+  .brief .dl { margin-top: 10px; padding: 9px 12px; border-radius: 10px; background: rgba(255,201,102,.08);
+               border: 1px solid rgba(255,201,102,.25); font-size: 13.5px; }
+  .brief .dl.overdue { background: rgba(255,111,111,.1); border-color: rgba(255,111,111,.4); }
+  .brief ul { margin: 4px 0 0 18px; }
+  .brief li { font-size: 13.5px; color: var(--dim); margin: 6px 0; }
+  .brief li::marker { color: var(--brand); }
+  .savebanner { margin-top: 10px; padding: 10px 12px; border-radius: 10px; font-size: 13.5px;
+                background: rgba(88,207,142,.09); border: 1px solid rgba(88,207,142,.35); color: #bdeccf; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .draftbox { margin-top: 12px; }
+  .draftbox .subj { font-weight: 700; font-size: 14px; margin-bottom: 6px; }
+  .draftbox textarea { min-height: 220px; font-size: 13px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .draftbox .tip { color: var(--faint); font-size: 12.5px; margin-top: 6px; }
+  .signrow { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+  .signrow input { flex: 1; }
+  .statusrow { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+  .statusrow button { flex: 1; min-width: 110px; }
+
+  .toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+           background: #2a2214; border: 1px solid #6b4a1e; color: var(--text); border-radius: 12px;
+           padding: 10px 18px; font-size: 13.5px; z-index: 40; display: none; max-width: 90vw; }
+  .toast.on { display: block; }
+  footer { color: var(--faint); font-size: 12px; margin-top: 34px; line-height: 1.7; }
+  footer b { color: var(--dim); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">🗂️ <span class="g">Docket</span></div>
+    <div class="tagline">Snap the paperwork. Docket reads it, ranks it, and fights your corner.</div>
+  </header>
+
+  <div class="assistant">
+    <div class="face">🤖</div>
+    <div class="speech">
+      <div class="who">Docket says</div>
+      <div class="say" id="digest-say"></div>
+      <div class="stats" id="digest-stats"></div>
+    </div>
+  </div>
+
+  <div class="addbar">
+    <label class="bigbtn" for="camera">📸 Snap a document</label>
+    <button class="bigbtn alt" id="add-typed" type="button">✍️ Add by typing</button>
+  </div>
+  <input type="file" id="camera" accept="image/*" capture="environment">
+
+  <div class="card" id="add-panel" style="display:none">
+    <h3 style="font-size:16px">New document</h3>
+    <div id="add-photo-wrap" style="margin-top:8px; display:none"><img class="photoprev" id="add-photo" alt="document photo"></div>
+    <div class="lab">Who sent it? (optional)</div>
+    <input type="text" id="add-sender" placeholder="e.g. Camden Council, British Gas…" maxlength="60">
+    <div class="lab">Type the important lines it says</div>
+    <textarea id="add-text" placeholder="Copy the key lines: who it's from, any amounts, any dates, any reference number. e.g. “Penalty Charge Notice… Amount due: £130… pay within 14 days… Ref: AB123456”"></textarea>
+    <div class="readout" id="add-readout">Docket will read what you type and work out what it is…</div>
+    <div class="lab">Category — tap to correct Docket</div>
+    <div class="chips" id="add-cats"></div>
+    <div class="rowbtns">
+      <button type="button" id="add-cancel">Cancel</button>
+      <button type="button" class="primary" id="add-save">Add to the pile</button>
+    </div>
+  </div>
+
+  <div id="pile"></div>
+
+  <footer>
+    <b>How Docket works:</b> everything stays on this device — photos and text live in your browser only.
+    Docket reads the lines you give it, sorts the pile by what genuinely matters (deadlines, money at stake,
+    escalation language), briefs you on each document, and drafts the letters — appeals, prove-it demands,
+    disputes, cancellations — that deal with it. Its tips are practical starting points, not legal advice.
+  </footer>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="sheet" id="sheet"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="engine.js"></script>
+<script>
+(function () {
+  'use strict';
+  var E = DocketEngine;
+  var LS_KEY = 'docket-v1';
+
+  /* ---------------- state ---------------- */
+  var state = { docs: [], me: { name: '' } };
+  try {
+    var raw = localStorage.getItem(LS_KEY);
+    if (raw) {
+      var parsed = JSON.parse(raw);
+      if (parsed && parsed.docs) state.docs = parsed.docs;
+      if (parsed && parsed.me) state.me = parsed.me;
+    }
+  } catch (e) { /* fresh start */ }
+
+  function save() {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(state)); }
+    catch (e) {
+      // storage full — drop the largest photo and retry once
+      var biggest = null;
+      for (var i = 0; i < state.docs.length; i++) {
+        var d = state.docs[i];
+        if (d.photo && (!biggest || d.photo.length > biggest.photo.length)) biggest = d;
+      }
+      if (biggest) {
+        biggest.photo = null;
+        try { localStorage.setItem(LS_KEY, JSON.stringify(state)); toast('Storage was full — oldest photo dropped, text kept.'); } catch (e2) {}
+      }
+    }
+  }
+
+  var idSeq = 0;
+  function newId() { return 'd' + Date.now().toString(36) + (idSeq++).toString(36); }
+  function byId(id) { for (var i = 0; i < state.docs.length; i++) if (state.docs[i].id === id) return state.docs[i]; return null; }
+  function el(id) { return document.getElementById(id); }
+  var esc = E.escapeHTML;
+
+  var toastTimer = null;
+  function toast(msg) {
+    var t = el('toast');
+    t.textContent = msg;
+    t.className = 'toast on';
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.className = 'toast'; }, 3200);
+  }
+
+  /* ---------------- the digest (the assistant speaking) ---------------- */
+  function renderDigest() {
+    var g = E.assistantDigest(state.docs, Date.now());
+    el('digest-say').textContent = g.headline;
+    var chips = [];
+    if (g.open) chips.push('<span class="stat"><b>' + g.open + '</b> open</span>');
+    if (g.overdue) chips.push('<span class="stat bad"><b>' + g.overdue + '</b> overdue</span>');
+    if (g.dueSoon) chips.push('<span class="stat"><b>' + g.dueSoon + '</b> due this week</span>');
+    if (g.atStake) chips.push('<span class="stat money"><b>' + esc(g.atStakeLabel) + '</b> at stake</span>');
+    if (g.saved) chips.push('<span class="stat win"><b>' + esc(g.savedLabel) + '</b> saved</span>');
+    el('digest-stats').innerHTML = chips.join('');
+  }
+
+  /* ---------------- the pile ---------------- */
+  var BANDS = [
+    { key: 'now',   title: '⚡ Act now' },
+    { key: 'week',  title: '📅 This week' },
+    { key: 'later', title: '🗂 When you can' },
+    { key: 'done',  title: '✅ Dealt with' }
+  ];
+
+  function docCard(entry) {
+    var d = entry.doc, c = E.categoryByKey(d.category);
+    var thumb = d.photo ? '<img src="' + d.photo + '" alt="">' : c.emoji;
+    var badges = [];
+    if (entry.deadline.state !== 'none') badges.push('<span class="badge ' + entry.deadline.state + '">' + esc(entry.deadline.label) + '</span>');
+    if (d.amount) badges.push('<span class="badge money">' + esc(E.formatMoney(d.amount, d.currency)) + '</span>');
+    var saving = E.potentialSaving(d, Date.now());
+    if (saving) badges.push('<span class="badge win">save ' + esc(saving.label) + '</span>');
+    if (d.escalation) badges.push('<span class="badge overdue">' + esc(d.escalation) + '</span>');
+    if (d.status !== 'open' && d.savedAmount) badges.push('<span class="badge win">saved ' + esc(E.formatMoney(d.savedAmount, d.currency)) + '</span>');
+    return '<div class="doc' + (entry.band === 'done' ? ' done' : '') + '" data-id="' + esc(d.id) + '">' +
+      '<div class="thumb">' + thumb + '</div>' +
+      '<div class="mid"><div class="t">' + esc(d.title) + '</div>' +
+      '<div class="badges">' + badges.join('') + '</div></div>' +
+      '<div class="score"><b>' + Math.round(entry.score) + '</b>priority</div></div>';
+  }
+
+  function renderPile() {
+    var t = E.triage(state.docs, Date.now());
+    var byBand = { now: [], week: [], later: [], done: [] };
+    for (var i = 0; i < t.length; i++) byBand[t[i].band].push(t[i]);
+    var html = '';
+    for (var b = 0; b < BANDS.length; b++) {
+      var band = BANDS[b], list = byBand[band.key];
+      if (!list.length && band.key !== 'now') continue;
+      html += '<div class="band"><h2>' + band.title + ' <span class="n">· ' + list.length + '</span></h2>';
+      if (!list.length) html += '<div class="empty">Nothing urgent — the doormat is winning today.</div>';
+      for (var j = 0; j < list.length; j++) html += docCard(list[j]);
+      html += '</div>';
+    }
+    if (!state.docs.length) {
+      html += '<div class="band"><div class="empty">The pile is empty. Snap your first document — or ' +
+        '<a href="#" id="demo-link">load 5 example documents</a> to see Docket at work.</div></div>';
+    }
+    el('pile').innerHTML = html;
+    var demo = el('demo-link');
+    if (demo && demo.addEventListener) demo.addEventListener('click', function (ev) { if (ev && ev.preventDefault) ev.preventDefault(); loadDemo(); });
+  }
+
+  function renderAll() { renderDigest(); renderPile(); }
+
+  /* ---------------- add flow ---------------- */
+  var pendingPhoto = null;
+  var pickedCategory = null;
+
+  function openAdd(photo) {
+    pendingPhoto = photo || null;
+    pickedCategory = null;
+    el('add-sender').value = '';
+    el('add-text').value = '';
+    el('add-photo-wrap').style.display = photo ? 'block' : 'none';
+    if (photo) el('add-photo').src = photo;
+    el('add-panel').style.display = 'block';
+    renderAddReadout();
+    var ta = el('add-text');
+    if (ta.focus) ta.focus();
+  }
+
+  function closeAdd() { el('add-panel').style.display = 'none'; pendingPhoto = null; }
+
+  function renderAddReadout() {
+    var text = el('add-text').value || '';
+    var cls = E.classifyDocument(text);
+    var amt = E.extractAmount(text);
+    var due = E.extractDueDate(text, Date.now());
+    var ref = E.extractReference(text);
+    var eff = pickedCategory || cls.key;
+    var effCat = E.categoryByKey(eff);
+    var bits = ['<b>' + effCat.emoji + ' ' + esc(effCat.label) + '</b>' +
+                (pickedCategory ? ' (your call)' : text.trim() ? ' (' + cls.confidence + ' confidence)' : '')];
+    if (amt) bits.push('<b>' + esc(amt.label) + '</b>');
+    if (due) bits.push('due <b>' + esc(E.formatDateISO(due)) + '</b>');
+    if (ref) bits.push('ref <b>' + esc(ref) + '</b>');
+    el('add-readout').innerHTML = text.trim() || pendingPhoto
+      ? 'Docket reads: ' + bits.join(' · ')
+      : 'Docket will read what you type and work out what it is…';
+    // category chips
+    var chips = '';
+    for (var i = 0; i < E.CATEGORIES.length; i++) {
+      var c = E.CATEGORIES[i];
+      chips += '<span class="chip' + (c.key === eff ? ' on' : '') + '" data-cat="' + c.key + '">' + c.emoji + ' ' + esc(c.label) + '</span>';
+    }
+    el('add-cats').innerHTML = chips;
+  }
+
+  function saveNewDoc() {
+    var v = E.validateDocument({
+      text: el('add-text').value,
+      sender: el('add-sender').value,
+      photo: pendingPhoto,
+      category: pickedCategory
+    }, Date.now());
+    if (!v.ok) { toast(v.reason); return; }
+    var d = v.doc;
+    d.id = newId();
+    state.docs.push(d);
+    save();
+    closeAdd();
+    renderAll();
+    var brief = E.briefing(d, Date.now());
+    toast(brief.emoji + ' Filed as “' + d.title + '” — tap it for the briefing.');
+  }
+
+  /* ---------------- photo capture ---------------- */
+  function handleFile(file) {
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      var img = new Image();
+      img.onload = function () {
+        var MAX = 1000;
+        var w = img.width, h = img.height;
+        var scale = Math.min(1, MAX / Math.max(w, h));
+        var canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(w * scale));
+        canvas.height = Math.max(1, Math.round(h * scale));
+        var ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        openAdd(canvas.toDataURL('image/jpeg', 0.72));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  /* ---------------- detail sheet: the briefing & the actions ---------------- */
+  var openDocId = null;
+
+  function openDetail(id) {
+    var d = byId(id);
+    if (!d) return;
+    openDocId = id;
+    var now = Date.now();
+    var b = E.briefing(d, now);
+    var imp = E.importanceScore(d, now);
+    var html = '<div class="grab"></div>' +
+      '<h3>' + b.emoji + ' ' + esc(b.title) + '</h3>' +
+      '<div class="sub">' + esc(b.category) + ' · added ' + esc(E.timeAgo(d.ts, now)) +
+      (d.ref ? ' · ref ' + esc(d.ref) : '') + ' · priority ' + Math.round(imp.score) + '</div>';
+    if (d.photo) html += '<img class="photo" src="' + d.photo + '" alt="document photo">';
+    html += '<div class="brief">' +
+      '<h4>What this is</h4><p>' + esc(b.what) + '</p>' +
+      '<h4>Why it matters</h4><p>' + esc(b.why) + '</p>';
+    if (b.deadlineLine) html += '<div class="dl' + (b.deadlineLine.indexOf('passed') !== -1 ? ' overdue' : '') + '">' + esc(b.deadlineLine) + '</div>';
+    if (b.saving) html += '<div class="savebanner">💰 ' + esc(b.saving.line) + '</div>';
+    html += '<h4>In your favour</h4><ul>';
+    for (var i = 0; i < b.favour.length; i++) html += '<li>' + esc(b.favour[i]) + '</li>';
+    html += '</ul>';
+    if (b.suggested.length && d.status === 'open') {
+      html += '<h4>Let Docket deal with it</h4><div class="actions">';
+      for (var j = 0; j < b.suggested.length; j++) {
+        var s = b.suggested[j];
+        html += '<button type="button" class="small" data-draft="' + s.kind + '">' + s.emoji + ' ' + esc(s.label) + '</button>';
+      }
+      html += '</div><div id="draft-out"></div>';
+    }
+    html += '</div>';
+    html += '<div class="statusrow">';
+    if (d.status === 'open') {
+      html += '<button type="button" class="primary" data-act="done">✅ Dealt with</button>' +
+              '<button type="button" data-act="snooze">💤 Snooze 3 days</button>';
+    } else {
+      html += '<button type="button" data-act="reopen">↩️ Reopen</button>';
+    }
+    html += '<button type="button" class="danger" data-act="remove">🗑 Remove</button></div>';
+    el('sheet').innerHTML = html;
+    el('overlay').className = 'overlay on';
+  }
+
+  function closeDetail() { el('overlay').className = 'overlay'; openDocId = null; }
+
+  function showDraft(kind) {
+    var d = byId(openDocId);
+    if (!d) return;
+    var draft = E.draftAction(d, kind, state.me, Date.now());
+    if (!draft) return;
+    var out = el('draft-out');
+    out.innerHTML = '<div class="draftbox">' +
+      '<div class="subj">✉️ ' + esc(draft.subject) + '</div>' +
+      '<textarea id="draft-body"></textarea>' +
+      '<div class="signrow"><span style="font-size:12.5px;color:var(--faint)">Sign as</span>' +
+      '<input type="text" id="sign-name" placeholder="Your name" maxlength="40"></div>' +
+      '<div class="rowbtns">' +
+      '<button type="button" id="draft-copy">📋 Copy letter</button>' +
+      '<a id="draft-mail" class="mailbtn">📨 Open in email</a>' +
+      '</div><div class="tip">💡 ' + esc(draft.tip) + '</div></div>';
+    el('draft-body').value = draft.body;
+    el('sign-name').value = state.me.name || '';
+    el('draft-mail').href = E.mailtoLink(draft, '');
+    var signEl = el('sign-name');
+    if (signEl.addEventListener) signEl.addEventListener('input', function () {
+      state.me.name = signEl.value;
+      save();
+      var re = E.draftAction(d, kind, state.me, Date.now());
+      el('draft-body').value = re.body;
+      el('draft-mail').href = E.mailtoLink(re, '');
+    });
+    var copyEl = el('draft-copy');
+    if (copyEl.addEventListener) copyEl.addEventListener('click', function () {
+      var body = el('draft-body');
+      var done = function () { toast('Letter copied — paste it into email, a form, or print it.'); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(body.value).then(done, done);
+      else { if (body.select) body.select(); try { document.execCommand('copy'); } catch (e) {} done(); }
+    });
+  }
+
+  function actOnDoc(act) {
+    var d = byId(openDocId);
+    if (!d) return;
+    var now = Date.now();
+    if (act === 'done') {
+      var saving = E.potentialSaving(d, now);
+      d.status = 'done';
+      d.doneTs = now;
+      if (saving) { d.savedAmount = saving.save; toast('Nice — dealt with inside the discount window. ' + saving.label + ' saved. 🎉'); }
+      else toast('Dealt with. One less thing on the doormat.');
+    } else if (act === 'snooze') {
+      d.snoozedUntil = now + 3 * E.DAY;
+      toast('Snoozed until ' + E.formatDateISO(E.toISO(d.snoozedUntil)) + ' — it drops down the pile, not off it.');
+    } else if (act === 'reopen') {
+      d.status = 'open'; d.doneTs = null; d.savedAmount = null;
+      toast('Back in the pile.');
+    } else if (act === 'remove') {
+      if (!confirm('Remove “' + d.title + '” and its photo for good?')) return;
+      for (var i = 0; i < state.docs.length; i++) if (state.docs[i].id === d.id) { state.docs.splice(i, 1); break; }
+      toast('Removed.');
+    }
+    save();
+    closeDetail();
+    renderAll();
+  }
+
+  /* ---------------- demo documents ---------------- */
+  function loadDemo() {
+    var now = Date.now();
+    var mk = function (over, text, sender, agoDays) {
+      var v = E.validateDocument({ text: text, sender: sender }, now - agoDays * E.DAY);
+      var d = v.doc; d.id = newId();
+      for (var k in over) d[k] = over[k];
+      return d;
+    };
+    state.docs = state.docs.concat([
+      mk({}, 'Penalty Charge Notice — contravention: parked in a restricted street. Reference: PCN/48291073. Amount due: £130.00. A discounted amount of £65.00 is payable within 14 days of the date of this notice.', 'Camden Council', 3),
+      mk({}, 'FINAL NOTICE — your outstanding balance of £342.18 has been passed to our collections team. Ref: DC-2210-8841. Contact us within 7 days to avoid further action.', 'Sterling Recovery Ltd', 1),
+      mk({}, 'Your electricity bill. Total due: £96.40 by 30/09/2026. This bill is based on an ESTIMATED meter reading. Account no: EL-778812', 'NorthGrid Energy', 2),
+      mk({}, 'Your car insurance renewal. Your policy renews automatically on 12/10/2026. New annual premium: £684.50. Policy number: MTR-55621. No action is needed.', 'Shield Insurance', 4),
+      mk({}, 'EXCLUSIVE OFFER — you have been selected! Act now to claim your limited time discount code. No obligation.', 'MegaDeals Direct', 0)
+    ]);
+    save();
+    renderAll();
+    toast('5 example documents filed — see how Docket ranked them.');
+  }
+
+  /* ---------------- wiring ---------------- */
+  var cameraEl = el('camera');
+  if (cameraEl.addEventListener) cameraEl.addEventListener('change', function () {
+    if (cameraEl.files && cameraEl.files[0]) handleFile(cameraEl.files[0]);
+    cameraEl.value = '';
+  });
+  var addTypedEl = el('add-typed');
+  if (addTypedEl.addEventListener) addTypedEl.addEventListener('click', function () { openAdd(null); });
+  var addTextEl = el('add-text');
+  if (addTextEl.addEventListener) addTextEl.addEventListener('input', renderAddReadout);
+  var addCancelEl = el('add-cancel');
+  if (addCancelEl.addEventListener) addCancelEl.addEventListener('click', closeAdd);
+  var addSaveEl = el('add-save');
+  if (addSaveEl.addEventListener) addSaveEl.addEventListener('click', saveNewDoc);
+  var addCatsEl = el('add-cats');
+  if (addCatsEl.addEventListener) addCatsEl.addEventListener('click', function (ev) {
+    var t = ev.target;
+    while (t && t !== addCatsEl && !(t.getAttribute && t.getAttribute('data-cat'))) t = t.parentNode;
+    if (t && t.getAttribute && t.getAttribute('data-cat')) {
+      var cat = t.getAttribute('data-cat');
+      pickedCategory = pickedCategory === cat ? null : cat;
+      renderAddReadout();
+    }
+  });
+  var pileEl = el('pile');
+  if (pileEl.addEventListener) pileEl.addEventListener('click', function (ev) {
+    var t = ev.target;
+    while (t && t !== pileEl && !(t.getAttribute && t.getAttribute('data-id'))) t = t.parentNode;
+    if (t && t.getAttribute && t.getAttribute('data-id')) openDetail(t.getAttribute('data-id'));
+  });
+  var overlayEl = el('overlay');
+  if (overlayEl.addEventListener) overlayEl.addEventListener('click', function (ev) {
+    if (ev.target === overlayEl) { closeDetail(); return; }
+    var t = ev.target;
+    while (t && t !== overlayEl && !(t.getAttribute && (t.getAttribute('data-act') || t.getAttribute('data-draft')))) t = t.parentNode;
+    if (t && t.getAttribute) {
+      if (t.getAttribute('data-act')) actOnDoc(t.getAttribute('data-act'));
+      else if (t.getAttribute('data-draft')) showDraft(t.getAttribute('data-draft'));
+    }
+  });
+
+  renderAll();
+
+  /* ---------------- offline ---------------- */
+  if (navigator.serviceWorker && navigator.serviceWorker.register && location.protocol !== 'file:') {
+    navigator.serviceWorker.register('sw.js').catch(function () {});
+  }
+})();
+</script>
+</body>
+</html>
