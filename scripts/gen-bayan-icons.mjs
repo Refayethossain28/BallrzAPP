@@ -71,7 +71,10 @@ function sparkDist(px, py, cx, cy, r, w) {
   return Math.min(d1, d2) * Math.min(w, r) * 0.7; // approx px distance
 }
 
-function render(N) {
+function render(N, opaque) {
+  // opaque: full-bleed square (no transparent rounded corners). iOS
+  // composites apple-touch-icon transparency onto black, so the 180px
+  // variant ships opaque and lets iOS apply its own mask.
   const rgba = Buffer.alloc(N * N * 4);
   const S = N / 512; // design space is 512
   const corner = 116 * S;
@@ -86,11 +89,11 @@ function render(N) {
   for (let y = 0; y < N; y++) {
     for (let x = 0; x < N; x++) {
       const i = (y * N + x) * 4;
-      // rounded-square mask
+      // rounded-square mask (skipped for the opaque apple-touch variant)
       const qx = Math.abs(x - N / 2) - (N / 2 - corner);
       const qy = Math.abs(y - N / 2) - (N / 2 - corner);
       const rd = Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) - corner;
-      const mask = clamp(0.5 - rd / aa, 0, 1);
+      const mask = opaque ? 1 : clamp(0.5 - rd / aa, 0, 1);
       if (mask <= 0) { rgba[i + 3] = 0; continue; }
 
       // midnight-indigo radial background, lit from the upper left
@@ -126,6 +129,6 @@ function render(N) {
 }
 
 for (const n of [180, 192, 512]) {
-  writeFileSync(join(OUT, `icon-${n}.png`), render(n));
+  writeFileSync(join(OUT, `icon-${n}.png`), render(n, n === 180));
   console.log(`bayan/icon-${n}.png`);
 }

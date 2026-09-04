@@ -282,7 +282,15 @@
       var raw = localStorage.getItem(PROFILE_KEY);
       if (raw) {
         var p = JSON.parse(raw);
-        if (p && typeof p === 'object') return p;
+        if (p && typeof p === 'object' && !Array.isArray(p)) {
+          // normalize shape so a hand-edited or stale profile can't crash a render
+          var base = E.defaultProfile();
+          p.xp = p.xp || 0;
+          p.stages = p.stages || base.stages;
+          p.cards = p.cards || base.cards;
+          p.streak = p.streak || base.streak;
+          return p;
+        }
       }
     } catch (e) {}
     return E.defaultProfile();
@@ -449,7 +457,15 @@
 
     var card = sess.queue[0];
     var word = E.cardWord(card);
-    if (!word) { sess.queue.shift(); renderReview(); return; }
+    if (!word) {
+      // a curriculum edit orphaned this card — prune it instead of letting
+      // it sit "due" forever behind a phantom badge count
+      sess.queue.shift();
+      delete state.profile.cards[card.id];
+      saveProfile();
+      renderReview();
+      return;
+    }
     h.push('<div class="muted" style="margin-bottom:8px">' + sess.queue.length + ' left in this session</div>');
     h.push('<div class="card flash">');
     h.push('<div class="f-ar ar" dir="rtl">' + esc(word.ar) + '</div>');
@@ -493,8 +509,8 @@
   /* ---------------- ALPHABET reference ---------------- */
   function renderAbc() {
     var h = [];
-    h.push('<div class="card"><div class="row spread"><h2>The 28 letters ' + ar('الْحُرُوف') + '</h2></div>');
-    h.push('<div class="muted" style="margin-bottom:10px">Tap a letter for its forms, sound and story.</div>');
+    h.push('<div class="card"><div class="row spread"><h2>The alphabet ' + ar('الْحُرُوف') + '</h2></div>');
+    h.push('<div class="muted" style="margin-bottom:10px">The 28 letters and hamza — tap any for its forms, sound and story.</div>');
     h.push('<div class="abc-grid">');
     for (var i = 0; i < E.LETTERS.length; i++) {
       var L = E.LETTERS[i];
@@ -685,6 +701,7 @@
       return E.letterQuiz(group ? group.letters : E.LETTERS, seed, 8);
     }
     if (stage.kind === 'letters-all') return E.letterQuiz(E.LETTERS, seed, 12);
+    if (stage.kind === 'marks-all') return E.markQuiz(seed, 12);
     if (stage.kind === 'marks') return E.markQuiz(seed, 8);
     if (stage.kind === 'vocab') {
       var unit = E.unitById(stage.ref);
@@ -722,7 +739,9 @@
 
   function beginQuiz() {
     var play = state.play;
-    play.quiz = buildQuiz(play.stage, stageSeed(play.stage));
+    // Salted per attempt: abandoning mid-quiz and reopening must not replay
+    // the identical questions with the answers already revealed.
+    play.quiz = buildQuiz(play.stage, stageSeed(play.stage) + ':' + Date.now());
     play.phase = play.quiz.length ? 'quiz' : 'done';
     play.qIdx = 0; play.answers = []; play.picked = -1;
     if (play.phase === 'done') finishStage();
@@ -1003,7 +1022,7 @@
     else if (act === 'text-en') { state.textOpen.showEn = !state.textOpen.showEn; renderText(); }
     else if (act === 'tense') { state.sarfTense = t.getAttribute('data-t'); renderSarf(); }
     else if (act === 'drill-abc') startStage({ id: 'drill-abc', kind: 'letters-all', ref: null, icon: '🎯', title: 'Alphabet drill', titleAr: 'كُلّ الْحُرُوف' });
-    else if (act === 'drill-marks') startStage({ id: 'drill-marks', kind: 'marks', ref: null, icon: '🎯', title: 'Signs drill', titleAr: 'الْحَرَكَات' });
+    else if (act === 'drill-marks') startStage({ id: 'drill-marks', kind: 'marks-all', ref: null, icon: '🎯', title: 'Signs drill', titleAr: 'الْحَرَكَات' });
     else if (act === 'say') speak(t.getAttribute('data-say'));
     else if (act === 'gloss') {
       var txt = E.textById(t.getAttribute('data-t'));

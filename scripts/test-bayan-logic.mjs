@@ -125,7 +125,7 @@ test('MARKS: full set of signs, vocalized names, examples', () => {
   }
   for (const M of E.MARKS) {
     assert.ok(M.display && M.name && M.nameEn && M.makes && M.desc, `${M.id} incomplete`);
-    assert.ok(M.example && M.example.ar && M.example.en, `${M.id} example incomplete`);
+    assert.ok(M.example && M.example.ar && M.example.en && M.example.translit, `${M.id} example incomplete`);
   }
 });
 
@@ -157,6 +157,7 @@ test('MORPH: pronouns, suffixes, paradigm, the ten forms, derived nouns', () => 
   assert.equal(E.MORPH.paradigm.length, 13);
   for (const r of E.MORPH.paradigm) {
     assert.ok(r.pronoun && r.past && r.present && r.en, `row incomplete: ${JSON.stringify(r)}`);
+    assert.ok(r.pronounTranslit && r.pastTranslit && r.presentTranslit, `${r.en} translits incomplete`);
     assert.ok(vocalized(r.past) && vocalized(r.present), `${r.en} forms not vocalized`);
   }
   const pastForms = new Set(E.MORPH.paradigm.map((r) => r.past));
@@ -278,6 +279,29 @@ test('readQuiz: asks about the text’s own words, glosses stay honest', () => {
   }
   deepEq(qs, E.readQuiz(t, 'r', 6));
 });
+test('vocabQuiz: no two options ever share a gloss or transliteration', () => {
+  for (const u of E.UNITS) {
+    for (let s = 0; s < 6; s++) {
+      for (const q of E.vocabQuiz(u.words, 'fuzz:' + u.id + ':' + s, 12)) {
+        const labels = q.options.map((o) => o.label);
+        assert.equal(new Set(labels).size, 4, `${u.id} duplicate option: ${labels.join(' / ')}`);
+      }
+    }
+  }
+});
+test('letterQuiz: sun/moon questions stay within the letters being drilled', () => {
+  const subset = E.LETTERS.slice(0, 12); // 7 sun + 5 moon — both sides workable
+  for (let s = 0; s < 8; s++) {
+    for (const q of E.letterQuiz(subset, 'sm:' + s, 12)) {
+      if (q.kind !== 'sunmoon') continue;
+      for (const o of q.options) {
+        assert.ok(subset.some((L) => L.ar === o.ar), `option ${o.ar} outside the drilled set`);
+      }
+    }
+  }
+  const tiny = E.LETTERS.slice(0, 2); // ا ب: no workable sun/moon split
+  for (const q of E.letterQuiz(tiny, 'tiny', 10)) assert.notEqual(q.kind, 'sunmoon');
+});
 test('quizScore: star thresholds at 50/70/90', () => {
   const quiz = Array.from({ length: 10 }, () => ({ answer: 0 }));
   const answersOf = (n) => Array.from({ length: 10 }, (_, i) => (i < n ? 0 : 1));
@@ -365,6 +389,12 @@ test('bumpStreak: grows daily, survives same-day repeats, breaks on a gap', () =
   assert.equal(s.best, 3, 'best remembered');
   assert.ok(E.streakAlive({ count: 2, last: '2026-09-03', best: 2 }, '2026-09-04'));
   assert.ok(!E.streakAlive({ count: 2, last: '2026-09-01', best: 2 }, '2026-09-04'));
+});
+test('bumpStreak: a clock that walks backwards cannot wipe a streak', () => {
+  const s = E.bumpStreak({ count: 50, last: '2026-09-05', best: 50 }, '2026-09-04');
+  assert.equal(s.count, 50, 'streak survives');
+  assert.equal(s.last, '2026-09-05', 'watermark never moves backwards');
+  assert.ok(E.streakAlive({ count: 50, last: '2026-09-05', best: 50 }, '2026-09-04'));
 });
 test('rankFor: the ladder from Mubtadiʾ to Faṣīḥ', () => {
   const first = E.rankFor(0);
@@ -471,6 +501,8 @@ test('searchVocab finds words by English, transliteration and bare Arabic', () =
   assert.ok(byAr.some((r) => r.word.ar === w.ar), 'bare Arabic hits');
   deepEq(E.searchVocab(''), []);
   deepEq(E.searchVocab('zzzznope'), []);
+  deepEq(E.searchVocab('-'), [], 'a query that folds to nothing matches nothing');
+  deepEq(E.searchVocab('ʿ'), [], 'a lone ʿayn sign matches nothing');
 });
 test('dailyWisdom: stable per day, rotates across days, always classical', () => {
   const a = E.dailyWisdom('2026-09-04');

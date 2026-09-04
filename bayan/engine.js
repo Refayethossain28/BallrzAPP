@@ -4530,7 +4530,15 @@
 
   var LETTER_KINDS = ['glyph2name', 'name2glyph', 'glyph2sound', 'spotForm', 'sunmoon'];
 
-  function letterQuestion(letter, kind, seed) {
+  // Can a sun/moon question be asked fairly within this letter set?
+  // It needs a target on one side and three wrong options on the other.
+  function sunmoonViable(letters) {
+    var sun = 0, moon = 0;
+    for (var i = 0; i < (letters || []).length; i++) (letters[i].sun ? sun++ : moon++);
+    return (sun >= 1 && moon >= 3) || (moon >= 1 && sun >= 3);
+  }
+
+  function letterQuestion(letter, kind, seed, set) {
     var d = letterDistractors(letter, 3, seed);
     var q, correct;
     if (kind === 'glyph2name') {
@@ -4560,10 +4568,13 @@
       correct = { label: letter.nameEn, ar: '' };
       return finishQuestion(q, correct, d.map(function (x) { return { label: x.nameEn, ar: '' }; }), seed);
     }
-    // sunmoon: which of these is a sun/moon letter?
-    var wantSun = hashStr(seed + ':side') % 2 === 0;
+    // sunmoon: which of these is a sun/moon letter? Drawn from the letters
+    // THIS drill covers, so learners are never quizzed on unseen glyphs.
+    var src = set && set.length ? set : LETTERS;
     var pool = { sun: [], moon: [] };
-    for (var i = 0; i < LETTERS.length; i++) (LETTERS[i].sun ? pool.sun : pool.moon).push(LETTERS[i]);
+    for (var i = 0; i < src.length; i++) (src[i].sun ? pool.sun : pool.moon).push(src[i]);
+    var wantSun = hashStr(seed + ':side') % 2 === 0;
+    if (!((wantSun ? pool.sun : pool.moon).length >= 1 && (wantSun ? pool.moon : pool.sun).length >= 3)) wantSun = !wantSun;
     var target = pickN(wantSun ? pool.sun : pool.moon, 1, seed + ':t')[0] || letter;
     var wrongs = pickN(wantSun ? pool.moon : pool.sun, 3, seed + ':w');
     q = {
@@ -4585,7 +4596,8 @@
     for (var i = 0; i < n; i++) {
       var letter = order[i % order.length];
       var kind = LETTER_KINDS[hashStr(seed + ':kind:' + i) % (i < 2 ? 3 : LETTER_KINDS.length)];
-      qs.push(letterQuestion(letter, kind, seed + ':' + i));
+      if (kind === 'sunmoon' && !sunmoonViable(order)) kind = 'glyph2name';
+      qs.push(letterQuestion(letter, kind, seed + ':' + i, order));
     }
     return qs;
   }
@@ -4624,9 +4636,19 @@
       if (w.ar === word.ar || w.en === word.en) continue;
       (w.pos === word.pos ? samePos : rest).push(w);
     }
-    var out = pickN(samePos, n, seed + ':pos');
-    rest = seededShuffle(rest, seed + ':rest');
-    while (out.length < n && rest.length) out.push(rest.shift());
+    // Same-pos first, then the rest — and never two options sharing a
+    // gloss or a transliteration (the lexicon glosses both سَنَة and عَام
+    // as "year", which would render as twin options).
+    var pool = seededShuffle(samePos, seed + ':pos').concat(seededShuffle(rest, seed + ':rest'));
+    var out = [], seen = {};
+    seen['e:' + word.en.toLowerCase()] = 1;
+    seen['t:' + word.translit] = 1;
+    for (var p = 0; p < pool.length && out.length < n; p++) {
+      var ke = 'e:' + pool[p].en.toLowerCase(), kt = 't:' + pool[p].translit;
+      if (seen[ke] || seen[kt]) continue;
+      seen[ke] = 1; seen[kt] = 1;
+      out.push(pool[p]);
+    }
     return out;
   }
 
@@ -4866,6 +4888,7 @@
     var s = { count: (streak && streak.count) || 0, last: (streak && streak.last) || '', best: (streak && streak.best) || 0 };
     if (s.last === isoDate) return s;
     var diff = s.last ? isoDayDiff(s.last, isoDate) : NaN;
+    if (diff <= 0) return s;   // the clock walked backwards — today is already counted
     s.count = diff === 1 ? s.count + 1 : 1;
     s.last = isoDate;
     if (s.count > s.best) s.best = s.count;
@@ -4875,7 +4898,7 @@
   function streakAlive(streak, isoDate) {
     if (!streak || !streak.last) return false;
     var diff = isoDayDiff(streak.last, isoDate);
-    return diff === 0 || diff === 1;
+    return diff <= 1;   // 0/1 = today/yesterday; negative = a backwards clock, still alive
   }
 
   // The ladder of ranks — classical titles for a classical pursuit.
@@ -5071,8 +5094,8 @@
       var w = words[i];
       var score = 0;
       var en = w.en.toLowerCase(), tr = translitFold(w.translit), ar = normalizeAr(w.ar);
-      if (en === qEn || tr === qT || (qAr && ar === qAr)) score = 100;
-      else if (en.indexOf(qEn) === 0 || tr.indexOf(qT) === 0 || (qAr && ar.indexOf(qAr) === 0)) score = 70;
+      if (en === qEn || (qT && tr === qT) || (qAr && ar === qAr)) score = 100;
+      else if (en.indexOf(qEn) === 0 || (qT && tr.indexOf(qT) === 0) || (qAr && ar.indexOf(qAr) === 0)) score = 70;
       else if (en.indexOf(qEn) !== -1 || (qT && tr.indexOf(qT) !== -1) || (qAr && ar.indexOf(qAr) !== -1)) score = 40;
       if (score) out.push({ word: w, score: score });
     }
