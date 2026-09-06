@@ -24,7 +24,8 @@
     /* platinum — the AI concierge voice */
     --plat: #C8CDD4; --plat-line: rgba(200,205,212,.22); --plat-fill: rgba(200,205,212,.05);
     /* text */
-    --ivory: #F2EDE3; --stone: #A79E8E; --mute: #6B6355;
+    --ivory: #F2EDE3; --stone: #A79E8E; --mute: #8F8676;
+    color-scheme: dark;
     /* semantic */
     --claret: #D4565C; --claret-line: rgba(212,86,92,.38); --claret-fill: rgba(212,86,92,.10);
     --jade: #63C69B; --jade-line: rgba(99,198,155,.35); --jade-fill: rgba(99,198,155,.10);
@@ -39,9 +40,9 @@
     --serif: ui-serif, "New York", Georgia, "Times New Roman", serif;
     --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    /* mood engine — read by the lamp, the sheet grab, the medallion */
+    /* mood engine — read by the lamp, the filament, the sheet grab, the medallion */
     --mood: var(--gold-100);
-    --mood-dim: rgba(246,231,195,.07);
+    --mood-dim: rgba(246,231,195,.14);
     --mood-period: 14s;
     /* legacy aliases so any missed selector degrades gracefully */
     --bg: var(--bg0); --bg2: var(--inset); --card: var(--panel); --card2: var(--panel2);
@@ -53,9 +54,9 @@
   @property --a { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
 
   /* mood states — set by renderDigest() */
-  body[data-mood=urgent] { --mood: var(--claret); --mood-dim: rgba(212,86,92,.06); --mood-period: 6s; }
-  body[data-mood=busy]   { --mood-dim: rgba(246,231,195,.10); --mood-period: 9s; }
-  body[data-mood=clear]  { --mood: var(--jade); --mood-dim: rgba(99,198,155,.06); --mood-period: 18s; }
+  body[data-mood=urgent] { --mood: var(--claret); --mood-dim: rgba(212,86,92,.15); --mood-period: 6s; }
+  body[data-mood=busy]   { --mood-dim: rgba(246,231,195,.18); --mood-period: 9s; }
+  body[data-mood=clear]  { --mood: var(--jade); --mood-dim: rgba(99,198,155,.12); --mood-period: 18s; }
 
   /* band channel — one variable drives rules, gauges and dots */
   [data-band=now]   { --bandc: var(--claret); --bandc-line: var(--claret-line); }
@@ -78,7 +79,7 @@
   body::before {
     content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
     background: radial-gradient(70% 32% at 50% -8%, var(--mood-dim), transparent 70%);
-    opacity: .75;
+    opacity: .9;
     animation: lamp var(--mood-period) var(--ease) infinite alternate;
   }
   @keyframes lamp { from { opacity: .5; } to { opacity: 1; } }
@@ -88,14 +89,23 @@
   @media (min-width: 760px) {
     .wrap { position: relative; }
     .wrap::before, .wrap::after { content: ""; position: absolute; top: 0; bottom: 0; width: 1px;
-      background: linear-gradient(180deg, transparent, rgba(230,201,131,.08) 20% 80%, transparent); }
+      background: linear-gradient(180deg, transparent, rgba(230,201,131,.18) 20% 80%, transparent); }
     .wrap::before { left: -28px; } .wrap::after { right: -28px; }
+  }
+  /* desktop: the detail becomes a floating plate, not a phone sheet */
+  @media (min-width: 900px) {
+    .overlay { align-items: center; padding: 24px; }
+    .sheet { border-radius: 24px; border-bottom: 1px solid transparent; max-height: 86dvh;
+             transform: translateY(24px); opacity: 0;
+             transition: transform .56s var(--ease), opacity .4s var(--ease); }
+    .overlay.on .sheet { transform: none; opacity: 1; }
   }
 
   button, .pill, .bigbtn, .chip, .doc, input, textarea, a { outline: none; }
   button:focus-visible, .pill:focus-visible, .bigbtn:focus-visible, .chip:focus-visible,
   .doc:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visible {
-    box-shadow: 0 0 0 1px var(--gold-300), 0 0 0 4px rgba(230,201,131,.15); }
+    box-shadow: 0 0 0 1px var(--gold-300), 0 0 0 4px rgba(230,201,131,.15);
+    outline: 2px solid transparent; outline-offset: 1px; }
 
   /* ── the plate: shared material recipe ── */
   .card, .assistant, .doc, .sheet, .toast {
@@ -105,23 +115,32 @@
   }
 
   /* ── header ── */
-  header { display: flex; align-items: center; gap: 10px; padding: 24px 0 4px; flex-wrap: wrap; }
+  header { display: flex; align-items: center; gap: 10px; padding: 24px 0 10px; flex-wrap: wrap;
+           position: relative; }
+  /* the lamp's filament: a 1px mood horizon breathing under the header */
+  header::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--mood), transparent); opacity: .35;
+    box-shadow: 0 0 12px var(--mood-dim);
+    animation: lamp var(--mood-period) var(--ease) infinite alternate; }
   .logo { font: 600 34px/1 var(--serif); letter-spacing: .01em; user-select: none;
           display: flex; align-items: center; gap: 8px; }
   .logo .ge { font-size: 26px; }
   .logo .g { background: linear-gradient(100deg, #F6E7C3, #E6C983 38%, #9C7B45 74%, #E6C983);
              -webkit-background-clip: text; background-clip: text; color: transparent; }
-  /* champagne-monochrome emoji — text-free glyphs only */
-  .logo .ge, .assistant .face, .doc .thumb:not(:has(img)) {
+  /* champagne-monochrome emoji — every chrome glyph wears the house metal */
+  .ge { display: inline-block; }
+  .ge, .assistant .face {
     filter: grayscale(1) sepia(.42) hue-rotate(-10deg) saturate(2) brightness(.95); }
   .tagline { color: var(--stone); font-size: 12.5px; letter-spacing: .02em; flex: 1 1 100%; margin-top: -2px; }
-  .pill { margin-left: auto; border: 1px solid var(--plat-line); border-radius: 999px; padding: 5px 13px;
+  .pill { margin-left: auto; border: 1px solid var(--plat-line); border-radius: 999px; padding: 9px 14px;
           font: 600 11px/1 var(--sans); letter-spacing: .14em; text-transform: uppercase;
-          color: var(--stone); background: var(--panel); cursor: pointer; white-space: nowrap; }
+          color: var(--stone); background: var(--panel); cursor: pointer; white-space: nowrap;
+          position: relative; }
+  .pill::after { content: ""; position: absolute; inset: -8px; border-radius: 999px; }
   .pill::before { content: ""; display: inline-block; width: 5px; height: 5px; border-radius: 50%;
                   margin-right: 7px; background: var(--mute); vertical-align: 1px; }
   .pill.on { color: var(--plat); border-color: rgba(200,205,212,.35); }
-  .pill.on::before { background: var(--plat); animation: signet 2.8s ease-out infinite; }
+  .pill.on::before { background: var(--plat); animation: signet 2.8s var(--ease) infinite; }
   @keyframes signet { from { box-shadow: 0 0 0 0 rgba(200,205,212,.35); } to { box-shadow: 0 0 0 6px rgba(200,205,212,0); } }
 
   /* ── the assistant: the centerpiece ── */
@@ -141,12 +160,13 @@
   .assistant .say { font: 500 18px/1.45 var(--serif); color: var(--ivory); }
   .say.speak { animation: speak .35s var(--ease); }
   @keyframes speak { from { opacity: 0; transform: translateY(3px); } }
-  .stats { display: flex; flex-wrap: wrap; margin: 12px 0 2px; }
-  .stat { display: flex; flex-direction: column-reverse; gap: 2px; padding: 0 14px 0 0;
+  .stats { display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 12px 0 2px; }
+  .stat { display: flex; flex-direction: column-reverse; gap: 2px;
           font: 600 9.5px/1 var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--stone); }
-  .stat + .stat { border-left: 1px solid rgba(230,201,131,.14); padding-left: 14px; }
   .stat b { font: 600 15px/1 var(--mono); font-variant-numeric: tabular-nums; color: var(--ivory); }
-  .stat.bad b { color: var(--claret); } .stat.win b { color: var(--jade); } .stat.money b { color: var(--gold-300); }
+  .stat.bad b { color: var(--claret); } .stat.win b, .stat.money b { color: var(--gold-300); }
+  /* money is always gold — the inline money span, used wherever prose carries an amount */
+  .m { color: var(--gold-300); font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: .95em; }
 
   /* ── add bar: the lacquer button ── */
   .addbar { display: flex; gap: 10px; margin: 12px 0 6px; }
@@ -154,8 +174,8 @@
     position: relative; overflow: hidden; border: 1px solid transparent; border-radius: 16px;
     background: linear-gradient(180deg, #1C1A15, #0F0E0B) padding-box,
       linear-gradient(180deg, rgba(246,231,195,.55), rgba(138,109,59,.30)) border-box;
-    color: var(--gold-100); font: 600 14.5px/1.2 var(--sans); letter-spacing: .02em; padding: 17px 8px;
-    white-space: nowrap;
+    color: var(--gold-100); font: 600 clamp(13px, 3.7vw, 14.5px)/1.2 var(--sans); letter-spacing: .02em;
+    padding: 17px 8px; white-space: nowrap;
     box-shadow: inset 0 1px 0 rgba(246,231,195,.14), 0 12px 28px -14px rgba(201,165,92,.25);
     text-shadow: 0 0 12px rgba(246,231,195,.35);
     cursor: pointer; transition: transform .18s var(--ease); }
@@ -191,12 +211,15 @@
 
   /* ── cards & engraved wells ── */
   .card { padding: 16px 18px; margin: 12px 0; }
-  .card h3, .sheet h3 { font: 560 20px/1.25 var(--serif); }
-  .lab { margin: 12px 0 6px; }
+  .card h3 { font: 560 20px/1.25 var(--serif); }
+  .lab { display: block; margin: 12px 0 6px; }
+  .ainote { font-size: 12.5px; color: var(--stone); margin: 6px 0 10px; line-height: 1.6; }
+  .sheet, .airesult, textarea { scrollbar-width: thin; scrollbar-color: var(--gold-700) transparent; }
   input[type=text], textarea {
-    width: 100%; background: var(--inset); border: 1px solid rgba(230,201,131,.16); border-radius: 12px;
+    width: 100%; background: var(--inset); border: 1px solid rgba(230,201,131,.30); border-radius: 12px;
     padding: 10px 12px; color: var(--ivory); font-size: 14.5px; font-family: inherit;
-    box-shadow: inset 0 2px 8px rgba(0,0,0,.5); transition: border-color .2s, box-shadow .2s;
+    box-shadow: inset 0 2px 8px rgba(0,0,0,.5);
+    transition: border-color .2s var(--ease), box-shadow .2s var(--ease);
   }
   input[type=text]:focus, textarea:focus { border-color: rgba(230,201,131,.55);
     box-shadow: inset 0 2px 8px rgba(0,0,0,.5), 0 0 0 3px rgba(230,201,131,.08); }
@@ -214,10 +237,10 @@
   .readout { background: var(--inset); border: 1px solid rgba(230,201,131,.18); border-radius: 12px;
              padding: 10px 12px; font-size: 13px; color: var(--stone); margin-top: 8px; min-height: 40px;
              box-shadow: inset 0 2px 8px rgba(0,0,0,.5); }
-  .readout b { color: var(--ivory); font-family: var(--mono); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .readout b { color: var(--gold-300); font-family: var(--mono); font-size: 12.5px; font-variant-numeric: tabular-nums; }
   .chips { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 8px; }
   .chip { background: var(--inset); border: 1px solid var(--line); color: var(--stone);
-          border-radius: 999px; padding: 4px 12px; font-size: 12px; cursor: pointer; user-select: none;
+          border-radius: 999px; padding: 8px 13px; font-size: 12px; cursor: pointer; user-select: none;
           transition: border-color .2s var(--ease), color .2s var(--ease); }
   .chip.on { color: var(--gold-300); border-color: rgba(230,201,131,.5); background: rgba(230,201,131,.10); }
   .rowbtns { display: flex; gap: 8px; margin-top: 12px; }
@@ -227,7 +250,7 @@
   .band { margin-top: 22px; }
   .band h2 { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px;
              color: var(--bandc, var(--gold-500)); }
-  .band h2 .n { color: var(--mute); font: 400 11px var(--mono); font-variant-numeric: tabular-nums; }
+  .band h2 .n { color: var(--stone); font: 400 11px var(--mono); font-variant-numeric: tabular-nums; }
   .band h2::after { content: ""; flex: 1; height: 1px; transform-origin: left; align-self: center;
     background: linear-gradient(90deg, var(--bandc-line, rgba(201,165,92,.4)), rgba(201,165,92,.03));
     animation: rule .9s var(--ease) both; }
@@ -237,12 +260,24 @@
   .empty { font: italic 14.5px/1.6 var(--serif); color: var(--stone); padding: 6px 0 2px; }
   .empty.zen { color: var(--jade); padding: 10px 0 4px; }
   .empty a { color: var(--gold-300); border-bottom: 1px solid rgba(230,201,131,.35); }
+  /* first-run specimen: a ghost plate being read forever */
+  .specimen { pointer-events: none; opacity: .55; overflow: hidden; }
+  .specimen .bar { height: 8px; border-radius: 4px; background: rgba(230,201,131,.14); margin: 7px 0; }
+  .specimen .bar.short { width: 55%; background: rgba(230,201,131,.09); }
+  .specimen::after { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(246,231,195,.9), transparent);
+    box-shadow: 0 0 14px 2px rgba(246,231,195,.35); animation: scancard 2.8s var(--ease) infinite; }
+  @keyframes scancard { from { transform: translateY(0); } to { transform: translateY(76px); } }
+  .invite { margin-top: 14px; }
 
   /* ── document cards + the gauge ── */
   .doc { display: flex; gap: 12px; align-items: center; position: relative;
          border-radius: 16px; padding: 12px 14px; margin: 10px 0; cursor: pointer;
          transition: background .45s var(--ease), transform .18s var(--ease);
-         animation: settle .45s var(--ease) both; }
+         animation: settle .45s var(--ease) both;
+         /* lighter throw than the standalone plates: cards stack 10px apart */
+         box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 1px 0 rgba(0,0,0,.9),
+                     0 10px 18px -14px rgba(0,0,0,.55); }
   .band .doc:nth-child(3) { animation-delay: .05s; }
   .band .doc:nth-child(4) { animation-delay: .1s; }
   .band .doc:nth-child(5) { animation-delay: .15s; }
@@ -265,8 +300,8 @@
                 overflow: hidden; }
   .doc .thumb img { width: 100%; height: 100%; object-fit: cover; }
   .doc .mid { flex: 1; min-width: 0; }
-  .doc .t { font-weight: 600; font-size: 15px; color: var(--ivory);
-            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .doc .t { font-weight: 600; font-size: 15px; color: var(--ivory); overflow: hidden;
+            display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   .doc .badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 5px; }
   .badge { font: 600 10px/1.7 var(--sans); letter-spacing: .12em; text-transform: uppercase;
            border-radius: 999px; padding: 2px 9px; border: 1px solid rgba(230,201,131,.16);
@@ -279,10 +314,10 @@
   .badge.money { color: var(--gold-300); font-family: var(--mono); text-transform: none;
                  letter-spacing: .02em; font-variant-numeric: tabular-nums; }
   .badge.win { color: var(--jade); border-color: var(--jade-line); background: var(--jade-fill); }
-  /* the gauge: a serif numeral inside a conic hairline ring, hued by band */
+  /* the gauge: a serif numeral inside a conic hairline ring, hued by band,
+     arc normalized to the top of the pile */
   .doc .score { flex: none; position: relative; width: 46px; height: 46px; display: grid;
-    place-items: center; align-content: center; gap: 1px; text-align: center;
-    font: 500 7px/1 var(--sans); text-transform: uppercase; letter-spacing: .12em; color: var(--mute); }
+    place-items: center; text-align: center; }
   .doc .score b { font: 500 17px/1 var(--serif); color: var(--ivory); font-variant-numeric: tabular-nums; }
   .doc .score::before { content: ""; position: absolute; inset: 0; border-radius: 50%;
     background: conic-gradient(var(--bandc, var(--gold-300)) calc(var(--p, 0) * 1%), rgba(255,255,255,.07) 0);
@@ -294,10 +329,13 @@
   /* ── the detail sheet: light under the door ── */
   .overlay { position: fixed; inset: 0; z-index: 20; display: flex; align-items: flex-end; justify-content: center;
     background: rgba(4,3,2,.82); opacity: 0; visibility: hidden; pointer-events: none;
-    transition: opacity .4s var(--ease), visibility 0s .4s; }
+    backdrop-filter: blur(0px); -webkit-backdrop-filter: blur(0px);
+    transition: opacity .4s var(--ease), backdrop-filter .4s var(--ease),
+                -webkit-backdrop-filter .4s var(--ease), visibility 0s .4s; }
   .overlay.on { opacity: 1; visibility: visible; pointer-events: auto;
-    transition: opacity .4s var(--ease);
-    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+    transition: opacity .4s var(--ease), backdrop-filter .4s var(--ease),
+                -webkit-backdrop-filter .4s var(--ease);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
   .sheet { border-radius: 24px 24px 0 0; border-bottom: 0; width: 100%; max-width: 720px;
     max-height: 88dvh; overflow-y: auto; padding: 14px 18px calc(24px + env(safe-area-inset-bottom));
     transform: translateY(100%); transition: transform .56s var(--ease);
@@ -305,9 +343,17 @@
   .overlay.on .sheet { transform: none; }
   .sheet .grab { width: 36px; height: 2px; border-radius: 1px; margin: 2px auto 14px;
     background: var(--mood); opacity: .55; box-shadow: 0 0 10px var(--mood-dim); }
-  .sheet h3 { font: 560 24px/1.2 var(--serif); margin-bottom: 4px; }
-  .sheet .sub { font: 400 11.5px/1.6 var(--mono); color: var(--mute); letter-spacing: .06em;
+  .sheet-x { position: absolute; top: 10px; right: 12px; width: 40px; height: 40px; padding: 0;
+    border-radius: 50%; font-size: 15px; line-height: 1; color: var(--stone); z-index: 2; }
+  .sheet { position: relative; }
+  .sheet h3 { font: 560 24px/1.2 var(--serif); margin: 0 44px 4px 0; }
+  .sheet .sub { font: 400 11.5px/1.6 var(--mono); color: var(--stone); letter-spacing: .06em;
                 font-variant-numeric: tabular-nums; margin-bottom: 10px; }
+  /* the concierge shows its working: the priority arithmetic, engraved */
+  .whyscore { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; margin: 2px 0 10px; }
+  .whyscore .wl { font: 600 9.5px/1.5 var(--sans); text-transform: uppercase; letter-spacing: .12em;
+                  color: var(--gold-500); }
+  .whyscore .wv { font: 500 11px/1.5 var(--mono); color: var(--ivory); font-variant-numeric: tabular-nums; }
   .sheet .photo { width: 100%; border-radius: 14px; border: 1px solid rgba(230,201,131,.25); margin: 8px 0; }
   .brief h4 { margin: 22px 0 6px; }
   .brief p { font-size: 14px; color: var(--ivory); }
@@ -368,7 +414,8 @@
   .signrow input#sign-name:focus { border-bottom-color: var(--gold-300);
     box-shadow: 0 1px 0 0 rgba(230,201,131,.25); }
   .statusrow { display: flex; gap: 8px; margin-top: 18px; flex-wrap: wrap; }
-  .statusrow button { flex: 1; min-width: 110px; white-space: nowrap; padding: 10px 8px; }
+  .statusrow button { flex: 1; min-width: 96px; white-space: nowrap; padding: 10px 8px; }
+  .statusrow button.armed { border-color: var(--claret-line); color: var(--claret); }
   .statusrow button.primary { background: linear-gradient(180deg, var(--panel2), var(--panel-deep));
     border: 1px solid var(--jade-line); color: var(--jade); box-shadow: none; }
   .statusrow button.primary:hover { background: var(--jade-fill); }
@@ -390,20 +437,25 @@
   @keyframes toastin { from { transform: translate(-50%, 14px); opacity: 0; } }
 
   /* ── footer ── */
-  footer { font: 400 11.5px/1.7 var(--sans); color: var(--mute); margin-top: 38px;
+  footer { font: 400 12.5px/1.7 var(--sans); color: var(--mute); margin-top: 38px;
            position: relative; padding-top: 16px; }
   footer::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 1px;
     background: linear-gradient(90deg, rgba(201,165,92,.3), transparent); }
+  footer p + p { margin-top: 10px; }
   footer b { color: var(--stone); }
 
   /* ── reduced motion: freeze at the most beautiful static pose ── */
   @media (prefers-reduced-motion: reduce) {
-    body::before { animation: none; opacity: .75; }
+    body::before { animation: none; opacity: .9; }
+    header::after { animation: none; opacity: .35; }
     .bigbtn::after { display: none; }
     .pill.on::before { animation: none; }
+    .spin { animation: none; }
     .doc.due-overdue::after, .doc.due-today::after { animation: none; opacity: .8; }
     #add-photo-wrap.reading::after { animation: none; top: 0; opacity: .6; }
+    .specimen::after { animation: none; opacity: .6; }
     .doc, .band h2::after, .toast.on, .say.speak, .doc .score::before { animation-duration: 1ms !important; }
+    .doc { animation-delay: 0ms !important; }
     .overlay, .overlay.on, .sheet { transition-duration: 1ms !important; }
     *, *::before, *::after { transition-duration: 1ms !important; }
     .draftbox.writing textarea { animation: none; }
@@ -429,17 +481,31 @@
   </div>
 
   <div class="addbar">
-    <label class="bigbtn" for="camera">📸 Snap a document</label>
-    <button class="bigbtn alt" id="add-typed" type="button">✍️ Add by typing</button>
+    <label class="bigbtn" for="camera"><span class="ge">📸</span> Snap a document</label>
+    <button class="bigbtn alt" id="add-typed" type="button"><span class="ge">✍️</span> Add by typing</button>
   </div>
   <input type="file" id="camera" accept="image/*" capture="environment">
+
+  <div class="card" id="ai-panel" style="display:none">
+    <h3>Link Docket AI</h3>
+    <p class="ainote">Paste your Anthropic API key (sk-ant-…). It is stored <b>only in this browser</b> and sent
+    <b>only to api.anthropic.com</b> — that’s what lets Docket AI read your photos, judge scams and write your
+    letters, with no server involved.</p>
+    <label class="lab" for="ai-key">Your API key</label>
+    <input type="text" id="ai-key" placeholder="sk-ant-…" autocomplete="off" spellcheck="false">
+    <div class="rowbtns">
+      <button type="button" id="ai-cancel">Cancel</button>
+      <button type="button" id="ai-unlink">Unlink</button>
+      <button type="button" class="primary" id="ai-link">Link AI</button>
+    </div>
+  </div>
 
   <div class="card" id="add-panel" style="display:none">
     <h3 style="font-size:16px">New document</h3>
     <div id="add-photo-wrap" style="margin-top:8px; display:none"><img class="photoprev" id="add-photo" alt="document photo"></div>
-    <div class="lab">Who sent it? (optional)</div>
+    <label class="lab" for="add-sender">Who sent it? (optional)</label>
     <input type="text" id="add-sender" placeholder="e.g. Camden Council, British Gas…" maxlength="60">
-    <div class="lab">Type the important lines it says</div>
+    <label class="lab" for="add-text">Type the important lines it says</label>
     <textarea id="add-text" placeholder="Copy the key lines: who it's from, any amounts, any dates, any reference number. e.g. “Penalty Charge Notice… Amount due: £130… pay within 14 days… Ref: AB123456”"></textarea>
     <div class="readout" id="add-readout">Docket will read what you type and work out what it is…</div>
     <div class="lab">Category — tap to correct Docket</div>
@@ -453,23 +519,23 @@
   <div id="pile"></div>
 
   <footer>
-    <b>How Docket works:</b> everything stays on this device — photos and text live in your browser only.
+    <p><b>How Docket works:</b> everything stays on this device — photos and text live in your browser only.
     Docket reads the lines you give it, sorts the pile by what genuinely matters (deadlines, money at stake,
     escalation language), briefs you on each document, and drafts the letters — appeals, prove-it demands,
-    disputes, cancellations — that deal with it.
-    <b>Docket AI (optional):</b> link your own Anthropic API key (🔑 above) and the assistant gets a real brain —
-    it reads the photo itself, fills in the details, judges scam risk, answers “what should I do?”, does tasks
-    you type in plain English, and writes finished letters with the real names, amounts and dates filled in.
-    The key lives only in this browser; with AI linked, the photo and text of a document are sent to
+    disputes, cancellations — that deal with it.</p>
+    <p><b>Docket AI (optional):</b> link your own Anthropic API key (“Link AI”, above) and the assistant gets a
+    real brain — it reads the photo itself, fills in the details, judges scam risk, answers “what should I do?”,
+    does tasks you type in plain English, and writes finished letters with the real names, amounts and dates
+    filled in. The key lives only in this browser; with AI linked, the photo and text of a document are sent to
     api.anthropic.com when you use an AI feature — nothing else, nowhere else.
-    Everything it says is a practical starting point, not legal advice.
+    Everything it says is a practical starting point, not legal advice.</p>
   </footer>
 </div>
 
 <div class="overlay" id="overlay">
-  <div class="sheet" id="sheet"></div>
+  <div class="sheet" id="sheet" role="dialog" aria-modal="true" tabindex="-1"></div>
 </div>
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="engine.js"></script>
 <script src="ai.js"></script>
@@ -513,6 +579,19 @@
   function el(id) { return document.getElementById(id); }
   var esc = E.escapeHTML;
 
+  // House finishing for text the UI emits:
+  // ge()  — one emoji glyph, dressed in the champagne-monochrome filter.
+  // rich() — escape, then set every money amount in gold mono (.m) and
+  //          every emoji in champagne (.ge): the two laws, applied to prose.
+  function ge(glyph) { return '<span class="ge">' + glyph + '</span>'; }
+  var MONEY_RE = /[£$€]\s?\d[\d,]*(?:\.\d{1,2})?/g;
+  var EMOJI_RE = new RegExp('(\\p{Extended_Pictographic}(?:\\uFE0F|\\u200D\\p{Extended_Pictographic})*)', 'gu');
+  function rich(s) {
+    return esc(s)
+      .replace(MONEY_RE, function (m) { return '<span class="m">' + m + '</span>'; })
+      .replace(EMOJI_RE, function (m) { return '<span class="ge">' + m + '</span>'; });
+  }
+
   var toastTimer = null;
   function toast(msg, cls) {
     var t = el('toast');
@@ -525,21 +604,30 @@
   /* ---------------- Live AI: link a key, show the state ---------------- */
   function renderAIPill() {
     var p = el('ai-pill');
-    if (AI.ready()) { p.textContent = '🤖 AI on'; p.className = 'pill on'; }
-    else { p.textContent = '🔑 Link AI'; p.className = 'pill'; }
+    if (AI.ready()) { p.textContent = 'AI on'; p.className = 'pill on'; }
+    else { p.textContent = 'Link AI'; p.className = 'pill'; }
     p.title = 'Docket AI reads your photos, gives tailored advice and writes your letters. ' +
       'Your Anthropic API key is stored only in this browser and sent only to api.anthropic.com.';
   }
 
+  // The key ceremony happens in the house furniture, not a browser prompt().
   function toggleAIKey() {
-    var cur = AI.getKey();
-    var k = prompt(cur
-      ? 'Docket AI is linked. Paste a new Anthropic API key to replace it, or clear the box and press OK to unlink.'
-      : 'Paste your Anthropic API key (sk-ant-…).\nIt is stored ONLY in this browser and sent ONLY to api.anthropic.com — that’s what lets Docket AI read your photos and write your letters, no server needed.', cur);
-    if (k === null) return;
-    AI.setKey(k.trim());
+    var panel = el('ai-panel');
+    var open = panel.style.display !== 'none';
+    panel.style.display = open ? 'none' : 'block';
+    if (!open) {
+      el('ai-key').value = AI.getKey();
+      el('ai-unlink').style.display = AI.ready() ? '' : 'none';
+      var k = el('ai-key');
+      if (k.focus) k.focus();
+    }
+  }
+
+  function linkAIKey(clear) {
+    AI.setKey(clear ? '' : String(el('ai-key').value || '').trim());
+    el('ai-panel').style.display = 'none';
     renderAIPill();
-    toast(AI.ready() ? 'Docket AI linked — snap a document and it will read the photo itself. 🤖'
+    toast(AI.ready() ? 'Docket AI linked — snap a document and it will read the photo itself.'
                      : 'Docket AI unlinked — the offline assistant keeps working.');
   }
 
@@ -547,7 +635,7 @@
   function renderDigest() {
     var g = E.assistantDigest(state.docs, Date.now());
     var s = el('digest-say');
-    s.textContent = g.headline;
+    s.innerHTML = rich(g.headline);
     // the concierge speaks again — a small fade, retriggered per render
     if (s.classList) { s.classList.remove('speak'); void s.offsetWidth; s.classList.add('speak'); }
     // the mood of the room: the lamp's color and breathing tempo follow the pile
@@ -563,48 +651,62 @@
 
   /* ---------------- the pile ---------------- */
   var BANDS = [
-    { key: 'now',   title: '⚡ Act now' },
-    { key: 'week',  title: '📅 This week' },
-    { key: 'later', title: '🗂 When you can' },
-    { key: 'done',  title: '✅ Dealt with' }
+    { key: 'now',   title: ge('⚡') + ' Act now' },
+    { key: 'week',  title: ge('📅') + ' This week' },
+    { key: 'later', title: ge('🗂') + ' When you can' },
+    { key: 'done',  title: ge('✅') + ' Dealt with' }
   ];
 
-  function docCard(entry) {
+  function docCard(entry, maxScore) {
     var d = entry.doc, c = E.categoryByKey(d.category);
-    var thumb = d.photo ? '<img src="' + d.photo + '" alt="">' : c.emoji;
+    var thumb = d.photo ? '<img src="' + d.photo + '" alt="">' : ge(c.emoji);
     var badges = [];
     if (entry.deadline.state !== 'none') badges.push('<span class="badge ' + entry.deadline.state + '">' + esc(entry.deadline.label) + '</span>');
     if (d.amount) badges.push('<span class="badge money">' + esc(E.formatMoney(d.amount, d.currency)) + '</span>');
     var saving = E.potentialSaving(d, Date.now());
-    if (saving) badges.push('<span class="badge win">save ' + esc(saving.label) + '</span>');
+    if (saving) badges.push('<span class="badge win">save <span class="m">' + esc(saving.label) + '</span></span>');
     if (d.escalation) badges.push('<span class="badge overdue">' + esc(d.escalation) + '</span>');
-    if (d.status !== 'open' && d.savedAmount) badges.push('<span class="badge win">saved ' + esc(E.formatMoney(d.savedAmount, d.currency)) + '</span>');
+    if (d.status !== 'open' && d.savedAmount) badges.push('<span class="badge win">saved <span class="m">' + esc(E.formatMoney(d.savedAmount, d.currency)) + '</span></span>');
+    var score = Math.round(entry.score);
+    // the ring's arc is honest: normalized to the top of the pile, not clamped
+    var pct = Math.round(100 * entry.score / (maxScore || 100));
     return '<div class="doc' + (entry.band === 'done' ? ' done' : '') +
       (entry.deadline.state !== 'none' ? ' due-' + entry.deadline.state : '') +
-      '" data-id="' + esc(d.id) + '">' +
+      '" data-id="' + esc(d.id) + '" tabindex="0" role="button" aria-label="' +
+      esc(d.title + (entry.deadline.state !== 'none' ? ', ' + entry.deadline.label : '') + ', priority ' + score) + '">' +
       '<div class="thumb">' + thumb + '</div>' +
       '<div class="mid"><div class="t">' + esc(d.title) + '</div>' +
       '<div class="badges">' + badges.join('') + '</div></div>' +
-      '<div class="score" style="--p:' + Math.min(100, Math.round(entry.score)) + '"><b>' +
-      Math.round(entry.score) + '</b>priority</div></div>';
+      '<div class="score" style="--p:' + pct + '" aria-hidden="true"><b>' + score + '</b></div></div>';
   }
 
   function renderPile() {
     var t = E.triage(state.docs, Date.now());
     var byBand = { now: [], week: [], later: [], done: [] };
-    for (var i = 0; i < t.length; i++) byBand[t[i].band].push(t[i]);
-    var html = '';
-    for (var b = 0; b < BANDS.length; b++) {
-      var band = BANDS[b], list = byBand[band.key];
-      if (!list.length && band.key !== 'now') continue;
-      html += '<div class="band" data-band="' + band.key + '"><h2>' + band.title + ' <span class="n">· ' + list.length + '</span></h2>';
-      if (!list.length) html += '<div class="empty zen">🕊 Nothing urgent — the doormat is winning today.</div>';
-      for (var j = 0; j < list.length; j++) html += docCard(list[j]);
-      html += '</div>';
+    var maxScore = 100;
+    for (var i = 0; i < t.length; i++) {
+      byBand[t[i].band].push(t[i]);
+      if (t[i].band !== 'done' && t[i].score > maxScore) maxScore = t[i].score;
     }
+    var html = '';
     if (!state.docs.length) {
-      html += '<div class="band"><div class="empty">The pile is empty. Snap your first document — or ' +
-        '<a href="#" id="demo-link">load 5 example documents</a> to see Docket at work.</div></div>';
+      // first run: one ghost specimen being read forever, and the invitation
+      html += '<div class="band" data-band="now">' +
+        '<h2>' + ge('📥') + ' The reading desk</h2>' +
+        '<div class="doc specimen" aria-hidden="true"><div class="thumb"></div>' +
+        '<div class="mid"><div class="bar"></div><div class="bar short"></div></div></div>' +
+        '<div class="lab">Docket reads whatever lands here</div>' +
+        '<div class="empty invite">Snap your first document — or ' +
+        '<a href="#" id="demo-link">load 5 example documents</a> to see the pile rank itself.</div></div>';
+    } else {
+      for (var b = 0; b < BANDS.length; b++) {
+        var band = BANDS[b], list = byBand[band.key];
+        if (!list.length && band.key !== 'now') continue;
+        html += '<div class="band" data-band="' + band.key + '"><h2>' + band.title + ' <span class="n">· ' + list.length + '</span></h2>';
+        if (!list.length) html += '<div class="empty zen">' + ge('🕊') + ' Nothing urgent — the doormat is winning today.</div>';
+        for (var j = 0; j < list.length; j++) html += docCard(list[j], maxScore);
+        html += '</div>';
+      }
     }
     el('pile').innerHTML = html;
     var demo = el('demo-link');
@@ -672,7 +774,7 @@
     var ref = E.extractReference(text);
     var eff = pickedCategory || cls.key;
     var effCat = E.categoryByKey(eff);
-    var bits = ['<b>' + effCat.emoji + ' ' + esc(effCat.label) + '</b>' +
+    var bits = [ge(effCat.emoji) + ' <b>' + esc(effCat.label) + '</b>' +
                 (pickedCategory ? ' (your call)' : text.trim() ? ' (' + cls.confidence + ' confidence)' : '')];
     if (amt) bits.push('<b>' + esc(amt.label) + '</b>');
     if (due) bits.push('due <b>' + esc(E.formatDateISO(due)) + '</b>');
@@ -681,14 +783,14 @@
       ? 'Docket reads: ' + bits.join(' · ')
       : 'Docket will read what you type and work out what it is…';
     if (aiReading) line = '<span class="spin">🤖</span> Docket AI is reading your photo… ' + line;
-    else if (pendingAI && pendingAI.summary) line = '🤖 <b>AI:</b> ' + esc(pendingAI.summary) + '<br>' + line;
-    else if (pendingPhoto && !AI.ready()) line += '<br>🔑 Link Docket AI (top right) and it reads the photo for you.';
+    else if (pendingAI && pendingAI.summary) line = ge('🤖') + ' <b>AI:</b> ' + rich(pendingAI.summary) + '<br>' + line;
+    else if (pendingPhoto && !AI.ready()) line += '<br>' + ge('🔑') + ' Link Docket AI (top right) and it reads the photo for you.';
     el('add-readout').innerHTML = line;
     // category chips
     var chips = '';
     for (var i = 0; i < E.CATEGORIES.length; i++) {
       var c = E.CATEGORIES[i];
-      chips += '<span class="chip' + (c.key === eff ? ' on' : '') + '" data-cat="' + c.key + '">' + c.emoji + ' ' + esc(c.label) + '</span>';
+      chips += '<span class="chip' + (c.key === eff ? ' on' : '') + '" data-cat="' + c.key + '">' + ge(c.emoji) + ' ' + esc(c.label) + '</span>';
     }
     el('add-cats').innerHTML = chips;
   }
@@ -748,35 +850,45 @@
     var d = byId(id);
     if (!d) return;
     openDocId = id;
+    removeArmed = null;
     var now = Date.now();
     var b = E.briefing(d, now);
     var imp = E.importanceScore(d, now);
     var html = '<div class="grab"></div>' +
-      '<h3>' + b.emoji + ' ' + esc(b.title) + '</h3>' +
+      '<button type="button" class="sheet-x" data-act="close" aria-label="Close">✕</button>' +
+      '<h3>' + ge(b.emoji) + ' ' + esc(b.title) + '</h3>' +
       '<div class="sub">' + esc(b.category) + ' · added ' + esc(E.timeAgo(d.ts, now)) +
-      (d.ref ? ' · ref ' + esc(d.ref) : '') + ' · priority ' + Math.round(imp.score) + '</div>';
+      (d.ref ? ' · ref ' + esc(d.ref) : '') + '</div>';
+    // the concierge shows its working: how the priority was arrived at
+    html += '<div class="whyscore">';
+    for (var w = 0; w < imp.reasons.length; w++) {
+      var wr = imp.reasons[w];
+      html += '<span class="wl">' + rich(wr.label) + '</span><span class="wv">' + (wr.pts >= 0 ? '+' : '') + wr.pts + '</span>';
+    }
+    html += '<span class="wl">priority</span><span class="wv">' + Math.round(imp.score) + '</span></div>';
     if (d.photo) html += '<img class="photo" src="' + d.photo + '" alt="document photo">';
     html += '<div class="brief">' +
-      '<h4>What this is</h4><p>' + esc(b.what) + '</p>' +
-      '<h4>Why it matters</h4><p>' + esc(b.why) + '</p>';
-    if (b.deadlineLine) html += '<div class="dl' + (b.deadlineLine.indexOf('passed') !== -1 ? ' overdue' : '') + '">' + esc(b.deadlineLine) + '</div>';
-    if (b.saving) html += '<div class="savebanner">💰 ' + esc(b.saving.line) + '</div>';
+      '<h4>What this is</h4><p>' + rich(b.what) + '</p>' +
+      '<h4>Why it matters</h4><p>' + rich(b.why) + '</p>';
+    if (b.deadlineLine) html += '<div class="dl' + (b.deadlineLine.indexOf('passed') !== -1 ? ' overdue' : '') + '">' + rich(b.deadlineLine) + '</div>';
+    if (b.saving) html += '<div class="savebanner">' + ge('💰') + ' ' + rich(b.saving.line) + '</div>';
     if (d.ai && d.ai.summary) {
-      html += '<div class="aisay"><div class="who">🤖 Docket AI read this</div>' + esc(d.ai.summary) + '</div>';
+      html += '<div class="aisay"><div class="who">' + ge('🤖') + ' Docket AI read this</div>' + rich(d.ai.summary) + '</div>';
       if (d.ai.scamRisk && d.ai.scamRisk !== 'none') {
-        html += '<div class="scambanner">🚩 <b>Scam risk: ' + esc(d.ai.scamRisk) + '.</b> ' + esc(d.ai.scamWhy || 'Verify the sender independently before paying or sharing anything.') + '</div>';
+        html += '<div class="scambanner">' + ge('🚩') + ' <b>Scam risk: ' + esc(d.ai.scamRisk) + '.</b> ' + rich(d.ai.scamWhy || 'Verify the sender independently before paying or sharing anything.') + '</div>';
       }
     }
     html += '<h4>In your favour</h4><ul>';
-    for (var i = 0; i < b.favour.length; i++) html += '<li>' + esc(b.favour[i]) + '</li>';
+    for (var i = 0; i < b.favour.length; i++) html += '<li>' + rich(b.favour[i]) + '</li>';
     if (d.ai && d.ai.advice) {
-      for (var ai2 = 0; ai2 < d.ai.advice.length; ai2++) html += '<li>🤖 ' + esc(d.ai.advice[ai2]) + '</li>';
+      for (var ai2 = 0; ai2 < d.ai.advice.length; ai2++) html += '<li>' + ge('🤖') + ' ' + rich(d.ai.advice[ai2]) + '</li>';
     }
     html += '</ul>';
     if (d.status === 'open') {
       html += '<h4>Ask Docket AI</h4>';
       if (AI.ready()) {
         html += '<div class="taskrow"><input type="text" id="ai-task" maxlength="500" ' +
+          'aria-label="Ask Docket AI to do a task on this document" ' +
           'placeholder="Do a task: “appeal this”, “offer £30/month”, “is this a scam?”…" enterkeyhint="go">' +
           '<button type="button" id="ai-go">Go</button></div>' +
           '<div class="airesult" id="ai-out" hidden></div>';
@@ -788,21 +900,24 @@
       html += '<h4>Let Docket deal with it</h4><div class="actions">';
       for (var j = 0; j < b.suggested.length; j++) {
         var s = b.suggested[j];
-        html += '<button type="button" class="small" data-draft="' + s.kind + '">' + s.emoji + ' ' + esc(s.label) + '</button>';
+        html += '<button type="button" data-draft="' + s.kind + '">' + ge(s.emoji) + ' ' + esc(s.label) + '</button>';
       }
       html += '</div><div id="draft-out"></div>';
     }
     html += '</div>';
     html += '<div class="statusrow">';
     if (d.status === 'open') {
-      html += '<button type="button" class="primary" data-act="done">✅ Dealt with</button>' +
-              '<button type="button" data-act="snooze">💤 Snooze 3 days</button>';
+      html += '<button type="button" class="primary" data-act="done">' + ge('✅') + ' Dealt with</button>' +
+              '<button type="button" data-act="snooze">' + ge('💤') + ' Snooze</button>';
     } else {
-      html += '<button type="button" data-act="reopen">↩️ Reopen</button>';
+      html += '<button type="button" data-act="reopen">' + ge('↩️') + ' Reopen</button>';
     }
-    html += '<button type="button" class="danger" data-act="remove">🗑 Remove</button></div>';
-    el('sheet').innerHTML = html;
+    html += '<button type="button" class="danger" data-act="remove">' + ge('🗑') + ' Remove</button></div>';
+    var sheetEl = el('sheet');
+    sheetEl.innerHTML = html;
+    sheetEl.scrollTop = 0;   // the always-rendered overlay keeps its scroll box between opens
     el('overlay').className = 'overlay on';
+    if (sheetEl.focus) sheetEl.focus();
     var goEl = el('ai-go');
     if (goEl && goEl.addEventListener) {
       goEl.addEventListener('click', runAITask);
@@ -833,15 +948,15 @@
     if (!draft) return;
     var out = el('draft-out');
     out.innerHTML = '<div class="draftbox">' +
-      '<div class="subj" id="draft-subj">✉️ ' + esc(draft.subject) + '</div>' +
-      '<textarea id="draft-body"></textarea>' +
-      '<div class="signrow"><span style="font-size:12.5px;color:var(--faint)">Sign as</span>' +
+      '<div class="subj" id="draft-subj">' + ge('✉️') + ' ' + esc(draft.subject) + '</div>' +
+      '<textarea id="draft-body" aria-label="Letter body"></textarea>' +
+      '<div class="signrow"><label for="sign-name" style="font-size:12.5px;color:var(--faint)">Sign as</label>' +
       '<input type="text" id="sign-name" placeholder="Your name" maxlength="40"></div>' +
-      (AI.ready() ? '<div class="rowbtns"><button type="button" id="draft-aiwrite">✨ Have Docket AI write it properly</button></div>' : '') +
+      (AI.ready() ? '<div class="rowbtns"><button type="button" id="draft-aiwrite">Have Docket AI write it properly</button></div>' : '') +
       '<div class="rowbtns">' +
-      '<button type="button" id="draft-copy">📋 Copy letter</button>' +
-      '<a id="draft-mail" class="mailbtn">📨 Open in email</a>' +
-      '</div><div class="tip">💡 ' + esc(draft.tip) + '</div></div>';
+      '<button type="button" id="draft-copy">' + ge('📋') + ' Copy letter</button>' +
+      '<a id="draft-mail" class="mailbtn">' + ge('📨') + ' Open in email</a>' +
+      '</div><div class="tip">' + ge('💡') + ' ' + rich(draft.tip) + '</div></div>';
     el('draft-body').value = draft.body;
     el('sign-name').value = state.me.name || '';
     el('draft-mail').href = E.mailtoLink(draft, '');
@@ -858,23 +973,23 @@
     var aiwEl = el('draft-aiwrite');
     if (aiwEl && aiwEl.addEventListener) aiwEl.addEventListener('click', function () {
       aiwEl.disabled = true;
-      aiwEl.textContent = '🤖 Docket AI is writing…';
+      aiwEl.textContent = 'Docket AI is writing…';
       var box = out.querySelector ? out.querySelector('.draftbox') : null;
       if (box && box.classList) box.classList.add('writing');
       AI.writeLetter(d, draft.label, state.me, el('draft-body').value)
         .then(function (letter) {
-          el('draft-subj').textContent = '✉️ ' + letter.subject;
+          el('draft-subj').innerHTML = ge('✉️') + ' ' + esc(letter.subject);
           el('draft-body').value = letter.body;
           el('draft-mail').href = E.mailtoLink(letter, '');
           aiWritten = true;
           if (box && box.classList) { box.classList.remove('writing'); box.classList.add('ai-written'); }
-          aiwEl.textContent = '✨ Written by Docket AI — edit as you like';
+          aiwEl.textContent = 'Written by Docket AI — edit as you like';
           toast('Letter written with the real details filled in. Read it before sending.');
         })
         .catch(function (err) {
           aiwEl.disabled = false;
           if (box && box.classList) box.classList.remove('writing');
-          aiwEl.textContent = '✨ Have Docket AI write it properly';
+          aiwEl.textContent = 'Have Docket AI write it properly';
           toast('Docket AI hit a problem: ' + err.message);
         });
     });
@@ -887,7 +1002,9 @@
     });
   }
 
+  var removeArmed = null, removeArmedTimer = null;
   function actOnDoc(act) {
+    if (act === 'close') { closeDetail(); return; }
     var d = byId(openDocId);
     if (!d) return;
     var now = Date.now();
@@ -909,9 +1026,23 @@
       d.status = 'open'; d.doneTs = null; d.savedAmount = null;
       toast('Back in the pile.');
     } else if (act === 'remove') {
-      if (!confirm('Remove “' + d.title + '” and its photo for good?')) return;
+      // in-world two-tap confirm: the first tap arms the button in claret
+      if (removeArmed !== d.id) {
+        removeArmed = d.id;
+        var rb = el('sheet').querySelector ? el('sheet').querySelector('[data-act=remove]') : null;
+        if (rb) { rb.textContent = 'Tap again to remove for good'; if (rb.classList) rb.classList.add('armed'); }
+        if (removeArmedTimer) clearTimeout(removeArmedTimer);
+        removeArmedTimer = setTimeout(function () {
+          removeArmed = null;
+          var rb2 = el('sheet').querySelector ? el('sheet').querySelector('[data-act=remove]') : null;
+          if (rb2) { rb2.innerHTML = ge('🗑') + ' Remove'; if (rb2.classList) rb2.classList.remove('armed'); }
+        }, 3200);
+        return;
+      }
+      removeArmed = null;
+      if (removeArmedTimer) clearTimeout(removeArmedTimer);
       for (var i = 0; i < state.docs.length; i++) if (state.docs[i].id === d.id) { state.docs.splice(i, 1); break; }
-      toast('Removed.');
+      toast('Removed — photo and all.');
     }
     save();
     closeDetail();
@@ -949,6 +1080,12 @@
   if (addTypedEl.addEventListener) addTypedEl.addEventListener('click', function () { openAdd(null); });
   var aiPillEl = el('ai-pill');
   if (aiPillEl.addEventListener) aiPillEl.addEventListener('click', toggleAIKey);
+  var aiLinkEl = el('ai-link');
+  if (aiLinkEl.addEventListener) aiLinkEl.addEventListener('click', function () { linkAIKey(false); });
+  var aiUnlinkEl = el('ai-unlink');
+  if (aiUnlinkEl.addEventListener) aiUnlinkEl.addEventListener('click', function () { linkAIKey(true); });
+  var aiCancelEl = el('ai-cancel');
+  if (aiCancelEl.addEventListener) aiCancelEl.addEventListener('click', function () { el('ai-panel').style.display = 'none'; });
   var addTextEl = el('add-text');
   if (addTextEl.addEventListener) addTextEl.addEventListener('input', renderAddReadout);
   var addCancelEl = el('add-cancel');
@@ -966,10 +1103,22 @@
     }
   });
   var pileEl = el('pile');
-  if (pileEl.addEventListener) pileEl.addEventListener('click', function (ev) {
+  function pileTarget(ev) {
     var t = ev.target;
     while (t && t !== pileEl && !(t.getAttribute && t.getAttribute('data-id'))) t = t.parentNode;
-    if (t && t.getAttribute && t.getAttribute('data-id')) openDetail(t.getAttribute('data-id'));
+    return t && t.getAttribute && t.getAttribute('data-id') ? t.getAttribute('data-id') : null;
+  }
+  if (pileEl.addEventListener) pileEl.addEventListener('click', function (ev) {
+    var id = pileTarget(ev);
+    if (id) openDetail(id);
+  });
+  if (pileEl.addEventListener) pileEl.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Enter' && ev.key !== ' ') return;
+    var id = pileTarget(ev);
+    if (id) { if (ev.preventDefault) ev.preventDefault(); openDetail(id); }
+  });
+  if (document.addEventListener) document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape' && openDocId) closeDetail();
   });
   var overlayEl = el('overlay');
   if (overlayEl.addEventListener) overlayEl.addEventListener('click', function (ev) {
