@@ -256,6 +256,40 @@ export function parseArgs(argv) {
   return { ok: true, command: words[0] === 'status' && words.length === 1 ? 'status' : 'run', brief: words.join(' '), flags };
 }
 
+/** Mission ids the web console mints and accepts. Path-safe by construction. */
+export const isMissionId = (id) => /^mission-[a-z0-9]{1,24}(?:-[a-z0-9]{1,16})?$/.test(String(id));
+
+/**
+ * Validate a web-console mission request (JSON payload, not argv) into the
+ * same normalized shape the CLI produces: newMission opts + harness opts.
+ * Pure, so the web surface is pinned by tests exactly like the flag surface.
+ */
+export function missionRequest(payload = {}) {
+  const brief = typeof payload.brief === 'string' ? payload.brief.trim() : '';
+  if (!brief) return { ok: false, error: 'a mission needs orders — write a brief' };
+  if (brief.length > 20_000) return { ok: false, error: 'brief too long — put big material in files and reference them' };
+  const model = typeof payload.model === 'string' && payload.model.trim() ? payload.model.trim() : SUCCESSOR;
+  const numbers = {};
+  for (const [key, label] of [['maxTurns', 'max turns'], ['maxUsd', 'budget']]) {
+    if (payload[key] !== undefined && payload[key] !== null && payload[key] !== '') {
+      const n = Number(payload[key]);
+      if (!Number.isFinite(n) || n <= 0) return { ok: false, error: `${label} must be a positive number` };
+      numbers[key] = n;
+    }
+  }
+  const effort = payload.effort === undefined || payload.effort === '' ? 'xhigh' : payload.effort;
+  if (!EFFORT_LEVELS.includes(effort)) return { ok: false, error: `effort must be one of ${EFFORT_LEVELS.join('|')}` };
+  const trust = Boolean(payload.trust);
+  const web = Boolean(payload.web);
+  const yolo = Boolean(payload.yolo);
+  return {
+    ok: true,
+    brief,
+    missionOpts: { model, ...numbers, powers: powersLabel({ trust, web, yolo }) },
+    runOpts: { trust, web, yolo, effort, ...(typeof payload.cwd === 'string' && payload.cwd ? { cwd: payload.cwd } : {}) },
+  };
+}
+
 /** The mission report — what happened, on the record. */
 export function debrief(mission, now = mission.endedAt) {
   const lived = Math.max(0, (now ?? mission.born) - mission.born);

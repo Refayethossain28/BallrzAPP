@@ -14,6 +14,7 @@ import {
   DEFAULT_LIMITS, newMission, beginMission, recordTurn, outcomeOf, endMission,
   fitToLaunch, CONSTITUTION, SAFE_TOOLS, WEB_TOOLS, EFFORT_LEVELS, sanitize,
   powersLabel, courtiers, buildOptions, parseArgs, debrief, understudyResult,
+  missionRequest, isMissionId,
 } from '../scion/logic.mjs';
 
 const T0 = Date.UTC(2026, 8, 10, 12, 0, 0);
@@ -228,6 +229,39 @@ test('the understudy rehearses deterministically and names the succession plan',
   assert.match(once, /Mission understood: refactor the engine/);
   assert.match(once, /claude-fable-5-1 → claude-opus-5 → claude-sonnet-5 → claude-haiku-4-5/);
   assert.match(once, /ANTHROPIC_API_KEY/);
+});
+
+test('web console: a mission request normalizes like the CLI would', () => {
+  const v = missionRequest({ brief: '  fix the tests  ', model: 'claude-opus-5', maxUsd: '2.5', trust: true, effort: 'high' });
+  assert.equal(v.ok, true);
+  assert.equal(v.brief, 'fix the tests');
+  assert.equal(v.missionOpts.model, 'claude-opus-5');
+  assert.equal(v.missionOpts.maxUsd, 2.5);
+  assert.equal(v.missionOpts.powers, 'safe+bash');
+  assert.deepEqual(v.runOpts, { trust: true, web: false, yolo: false, effort: 'high' });
+  const defaults = missionRequest({ brief: 'x' });
+  assert.equal(defaults.missionOpts.model, SUCCESSOR);
+  assert.equal(defaults.missionOpts.powers, 'safe');
+  assert.equal(defaults.runOpts.effort, 'xhigh');
+  assert.equal('maxUsd' in defaults.missionOpts, false); // engine defaults apply
+});
+
+test('web console: garbage requests are refused, same doctrine as argv', () => {
+  assert.equal(missionRequest({}).ok, false);
+  assert.equal(missionRequest({ brief: '   ' }).ok, false);
+  assert.equal(missionRequest({ brief: 'x'.repeat(20_001) }).ok, false);
+  assert.equal(missionRequest({ brief: 'x', maxUsd: '-1' }).ok, false);
+  assert.equal(missionRequest({ brief: 'x', maxTurns: 'many' }).ok, false);
+  assert.equal(missionRequest({ brief: 'x', effort: 'ultra' }).ok, false);
+  assert.equal(missionRequest({ brief: 'x', model: 42 }).missionOpts.model, SUCCESSOR); // junk model → successor
+});
+
+test('web console: mission ids are strict and path-safe', () => {
+  assert.equal(isMissionId('mission-mtvy14ng'), true);
+  assert.equal(isMissionId('mission-mtvy14ng-a1b2c3'), true);
+  assert.equal(isMissionId('mission-../../etc'), false);
+  assert.equal(isMissionId('mission-UPPER'), false);
+  assert.equal(isMissionId('anything-else'), false);
 });
 
 console.log(`\nscion logic: ${passed} tests passed`);

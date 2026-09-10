@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e0c16">
+<title>Scion — mission console</title>
+<style>
+  :root {
+    --ink: #0e0c16; --panel: #171425; --panel2: #1f1b31; --line: #2c2745;
+    --text: #e8e4f4; --dim: #9a93b8; --gold: #d4af5e; --gold-dim: #8a7440;
+    --ok: #6fd394; --bad: #e07a7a; --run: #7aa8e0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ink); color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 16px; padding-bottom: 48px; max-width: 680px; margin-inline: auto;
+  }
+  header { display: flex; align-items: baseline; gap: 10px; margin: 8px 0 4px; flex-wrap: wrap; }
+  h1 { font-size: 24px; margin: 0; letter-spacing: 0.06em; }
+  h1 .fleuron { color: var(--gold); }
+  .lineage { color: var(--dim); font-size: 12.5px; }
+  .chip {
+    display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px;
+    border: 1px solid var(--line); color: var(--dim); margin-top: 6px;
+  }
+  .chip.live { color: var(--ok); border-color: var(--ok); }
+  .chip.understudy { color: var(--gold); border-color: var(--gold-dim); }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    padding: 14px; margin-top: 14px;
+  }
+  label { display: block; color: var(--dim); font-size: 12px; margin: 10px 0 4px; letter-spacing: 0.04em; text-transform: uppercase; }
+  textarea, select, input[type=number] {
+    width: 100%; background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 10px; padding: 10px 12px; font: inherit;
+  }
+  textarea { min-height: 96px; resize: vertical; }
+  .row { display: flex; gap: 10px; }
+  .row > div { flex: 1; min-width: 0; }
+  .powers { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+  .powers label.toggle {
+    display: flex; align-items: center; gap: 6px; margin: 0; text-transform: none;
+    font-size: 13.5px; color: var(--text); background: var(--panel2); border: 1px solid var(--line);
+    border-radius: 999px; padding: 7px 12px; cursor: pointer; user-select: none;
+  }
+  .powers label.toggle.danger { color: var(--bad); }
+  button#launch {
+    width: 100%; margin-top: 16px; padding: 13px; border-radius: 12px; border: 0;
+    background: var(--gold); color: #241d0c; font: inherit; font-weight: 700; letter-spacing: 0.03em;
+    cursor: pointer;
+  }
+  button#launch:disabled { opacity: 0.5; }
+  .hint { color: var(--dim); font-size: 12.5px; margin-top: 8px; }
+  #feed { display: none; }
+  #feed .events { font: 12.5px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; color: var(--dim); max-height: 40vh; overflow-y: auto; }
+  #feed .events .fresh { color: var(--text); }
+  #debrief { font: 12.5px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; margin: 8px 0 0; }
+  .verdict { font-weight: 700; }
+  .verdict.succeeded, .verdict.rehearsed { color: var(--ok); }
+  .verdict.failed { color: var(--bad); }
+  .verdict.running { color: var(--run); }
+  #history .mission { padding: 9px 0; border-top: 1px solid var(--line); font-size: 13.5px; }
+  #history .mission:first-child { border-top: 0; }
+  #history .meta { color: var(--dim); font-size: 12px; }
+  #error { color: var(--bad); font-size: 13.5px; margin-top: 10px; min-height: 1em; }
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="fleuron">⚜</span> SCION</h1>
+  <span class="lineage">mission console · successor of <span id="ancestor">claude-fable-5</span></span>
+</header>
+<span id="harness" class="chip">connecting…</span>
+
+<section class="card" id="compose">
+  <label for="brief">Mission brief</label>
+  <textarea id="brief" placeholder="e.g. audit fare/logic.mjs and report edge cases the tests miss"></textarea>
+
+  <div class="row">
+    <div>
+      <label for="model">Model</label>
+      <select id="model"></select>
+    </div>
+    <div>
+      <label for="effort">Effort</label>
+      <select id="effort"></select>
+    </div>
+  </div>
+  <div class="row">
+    <div>
+      <label for="budget">Budget $</label>
+      <input id="budget" type="number" min="0.1" step="0.5" placeholder="5">
+    </div>
+    <div>
+      <label for="turns">Max turns</label>
+      <input id="turns" type="number" min="1" step="1" placeholder="30">
+    </div>
+  </div>
+
+  <label>Powers</label>
+  <div class="powers">
+    <label class="toggle"><input id="web" type="checkbox"> web</label>
+    <label class="toggle"><input id="trust" type="checkbox"> bash</label>
+    <label class="toggle danger"><input id="yolo" type="checkbox"> yolo</label>
+  </div>
+
+  <button id="launch">Launch mission</button>
+  <div id="error"></div>
+  <div class="hint">Safe by default: no shell, no web. The agent can still edit files —
+  keep your work committed to git. One mission runs at a time.</div>
+</section>
+
+<section class="card" id="feed">
+  <div><span id="feed-status" class="verdict running">running</span> <span id="feed-id" class="meta lineage"></span></div>
+  <div class="events" id="events"></div>
+  <pre id="debrief"></pre>
+</section>
+
+<section class="card" id="history">
+  <label>Missions this session</label>
+  <div id="mission-list"><span class="meta">none yet</span></div>
+</section>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const state = { polling: null, current: null, shownEvents: 0 };
+
+  const setError = (msg) => { $('error').textContent = msg || ''; };
+
+  function renderStatus(s) {
+    const chip = $('harness');
+    chip.textContent = 'harness: ' + s.harness + (s.busy ? ' · busy' : '');
+    chip.className = 'chip ' + s.harness;
+    if (s.ancestor) $('ancestor').textContent = s.ancestor;
+    const model = $('model');
+    if (model.options.length === 0) {
+      for (const rung of s.lineage || []) {
+        const opt = document.createElement('option');
+        opt.value = rung.id;
+        opt.textContent = rung.id + ' — ' + rung.title;
+        if (rung.id === s.successor) opt.selected = true;
+        model.appendChild(opt);
+      }
+      const effort = $('effort');
+      for (const level of s.efforts || []) {
+        const opt = document.createElement('option');
+        opt.value = level;
+        opt.textContent = level;
+        if (s.defaults && level === s.defaults.effort) opt.selected = true;
+        effort.appendChild(opt);
+      }
+      if (s.defaults) {
+        $('budget').placeholder = String(s.defaults.maxUsd);
+        $('turns').placeholder = String(s.defaults.maxTurns);
+      }
+    }
+  }
+
+  function renderHistory(data) {
+    const box = $('mission-list');
+    const list = (data && data.missions) || [];
+    let hasAny = false;
+    const frag = document.createDocumentFragment();
+    for (const m of list) {
+      hasAny = true;
+      const row = document.createElement('div');
+      row.className = 'mission';
+      const verdict = document.createElement('span');
+      verdict.className = 'verdict ' + m.status;
+      verdict.textContent = m.status;
+      const brief = document.createElement('div');
+      brief.textContent = m.brief;
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      meta.textContent = m.model + ' · ' + m.powers;
+      row.appendChild(verdict);
+      row.appendChild(brief);
+      row.appendChild(meta);
+      frag.appendChild(row);
+    }
+    if (hasAny) { box.textContent = ''; box.appendChild(frag); }
+  }
+
+  function renderMission(m) {
+    $('feed').style.display = 'block';
+    $('feed-id').textContent = m.id || '';
+    const status = $('feed-status');
+    status.textContent = m.status;
+    status.className = 'verdict ' + m.status;
+    const events = m.events || [];
+    const box = $('events');
+    for (let i = state.shownEvents; i < events.length; i += 1) {
+      const line = document.createElement('div');
+      line.className = 'fresh';
+      line.textContent = events[i].line;
+      box.appendChild(line);
+      state.shownEvents = i + 1;
+    }
+    box.scrollTop = box.scrollHeight;
+    if (m.debrief) $('debrief').textContent = m.debrief;
+    if (m.status !== 'running') {
+      state.current = null;
+      $('launch').disabled = false;
+      refresh();
+      return false; // stop polling
+    }
+    return true;
+  }
+
+  function pollCurrent() {
+    if (!state.current) return;
+    fetch('/api/mission/' + state.current)
+      .then((r) => r.json())
+      .then((m) => {
+        if (m && m.id && renderMission(m)) setTimeout(pollCurrent, 1200);
+      })
+      .catch(() => { setTimeout(pollCurrent, 3000); });
+  }
+
+  function refresh() {
+    fetch('/api/status').then((r) => r.json()).then(renderStatus).catch(() => {});
+    fetch('/api/missions').then((r) => r.json()).then(renderHistory).catch(() => {});
+  }
+
+  function launch() {
+    setError('');
+    const yolo = $('yolo').checked;
+    if (yolo && !confirm('YOLO bypasses every permission check. Only inside an isolated container. Proceed?')) return;
+    const payload = {
+      brief: $('brief').value,
+      model: $('model').value,
+      effort: $('effort').value,
+      maxUsd: $('budget').value,
+      maxTurns: $('turns').value,
+      web: $('web').checked,
+      trust: $('trust').checked,
+      yolo: yolo,
+    };
+    $('launch').disabled = true;
+    fetch('/api/mission', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      .then((r) => r.json().then((data) => ({ ok: r.ok, data })))
+      .then(({ ok, data }) => {
+        if (!ok || !data.id) {
+          setError((data && data.error) || 'launch failed');
+          $('launch').disabled = false;
+          return;
+        }
+        state.current = data.id;
+        state.shownEvents = 0;
+        $('events').textContent = '';
+        $('debrief').textContent = '';
+        pollCurrent();
+      })
+      .catch(() => { setError('server unreachable'); $('launch').disabled = false; });
+  }
+
+  $('launch').addEventListener('click', launch);
+  refresh();
+  setInterval(refresh, 15000);
+</script>
+</body>
+</html>
