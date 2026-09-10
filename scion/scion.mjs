@@ -9,10 +9,11 @@
  *
  * Flags: --model <id>  --max-turns <n>  --budget <usd>  --cwd <dir>
  *        --effort <low|medium|high|xhigh|max>
- *        --trust (adds Bash to the allowed tools)
+ *        --web   (adds WebSearch/WebFetch to the tool surface)
+ *        --trust (adds Bash to the tool surface)
  *        --yolo  (bypasses permissions — isolated environments only)
  */
-import { newMission, fitToLaunch, parseArgs, debrief, SUCCESSOR, ANCESTOR } from './logic.mjs';
+import { newMission, fitToLaunch, parseArgs, debrief, powersLabel, SUCCESSOR, ANCESTOR } from './logic.mjs';
 import { runMission, harnessStatus } from './harness.mjs';
 
 const say = (line) => console.log(line);
@@ -27,6 +28,7 @@ flags: --model <id>      model to run (default ${SUCCESSOR})
        --budget <usd>    spend ceiling (default $5)
        --cwd <dir>       mission working directory
        --effort <level>  low|medium|high|xhigh|max (default xhigh)
+       --web             allow WebSearch/WebFetch
        --trust           allow Bash
        --yolo            bypass permissions (isolated environments only)`;
 
@@ -55,6 +57,7 @@ const mission = newMission(`mission-${Date.now().toString(36)}`, parsed.brief, D
   model: flags.model,
   maxTurns: flags.maxTurns ?? undefined,
   maxUsd: flags.maxUsd ?? undefined,
+  powers: powersLabel(flags),
 });
 
 const fit = fitToLaunch(mission);
@@ -63,9 +66,14 @@ if (!fit.ok) {
   process.exit(2);
 }
 
+if (flags.yolo) {
+  say('⚠ YOLO: permission checks are bypassed — every tool runs unprompted.');
+  say('⚠ Only proceed inside an isolated container or sandbox.');
+}
+
 const ended = await runMission(
   mission,
-  { cwd: flags.cwd, trust: flags.trust, yolo: flags.yolo, effort: flags.effort },
+  { cwd: flags.cwd, trust: flags.trust, web: flags.web, yolo: flags.yolo, effort: flags.effort },
   say,
 );
 say('');

@@ -9,13 +9,23 @@
  * Process-neutral like automaton/agent.mjs: no process.exit, no argv,
  * loggers injected.
  */
+import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import {
-  beginMission, recordTurn, endMission, buildOptions, understudyResult,
+  beginMission, recordTurn, endMission, buildOptions, understudyResult, sanitize,
 } from './logic.mjs';
 
-/** Credentials any of the SDK's auth paths can pick up. */
+/**
+ * Credentials the SDK can pick up: the env vars, or a stored `claude` login
+ * credentials file. A keychain-only login (macOS) is invisible from here —
+ * `claude setup-token` or an env var makes it visible. The status message
+ * says so rather than claiming "none".
+ */
 export function hasCredentials(env = process.env) {
-  return Boolean(env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN || env.CLAUDE_CODE_OAUTH_TOKEN);
+  if (env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN || env.CLAUDE_CODE_OAUTH_TOKEN) return true;
+  const configDir = env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
+  return existsSync(join(configDir, '.credentials.json'));
 }
 
 async function loadSdk() {
@@ -34,8 +44,8 @@ export async function harnessStatus(env = process.env) {
     harness: sdk && creds ? 'live' : 'understudy',
     sdk: sdk ? '@anthropic-ai/claude-agent-sdk installed' : '@anthropic-ai/claude-agent-sdk missing — npm install',
     credentials: creds
-      ? 'found (ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN / CLAUDE_CODE_OAUTH_TOKEN)'
-      : 'none — set ANTHROPIC_API_KEY',
+      ? 'found (env var or stored claude login)'
+      : 'none detected — set ANTHROPIC_API_KEY (a keychain-only claude login is invisible here; run `claude setup-token` or export a key)',
   };
 }
 
@@ -65,8 +75,9 @@ export async function runMission(mission, opts = {}, say = () => {}, clock = Dat
         const blocks = message.message?.content ?? [];
         const toolUses = blocks.filter((b) => b.type === 'tool_use').length;
         for (const b of blocks) {
-          if (b.type === 'text' && b.text.trim()) say(`  ${b.text.trim().split('\n', 1)[0].slice(0, 100)}`);
-          if (b.type === 'tool_use') say(`  → ${b.name}`);
+          // sanitize: model text can carry web-sourced ANSI escapes.
+          if (b.type === 'text' && b.text.trim()) say(`  ${sanitize(b.text).trim().split('\n', 1)[0].slice(0, 100)}`);
+          if (b.type === 'tool_use') say(`  → ${sanitize(b.name)}`);
         }
         m = recordTurn(m, { usage: message.message?.usage, toolUses }, clock());
       } else if (message.type === 'result') {

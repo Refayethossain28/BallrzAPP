@@ -15,12 +15,18 @@ its author to work, with tools, subagents, budgets and a full mission ledger.
 
 ```bash
 npm install                 # installs @anthropic-ai/claude-agent-sdk
-export ANTHROPIC_API_KEY=sk-ant-...   # or `claude` login / ANTHROPIC_AUTH_TOKEN
+export ANTHROPIC_API_KEY=sk-ant-...   # or a stored `claude` login (see note)
 
 npm run scion -- "audit fare/logic.mjs and report edge cases"
 npm run scion -- --trust "run the test suite and fix what fails"
 npm run scion -- status     # which harness would run right now, and why
 ```
+
+> Credentials note: scion goes live when it sees `ANTHROPIC_API_KEY`,
+> `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, or a stored `claude`
+> login credentials file (`~/.claude/.credentials.json`). A keychain-only
+> login (macOS) is invisible to the gate — run `claude setup-token` or
+> export a key. `scion status` tells you which harness would run.
 
 No SDK or no credentials? Nothing breaks: the deterministic **understudy**
 rehearses the mission instead (mission accepted, succession plan printed),
@@ -36,6 +42,7 @@ brain.
 | `--budget <usd>` | spend ceiling (SDK-enforced) | $5 |
 | `--cwd <dir>` | mission working directory | process cwd |
 | `--effort <level>` | `low`…`max` reasoning depth | `xhigh` |
+| `--web` | allow `WebSearch`/`WebFetch` | off |
 | `--trust` | allow the `Bash` tool | off |
 | `--yolo` | bypass permissions entirely | off — isolated environments only |
 
@@ -61,12 +68,26 @@ Two subagents are always on retainer (defined via the SDK's `agents` option):
 
 ## Safety posture
 
-- Default tools are read/search/edit/web only — **no `Bash`** unless `--trust`.
-- `--yolo` (bypass permissions) exists for sandboxes and CI containers only.
+What the code actually enforces — and what it doesn't:
+
+- The default tool surface is `Read`, `Glob`, `Grep`, `Edit`, `Write`, `Agent`,
+  `TaskCreate`, `TaskUpdate` — restricted via the SDK's `tools` option, so
+  `Bash` and the web tools are absent from the surface, not merely denied.
+  `--trust` adds `Bash`; `--web` adds `WebSearch`/`WebFetch`.
+- Web tools are off by default deliberately: fetched pages are untrusted input
+  to an agent whose edits are auto-accepted. Turning on `--web` accepts that
+  pairing — prefer running such missions in a container.
+- **Edits are auto-accepted and not path-scoped.** A mission can write anywhere
+  the process user can (including outside `--cwd`). The constitution instructs
+  the agent to stay inside the mission directory, but an instruction is not a
+  sandbox — run missions you don't fully trust in a container.
+- `--yolo` (bypass permissions, full tool surface) is for isolated containers
+  only; the CLI prints a warning and the debrief records the powers used.
 - Turn and dollar ceilings are enforced by the SDK (`maxTurns`, `maxBudgetUsd`);
   the ledger meters an independent dollar estimate per turn as a cross-check.
-- The scion's constitution (appended to the system prompt) binds it to honest,
-  minimal, reversible work inside the mission directory.
+- Model output echoed to the terminal is stripped of ANSI/control characters,
+  so web-sourced escape sequences can't rewrite the transcript.
+- The understudy path is pure and network-free — it can never spend money.
 
 ## Architecture (house rules)
 
@@ -76,5 +97,5 @@ Two subagents are always on retainer (defined via the SDK's `agents` option):
 - `harness.mjs` — the live Claude Agent SDK adapter + understudy fallback.
   Process-neutral: no `process.exit`, loggers injected.
 - `scion.mjs` — the CLI.
-- Tests: `npm run test:scion` → `scripts/test-scion-logic.mjs` (14 tests, part
+- Tests: `npm run test:scion` → `scripts/test-scion-logic.mjs` (20 tests, part
   of root `npm test`).

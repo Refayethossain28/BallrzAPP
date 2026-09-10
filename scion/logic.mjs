@@ -69,13 +69,14 @@ export function newMission(id, brief, now, opts = {}) {
     },
     status: 'planned', // planned → running → succeeded | failed | rehearsed
     outcome: null, // the SDK result subtype (or 'offline'), verbatim
+    powers: opts.powers ?? 'safe', // what the mission was allowed to do
     turns: 0,
     toolCalls: 0,
     estimatedUsd: 0, // metered here from usage
     reportedUsd: null, // the SDK's own total_cost_usd, when it says
     result: null,
     endedAt: null,
-    ledger: [{ at: now, type: 'planned', note: `mission accepted for ${model}` }],
+    ledger: [{ at: now, type: 'planned', note: `mission accepted for ${model} (powers: ${opts.powers ?? 'safe'})` }],
   };
 }
 
@@ -145,11 +146,31 @@ work honestly, verify before you claim, keep every change minimal and reversible
 never run destructive commands, and stay inside the mission's working directory.
 When the mission is done, state plainly what you did and what you did not do.`;
 
-// The default tool posture: everything useful, nothing that executes
-// arbitrary shell. `trust` adds Bash; `yolo` bypasses permissions entirely.
+// The default tool posture: read, search, edit and subagents — nothing that
+// executes shell (`trust` adds Bash) and nothing that pulls untrusted web
+// content into an auto-approved edit loop (`web` adds the web tools).
+// `yolo` bypasses permissions entirely and lifts the surface restriction.
 export const SAFE_TOOLS = Object.freeze([
-  'Read', 'Glob', 'Grep', 'Edit', 'Write', 'WebSearch', 'WebFetch', 'Agent', 'TaskCreate', 'TaskUpdate',
+  'Read', 'Glob', 'Grep', 'Edit', 'Write', 'Agent', 'TaskCreate', 'TaskUpdate',
 ]);
+export const WEB_TOOLS = Object.freeze(['WebSearch', 'WebFetch']);
+
+export const EFFORT_LEVELS = Object.freeze(['low', 'medium', 'high', 'xhigh', 'max']);
+
+/**
+ * Strip terminal control characters (C0 except tab/newline, DEL, CSI) so
+ * model output echoed to a terminal cannot rewrite the transcript or spoof
+ * the debrief with ANSI escapes.
+ */
+// eslint-disable-next-line no-control-regex
+export const sanitize = (text) => String(text).replace(/[\x00-\x08\x0b-\x1f\x7f\x9b]/g, '');
+
+/** One honest word for what the mission was allowed to do — for the record. */
+export function powersLabel({ trust = false, web = false, yolo = false } = {}) {
+  if (yolo) return 'yolo (permissions bypassed)';
+  const extras = [web && 'web', trust && 'bash'].filter(Boolean);
+  return extras.length ? `safe+${extras.join('+')}` : 'safe';
+}
 
 /**
  * The scion's court: subagents the main loop can dispatch. The scout reads
@@ -174,7 +195,7 @@ export function courtiers() {
 }
 
 /** Map a mission to the Agent SDK's query() options object. Pure. */
-export function buildOptions(mission, { cwd = null, trust = false, yolo = false, effort = 'xhigh' } = {}) {
+export function buildOptions(mission, { cwd = null, trust = false, web = false, yolo = false, effort = 'xhigh' } = {}) {
   const options = {
     model: mission.model,
     appendSystemPrompt: CONSTITUTION,
@@ -186,27 +207,37 @@ export function buildOptions(mission, { cwd = null, trust = false, yolo = false,
   };
   if (cwd) options.cwd = cwd;
   if (yolo) {
+    // Full surface, no permission gate — isolated environments only.
     options.permissionMode = 'bypassPermissions';
     options.allowDangerouslySkipPermissions = true;
   } else {
+    // `tools` RESTRICTS what exists (allowedTools alone only pre-approves —
+    // the tool would stay available and be denied per call); the same list
+    // in allowedTools then pre-approves everything that remains, so a
+    // headless run never stalls on a permission prompt.
+    const surface = [...SAFE_TOOLS, ...(web ? WEB_TOOLS : []), ...(trust ? ['Bash'] : [])];
     options.permissionMode = 'acceptEdits';
-    options.allowedTools = trust ? [...SAFE_TOOLS, 'Bash'] : [...SAFE_TOOLS];
+    options.tools = surface;
+    options.allowedTools = [...surface];
   }
   return options;
 }
 
 /** Parse CLI argv (after node + script). Pure, so the flag surface is pinned. */
 export function parseArgs(argv) {
-  const flags = { model: SUCCESSOR, maxTurns: null, maxUsd: null, cwd: null, trust: false, yolo: false, effort: 'xhigh' };
+  const flags = { model: SUCCESSOR, maxTurns: null, maxUsd: null, cwd: null, trust: false, web: false, yolo: false, effort: 'xhigh' };
   const words = [];
   const takesValue = { '--model': 'model', '--max-turns': 'maxTurns', '--budget': 'maxUsd', '--cwd': 'cwd', '--effort': 'effort' };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--trust') flags.trust = true;
+    else if (arg === '--web') flags.web = true;
     else if (arg === '--yolo') flags.yolo = true;
-    else if (takesValue[arg]) {
+    // hasOwn, not a truthy lookup: brief words like "constructor" must never
+    // resolve through Object.prototype and eat the next word as a flag value.
+    else if (Object.hasOwn(takesValue, arg)) {
       const value = argv[i + 1];
-      if (value === undefined) return { ok: false, error: `${arg} needs a value` };
+      if (value === undefined || value.startsWith('--')) return { ok: false, error: `${arg} needs a value` };
       flags[takesValue[arg]] = value;
       i += 1;
     } else if (arg.startsWith('--')) return { ok: false, error: `unknown flag ${arg}` };
@@ -218,6 +249,9 @@ export function parseArgs(argv) {
       if (!Number.isFinite(n) || n <= 0) return { ok: false, error: `--${key === 'maxUsd' ? 'budget' : 'max-turns'} must be a positive number` };
       flags[key] = n;
     }
+  }
+  if (!EFFORT_LEVELS.includes(flags.effort)) {
+    return { ok: false, error: `--effort must be one of ${EFFORT_LEVELS.join('|')}` };
   }
   return { ok: true, command: words[0] === 'status' && words.length === 1 ? 'status' : 'run', brief: words.join(' '), flags };
 }
@@ -232,11 +266,12 @@ export function debrief(mission, now = mission.endedAt) {
     '',
     `- model: ${mission.model}${mission.model === SUCCESSOR ? ` (successor of ${ANCESTOR})` : ''}`,
     `- outcome: ${mission.outcome ?? 'never launched'}`,
+    `- powers: ${mission.powers ?? 'safe'}`,
     `- turns: ${mission.turns}, tool calls: ${mission.toolCalls}`,
     `- spend: $${spent.toFixed(4)} (${spentLabel}), budget $${mission.limits.maxUsd.toFixed(2)}`,
     `- wall clock: ${(lived / 1000).toFixed(1)}s`,
     '',
-    mission.result ? String(mission.result).trim() : '(no result text)',
+    mission.result ? sanitize(String(mission.result)).trim() : '(no result text)',
   ].join('\n');
 }
 

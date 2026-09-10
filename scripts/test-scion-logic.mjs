@@ -12,8 +12,8 @@ import assert from 'node:assert/strict';
 import {
   ANCESTOR, LINEAGE, SUCCESSOR, rungFor, successionPlan, costOfUsage, round4,
   DEFAULT_LIMITS, newMission, beginMission, recordTurn, outcomeOf, endMission,
-  fitToLaunch, CONSTITUTION, SAFE_TOOLS, courtiers, buildOptions, parseArgs,
-  debrief, understudyResult,
+  fitToLaunch, CONSTITUTION, SAFE_TOOLS, WEB_TOOLS, EFFORT_LEVELS, sanitize,
+  powersLabel, courtiers, buildOptions, parseArgs, debrief, understudyResult,
 } from '../scion/logic.mjs';
 
 const T0 = Date.UTC(2026, 8, 10, 12, 0, 0);
@@ -96,13 +96,17 @@ test('launch guardrails: no empty briefs, no zero budgets, no epic briefs', () =
   assert.equal(fitToLaunch(newMission('m', 'x'.repeat(20_001), T0)).ok, false);
 });
 
-test('options: safe posture by default — no Bash, edits accepted, doctrine appended', () => {
+test('options: safe posture RESTRICTS the surface — no Bash, no web, edits accepted', () => {
   const o = buildOptions(newMission('m', 'brief', T0));
   assert.equal(o.model, SUCCESSOR);
   assert.equal(o.appendSystemPrompt, CONSTITUTION);
   assert.equal(o.permissionMode, 'acceptEdits');
+  // `tools` limits what exists (allowedTools alone only pre-approves);
+  // the same list is pre-approved so a headless run never stalls.
+  assert.deepEqual(o.tools, [...SAFE_TOOLS]);
   assert.deepEqual(o.allowedTools, [...SAFE_TOOLS]);
-  assert.equal(o.allowedTools.includes('Bash'), false);
+  assert.equal(o.tools.includes('Bash'), false);
+  for (const webTool of WEB_TOOLS) assert.equal(o.tools.includes(webTool), false);
   assert.equal(o.maxTurns, DEFAULT_LIMITS.maxTurns);
   assert.equal(o.maxBudgetUsd, DEFAULT_LIMITS.maxUsd);
   assert.equal(o.effort, 'xhigh');
@@ -111,15 +115,24 @@ test('options: safe posture by default — no Bash, edits accepted, doctrine app
   assert.equal('allowDangerouslySkipPermissions' in o, false);
 });
 
-test('options: --trust adds Bash without mutating the safe list; --yolo bypasses', () => {
+test('options: --web adds the web tools, --trust adds Bash, sources unmutated', () => {
+  const webbed = buildOptions(newMission('m', 'brief', T0), { web: true });
+  for (const webTool of WEB_TOOLS) assert.equal(webbed.tools.includes(webTool), true);
+  assert.equal(webbed.tools.includes('Bash'), false);
   const trusted = buildOptions(newMission('m', 'brief', T0), { trust: true, cwd: '/tmp/ws' });
+  assert.equal(trusted.tools.includes('Bash'), true);
   assert.equal(trusted.allowedTools.includes('Bash'), true);
+  assert.equal(trusted.tools.includes('WebFetch'), false);
   assert.equal(SAFE_TOOLS.includes('Bash'), false); // frozen source untouched
   assert.equal(trusted.cwd, '/tmp/ws');
+});
+
+test('options: --yolo bypasses permissions and lifts the surface restriction', () => {
   const yolo = buildOptions(newMission('m', 'brief', T0), { yolo: true });
   assert.equal(yolo.permissionMode, 'bypassPermissions');
   assert.equal(yolo.allowDangerouslySkipPermissions, true);
   assert.equal('allowedTools' in yolo, false);
+  assert.equal('tools' in yolo, false);
 });
 
 test('the court: scout and auditor are read-only, scout on the cheap envoy', () => {
@@ -134,13 +147,14 @@ test('the court: scout and auditor are read-only, scout on the cheap envoy', () 
 });
 
 test('argv: flags parse, briefs join, garbage is refused', () => {
-  const p = parseArgs(['--model', 'claude-opus-5', '--budget', '2.5', '--trust', 'fix', 'the', 'tests']);
+  const p = parseArgs(['--model', 'claude-opus-5', '--budget', '2.5', '--trust', '--web', 'fix', 'the', 'tests']);
   assert.equal(p.ok, true);
   assert.equal(p.command, 'run');
   assert.equal(p.brief, 'fix the tests');
   assert.equal(p.flags.model, 'claude-opus-5');
   assert.equal(p.flags.maxUsd, 2.5);
   assert.equal(p.flags.trust, true);
+  assert.equal(p.flags.web, true);
   assert.equal(parseArgs(['status']).command, 'status');
   assert.equal(parseArgs(['status', 'extra']).command, 'run'); // "status" can still open a brief
   assert.equal(parseArgs(['--warp-speed']).ok, false);
@@ -149,18 +163,61 @@ test('argv: flags parse, briefs join, garbage is refused', () => {
   assert.equal(parseArgs(['--max-turns', 'many', 'x']).ok, false);
 });
 
+test('argv: Object.prototype words are brief words, never flags', () => {
+  const p = parseArgs(['fix', 'the', 'constructor', 'of', 'the', 'class']);
+  assert.equal(p.ok, true);
+  assert.equal(p.brief, 'fix the constructor of the class'); // nothing swallowed
+  for (const word of ['constructor', 'toString', 'valueOf', 'hasOwnProperty', '__proto__']) {
+    const q = parseArgs([word, 'is', 'broken']);
+    assert.equal(q.ok, true);
+    assert.equal(q.brief, `${word} is broken`);
+    assert.equal(q.flags.model, SUCCESSOR); // flags untouched by prototype lookups
+  }
+});
+
+test('argv: a flag is never accepted as another flag\'s value', () => {
+  assert.equal(parseArgs(['--model', '--trust', 'brief']).ok, false); // --trust not silently eaten
+  assert.equal(parseArgs(['--cwd', '--yolo', 'brief']).ok, false);
+  assert.equal(parseArgs(['--effort', '--trust', 'brief']).ok, false);
+});
+
+test('argv: --effort only accepts the five SDK levels', () => {
+  for (const level of EFFORT_LEVELS) assert.equal(parseArgs(['--effort', level, 'x']).ok, true);
+  assert.equal(parseArgs(['--effort', 'ultra', 'x']).ok, false);
+  assert.equal(parseArgs(['--effort', 'xigh', 'x']).ok, false);
+});
+
+test('powers: one honest label per posture, recorded on the mission', () => {
+  assert.equal(powersLabel(), 'safe');
+  assert.equal(powersLabel({ web: true }), 'safe+web');
+  assert.equal(powersLabel({ trust: true }), 'safe+bash');
+  assert.equal(powersLabel({ web: true, trust: true }), 'safe+web+bash');
+  assert.equal(powersLabel({ yolo: true, trust: true }), 'yolo (permissions bypassed)');
+  const m = newMission('m', 'brief', T0, { powers: powersLabel({ trust: true }) });
+  assert.equal(m.powers, 'safe+bash');
+  assert.match(m.ledger[0].note, /powers: safe\+bash/);
+  assert.equal(newMission('m', 'brief', T0).powers, 'safe');
+});
+
+test('sanitize: strips ANSI escapes and control chars, keeps tabs and newlines', () => {
+  assert.equal(sanitize('a\x1b[31mred\x1b[0mb'), 'a[31mred[0mb'); // ESC gone, text stays
+  assert.equal(sanitize('ding\x07\x00\x9b31m'), 'ding31m');
+  assert.equal(sanitize('line1\nline2\tend'), 'line1\nline2\tend');
+});
+
 test('debrief: reports the verdict, the lineage note and whose bill it quotes', () => {
   let m = beginMission(newMission('m4', 'brief', T0), T0);
   m = recordTurn(m, { usage: { output_tokens: 100_000 }, toolUses: 1 }, T0 + 1);
   const estimated = debrief(endMission(m, { subtype: 'error_max_turns', result: null }, T0 + 5000));
   assert.match(estimated, /mission m4 — failed/);
   assert.match(estimated, new RegExp(`successor of ${ANCESTOR}`));
+  assert.match(estimated, /powers: safe/);
   assert.match(estimated, /\(estimated\)/);
   assert.match(estimated, /5\.0s/);
   assert.match(estimated, /\(no result text\)/);
-  const reported = debrief(endMission(m, { subtype: 'success', result: 'shipped', reportedUsd: 1.5 }, T0 + 5000));
+  const reported = debrief(endMission(m, { subtype: 'success', result: 'shipped\x1b[2Jclean', reportedUsd: 1.5 }, T0 + 5000));
   assert.match(reported, /\$1\.5000 \(reported by the SDK\)/);
-  assert.match(reported, /shipped/);
+  assert.match(reported, /shipped\[2Jclean/); // result text is control-stripped
 });
 
 test('the understudy rehearses deterministically and names the succession plan', () => {

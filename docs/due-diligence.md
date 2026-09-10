@@ -102,7 +102,7 @@ Optional integrations, all replaceable:
 |---|---|---|---|
 | Firebase (Auth/Firestore/FCM/Hosting) | ApexVIP, Concierge, Ripple, Bloom, Orbit REAL, Atlas convoy, AIOS sync | Owner's project | Rules in repo; migratable to any Firebase project |
 | Stripe (Checkout/Billing/webhooks) | ApexVIP payments, Concierge subscriptions | Secret key (Secret Manager) | Webhook mirrors truth into Firestore |
-| Anthropic API | AIOS, Lingua, Imposter packs, Automaton, LLM compare | User-supplied key | Always optional; keys stay server-side |
+| Anthropic API | AIOS, Lingua, Imposter packs, Automaton, Scion, LLM compare | User-supplied key | Always optional; keys stay server-side |
 | OpenStreetMap / CARTO / Esri tiles | Atlas, Orbit Real | Keyless | Tile-usage policies apply at production scale — budget for a commercial tile plan |
 | OSRM / FOSSGIS routing, Nominatim geocoding | Atlas, Orbit Real | Keyless | Community servers; self-host for production |
 | TfL open data, TomTom traffic | Atlas traffic | TomTom optional | |
