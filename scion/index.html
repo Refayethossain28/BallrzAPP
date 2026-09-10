@@ -220,7 +220,12 @@
   }
 
   function refresh() {
-    fetch('/api/status').then((r) => r.json()).then(renderStatus).catch(() => {});
+    // On GitHub Pages there is no backend — say so instead of spinning.
+    fetch('/api/status').then((r) => (r.ok ? r.json() : Promise.reject())).then(renderStatus).catch(() => {
+      const chip = $('harness');
+      chip.textContent = 'no server — clone the repo and run: npm run scion:web';
+      chip.className = 'chip';
+    });
     fetch('/api/missions').then((r) => r.json()).then(renderHistory).catch(() => {});
   }
 
