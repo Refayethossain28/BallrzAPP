@@ -83,12 +83,30 @@ const readBody = (req) => new Promise((resolve, reject) => {
   req.on('error', reject);
 });
 
+/* ── the PWA shell: an allowlist, so no path ever escapes scion/ ── */
+const STATIC = {
+  '/': ['index.html', 'text/html; charset=utf-8'],
+  '/index.html': ['index.html', 'text/html; charset=utf-8'],
+  '/manifest.json': ['manifest.json', 'application/manifest+json'],
+  '/sw.js': ['sw.js', 'text/javascript; charset=utf-8'],
+  '/icon.svg': ['icon.svg', 'image/svg+xml'],
+  '/icon-180.png': ['icon-180.png', 'image/png'],
+  '/icon-192.png': ['icon-192.png', 'image/png'],
+  '/icon-512.png': ['icon-512.png', 'image/png'],
+};
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
 
-  if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    return res.end(readFileSync(join(SRC, 'index.html')));
+  if (req.method === 'GET' && STATIC[url.pathname]) {
+    const [file, type] = STATIC[url.pathname];
+    try {
+      const body = readFileSync(join(SRC, file));
+      res.writeHead(200, { 'Content-Type': type });
+      return res.end(body);
+    } catch {
+      return json(res, 404, { error: 'asset missing — run: npm run icons:scion' });
+    }
   }
   if (req.method === 'GET' && url.pathname === '/api/status') {
     const status = await harnessStatus();

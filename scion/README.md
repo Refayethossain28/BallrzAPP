@@ -53,6 +53,14 @@ Zero dependencies (`node:http`), one mission at a time, in-memory history.
 Same posture rules as the CLI: web and bash are opt-in toggles, yolo asks
 for confirmation and is container-only.
 
+The console is an installable PWA: on iPhone open it in Safari → Share →
+**Add to Home Screen** and it runs standalone under its own gold-crown icon
+(Android/desktop Chrome offer Install from the address bar). The shell is
+cached offline by a service worker — pages load without the server, and a
+tap-to-update banner appears when a new version ships; the mission API is
+never cached, so live runs stay live. Icons regenerate with
+`npm run icons:scion` (zero-dependency PNG writer, motif in `icon.svg`).
+
 ## Flags
 
 | Flag | Meaning | Default |
