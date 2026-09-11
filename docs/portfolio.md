@@ -57,7 +57,7 @@ payments, deploy workflows, iOS wrappers.
 | Omni | Do-everything utility app (tasks, notes, converters, QR, timers) | `omni/` | None | `test:logic` |
 | Hub | Launcher PWA for the whole portfolio | `hub/` | None | smoke |
 | Automaton | A sovereign AI agent that earns to pay for its own compute — or dies | `automaton/` | Anthropic (server) | `test:automaton` |
-| Scion | A successor agent on the Claude Agent SDK: missions on the strongest model in the lineage, with subagents, budgets and a mission ledger | `scion/` | Anthropic (Agent SDK) | `test:scion` (20) |
+| Scion | A successor agent on the Claude Agent SDK: missions on the strongest model in the lineage, with subagents, budgets, a mission ledger — CLI + phone-friendly mission console | `scion/` | Anthropic (Agent SDK) | `test:scion` (23) + smoke |
 
 ## Money, crypto & fintech
 

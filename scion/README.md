@@ -33,6 +33,26 @@ rehearses the mission instead (mission accepted, succession plan printed),
 so the CLI and tests run anywhere — same doctrine as `automaton/`'s offline
 brain.
 
+## The mission console (web app)
+
+A phone-friendly UI over the same engine — write a brief, pick the powers,
+watch the run arrive line by line, read the debrief:
+
+```bash
+npm run scion:web        # http://localhost:8798
+```
+
+The mission agent can edit files on the host, so the server binds
+`127.0.0.1` by default. To drive it from an iPhone on your own network:
+
+```bash
+HOST=0.0.0.0 npm run scion:web   # then open http://<computer-ip>:8798 — trusted networks only
+```
+
+Zero dependencies (`node:http`), one mission at a time, in-memory history.
+Same posture rules as the CLI: web and bash are opt-in toggles, yolo asks
+for confirmation and is container-only.
+
 ## Flags
 
 | Flag | Meaning | Default |
@@ -96,6 +116,7 @@ What the code actually enforces — and what it doesn't:
   clock; callers pass `now`.
 - `harness.mjs` — the live Claude Agent SDK adapter + understudy fallback.
   Process-neutral: no `process.exit`, loggers injected.
-- `scion.mjs` — the CLI.
-- Tests: `npm run test:scion` → `scripts/test-scion-logic.mjs` (20 tests, part
-  of root `npm test`).
+- `scion.mjs` — the CLI. `server.mjs` + `index.html` — the mission console
+  (zero-dep `node:http` API + smoke-test-clean single-file page).
+- Tests: `npm run test:scion` → `scripts/test-scion-logic.mjs` (23 tests, part
+  of root `npm test`; the console page is covered by the prototype smoke test).
