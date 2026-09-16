@@ -35,12 +35,19 @@ self.addEventListener('fetch', (e) => {
     );
     return;
   }
+  // stale-while-revalidate: serve the cached asset instantly, refresh it in
+  // the background so engine.js never drifts more than one visit behind index.html
   e.respondWith(
-    caches.match(e.request).then((hit) => hit || fetch(e.request).then((res) => {
-      const copy = res.clone();
-      caches.open(CACHE).then((c) => c.put(e.request, copy));
-      return res;
-    }))
+    caches.match(e.request).then((hit) => {
+      const refresh = fetch(e.request)
+        .then((res) => {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(e.request, copy));
+          return res;
+        })
+        .catch(() => hit);
+      return hit || refresh;
+    })
   );
 });
 

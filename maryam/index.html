@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#FFFBF2">
+<meta name="theme-color" content="#FFFBF2" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#171209" media="(prefers-color-scheme: dark)">
 <meta name="description" content="Friendly one-to-one maths tutoring for KS2, KS3 and GCSE — in person across South West London, online anywhere. A new puzzle every morning.">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -21,8 +22,8 @@
      ============================================================ */
   :root{
     --paper:#FFFBF2; --ink:#221D16;
-    --sun:#FFB703; --sun-deep:#E08E00; --sun-tint:#FFEFC9;
-    --stone:#6F6757; --leaf:#2E7D46; --berry:#C6402E;
+    --sun:#FFB703; --sun-deep:#B87400; --sun-tint:#FFEFC9;
+    --stone:#6F6757; --leaf:#2A7340; --berry:#BC3A28;
     --rule:#221D16;
     --disc-glow:none;
     --grain-opacity:0.04;
@@ -35,8 +36,8 @@
   @media (prefers-color-scheme: dark){
     :root:not([data-theme="light"]){
       --paper:#171209; --ink:#F4EBDA;
-      --sun-tint:#3A2C10; --stone:#A79C88;
-      --leaf:#57B879; --berry:#E0664F;
+      --sun-deep:#E08E00; --sun-tint:#3A2C10; --stone:#A79C88;
+      --leaf:#57B879; --berry:#E6785F;
       --rule:rgba(244,235,218,.22);
       --disc-glow:0 0 48px rgba(255,183,3,.28);
       --grain-opacity:0.02;
@@ -44,12 +45,13 @@
   }
   :root[data-theme="dark"]{
     --paper:#171209; --ink:#F4EBDA;
-    --sun-tint:#3A2C10; --stone:#A79C88;
-    --leaf:#57B879; --berry:#E0664F;
+    --sun-deep:#E08E00; --sun-tint:#3A2C10; --stone:#A79C88;
+    --leaf:#57B879; --berry:#E6785F;
     --rule:rgba(244,235,218,.22);
     --disc-glow:0 0 48px rgba(255,183,3,.28);
     --grain-opacity:0.02;
   }
+  [hidden]{display:none !important}
 
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
   html{scroll-behavior:smooth}
@@ -111,10 +113,14 @@
   .ghost:hover{background:var(--sun-tint)}
   .pill:active,.ghost:active,.padkey:active,.chip:active{transform:translateY(2px) scale(0.98); transition-duration:120ms}
   a:focus-visible,button:focus-visible,summary:focus-visible,input:focus-visible,
-  select:focus-visible,textarea:focus-visible{outline:2px solid var(--ink); outline-offset:2px; border-radius:4px}
+  select:focus-visible,textarea:focus-visible{outline:2px solid var(--ink); outline-offset:2px}
 
+  .visually-hidden{position:absolute; width:1px; height:1px; overflow:hidden;
+    clip-path:inset(50%); white-space:nowrap}
   .textlink{font-weight:500; text-transform:uppercase; letter-spacing:0.06em;
     font-size:0.9375rem; text-decoration:none; position:relative; padding-bottom:2px}
+  button.textlink::before{content:""; position:absolute; left:0; right:0; top:50%;
+    height:44px; transform:translateY(-50%)}
   .textlink::after{content:""; position:absolute; left:0; right:0; bottom:-2px; height:8px;
     background:var(--sun); border-radius:999px; transform:translateY(100%); opacity:0;
     transition:transform var(--med) var(--spring), opacity var(--fast); z-index:-1}
@@ -131,14 +137,17 @@
   .wordmark b{font-weight:700}
 
   /* the sunset toggle: a horizon with a sun on it */
-  .sunset{position:relative; width:64px; height:28px; flex:none}
+  .sunset{position:relative; width:64px; height:44px; flex:none}
   .sunset .horizon{position:absolute; left:0; right:0; top:50%; height:1.5px; background:var(--ink)}
   .sunset .disc{position:absolute; left:50%; top:50%; width:18px; height:18px; margin:-9px;
     border-radius:50%; background:var(--sun); border:1.5px solid var(--sun-deep);
     box-shadow:var(--disc-glow);
     transition:transform var(--slow) var(--spring), clip-path var(--slow)}
-  :root[data-theme="dark"] .sunset .disc,
-  .theme-dark .sunset .disc{transform:translateY(7px); clip-path:inset(0 0 58% 0)}
+  :root[data-theme="dark"] .sunset .disc{transform:translateY(7px); clip-path:inset(0 0 58% 0)}
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]) .sunset .disc{transform:translateY(7px); clip-path:inset(0 0 58% 0)}
+  }
+  @media (max-width:479px){ header.mast .textlink{display:none} }
 
   /* ============ № 01 — the cover ============ */
   .cover{border-top:none; min-height:100svh; display:flex; align-items:center;
@@ -191,8 +200,10 @@
   .ticker .lane > div{display:flex; white-space:nowrap;
     font-weight:500; font-size:0.9375rem; text-transform:uppercase; letter-spacing:0.08em}
   .ticker .lane span{padding-inline:14px}
-  .ticker .lane .x{font-family:var(--display); font-weight:900}
+  .ticker .lane .x{font-family:var(--display); font-weight:900; display:inline-block}
   @keyframes tick{to{transform:translateX(-50%)}}
+  .ticker .lane .x{animation:xQuarter 6s var(--spring) infinite alternate}
+  @keyframes xQuarter{0%,40%{transform:rotate(0deg)} 60%,100%{transform:rotate(90deg)}}
 
   /* ============ № 03 — a word from Maryam ============ */
   .word-grid{display:grid; gap:clamp(2rem,6vw,4rem); align-items:start}
@@ -274,6 +285,10 @@
     background:linear-gradient(transparent 55%, var(--sun) 55%, var(--sun) 92%, transparent 92%);
     display:none; width:fit-content; padding-inline:2px}
   .puz-hint.show{display:block}
+  :root[data-theme="dark"] .puz-hint{background:var(--sun); color:#221D16; padding:2px 8px; border-radius:4px}
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]) .puz-hint{background:var(--sun); color:#221D16; padding:2px 8px; border-radius:4px}
+  }
   .puz-sun{position:absolute; top:20px; right:20px; width:22px; height:22px}
   .puz-sun circle{fill:var(--sun); stroke:var(--sun-deep); stroke-width:1.5}
   .puz-sun line{stroke:var(--sun-deep); stroke-width:2; stroke-linecap:round;
@@ -301,7 +316,7 @@
     letter-spacing:0.06em; padding:10px 18px; border-radius:999px;
     border:1.5px solid #221D16; color:#221D16; min-height:44px;
     transition:transform var(--med) var(--spring), background var(--fast)}
-  .chip[aria-pressed="true"]{background:#221D16; color:var(--sun)}
+  .chip[aria-checked="true"]{background:#221D16; color:var(--sun)}
   .stage{position:relative; border:1.5px solid #221D16; border-radius:var(--radius-card);
     padding:clamp(16px,4vw,32px); overflow:hidden; background:rgba(255,255,255,0.12)}
   .stage.flash{animation:flash 240ms ease}
@@ -317,7 +332,7 @@
   .graph{display:block; width:100%; height:auto; margin-top:8px}
   .graph .axis{stroke:#221D16; stroke-width:1; opacity:0.5}
   .graph .tickline{stroke:#221D16; stroke-width:1; opacity:0.2}
-  .graph text{font-family:var(--grotesk); font-size:11px; fill:#221D16; opacity:0.6;
+  .graph text{font-family:var(--grotesk); font-size:11px; fill:#221D16; opacity:0.8;
     text-transform:uppercase; letter-spacing:0.06em}
   .graph .scoreline{fill:none; stroke:#221D16; stroke-width:2.5; stroke-linejoin:round}
   .graph .tipdisc{fill:var(--paper); stroke:#221D16; stroke-width:2}
@@ -325,7 +340,7 @@
     transition:opacity 200ms ease}
   .graph .rays.spin{animation:spinOnce 700ms var(--spring)}
   @keyframes spinOnce{to{transform:rotate(360deg)}}
-  .graph .caption{opacity:0.55; font-size:10px}
+  .graph .caption{font-size:10px}
   .pad{display:grid; grid-template-columns:repeat(3,1fr); gap:8px;
     max-width:340px; margin:14px auto 0}
   .padkey{min-height:56px; border:1.5px solid #221D16; border-radius:14px;
@@ -333,7 +348,7 @@
     transition:transform var(--med) var(--spring), background var(--fast);
     font-variant-numeric:tabular-nums}
   .padkey:hover{background:rgba(255,255,255,0.35)}
-  .padkey.go{background:#221D16; color:var(--sun)}
+  .padkey.go{background:#221D16; color:var(--sun); grid-column:1 / -1}
   .sprint-end{text-align:center; padding-block:12px}
   .sprint-end .bigline{font-family:var(--display); font-weight:900;
     font-size:clamp(1.6rem,5vw,2.6rem); margin-bottom:0.4em}
@@ -409,6 +424,10 @@
   .faq summary::before{content:"+"; font-weight:900; color:var(--sun-deep); flex:none;
     display:inline-block; transition:transform 200ms ease; transform-origin:50% 55%}
   .faq details[open] summary::before{transform:rotate(45deg)}
+  .faq .ans{display:grid; grid-template-rows:1fr}
+  .faq .ans>.a{overflow:hidden; min-height:0}
+  .faq details[open] .ans{animation:accGrow var(--med) var(--spring)}
+  @keyframes accGrow{from{grid-template-rows:0fr}}
   .faq .a{padding:0 0 22px 36px; color:var(--stone); max-width:60ch;
     animation:accIn var(--med) ease}
   @keyframes accIn{from{opacity:0; transform:translateY(-6px)}}
@@ -438,13 +457,16 @@
     background-size:6px 6px; background-repeat:no-repeat}
   .field select option{color:#221D16; background:#FFFBF2}
   .field.flag input,.field.flag textarea,.field.flag select{border-bottom:2px solid var(--berry)}
+  /* the :focus rules above zero the outline — restore it for keyboard focus */
+  .puz-answer:focus-visible,.field input:focus-visible,.field select:focus-visible,
+  .field textarea:focus-visible{outline:2px solid var(--ink); outline-offset:2px}
   .field .note{display:none; margin-top:6px; font-family:var(--display); font-style:italic;
     font-weight:600; color:var(--berry); font-size:0.9375rem}
   .field.flag .note{display:block}
   .field.shake{animation:shake 300ms ease}
   .modes{display:flex; gap:10px; flex-wrap:wrap}
   .modes .chip{border-color:var(--ink); color:var(--ink)}
-  .modes .chip[aria-pressed="true"]{background:var(--ink); color:var(--paper)}
+  .modes .chip[aria-checked="true"]{background:var(--ink); color:var(--paper)}
   .letter{background:var(--sun-tint); border:1px solid var(--rule);
     border-radius:var(--radius-card); padding:clamp(22px,4vw,36px); position:relative}
   .letter .lhead{font-weight:500; font-size:0.8125rem; text-transform:uppercase;
@@ -535,6 +557,8 @@
       transition-duration:0.001s !important}
     .ticker .lane{animation:none; flex-wrap:wrap; width:auto}
     .ticker .lane > div{white-space:normal; flex-wrap:wrap}
+    .ticker .lane > div[aria-hidden="true"]{display:none}
+    .ticker .lane .x{animation:none}
     .scrollcue{animation:none}
     .cover h1 .word{opacity:1; transform:none; animation:none}
     .clicks svg path{stroke-dashoffset:0; animation:none}
@@ -548,7 +572,7 @@
 <header class="mast">
   <div class="row">
     <a class="wordmark" href="#top"><b>Maryam</b> — Maths Tutor</a>
-    <button class="sunset js-sunset" type="button" aria-pressed="false" aria-label="Switch to dark mode">
+    <button class="sunset js-sunset" type="button" aria-pressed="false" aria-label="Dark mode">
       <span class="horizon"></span><span class="disc"></span>
     </button>
     <a class="textlink" href="#hello">Say hello</a>
@@ -562,7 +586,7 @@
   <div class="wrap">
     <div class="cover-numeral js-numeral" aria-hidden="true"><span class="numghost js-numghost">16</span><span class="js-numface">16</span></div>
     <div class="cover-copy">
-      <p class="folio cover-issue">№ <span class="js-issue">259</span> — <span class="js-dateline">Tuesday 16 September</span></p>
+      <p class="folio cover-issue">№ <span class="js-issue">259</span> — <span class="js-dateline">16 September</span></p>
       <h1><span class="word">Suddenly,</span> <span class="word">maths</span>
         <span class="word"><span class="clicks">clicks<svg viewBox="0 0 100 14" aria-hidden="true" preserveAspectRatio="none"><path pathLength="1" d="M2 10 C 20 4, 45 12, 62 7 S 92 6, 98 8"/></svg></span><span class="sunstop" aria-hidden="true"></span></span>
       </h1>
@@ -670,7 +694,7 @@
 <!-- ============ № 05 — the daily puzzle ============ -->
 <section id="puzzle" aria-labelledby="puzzle-h">
   <div class="wrap">
-    <p class="folio">№ 05 — The Daily Puzzle <em class="js-puzdate">Tuesday 16 September</em></p>
+    <p class="folio">№ 05 — The Daily Puzzle <em class="js-puzdate">16 September</em></p>
     <h2 class="h2" id="puzzle-h">One puzzle, every morning.</h2>
     <p class="sub">Everyone gets the same puzzle today, so the whole household can race. First to crack it chooses pudding.</p>
 
@@ -684,12 +708,12 @@
       </svg>
       <p class="puz-q js-puzq">Loading today’s puzzle…</p>
       <div class="puz-row">
-        <label style="display:none" for="puz-answer">Your answer</label>
-        <input class="puz-answer" id="puz-answer" inputmode="numeric" autocomplete="off" placeholder="?">
+        <input class="puz-answer" id="puz-answer" inputmode="numeric" autocomplete="off"
+          placeholder="?" aria-label="Your answer">
         <button class="pill js-puzcheck" type="button">Check my answer</button>
         <button class="textlink js-puznudge" type="button">Give me a nudge</button>
       </div>
-      <p class="puz-hint js-puzhint"></p>
+      <p class="puz-hint js-puzhint" aria-live="polite"></p>
       <p class="puz-note js-puznote" aria-live="polite"></p>
     </div>
 
@@ -711,21 +735,22 @@
     <h2 class="h2" id="sprint-h">Sixty seconds. How high can your line climb?</h2>
     <p class="sub">Press start. Every right answer plots a point — your score draws its own graph, and streaks grow your sun.</p>
 
-    <div class="chips js-modes" role="group" aria-label="Sprint difficulty"></div>
+    <div class="chips js-modes" role="radiogroup" aria-label="Sprint difficulty"></div>
 
     <div class="stage js-stage">
+      <p class="visually-hidden js-sr" role="status"></p>
       <div class="sprint-idle js-idle">
         <button class="pill js-start" type="button">Start the sprint</button>
       </div>
 
-      <div class="js-play" hidden>
+      <div class="js-play" hidden tabindex="-1">
         <div class="hud"><span>Score <span class="js-score">0</span></span><span><span class="js-clock">60</span>s</span></div>
         <p class="sprint-q"><span class="js-q">7 × 8</span> = <span class="typed js-typed">&nbsp;</span></p>
         <div class="pad js-pad" aria-label="Number pad"></div>
       </div>
 
       <div class="sprint-end js-end" hidden>
-        <p class="bigline js-endline">Time.</p>
+        <p class="bigline js-endline" tabindex="-1">Time.</p>
         <p class="rank js-endrank"></p>
         <button class="pill js-again" type="button">Go again</button>
         <p class="whisper">Sixty good seconds. Imagine an hour a week.</p>
@@ -740,7 +765,7 @@
           <g class="rays js-rays"></g>
           <circle class="tipdisc" cx="0" cy="0" r="9"/>
         </g>
-        <text class="caption js-gcap" x="580" y="222" text-anchor="end"></text>
+        <text class="caption js-gcap" x="580" y="212" text-anchor="end"></text>
         <text x="24" y="222">0s</text><text x="584" y="222" text-anchor="end">60s</text>
       </svg>
     </div>
@@ -804,23 +829,23 @@
     <div class="faq">
       <details>
         <summary>Whereabouts in South West London?</summary>
-        <p class="a">I travel to pupils across South West London. Get in touch with your postcode and we’ll see if it works — and if it doesn’t, online lessons work beautifully.</p>
+        <div class="ans"><p class="a">I travel to pupils across South West London. Get in touch with your postcode and we’ll see if it works — and if it doesn’t, online lessons work beautifully.</p></div>
       </details>
       <details>
         <summary>How do online lessons work?</summary>
-        <p class="a">A video call plus a shared digital whiteboard. Your child needs a laptop or tablet, a pencil and some paper — that’s it.</p>
+        <div class="ans"><p class="a">A video call plus a shared digital whiteboard. Your child needs a laptop or tablet, a pencil and some paper — that’s it.</p></div>
       </details>
       <details>
         <summary>What do parents actually get?</summary>
-        <p class="a">A short note after each session: what we covered, what clicked, and what’s next. You’ll never have to guess how it’s going.</p>
+        <div class="ans"><p class="a">A short note after each session: what we covered, what clicked, and what’s next. You’ll never have to guess how it’s going.</p></div>
       </details>
       <details>
         <summary>How much are lessons?</summary>
-        <p class="a">Fees depend on stage and format, so there’s no price list here. Send a message and I’ll talk you through it — no obligation, no hard sell.</p>
+        <div class="ans"><p class="a">Fees depend on stage and format, so there’s no price list here. Send a message and I’ll talk you through it — no obligation, no hard sell.</p></div>
       </details>
       <details>
         <summary>What happens in the first lesson?</summary>
-        <p class="a">Some talking and a little maths: finding what’s solid, what’s wobbly, and what we’ll do about it — with at least one genuinely surprising bit of maths along the way.</p>
+        <div class="ans"><p class="a">Some talking and a little maths: finding what’s solid, what’s wobbly, and what we’ll do about it — with at least one genuinely surprising bit of maths along the way.</p></div>
       </details>
     </div>
   </div>
@@ -855,7 +880,7 @@
 
         <div class="field js-f-mode">
           <span class="folio" style="margin-bottom:8px" id="mode-label">Where suits you?</span>
-          <div class="modes js-modechips" role="group" aria-labelledby="mode-label"></div>
+          <div class="modes js-modechips" role="radiogroup" aria-labelledby="mode-label"></div>
         </div>
 
         <div class="field js-f-message">
@@ -876,10 +901,10 @@
       <div>
         <div class="letter">
           <p class="lhead">Your letter — writes itself</p>
-          <div class="ltext js-letter" aria-live="polite"></div>
-          <div class="postmark js-postmark"><span>Posted<br><span class="js-pmdate"></span></span></div>
+          <div class="ltext js-letter"></div>
+          <div class="postmark js-postmark"><span>Ready to send<br><span class="js-pmdate"></span></span></div>
         </div>
-        <p class="posted js-posted">Posted — your email app has the letter ready to send.</p>
+        <p class="posted js-posted">Your email app should now be open with the letter — press send there, or use “Copy the letter” if it didn’t appear.</p>
         <div class="reach">
           <p class="lbl">Or reach me directly:</p>
           <div class="chips2 js-reach"></div>
@@ -904,12 +929,12 @@
     </nav>
     <div class="foot-meta">
       <p class="who js-footline">Maryam — maths tutor · KS2, KS3 &amp; GCSE · South West London &amp; online</p>
-      <button class="sunset js-sunset" type="button" aria-pressed="false" aria-label="Switch to dark mode">
+      <button class="sunset js-sunset" type="button" aria-pressed="false" aria-label="Dark mode">
         <span class="horizon"></span><span class="disc"></span>
       </button>
     </div>
     <div class="qed-row">
-      <span class="qed" tabindex="0">Q.E.D<span class="sunstop" aria-hidden="true"></span><svg aria-hidden="true"><rect x="1" y="1" width="99%" height="94%" rx="6" pathLength="1"/></svg></span>
+      <span class="qed">Q.E.D<span class="sunstop" aria-hidden="true"></span><svg aria-hidden="true"><rect x="1" y="1" width="99%" height="94%" rx="6" pathLength="1"/></svg></span>
     </div>
     <p class="foot-fine">Made with care (and a protractor) in South West London. © <span class="js-year">2026</span> Maryam — Maths Tutor.</p>
   </div>
@@ -949,27 +974,36 @@
     if (t === 'dark' || t === 'light') return t;
     try { return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'; } catch (e) { return 'light'; }
   }
+  function syncSunsets(t) {
+    $$('.js-sunset').forEach(function (b) {
+      b.setAttribute('aria-pressed', t === 'dark' ? 'true' : 'false');
+    });
+    var chrome = t === 'dark' ? '#171209' : '#FFFBF2';
+    $$('meta[name="theme-color"]').forEach(function (m) { m.setAttribute('content', chrome); });
+  }
   function applyTheme(t) {
     document.documentElement.setAttribute('data-theme', t);
     try { localStorage.setItem('maryam-theme', t); } catch (e) {}
-    $$('.js-sunset').forEach(function (b) {
-      b.setAttribute('aria-pressed', t === 'dark' ? 'true' : 'false');
-      b.setAttribute('aria-label', t === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
-    });
+    syncSunsets(t);
   }
   try {
     var saved = localStorage.getItem('maryam-theme');
     if (saved === 'dark' || saved === 'light') applyTheme(saved);
   } catch (e) {}
+  syncSunsets(currentTheme()); // system-dark first visits get a set sun, no storage write
   $$('.js-sunset').forEach(function (b) {
     b.addEventListener('click', function () { applyTheme(currentTheme() === 'dark' ? 'light' : 'dark'); });
   });
 
   /* ---------------- the daily edition ---------------- */
   var now = Date.now();
-  var cover = E.coverDate(now);
-  var todayIso = E.isoDate(now);
-  $('.js-issue').textContent = E.issueNumber(now);
+  // The engine reads UTC; shift the seed so the edition, puzzle and fact all
+  // roll over at the viewer's LOCAL midnight (an hour matters during BST).
+  var dayNow = now;
+  try { dayNow = now - new Date(now).getTimezoneOffset() * 60000; } catch (e) {}
+  var cover = E.coverDate(dayNow);
+  var todayIso = E.isoDate(dayNow);
+  $('.js-issue').textContent = E.issueNumber(dayNow);
   $('.js-dateline').textContent = cover.dateLine;
   $('.js-puzdate').textContent = cover.dateLine;
   $('.js-year').textContent = cover.year;
@@ -1012,7 +1046,7 @@
     var statsEl = $('.js-stats');
     statsEl.hidden = false;
     statsEl.innerHTML = stats.map(function (s) {
-      return '<div class="stat"><b>' + E.escapeHTML(s.n) + '</b><span>' + E.escapeHTML(s.label) + '</span></div>';
+      return '<div class="stat"><b data-n="' + E.escapeHTML(s.n) + '">' + E.escapeHTML(s.n) + '</b><span>' + E.escapeHTML(s.label) + '</span></div>';
     }).join('');
   }
 
@@ -1034,6 +1068,32 @@
   $$('.js-fig').forEach(function (el) {
     if (io && !reduceMotion) io.observe(el);
     else el.classList.add('in-view');
+    el.addEventListener('mouseenter', function () {
+      if (reduceMotion || !el.classList.contains('in-view')) return;
+      el.classList.remove('in-view'); void el.offsetWidth; el.classList.add('in-view');
+    });
+  });
+
+  // honest counters count up on first sight (they stay hidden unless CONFIG fills them)
+  $$('.js-stats .stat b').forEach(function (b) {
+    var target = parseInt(b.getAttribute('data-n'), 10);
+    if (!io || reduceMotion || !(target > 1)) return;
+    b.textContent = '0';
+    var so = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (!en.isIntersecting) return;
+        so.unobserve(en.target);
+        var t0 = null;
+        var step = function (ts) {
+          if (t0 === null) t0 = ts;
+          var k = Math.min(1, (ts - t0) / 900);
+          b.textContent = Math.round(k * target);
+          if (k < 1) requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+      });
+    }, { threshold: 0.35 });
+    so.observe(b);
   });
 
   /* ---------------- confetti (deterministic physics, dumb painter) ---------------- */
@@ -1082,12 +1142,17 @@
     return { x: (r.left || 0) + (r.width || 0) / 2, y: (r.top || 0) + (r.height || 0) / 2 };
   }
   var INK_CREAM = ['#221D16', '#FFFBF2'];
-  var INK_SUN = ['#221D16', '#FFB703', '#E08E00'];
+  // over the paper ground, "ink" must follow the theme or dark-mode confetti vanishes
+  function inkSun() {
+    return currentTheme() === 'dark'
+      ? ['#F4EBDA', '#FFB703', '#E08E00']
+      : ['#221D16', '#FFB703', '#E08E00'];
+  }
 
   /* ---------------- № 05 — the daily puzzle ---------------- */
   var puzzle = E.dailyPuzzle(todayIso);
-  var yesterday = E.dailyPuzzle(E.isoDate(now - E.DAY));
-  $('.js-puzq').textContent = puzzle.emoji + ' ' + puzzle.question;
+  var yesterday = E.dailyPuzzle(E.isoDate(dayNow - E.DAY));
+  $('.js-puzq').textContent = puzzle.question;
   $('.js-yesterday').textContent = yesterday.question + ' — the answer was ' + yesterday.answer + '.';
   $('.js-fact').textContent = E.factOfDay(todayIso).fact;
 
@@ -1102,7 +1167,7 @@
       puzNote.innerHTML = '<span class="good">Solved — lovely work. A new puzzle arrives at midnight.</span>' +
         '<span class="why">' + E.escapeHTML(puzzle.explain) + '</span>';
       var c = centerOf($('.js-puzcard'));
-      fireConfetti(c.x, c.y, 'puzzle:' + todayIso, 20, INK_SUN);
+      fireConfetti(c.x, c.y, 'puzzle:' + todayIso, 20, inkSun());
     } else {
       var card = $('.js-puzcard');
       card.classList.remove('shake');
@@ -1115,8 +1180,9 @@
   puzInput.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') checkPuzzle(); });
   $('.js-puznudge').addEventListener('click', function () {
     var h = $('.js-puzhint');
-    h.textContent = puzzle.hint;
     h.classList.add('show');
+    // write the text once the region is rendered, so aria-live announces it
+    setTimeout(function () { h.textContent = puzzle.hint; }, 0);
   });
 
   /* ---------------- № 06 — the sixty-second sprint ---------------- */
@@ -1129,26 +1195,28 @@
   // mode chips
   var modesEl = $('.js-modes');
   modesEl.innerHTML = E.SPRINT_MODES.map(function (m) {
-    return '<button class="chip" type="button" data-mode="' + m.key + '" aria-pressed="' +
+    return '<button class="chip" type="button" role="radio" data-mode="' + m.key + '" aria-checked="' +
       (m.key === 'classic') + '" title="' + E.escapeHTML(m.hint) + '">' + E.escapeHTML(m.label) + '</button>';
   }).join('');
   $$('.js-modes .chip').forEach(function (b) {
     b.addEventListener('click', function () {
       sprint.mode = b.getAttribute('data-mode');
-      $$('.js-modes .chip').forEach(function (o) { o.setAttribute('aria-pressed', String(o === b)); });
+      $$('.js-modes .chip').forEach(function (o) { o.setAttribute('aria-checked', String(o === b)); });
     });
   });
 
-  // number pad
+  // number pad — the '-' key matters: level-4 subtractions go below zero
   var padEl = $('.js-pad');
-  var PAD = ['1','2','3','4','5','6','7','8','9','⌫','0','↵'];
+  var PAD = ['1','2','3','4','5','6','7','8','9','-','0','⌫','↵'];
   padEl.innerHTML = PAD.map(function (k) {
     var cls = k === '↵' ? 'padkey go' : 'padkey';
-    var label = k === '⌫' ? 'Delete' : (k === '↵' ? 'Answer' : k);
-    return '<button class="' + cls + '" type="button" data-key="' + k + '" aria-label="' + label + '">' + k + '</button>';
+    var label = k === '⌫' ? 'Delete' : (k === '↵' ? 'Answer' : (k === '-' ? 'Minus' : k));
+    var face = k === '-' ? '−' : k;
+    return '<button class="' + cls + '" type="button" data-key="' + k + '" aria-label="' + label + '">' + face + '</button>';
   }).join('');
 
-  function sprintSeed() { return todayIso + ':' + sprint.mode + ':' + sprint.qIndex; }
+  // startAt is the round nonce: "Go again" deals a fresh hand every time
+  function sprintSeed() { return todayIso + ':' + sprint.mode + ':' + sprint.startAt + ':' + sprint.qIndex; }
   function nextQuestion() {
     sprint.qIndex++;
     var level = E.sprintLevelForMode(sprint.mode, sprint.streak);
@@ -1156,6 +1224,7 @@
     sprint.typed = '';
     $('.js-q').textContent = sprint.q.question.replace('.  x = ?', ',  x');
     $('.js-typed').innerHTML = '&nbsp;';
+    $('.js-sr').textContent = sprint.q.question;
   }
   function drawTicks() {
     var g = $('.js-ticks');
@@ -1212,6 +1281,7 @@
     showRays();
     nextQuestion();
     redrawGraph(0);
+    try { $('.js-play').focus(); } catch (e) {}
     clearInterval(sprint.timer);
     sprint.timer = setInterval(function () {
       var el = elapsedSec();
@@ -1231,9 +1301,10 @@
     $('.js-endline').textContent = 'Time. You scored ' + sprint.score + ' — ' + sprint.correct +
       ' right, best streak ' + sprint.best + '.' + (isPB ? ' A new personal best.' : ' Your personal best is ' + best + '.');
     var rank = E.sprintRank(sprint.score);
-    $('.js-endrank').textContent = rank.emoji + ' ' + rank.name + ' — ' + rank.hint;
+    $('.js-endrank').textContent = rank.name + ' — ' + rank.hint;
     $('.js-gcap').textContent = ('The Sprint — ' + cover.dateLine + ' — ' + sprint.correct + ' right · maryam, maths tutor').toUpperCase();
     redrawGraph(SPRINT_SECONDS);
+    try { $('.js-endline').focus(); } catch (e) {}
   }
   function answerSprint() {
     if (!sprint.running || sprint.typed === '' || sprint.typed === '-') return;
@@ -1247,7 +1318,7 @@
       showRays();
       if (sprint.streak > 0 && sprint.streak % 5 === 0 && !reduceMotion) {
         var rg = $('.js-rays');
-        rg.classList.remove('spin'); void rg.getBoundingClientRect; rg.classList.add('spin');
+        rg.classList.remove('spin'); void rg.getBoundingClientRect(); rg.classList.add('spin');
         setTimeout(function () { rg.classList.remove('spin'); }, 750);
       }
       if (sprint.streak === 10) {
@@ -1265,6 +1336,7 @@
       q.classList.remove('shake'); void q.offsetWidth; q.classList.add('shake');
       sprint.typed = '';
       $('.js-typed').innerHTML = '&nbsp;';
+      $('.js-sr').textContent = 'Not quite — streak reset. ' + sprint.q.question;
     }
   }
   function sprintKey(k) {
@@ -1288,6 +1360,9 @@
   });
   document.addEventListener('keydown', function (ev) {
     if (!sprint.running) return;
+    // never steal keys from someone typing in the puzzle box or the form
+    var t = ev.target;
+    if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || '') || t.isContentEditable)) return;
     if (/^[0-9]$/.test(ev.key) || ev.key === 'Backspace' || ev.key === 'Enter' || ev.key === '-') {
       ev.preventDefault();
       sprintKey(ev.key);
@@ -1342,13 +1417,13 @@
   var modeVal = 'notsure';
   var modeChipsEl = $('.js-modechips');
   modeChipsEl.innerHTML = E.MODES.map(function (m) {
-    return '<button class="chip" type="button" data-mode="' + m + '" aria-pressed="' + (m === 'notsure') + '">' +
+    return '<button class="chip" type="button" role="radio" data-mode="' + m + '" aria-checked="' + (m === 'notsure') + '">' +
       E.escapeHTML(E.MODE_LABELS[m]) + '</button>';
   }).join('');
   $$('.js-modechips .chip').forEach(function (b) {
     b.addEventListener('click', function () {
       modeVal = b.getAttribute('data-mode');
-      $$('.js-modechips .chip').forEach(function (o) { o.setAttribute('aria-pressed', String(o === b)); });
+      $$('.js-modechips .chip').forEach(function (o) { o.setAttribute('aria-checked', String(o === b)); });
       renderLetter();
     });
   });
@@ -1367,7 +1442,7 @@
   function renderLetterNow() {
     var d = E.draftLetter(fields());
     var html = E.escapeHTML(d.text)
-      .replace(/____/g, '<span class="gap" aria-label="still blank"></span>');
+      .replace(/____/g, '<span class="gap" role="img" aria-label="still blank"></span>');
     letterEl.innerHTML = html;
     // draw-on ticks for filled-in fields
     var f = fields();
@@ -1387,19 +1462,30 @@
   });
   yearSel.addEventListener('change', renderLetterNow);
 
+  var FIELD_IDS = { name: 'f-name', year: 'f-year', message: 'f-message' };
   function showNotes(v) {
+    var firstBad = null;
     [['name', '.js-f-name'], ['year', '.js-f-year'], ['message', '.js-f-message']].forEach(function (pair) {
       var key = pair[0], box = $(pair[1]);
       var note = box.querySelector('.note');
+      var ctl = document.getElementById(FIELD_IDS[key]);
+      if (note && !note.id) note.id = 'note-' + key;
       if (v.notes[key]) {
         box.classList.add('flag');
         box.classList.remove('shake'); void box.offsetWidth; box.classList.add('shake');
         if (note) note.textContent = v.notes[key];
+        if (ctl) {
+          ctl.setAttribute('aria-invalid', 'true');
+          ctl.setAttribute('aria-describedby', 'note-' + key);
+          if (!firstBad) firstBad = ctl;
+        }
       } else {
         box.classList.remove('flag');
         if (note) note.textContent = '';
+        if (ctl) { ctl.removeAttribute('aria-invalid'); ctl.removeAttribute('aria-describedby'); }
       }
     });
+    if (firstBad) { try { firstBad.focus(); } catch (e) {} }
   }
   form.addEventListener('submit', function (ev) {
     ev.preventDefault();
@@ -1461,7 +1547,7 @@
     if (eggTaps >= 7) {
       eggTaps = 0;
       var c = centerOf($('.js-egg'));
-      fireConfetti(c.x, c.y, 'egg:' + todayIso, 40, INK_SUN);
+      fireConfetti(c.x, c.y, 'egg:' + todayIso, 40, inkSun());
       toast('Seven times — somebody knows their tables.');
     }
   });

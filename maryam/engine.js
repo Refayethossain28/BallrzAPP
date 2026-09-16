@@ -255,6 +255,259 @@
         hint: 'A prime has exactly two factors — itself and 1. Try dividing each by 3, 5 and 7.',
         explain: p + ' has no factors besides 1 and itself — every other number in the line divides by 3, 5 or 7.'
       };
+    },
+    function numberChain(seed) {
+      var n = randInt(seed + ':n', 3, 30);
+      var a = randInt(seed + ':a', 2, 15);
+      return {
+        topic: 'Chains', emoji: '⛓️',
+        question: 'Start with ' + n + '. Double it, then add ' + a + '. What do you get?',
+        answer: 2 * n + a,
+        hint: 'One step at a time: double first, then add.',
+        explain: 'Double ' + n + ' is ' + 2 * n + ', and ' + 2 * n + ' + ' + a + ' = ' + (2 * n + a) + '.'
+      };
+    },
+    function moneyChange(seed) {
+      var note = pickSeeded(seed + ':note', [10, 20]);
+      var cost = randInt(seed + ':c', 1, note - 1);
+      return {
+        topic: 'Money', emoji: '💷',
+        question: 'You pay for a £' + cost + ' comic with a £' + note + ' note. How much change do you get, in pounds?',
+        answer: note - cost,
+        hint: 'Count up from £' + cost + ' to £' + note + '.',
+        explain: '£' + note + ' − £' + cost + ' = £' + (note - cost) + ' change.'
+      };
+    },
+    function moneyCoins(seed) {
+      var coin = pickSeeded(seed + ':coin', [2, 5, 10, 20, 50]);
+      var pounds = randInt(seed + ':t', 1, 9);
+      return {
+        topic: 'Money', emoji: '🪙',
+        question: 'How many ' + coin + 'p coins make £' + pounds + '?',
+        answer: pounds * 100 / coin,
+        hint: '£1 is 100p — how many ' + coin + 'p coins make 100p?',
+        explain: '£' + pounds + ' is ' + pounds * 100 + 'p, and ' + pounds * 100 + ' ÷ ' + coin + ' = ' + (pounds * 100 / coin) + '.'
+      };
+    },
+    function perimeterOfRectangle(seed) {
+      var w = randInt(seed + ':w', 3, 15);
+      var h = randInt(seed + ':h', 2, 12);
+      return {
+        topic: 'Perimeter', emoji: '🖼️',
+        question: 'A rectangle is ' + w + ' cm wide and ' + h + ' cm tall. What is its perimeter in cm?',
+        answer: 2 * (w + h),
+        hint: 'The perimeter goes all the way round — two widths and two heights.',
+        explain: w + ' + ' + h + ' + ' + w + ' + ' + h + ' = ' + 2 * (w + h) + ' cm all the way round.'
+      };
+    },
+    function sequenceDown(seed) {
+      var step = randInt(seed + ':d', 3, 9);
+      var start = 4 * step + 1 + randInt(seed + ':s', 0, 40);
+      var terms = [start, start - step, start - 2 * step, start - 3 * step];
+      return {
+        topic: 'Sequences', emoji: '🪜',
+        question: 'What comes next: ' + terms.join(', ') + ', … ?',
+        answer: start - 4 * step,
+        hint: 'The numbers are falling — by how much each time?',
+        explain: 'Each step is −' + step + ', so after ' + terms[3] + ' comes ' + (start - 4 * step) + '.'
+      };
+    },
+    function doublingPattern(seed) {
+      var r = pickSeeded(seed + ':r', [2, 3]);
+      var start = randInt(seed + ':s', 1, 5);
+      var terms = [start, start * r, start * r * r, start * r * r * r];
+      return {
+        topic: 'Patterns', emoji: '🌱',
+        question: 'What comes next: ' + terms.join(', ') + ', … ?',
+        answer: terms[3] * r,
+        hint: 'It isn’t adding this time — each number is multiplied by the same thing.',
+        explain: 'Each term is ×' + r + ', so after ' + terms[3] + ' comes ' + terms[3] * r + '.'
+      };
+    },
+    function nthSquare(seed) {
+      var n = randInt(seed + ':n', 3, 12);
+      var ord = n === 3 ? '3rd' : n + 'th';
+      return {
+        topic: 'Square numbers', emoji: '🔲',
+        question: 'What is the ' + ord + ' square number?',
+        answer: n * n,
+        hint: 'A square number is a number times itself.',
+        explain: n + ' × ' + n + ' = ' + n * n + '.'
+      };
+    },
+    function smallCube(seed) {
+      var c = randInt(seed + ':c', 2, 6);
+      return {
+        topic: 'Cubes', emoji: '🧊',
+        question: 'What is ' + c + ' cubed?',
+        answer: c * c * c,
+        hint: 'Cubed means times itself, then times itself again.',
+        explain: c + ' × ' + c + ' × ' + c + ' = ' + c * c * c + '.'
+      };
+    },
+    function straightLineAngle(seed) {
+      var a = randInt(seed + ':a', 25, 155);
+      return {
+        topic: 'Angles', emoji: '📏',
+        question: 'Two angles sit together on a straight line. One is ' + a + '°. How big is the other?',
+        answer: 180 - a,
+        hint: 'Angles on a straight line add up to 180°.',
+        explain: '180 − ' + a + ' = ' + (180 - a) + '°.'
+      };
+    },
+    function nthMultiple(seed) {
+      var k = randInt(seed + ':k', 3, 9);
+      var m = randInt(seed + ':m', 4, 12);
+      var ord = k === 3 ? '3rd' : k + 'th';
+      return {
+        topic: 'Multiples', emoji: '🎯',
+        question: 'What is the ' + ord + ' multiple of ' + m + '?',
+        answer: k * m,
+        hint: 'Count up in ' + m + 's, ' + k + ' times.',
+        explain: k + ' × ' + m + ' = ' + k * m + '.'
+      };
+    },
+    function countFactors(seed) {
+      var n = pickSeeded(seed + ':n', [12, 16, 18, 20, 24, 28, 30, 36]);
+      var count = 0;
+      for (var i = 1; i <= n; i++) if (n % i === 0) count++;
+      return {
+        topic: 'Factors', emoji: '🧩',
+        question: 'How many factors does ' + n + ' have?',
+        answer: count,
+        hint: 'Hunt in pairs: 1 and ' + n + ', 2 and ' + (n / 2) + '…',
+        explain: 'The factors of ' + n + ' pair up neatly — there are ' + count + ' of them, counting 1 and ' + n + ' itself.'
+      };
+    },
+    function temperatureDrop(seed) {
+      var a = randInt(seed + ':a', 1, 8);
+      var b = randInt(seed + ':b', a + 2, a + 15);
+      return {
+        topic: 'Negative numbers', emoji: '🥶',
+        question: 'The temperature is ' + a + '° and it drops by ' + b + '°. What is it now, in degrees?',
+        answer: a - b,
+        hint: 'It falls straight past zero — keep counting down.',
+        explain: a + ' − ' + b + ' = ' + (a - b) + '°. Brrr.'
+      };
+    },
+    function orderOfOperations(seed) {
+      var a = randInt(seed + ':a', 2, 12);
+      var b = randInt(seed + ':b', 2, 9);
+      var c = randInt(seed + ':c', 2, 9);
+      return {
+        topic: 'Order of operations', emoji: '🚦',
+        question: 'What is ' + a + ' + ' + b + ' × ' + c + '?',
+        answer: a + b * c,
+        hint: 'Multiplication goes first — no matter where it sits.',
+        explain: b + ' × ' + c + ' = ' + b * c + ' first, then ' + a + ' + ' + b * c + ' = ' + (a + b * c) + '.'
+      };
+    },
+    function roundToTen(seed) {
+      var n = randInt(seed + ':n', 101, 989);
+      return {
+        topic: 'Rounding', emoji: '🎢',
+        question: 'Round ' + n + ' to the nearest 10.',
+        answer: Math.round(n / 10) * 10,
+        hint: 'Look at the ones digit — 5 or more rounds up.',
+        explain: 'The ones digit is ' + (n % 10) + ', so ' + n + ' rounds to ' + Math.round(n / 10) * 10 + '.'
+      };
+    },
+    function placeValue(seed) {
+      var n = randInt(seed + ':n', 1000, 9999);
+      return {
+        topic: 'Place value', emoji: '🏛️',
+        question: 'In the number ' + n + ', which digit is in the tens place?',
+        answer: Math.floor(n / 10) % 10,
+        hint: 'Ones on the right, then tens just to their left.',
+        explain: 'Reading from the right: ones, then tens — the tens digit of ' + n + ' is ' + (Math.floor(n / 10) % 10) + '.'
+      };
+    },
+    function missingAddend(seed) {
+      var a = randInt(seed + ':a', 12, 78);
+      var c = a + randInt(seed + ':d', 5, 60);
+      return {
+        topic: 'Missing number', emoji: '🔍',
+        question: 'What number added to ' + a + ' makes ' + c + '?',
+        answer: c - a,
+        hint: 'Take ' + a + ' away from ' + c + '.',
+        explain: c + ' − ' + a + ' = ' + (c - a) + '.'
+      };
+    },
+    function missingFactor(seed) {
+      var a = randInt(seed + ':a', 3, 12);
+      var b = randInt(seed + ':b', 3, 12);
+      return {
+        topic: 'Missing number', emoji: '🔍',
+        question: 'What number times ' + a + ' makes ' + a * b + '?',
+        answer: b,
+        hint: 'Divide ' + a * b + ' by ' + a + '.',
+        explain: a * b + ' ÷ ' + a + ' = ' + b + '.'
+      };
+    },
+    function timeUnits(seed) {
+      if (rand01(seed + ':t') < 0.5) {
+        var w = randInt(seed + ':w', 2, 9);
+        return {
+          topic: 'Time', emoji: '📅',
+          question: 'How many days are there in ' + w + ' weeks?',
+          answer: 7 * w,
+          hint: 'A week is 7 days.',
+          explain: w + ' × 7 = ' + 7 * w + ' days.'
+        };
+      }
+      var h = randInt(seed + ':h', 2, 9);
+      return {
+        topic: 'Time', emoji: '⏰',
+        question: 'How many minutes are there in ' + h + ' hours?',
+        answer: 60 * h,
+        hint: 'An hour is 60 minutes.',
+        explain: h + ' × 60 = ' + 60 * h + ' minutes.'
+      };
+    },
+    function shareEqually(seed) {
+      var d = randInt(seed + ':d', 3, 8);
+      var each = randInt(seed + ':e', 3, 12);
+      return {
+        topic: 'Division', emoji: '🍓',
+        question: d + ' children share ' + d * each + ' strawberries equally. How many does each child get?',
+        answer: each,
+        hint: 'Share them out one at a time — or divide.',
+        explain: d * each + ' ÷ ' + d + ' = ' + each + ' each.'
+      };
+    },
+    function doubleIt(seed) {
+      var n = randInt(seed + ':n', 13, 98);
+      return {
+        topic: 'Doubling', emoji: '👯',
+        question: 'What is double ' + n + '?',
+        answer: 2 * n,
+        hint: 'Double the tens, double the ones, put them back together.',
+        explain: 'Double ' + Math.floor(n / 10) * 10 + ' is ' + Math.floor(n / 10) * 20 +
+          ' and double ' + (n % 10) + ' is ' + (n % 10) * 2 + ' — together, ' + 2 * n + '.'
+      };
+    },
+    function halveIt(seed) {
+      var n = 2 * randInt(seed + ':n', 12, 99);
+      return {
+        topic: 'Halving', emoji: '🔪',
+        question: 'What is half of ' + n + '?',
+        answer: n / 2,
+        hint: 'Split it into two equal pieces.',
+        explain: n + ' ÷ 2 = ' + n / 2 + '.'
+      };
+    },
+    function ratioShare(seed) {
+      var pair = pickSeeded(seed + ':p', [[1, 2], [1, 3], [2, 3], [1, 4], [3, 4], [2, 5]]);
+      var a = pair[0], b = pair[1];
+      var u = randInt(seed + ':u', 2, 9);
+      var s = (a + b) * u;
+      return {
+        topic: 'Ratio', emoji: '⚖️',
+        question: 'Share ' + s + ' sweets between two friends in the ratio ' + a + ' : ' + b + '. How many does the friend with more get?',
+        answer: b * u,
+        hint: 'The ratio has ' + (a + b) + ' parts in total — how big is one part?',
+        explain: s + ' ÷ ' + (a + b) + ' = ' + u + ' per part, and ' + b + ' parts is ' + b * u + '.'
+      };
     }
   ];
 
@@ -295,7 +548,7 @@
   // The three chips above the game. gentle stays in tables territory,
   // classic climbs the whole ladder, spicy starts hot and gets hotter.
   var SPRINT_MODES = [
-    { key: 'gentle',  label: 'Gently does it', hint: 'Times tables, kindly ones first' },
+    { key: 'gentle',  label: 'Gently does it', hint: 'Times tables, adding and sharing — stays easy' },
     { key: 'classic', label: 'The full ladder', hint: 'Starts easy, climbs as you streak' },
     { key: 'spicy',   label: 'Straight to spicy', hint: 'Squares, fractions and a little algebra' }
   ];
@@ -421,10 +674,16 @@
   var MODE_PHRASES = {
     inperson: 'in person',
     online: 'online',
-    notsure: 'in person or online — we’re easy'
+    notsure: 'format TBC'
+  };
+  // Full sentence endings for the letter — the parent's voice, so no whimsy.
+  var MODE_SENTENCES = {
+    inperson: 'in person if possible',
+    online: 'online if possible',
+    notsure: 'in person or online — whichever works best'
   };
   var MODE_LABELS = {
-    inperson: 'In person — SW London',
+    inperson: 'In person — South West London',
     online: 'Online',
     notsure: 'Not sure yet'
   };
@@ -476,12 +735,12 @@
     if (!name) { name = GAP; gaps.push('name'); }
     var year = v.year;
     if (YEARS.indexOf(year) === -1) { year = GAP; gaps.push('year'); }
-    else if (year === 'notsure') year = 'a year group we’re still sure-ing up';
+    else if (year === 'notsure') year = 'a year group I’m not sure of yet';
     var message = v.message;
     if (!message) { message = GAP; gaps.push('message'); }
     var text = 'Dear Maryam,\n\n' +
       'My name is ' + name + '. I’m looking for maths help for my child in ' + year +
-      ' — ' + MODE_PHRASES[v.mode] + ' if possible.\n\n' +
+      ' — ' + MODE_SENTENCES[v.mode] + '.\n\n' +
       'Here’s what’s going on: ' + message + '\n\n' +
       'Speak soon,\n' + name;
     return { text: text, gaps: gaps };
@@ -537,7 +796,7 @@
     SECOND: SECOND, MINUTE: MINUTE, HOUR: HOUR, DAY: DAY,
     STAGES: STAGES, FACTS: FACTS, RANKS: RANKS, GLYPHS: GLYPHS,
     SPRINT_MODES: SPRINT_MODES, YEARS: YEARS, MODES: MODES,
-    MODE_LABELS: MODE_LABELS, MODE_PHRASES: MODE_PHRASES,
+    MODE_LABELS: MODE_LABELS, MODE_PHRASES: MODE_PHRASES, MODE_SENTENCES: MODE_SENTENCES,
     MAX_NAME: MAX_NAME, MAX_MESSAGE: MAX_MESSAGE, GAP: GAP,
     hashStr: hashStr, rand01: rand01, randInt: randInt, pickSeeded: pickSeeded,
     escapeHTML: escapeHTML, plural: plural, isoDate: isoDate,

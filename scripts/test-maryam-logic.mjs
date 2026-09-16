@@ -156,10 +156,63 @@ test('dailyPuzzle: each maker is mathematically honest (recomputed from its own 
       assert.ok(E.isPrime(p.answer), `answer is prime: ${p.answer}`);
       for (const n of nums) if (n !== p.answer) assert.ok(!E.isPrime(n), `distractor ${n} is not prime (${p.question})`);
       assert.equal(nums.length, 4, 'four candidates offered');
+    } else if (p.topic === 'Chains') {
+      assert.equal(p.answer, 2 * nums[0] + nums[1], p.question);
+    } else if (p.topic === 'Money') {
+      if (/coins/.test(p.question)) assert.equal(p.answer, (nums[1] * 100) / nums[0], p.question);
+      else assert.equal(p.answer, nums[1] - nums[0], p.question);
+    } else if (p.topic === 'Perimeter') {
+      assert.equal(p.answer, 2 * (nums[0] + nums[1]), p.question);
+    } else if (p.topic === 'Patterns') {
+      const [t1, t2, t3, t4] = nums;
+      assert.equal(t2 / t1, t4 / t3, 'geometric pattern');
+      assert.equal(p.answer, t4 * (t2 / t1), p.question);
+    } else if (p.topic === 'Square numbers') {
+      assert.equal(p.answer, nums[0] * nums[0], p.question);
+    } else if (p.topic === 'Cubes') {
+      assert.equal(p.answer, nums[0] ** 3, p.question);
+    } else if (p.topic === 'Angles') {
+      assert.equal(p.answer, 180 - nums[0], p.question);
+    } else if (p.topic === 'Multiples') {
+      assert.equal(p.answer, nums[0] * nums[1], p.question);
+    } else if (p.topic === 'Factors') {
+      let count = 0;
+      for (let i = 1; i <= nums[0]; i++) if (nums[0] % i === 0) count++;
+      assert.equal(p.answer, count, p.question);
+    } else if (p.topic === 'Negative numbers') {
+      assert.equal(p.answer, nums[0] - nums[1], p.question);
+      assert.ok(p.answer < 0, 'the point is crossing zero');
+    } else if (p.topic === 'Order of operations') {
+      assert.equal(p.answer, nums[0] + nums[1] * nums[2], p.question);
+    } else if (p.topic === 'Rounding') {
+      assert.equal(p.answer, Math.round(nums[0] / 10) * 10, p.question);
+    } else if (p.topic === 'Place value') {
+      assert.equal(p.answer, Math.floor(nums[0] / 10) % 10, p.question);
+    } else if (p.topic === 'Missing number') {
+      if (/times/.test(p.question)) assert.equal(p.answer, nums[1] / nums[0], p.question);
+      else assert.equal(p.answer, nums[1] - nums[0], p.question);
+    } else if (p.topic === 'Time') {
+      if (/weeks/.test(p.question)) assert.equal(p.answer, 7 * nums[0], p.question);
+      else assert.equal(p.answer, 60 * nums[0], p.question);
+    } else if (p.topic === 'Division') {
+      assert.equal(p.answer, nums[1] / nums[0], p.question);
+    } else if (p.topic === 'Doubling') {
+      assert.equal(p.answer, 2 * nums[0], p.question);
+    } else if (p.topic === 'Halving') {
+      assert.equal(p.answer, nums[0] / 2, p.question);
+    } else if (p.topic === 'Ratio') {
+      const [s, a, b] = nums;
+      assert.equal(p.answer, (s / (a + b)) * b, p.question);
+      assert.ok(b > a, 'the bigger share is asked for');
     } else {
       assert.fail('unknown topic ' + p.topic);
     }
   }
+});
+test('dailyPuzzle: the full 30-template pool is reachable', () => {
+  const indices = new Set();
+  for (let d = 0; d < 700; d++) indices.add(E.dailyPuzzle(E.isoDate(NOW + d * DAY)).index);
+  assert.equal(indices.size, 30, `every maker gets its day (saw ${indices.size})`);
 });
 test('checkAnswer forgives formatting but not wrong answers', () => {
   assert.ok(E.checkAnswer(12, '12'));
