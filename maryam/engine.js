@@ -3,12 +3,12 @@
  * Maryam's site is a one-page home for her tutoring business: maths up
  * to GCSE, taught in person around South West London and online
  * anywhere. Every rule that makes the page feel alive — the daily
- * puzzle that changes with the date, the quick-fire sprint game and its
- * ranks, the countdown to GCSE exam season, the enquiry form's
- * validation and the mailto it composes, even the confetti physics —
- * lives HERE as pure, deterministic, clock-injected functions with zero
- * DOM and zero I/O, unit-tested in scripts/test-maryam-logic.mjs and
- * rendered by index.html.
+ * "edition" cover date, the puzzle that changes at midnight, the
+ * sixty-second sprint and its ranks, the countdown to GCSE exam season,
+ * the enquiry letter that writes itself and the mailto it becomes, even
+ * the glyph-confetti physics — lives HERE as pure, deterministic,
+ * clock-injected functions with zero DOM and zero I/O, unit-tested in
+ * scripts/test-maryam-logic.mjs and rendered by index.html.
  *
  * Classic script on purpose: it must load in a browser <script>, in the
  * headless smoke sandbox, and via module.exports in the test runner.
@@ -69,26 +69,48 @@
     return d.getUTCFullYear() + '-' + (m < 10 ? '0' : '') + m + '-' + (day < 10 ? '0' : '') + day;
   }
 
+  /* ---------------- the daily edition: cover date & issue number ---------------- */
+  // The site is literally a daily paper: the issue number is the day of
+  // the year, the cover numeral is the day of the month.
+  var WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
+                'July', 'August', 'September', 'October', 'November', 'December'];
+
+  function issueNumber(utcMs) {
+    var d = new Date(utcMs);
+    var start = Date.UTC(d.getUTCFullYear(), 0, 1);
+    return Math.floor((utcMs - start) / DAY) + 1;
+  }
+
+  function coverDate(utcMs) {
+    var d = new Date(utcMs);
+    var dayNumber = d.getUTCDate();
+    var weekday = WEEKDAYS[d.getUTCDay()];
+    var monthName = MONTHS[d.getUTCMonth()];
+    return {
+      dayNumber: dayNumber,
+      weekday: weekday,
+      monthName: monthName,
+      year: d.getUTCFullYear(),
+      dateLine: weekday + ' ' + dayNumber + ' ' + monthName,
+      iso: isoDate(utcMs)
+    };
+  }
+
   /* ---------------- what Maryam teaches ---------------- */
-  // The three stops on the journey to GCSE. The form and the topic cards
-  // both render from this one list.
+  // The three stops on the journey to GCSE. The cards and the enquiry
+  // letter's year-group mapping both lean on this one list.
   var STAGES = [
     {
-      key: 'ks2', label: 'Key Stage 2', years: 'Years 3–6', emoji: '🧮',
-      headline: 'Where number confidence begins',
-      blurb: 'Times tables that stick, fractions that finally make sense, and the quiet superpower of not being scared of maths.',
+      key: 'ks2', label: 'KS2', years: 'Years 3–6',
       topics: ['Times tables', 'Fractions & decimals', 'Mental arithmetic', 'Shape & measure', 'Word problems', 'SATs confidence']
     },
     {
-      key: 'ks3', label: 'Key Stage 3', years: 'Years 7–9', emoji: '📐',
-      headline: 'The bridge years that matter most',
-      blurb: 'Algebra arrives, letters join the numbers, and good habits now make GCSE feel easy later.',
+      key: 'ks3', label: 'KS3', years: 'Years 7–9',
       topics: ['Algebra basics', 'Ratio & proportion', 'Angles & geometry', 'Percentages', 'Probability', 'Graphs & sequences']
     },
     {
-      key: 'gcse', label: 'GCSE', years: 'Years 10–11 · Foundation & Higher', emoji: '🎓',
-      headline: 'Exam technique meets real understanding',
-      blurb: 'Past papers, mark-scheme thinking and topic-by-topic gap fixing — for both Foundation and Higher tiers.',
+      key: 'gcse', label: 'GCSE', years: 'Years 10–11 · Foundation & Higher',
       topics: ['Number', 'Algebra', 'Ratio & proportion', 'Geometry & measures', 'Probability', 'Statistics']
     }
   ];
@@ -123,19 +145,22 @@
   /* ---------------- the daily puzzle ---------------- */
   // One fresh puzzle a day, generated (not hand-picked) so no two days in
   // a row feel the same, and always with a whole-number answer. Same date
-  // in = same puzzle out, which is what makes it testable.
+  // in = same puzzle out — which is what lets the page show yesterday's
+  // answer with no storage at all.
 
   var PUZZLE_MAKERS = [
     function thinkOfANumber(seed) {
       var n = randInt(seed + ':n', 3, 12);
       var a = randInt(seed + ':a', 2, 6);
       var b = randInt(seed + ':b', 1, 19);
+      var r = n * a + b;
       return {
         topic: 'Algebra', emoji: '🤔',
         question: 'I’m thinking of a number. Multiply it by ' + a + ', add ' + b +
-                  ', and you get ' + (n * a + b) + '. What’s my number?',
+                  ', and you get ' + r + '. What’s my number?',
         answer: n,
-        hint: 'Work backwards — undo the “add ' + b + '” first, then undo the “multiply by ' + a + '”.'
+        hint: 'Work backwards — undo the “add ' + b + '” first, then undo the “multiply by ' + a + '”.',
+        explain: 'Backwards it goes: ' + r + ' − ' + b + ' = ' + (r - b) + ', and ' + (r - b) + ' ÷ ' + a + ' = ' + n + '.'
       };
     },
     function nextInSequence(seed) {
@@ -146,7 +171,8 @@
         topic: 'Sequences', emoji: '🪜',
         question: 'What comes next: ' + terms.join(', ') + ', … ?',
         answer: start + 4 * step,
-        hint: 'How big is the jump between each pair of neighbours?'
+        hint: 'How big is the jump between each pair of neighbours?',
+        explain: 'Each jump is +' + step + ', so after ' + terms[3] + ' comes ' + (start + 4 * step) + '.'
       };
     },
     function fractionOf(seed) {
@@ -159,7 +185,8 @@
         topic: 'Fractions', emoji: '🍕',
         question: 'What is ' + num + '/' + den + ' of ' + whole + '?',
         answer: num * unit,
-        hint: 'Divide by the bottom, times by the top.'
+        hint: 'Divide by the bottom, times by the top.',
+        explain: whole + ' ÷ ' + den + ' = ' + unit + ', and ' + unit + ' × ' + num + ' = ' + (num * unit) + '.'
       };
     },
     function saleDiscount(seed) {
@@ -167,11 +194,13 @@
       var pct = pcts[randInt(seed + ':p', 0, pcts.length - 1)];
       // a multiple of 20 keeps the discounted price whole for every pct above
       var base = randInt(seed + ':b', 2, 15) * 20;
+      var off = base * pct / 100;
       return {
         topic: 'Percentages', emoji: '🏷️',
         question: 'A £' + base + ' pair of trainers is ' + pct + '% off in the sale. What do they cost now, in pounds?',
-        answer: base - base * pct / 100,
-        hint: 'Find ' + pct + '% of £' + base + ' first, then take it away.'
+        answer: base - off,
+        hint: 'Find ' + pct + '% of £' + base + ' first, then take it away.',
+        explain: pct + '% of £' + base + ' is £' + off + ', and £' + base + ' − £' + off + ' = £' + (base - off) + '.'
       };
     },
     function missingAngle(seed) {
@@ -181,7 +210,8 @@
         topic: 'Geometry', emoji: '📐',
         question: 'Two angles of a triangle are ' + a + '° and ' + b + '°. How many degrees is the third?',
         answer: 180 - a - b,
-        hint: 'The three angles of any triangle add up to 180°.'
+        hint: 'The three angles of any triangle add up to 180°.',
+        explain: 'Angles in a triangle add to 180°, and 180 − ' + a + ' − ' + b + ' = ' + (180 - a - b) + '.'
       };
     },
     function findTheMean(seed) {
@@ -193,7 +223,8 @@
         topic: 'Statistics', emoji: '📊',
         question: 'Four quiz scores: ' + scores.join(', ') + '. What’s the mean?',
         answer: m,
-        hint: 'Add them all up, then share equally between the four.'
+        hint: 'Add them all up, then share equally between the four.',
+        explain: 'They add up to ' + 4 * m + ', and ' + 4 * m + ' ÷ 4 = ' + m + '.'
       };
     },
     function areaOfRectangle(seed) {
@@ -203,7 +234,8 @@
         topic: 'Area', emoji: '⬜',
         question: 'A rectangle is ' + w + ' cm wide and ' + h + ' cm tall. What’s its area in cm²?',
         answer: w * h,
-        hint: 'Area of a rectangle = width × height.'
+        hint: 'Area of a rectangle = width × height.',
+        explain: 'Width × height: ' + w + ' × ' + h + ' = ' + (w * h) + ' cm².'
       };
     },
     function spotThePrime(seed) {
@@ -220,7 +252,8 @@
         topic: 'Primes', emoji: '🕵️',
         question: 'Only one of these is prime: ' + line.join(', ') + '. Which one?',
         answer: p,
-        hint: 'A prime has exactly two factors — itself and 1. Try dividing each by 3 and 7.'
+        hint: 'A prime has exactly two factors — itself and 1. Try dividing each by 3, 5 and 7.',
+        explain: p + ' has no factors besides 1 and itself — every other number in the line divides by 3, 5 or 7.'
       };
     }
   ];
@@ -236,7 +269,7 @@
     var idx = hashStr(seed) % PUZZLE_MAKERS.length;
     var p = PUZZLE_MAKERS[idx](seed);
     return { date: String(iso), index: idx, topic: p.topic, emoji: p.emoji,
-             question: p.question, answer: p.answer, hint: p.hint };
+             question: p.question, answer: p.answer, hint: p.hint, explain: p.explain };
   }
 
   // Forgiving marking: "12", " 12 ", "12.0", "£12" and "12°" all count.
@@ -247,15 +280,31 @@
   }
 
   /* ---------------- the sprint: sixty seconds of quick-fire maths ---------------- */
-  // Questions get harder as the streak grows. Every question is generated
-  // from (level, seed) so a round can be replayed move-for-move in tests,
-  // and every answer is a whole number so typing stays fast on a phone.
+  // Questions climb in difficulty with the streak, shaped by the chosen
+  // mode. Every question is generated from (level, seed) so a round can
+  // be replayed move-for-move in tests, and every answer is a whole
+  // number so typing stays fast on a phone.
 
   function sprintLevelFor(streak) {
     if (streak < 4) return 1;
     if (streak < 8) return 2;
     if (streak < 12) return 3;
     return 4;
+  }
+
+  // The three chips above the game. gentle stays in tables territory,
+  // classic climbs the whole ladder, spicy starts hot and gets hotter.
+  var SPRINT_MODES = [
+    { key: 'gentle',  label: 'Gently does it', hint: 'Times tables, kindly ones first' },
+    { key: 'classic', label: 'The full ladder', hint: 'Starts easy, climbs as you streak' },
+    { key: 'spicy',   label: 'Straight to spicy', hint: 'Squares, fractions and a little algebra' }
+  ];
+
+  function sprintLevelForMode(mode, streak) {
+    var base = sprintLevelFor(streak);
+    if (mode === 'gentle') return Math.min(base, 2);
+    if (mode === 'spicy') return Math.max(base, 3);
+    return base;
   }
 
   function sprintQuestion(level, seed) {
@@ -329,73 +378,124 @@
   }
 
   /* ---------------- the road to GCSE season ---------------- */
-  // GCSE maths papers land in mid-May to mid-June each year. The countdown
-  // aims at mid-May; during the season itself it switches to cheering.
+  // GCSE maths papers land in mid-May to mid-June each year. The page's
+  // CONFIG can pin the exact first-exam date; when it doesn't,
+  // defaultExamStart aims at the season and rolls over once it has passed.
   var SEASON_MONTH = 4;   // May (0-indexed)
   var SEASON_DAY = 12;    // papers typically begin around here
   var SEASON_LENGTH_DAYS = 35;
 
-  function examCountdown(now) {
+  function defaultExamStart(now) {
     var y = new Date(now).getUTCFullYear();
-    var start = Date.UTC(y, SEASON_MONTH, SEASON_DAY);
-    if (now >= start + SEASON_LENGTH_DAYS * DAY) {
-      y += 1;
-      start = Date.UTC(y, SEASON_MONTH, SEASON_DAY);
+    var start = Date.UTC(y, SEASON_MONTH, SEASON_DAY, 9, 0, 0);
+    if (now >= start + SEASON_LENGTH_DAYS * DAY) start = Date.UTC(y + 1, SEASON_MONTH, SEASON_DAY, 9, 0, 0);
+    return start;
+  }
+
+  // Days/hours/minutes/seconds until a target moment. Never negative:
+  // once the target passes, phase flips to 'underway' and the figures
+  // freeze at zero for the page to swap in its good-luck copy.
+  function countdown(now, target) {
+    var left = target - now;
+    if (!(isFinite(left)) || left <= 0) {
+      return { phase: 'underway', days: 0, hours: 0, minutes: 0, seconds: 0 };
     }
-    if (now >= start) {
-      return { days: 0, weeks: 0, examYear: y, inSeason: true,
-               label: 'GCSE season ' + y + ' is here — deep breaths, you’ve got this.' };
-    }
-    var days = Math.ceil((start - now) / DAY);
     return {
-      days: days, weeks: Math.floor(days / 7), examYear: y, inSeason: false,
-      label: days + ' ' + plural(days, 'day') + ' until GCSE maths season ' + y
+      phase: 'counting',
+      days: Math.floor(left / DAY),
+      hours: Math.floor((left % DAY) / HOUR),
+      minutes: Math.floor((left % HOUR) / MINUTE),
+      seconds: Math.floor((left % MINUTE) / SECOND)
     };
   }
 
-  /* ---------------- the enquiry form ---------------- */
-  // Pure validation and a composed mailto: the page owns nothing but the
-  // click. Contact details live in index.html's CONFIG, passed in here.
-  var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+  /* ---------------- the enquiry letter ---------------- */
+  // The form has no email field: sending opens the parent's own mail app,
+  // so the message arrives from their real address. Pure validation and
+  // letter composition here; Maryam's address comes from index.html's
+  // CONFIG, passed in.
   var MAX_NAME = 60, MAX_MESSAGE = 600;
-  var MODES = ['inperson', 'online', 'either'];
-  var MODE_LABELS = { inperson: 'In person (SW London)', online: 'Online', either: 'Either works' };
+  var YEARS = ['Year 3', 'Year 4', 'Year 5', 'Year 6', 'Year 7', 'Year 8',
+               'Year 9', 'Year 10', 'Year 11', 'notsure'];
+  var MODES = ['inperson', 'online', 'notsure'];
+  var MODE_PHRASES = {
+    inperson: 'in person',
+    online: 'online',
+    notsure: 'in person or online — we’re easy'
+  };
+  var MODE_LABELS = {
+    inperson: 'In person — SW London',
+    online: 'Online',
+    notsure: 'Not sure yet'
+  };
 
-  function validateEnquiry(e) {
-    e = e || {};
-    var errors = [];
-    var name = String(e.name == null ? '' : e.name).trim();
-    var email = String(e.email == null ? '' : e.email).trim();
-    var stage = String(e.stage == null ? '' : e.stage);
-    var mode = String(e.mode == null ? '' : e.mode);
-    var message = String(e.message == null ? '' : e.message).trim();
-    if (!name) errors.push('Add your name so Maryam knows who to reply to.');
-    else if (name.length > MAX_NAME) errors.push('Name: ' + MAX_NAME + ' characters max.');
-    if (!EMAIL_RE.test(email)) errors.push('That email doesn’t look right.');
-    if (!stageByKey(stage) && stage !== 'notsure') errors.push('Pick a stage — or “not sure yet” is fine too.');
-    if (MODES.indexOf(mode) === -1) errors.push('Choose in person, online, or either.');
-    if (message.length > MAX_MESSAGE) errors.push('Message: ' + MAX_MESSAGE + ' characters max (' + message.length + ' now).');
-    if (errors.length) return { ok: false, errors: errors };
-    return { ok: true, name: name, email: email, stage: stage, mode: mode, message: message };
+  // 'Year 3'..'Year 6' → ks2, 7–9 → ks3, 10–11 → gcse.
+  function yearToStage(year) {
+    var m = /^Year (\d+)$/.exec(String(year || ''));
+    if (!m) return null;
+    var n = +m[1];
+    if (n >= 3 && n <= 6) return stageByKey('ks2');
+    if (n >= 7 && n <= 9) return stageByKey('ks3');
+    if (n >= 10 && n <= 11) return stageByKey('gcse');
+    return null;
   }
 
-  function composeEnquiry(v, toEmail) {
-    var stage = stageByKey(v.stage);
-    var stageLabel = stage ? stage.label + ' (' + stage.years + ')' : 'Not sure yet';
-    var subject = 'Maths tutoring enquiry — ' + (stage ? stage.label : 'general');
-    var lines = [
-      'Hi Maryam,',
-      '',
-      'I’d love to ask about maths tutoring.',
-      '',
-      'Name: ' + v.name,
-      'Email: ' + v.email,
-      'Stage: ' + stageLabel,
-      'Lessons: ' + (MODE_LABELS[v.mode] || v.mode)
-    ];
-    if (v.message) lines.push('', v.message);
-    lines.push('', 'Thanks!');
-    var body = lines.join('\n');
+  function cleanEnquiry(e) {
+    e = e || {};
+    return {
+      name: String(e.name == null ? '' : e.name).trim(),
+      year: String(e.year == null ? '' : e.year),
+      mode: MODES.indexOf(e.mode) !== -1 ? e.mode : 'notsure',
+      message: String(e.message == null ? '' : e.message).trim()
+    };
+  }
+
+  // Proofreader's marks: one kindly margin note per field that needs one.
+  function validateEnquiry(e) {
+    var v = cleanEnquiry(e);
+    var notes = {};
+    if (!v.name) notes.name = 'Pencil in your name, so I know who’s writing.';
+    else if (v.name.length > MAX_NAME) notes.name = 'A shorter name, please — ' + MAX_NAME + ' characters is plenty.';
+    if (YEARS.indexOf(v.year) === -1) notes.year = 'Which year group? “Not sure” is a perfectly good answer.';
+    if (!v.message) notes.message = 'A line or two about your child helps me reply properly.';
+    else if (v.message.length > MAX_MESSAGE) notes.message = 'Keep it under ' + MAX_MESSAGE + ' characters (' + v.message.length + ' now).';
+    var ok = true;
+    for (var k in notes) { ok = false; break; }
+    return { ok: ok, notes: notes, cleaned: v };
+  }
+
+  // The live letter: real values where the parent has written them,
+  // marked gaps where they haven't. The page draws gaps as marigold
+  // blanks; the same text (gap-free) becomes the email body.
+  var GAP = '____';
+
+  function draftLetter(e) {
+    var v = cleanEnquiry(e);
+    var gaps = [];
+    var name = v.name;
+    if (!name) { name = GAP; gaps.push('name'); }
+    var year = v.year;
+    if (YEARS.indexOf(year) === -1) { year = GAP; gaps.push('year'); }
+    else if (year === 'notsure') year = 'a year group we’re still sure-ing up';
+    var message = v.message;
+    if (!message) { message = GAP; gaps.push('message'); }
+    var text = 'Dear Maryam,\n\n' +
+      'My name is ' + name + '. I’m looking for maths help for my child in ' + year +
+      ' — ' + MODE_PHRASES[v.mode] + ' if possible.\n\n' +
+      'Here’s what’s going on: ' + message + '\n\n' +
+      'Speak soon,\n' + name;
+    return { text: text, gaps: gaps };
+  }
+
+  function composeEnquiry(e, toEmail) {
+    var v = cleanEnquiry(e);
+    var stage = yearToStage(v.year);
+    var yearBit = v.year === 'notsure' || YEARS.indexOf(v.year) === -1
+      ? 'year group TBC'
+      : v.year + (stage ? ' (' + stage.label + ')' : '');
+    var subject = 'Maths tutoring enquiry — ' + yearBit + ', ' +
+      (v.mode === 'notsure' ? 'format TBC' : MODE_PHRASES[v.mode]);
+    var body = draftLetter(v).text;
     return {
       subject: subject,
       body: body,
@@ -406,8 +506,11 @@
   }
 
   /* ---------------- confetti, deterministically ---------------- */
-  // The page just draws these; physics parameters come from here so even
-  // the celebration is testable. Angles in radians, speeds in px/frame.
+  // Operator glyphs raining in ink and cream. The page just paints these;
+  // physics parameters come from here so even the celebration is
+  // testable. Angles in radians, speeds in px/frame.
+  var GLYPHS = ['+', '×', '÷', '='];
+
   function confettiBurst(seed, n) {
     n = n || 24;
     var out = [];
@@ -415,11 +518,13 @@
       var s = 'maryam-confetti:' + String(seed) + ':' + i;
       var angle = -Math.PI / 2 + (rand01(s + ':a') - 0.5) * Math.PI * 0.9;
       var speed = 4 + rand01(s + ':v') * 7;
+      var gi = Math.floor(rand01(s + ':g') * GLYPHS.length);
       out.push({
         vx: Math.cos(angle) * speed,
         vy: Math.sin(angle) * speed,
-        hue: Math.floor(rand01(s + ':h') * 360),
-        size: 4 + rand01(s + ':s') * 6,
+        glyphIndex: gi,
+        glyph: GLYPHS[gi],
+        size: 10 + rand01(s + ':s') * 12,
         spin: (rand01(s + ':r') - 0.5) * 0.6,
         drift: (rand01(s + ':d') - 0.5) * 0.4
       });
@@ -430,16 +535,20 @@
   /* ---------------- exports ---------------- */
   var E = {
     SECOND: SECOND, MINUTE: MINUTE, HOUR: HOUR, DAY: DAY,
-    STAGES: STAGES, FACTS: FACTS, RANKS: RANKS,
-    MAX_NAME: MAX_NAME, MAX_MESSAGE: MAX_MESSAGE, MODES: MODES, MODE_LABELS: MODE_LABELS,
+    STAGES: STAGES, FACTS: FACTS, RANKS: RANKS, GLYPHS: GLYPHS,
+    SPRINT_MODES: SPRINT_MODES, YEARS: YEARS, MODES: MODES,
+    MODE_LABELS: MODE_LABELS, MODE_PHRASES: MODE_PHRASES,
+    MAX_NAME: MAX_NAME, MAX_MESSAGE: MAX_MESSAGE, GAP: GAP,
     hashStr: hashStr, rand01: rand01, randInt: randInt, pickSeeded: pickSeeded,
     escapeHTML: escapeHTML, plural: plural, isoDate: isoDate,
+    issueNumber: issueNumber, coverDate: coverDate,
     stageByKey: stageByKey, factOfDay: factOfDay,
     dailyPuzzle: dailyPuzzle, checkAnswer: checkAnswer, isPrime: isPrime,
-    sprintLevelFor: sprintLevelFor, sprintQuestion: sprintQuestion,
-    sprintPoints: sprintPoints, sprintRank: sprintRank,
-    examCountdown: examCountdown,
-    validateEnquiry: validateEnquiry, composeEnquiry: composeEnquiry,
+    sprintLevelFor: sprintLevelFor, sprintLevelForMode: sprintLevelForMode,
+    sprintQuestion: sprintQuestion, sprintPoints: sprintPoints, sprintRank: sprintRank,
+    defaultExamStart: defaultExamStart, countdown: countdown,
+    yearToStage: yearToStage, validateEnquiry: validateEnquiry,
+    draftLetter: draftLetter, composeEnquiry: composeEnquiry,
     confettiBurst: confettiBurst
   };
 
