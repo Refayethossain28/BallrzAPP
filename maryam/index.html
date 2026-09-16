@@ -1,0 +1,1565 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#FFFBF2" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#171209" media="(prefers-color-scheme: dark)">
+<meta name="description" content="Friendly one-to-one maths tutoring for KS2, KS3 and GCSE — in person across South West London, online anywhere. A new puzzle every morning.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>Maryam — Maths Tutor, South West London</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT,WONK@0,9..144,100..900,0..100,0..1;1,9..144,100..900,0..100,0..1&family=Space+Grotesk:wght@400;500;700&display=swap">
+<style>
+  /* ============================================================
+     GOLDEN RATIO — a sunlit broadsheet a child can play.
+     Every circle is a sun; every rule is a line on the page.
+     ============================================================ */
+  :root{
+    --paper:#FFFBF2; --ink:#221D16;
+    --sun:#FFB703; --sun-deep:#B87400; --sun-tint:#FFEFC9;
+    --stone:#6F6757; --leaf:#2A7340; --berry:#BC3A28;
+    --rule:#221D16;
+    --disc-glow:none;
+    --grain-opacity:0.04;
+    --radius-card:24px; --radius-pill:999px;
+    --spring:cubic-bezier(0.34,1.56,0.64,1);
+    --fast:150ms; --med:250ms; --slow:600ms; --grand:900ms;
+    --display:'Fraunces',Georgia,'Times New Roman',serif;
+    --grotesk:'Space Grotesk','Helvetica Neue',Arial,sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper:#171209; --ink:#F4EBDA;
+      --sun-deep:#E08E00; --sun-tint:#3A2C10; --stone:#A79C88;
+      --leaf:#57B879; --berry:#E6785F;
+      --rule:rgba(244,235,218,.22);
+      --disc-glow:0 0 48px rgba(255,183,3,.28);
+      --grain-opacity:0.02;
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#171209; --ink:#F4EBDA;
+    --sun-deep:#E08E00; --sun-tint:#3A2C10; --stone:#A79C88;
+    --leaf:#57B879; --berry:#E6785F;
+    --rule:rgba(244,235,218,.22);
+    --disc-glow:0 0 48px rgba(255,183,3,.28);
+    --grain-opacity:0.02;
+  }
+  [hidden]{display:none !important}
+
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html{scroll-behavior:smooth}
+  html,body{margin:0; padding:0}
+  body{
+    background:var(--paper); color:var(--ink);
+    font-family:var(--grotesk); font-size:1.0625rem; line-height:1.65;
+    overflow-x:hidden;
+  }
+  /* paper grain so the cream reads as stock, not screen */
+  body::before{
+    content:""; position:fixed; inset:0; z-index:1; pointer-events:none;
+    opacity:var(--grain-opacity);
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  ::selection{background:var(--sun); color:#221D16}
+
+  h1,h2,h3{font-family:var(--display); font-weight:900; line-height:1.05;
+    letter-spacing:-0.02em; margin:0; text-wrap:balance;
+    font-variation-settings:"SOFT" 0,"WONK" 1; font-optical-sizing:auto}
+  p{margin:0}
+  a{color:inherit}
+  button{font:inherit; color:inherit; background:none; border:none; cursor:pointer; padding:0}
+  img{max-width:100%}
+
+  .wrap{max-width:1200px; margin:0 auto; padding-inline:16px}
+  @media (min-width:720px){ .wrap{padding-inline:40px} }
+
+  /* folios — the small-caps department lines */
+  .folio{font-family:var(--grotesk); font-weight:500; font-size:0.8125rem;
+    text-transform:uppercase; letter-spacing:0.06em; color:var(--stone);
+    display:flex; align-items:baseline; gap:12px; flex-wrap:wrap}
+  .folio em{font-family:var(--display); font-style:italic; font-weight:600;
+    text-transform:none; letter-spacing:0; font-size:0.95rem}
+  section{padding-block:clamp(4rem,12vw,8rem); border-top:1px solid var(--rule);
+    position:relative; z-index:2}
+  section > .wrap > .folio{margin-bottom:clamp(1.5rem,4vw,2.5rem)}
+  .h2{font-size:clamp(2rem,8vw,4.5rem); margin-bottom:0.5em}
+  .sub{color:var(--stone); max-width:38em; margin-bottom:2rem}
+
+  /* skip link */
+  .skip{position:absolute; left:16px; top:-64px; z-index:100; background:var(--sun);
+    color:#221D16; padding:10px 18px; border-radius:var(--radius-pill);
+    font-weight:500; text-decoration:none; transition:top var(--fast)}
+  .skip:focus{top:12px}
+
+  /* ---------- buttons: everything presses down like something real ---------- */
+  .pill,.ghost{
+    display:inline-flex; align-items:center; justify-content:center; gap:8px;
+    font-family:var(--grotesk); font-weight:500; font-size:0.9375rem;
+    text-transform:uppercase; letter-spacing:0.06em; text-decoration:none;
+    padding:14px 28px; border-radius:var(--radius-pill);
+    transition:transform var(--med) var(--spring), background var(--fast), color var(--fast);
+    min-height:44px; white-space:nowrap;
+  }
+  .pill{background:var(--sun); color:#221D16; border:1.5px solid var(--sun-deep)}
+  .pill:hover{background:var(--sun-deep)}
+  .ghost{border:1px solid var(--ink); color:var(--ink)}
+  .ghost:hover{background:var(--sun-tint)}
+  .pill:active,.ghost:active,.padkey:active,.chip:active{transform:translateY(2px) scale(0.98); transition-duration:120ms}
+  a:focus-visible,button:focus-visible,summary:focus-visible,input:focus-visible,
+  select:focus-visible,textarea:focus-visible{outline:2px solid var(--ink); outline-offset:2px}
+
+  .visually-hidden{position:absolute; width:1px; height:1px; overflow:hidden;
+    clip-path:inset(50%); white-space:nowrap}
+  .textlink{font-weight:500; text-transform:uppercase; letter-spacing:0.06em;
+    font-size:0.9375rem; text-decoration:none; position:relative; padding-bottom:2px}
+  button.textlink::before{content:""; position:absolute; left:0; right:0; top:50%;
+    height:44px; transform:translateY(-50%)}
+  .textlink::after{content:""; position:absolute; left:0; right:0; bottom:-2px; height:8px;
+    background:var(--sun); border-radius:999px; transform:translateY(100%); opacity:0;
+    transition:transform var(--med) var(--spring), opacity var(--fast); z-index:-1}
+  .textlink:hover::after,.textlink:focus-visible::after{transform:translateY(35%); opacity:1}
+
+  /* ---------- masthead ---------- */
+  header.mast{position:sticky; top:0; z-index:50; background:var(--paper);
+    border-bottom:1px solid var(--rule)}
+  header.mast .row{max-width:1200px; margin:0 auto; height:56px; padding-inline:16px;
+    display:flex; align-items:center; justify-content:space-between; gap:12px}
+  @media (min-width:720px){ header.mast .row{padding-inline:40px} }
+  .wordmark{font-weight:500; font-size:0.8125rem; text-transform:uppercase;
+    letter-spacing:0.08em; text-decoration:none; white-space:nowrap}
+  .wordmark b{font-weight:700}
+
+  /* the sunset toggle: a horizon with a sun on it */
+  .sunset{position:relative; width:64px; height:44px; flex:none}
+  .sunset .horizon{position:absolute; left:0; right:0; top:50%; height:1.5px; background:var(--ink)}
+  .sunset .disc{position:absolute; left:50%; top:50%; width:18px; height:18px; margin:-9px;
+    border-radius:50%; background:var(--sun); border:1.5px solid var(--sun-deep);
+    box-shadow:var(--disc-glow);
+    transition:transform var(--slow) var(--spring), clip-path var(--slow)}
+  :root[data-theme="dark"] .sunset .disc{transform:translateY(7px); clip-path:inset(0 0 58% 0)}
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]) .sunset .disc{transform:translateY(7px); clip-path:inset(0 0 58% 0)}
+  }
+  @media (max-width:479px){ header.mast .textlink{display:none} }
+
+  /* ============ № 01 — the cover ============ */
+  .cover{border-top:none; min-height:100svh; display:flex; align-items:center;
+    overflow:hidden; padding-block:clamp(3rem,8vw,5rem)}
+  .cover .wrap{position:relative; width:100%}
+  .cover-issue{margin-bottom:1.2rem}
+  .cover-numeral{position:absolute; right:-4%; top:50%; transform:translateY(-52%);
+    z-index:0; pointer-events:auto; user-select:none; line-height:0.8;
+    font-family:var(--display); font-weight:900; font-size:clamp(9rem,42vw,26rem);
+    font-variation-settings:"SOFT" 0,"WONK" 1;
+    color:var(--sun-tint); -webkit-text-stroke:0;
+    transition:transform var(--med) var(--spring), font-variation-settings var(--med)}
+  .cover-numeral .numghost{position:absolute; left:6px; top:8px; z-index:-1;
+    color:transparent; -webkit-text-stroke:2px var(--ink); opacity:0.35}
+  .cover-numeral:hover,.cover-numeral.giggle{transform:translateY(-52%) rotate(3deg);
+    font-variation-settings:"SOFT" 60,"WONK" 1}
+  .cover-copy{position:relative; z-index:2; max-width:40rem}
+  .cover h1{font-size:clamp(3.2rem,14vw,9rem); letter-spacing:-0.03em}
+  .cover h1 .word{display:inline-block; opacity:0; transform:translateY(24px);
+    animation:riseIn var(--slow) var(--spring) forwards}
+  .cover h1 .word:nth-child(2){animation-delay:80ms}
+  .cover h1 .word:nth-child(3){animation-delay:160ms}
+  @keyframes riseIn{to{opacity:1; transform:none}}
+  .clicks{position:relative; white-space:nowrap}
+  .clicks svg{position:absolute; left:-2%; bottom:-0.12em; width:104%; height:0.28em; overflow:visible}
+  .clicks svg path{fill:none; stroke:var(--sun); stroke-width:8; stroke-linecap:round;
+    stroke-dasharray:1; stroke-dashoffset:1; animation:drawSwash var(--slow) ease-out 1s forwards}
+  @keyframes drawSwash{to{stroke-dashoffset:0}}
+  .sunstop{display:inline-block; width:0.16em; height:0.16em; border-radius:50%;
+    background:var(--sun); border:1.5px solid var(--sun-deep); box-shadow:var(--disc-glow);
+    margin-left:0.06em; transform:scale(0); animation:popIn 400ms var(--spring) 1s forwards}
+  @keyframes popIn{60%{transform:scale(1.15)} to{transform:scale(1)}}
+  .cover .lede{margin-top:1.6rem; max-width:34em; color:var(--stone)}
+  .cover .ctas{margin-top:2.2rem; display:flex; gap:14px; flex-wrap:wrap}
+  .scrollcue{position:absolute; left:50%; bottom:18px; transform:translateX(-50%);
+    font-family:var(--display); font-weight:900; font-size:1.4rem; color:var(--stone);
+    animation:bob 2s ease-in-out infinite; z-index:2}
+  @keyframes bob{50%{transform:translateX(-50%) translateY(6px)}}
+
+  /* ============ № 02 — the ticker ============ */
+  .ticker{border-top:1px solid var(--rule); border-bottom:1px solid var(--rule);
+    background:var(--sun); color:#221D16; overflow:hidden; padding-block:12px;
+    position:relative; z-index:2}
+  :root[data-theme="dark"] .ticker{background:#221D16; color:var(--sun)}
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]) .ticker{background:#221D16; color:var(--sun)}
+  }
+  .ticker .lane{display:flex; width:max-content; animation:tick 40s linear infinite; will-change:transform}
+  .ticker:hover .lane,.ticker:focus-within .lane{animation-play-state:paused}
+  .ticker .lane > div{display:flex; white-space:nowrap;
+    font-weight:500; font-size:0.9375rem; text-transform:uppercase; letter-spacing:0.08em}
+  .ticker .lane span{padding-inline:14px}
+  .ticker .lane .x{font-family:var(--display); font-weight:900; display:inline-block}
+  @keyframes tick{to{transform:translateX(-50%)}}
+  .ticker .lane .x{animation:xQuarter 6s var(--spring) infinite alternate}
+  @keyframes xQuarter{0%,40%{transform:rotate(0deg)} 60%,100%{transform:rotate(90deg)}}
+
+  /* ============ № 03 — a word from Maryam ============ */
+  .word-grid{display:grid; gap:clamp(2rem,6vw,4rem); align-items:start}
+  @media (min-width:900px){ .word-grid{grid-template-columns:2fr 1fr} }
+  .pullquote{font-family:var(--display); font-style:italic; font-weight:600;
+    font-size:clamp(1.6rem,5vw,2.8rem); line-height:1.25; letter-spacing:-0.01em;
+    margin-bottom:2rem; text-wrap:balance}
+  .word-body{max-width:65ch}
+  .word-body::first-letter{font-family:var(--display); font-weight:900; float:left;
+    font-size:3.4em; line-height:0.8; padding-right:0.12em; padding-top:0.08em; color:var(--sun-deep)}
+  @media (min-width:900px){ .word-body{columns:2; column-gap:40px} }
+  .portrait{display:flex; flex-direction:column; align-items:center; gap:14px}
+  .portrait .disc{width:min(64vw,240px); aspect-ratio:1; border-radius:50%;
+    background:var(--sun-tint); border:1.5px dashed var(--stone);
+    display:flex; align-items:center; justify-content:center; text-align:center;
+    padding:24px; box-shadow:var(--disc-glow); overflow:hidden}
+  .portrait .disc img{width:100%; height:100%; object-fit:cover; border-radius:50%}
+  .portrait .disc span{font-size:0.8125rem; text-transform:uppercase;
+    letter-spacing:0.06em; color:var(--stone); font-weight:500}
+  .portrait figcaption{font-size:0.8125rem; color:var(--stone);
+    text-transform:uppercase; letter-spacing:0.06em; font-weight:500; text-align:center}
+  .stats{display:flex; gap:clamp(2rem,8vw,5rem); margin-top:3rem; flex-wrap:wrap}
+  .stats .stat b{display:block; font-family:var(--display); font-weight:900;
+    font-size:clamp(3rem,10vw,5rem); line-height:1; font-variant-numeric:tabular-nums}
+  .stats .stat span{font-size:0.8125rem; color:var(--stone);
+    text-transform:uppercase; letter-spacing:0.06em; font-weight:500}
+
+  /* ============ № 04 — what we cover ============ */
+  .cards{display:grid; gap:20px}
+  @media (min-width:960px){ .cards{grid-template-columns:repeat(3,1fr)} }
+  .card{position:relative; overflow:hidden; background:var(--sun-tint);
+    border:1px solid var(--rule); border-radius:var(--radius-card);
+    padding:28px 24px 24px; display:flex; flex-direction:column; gap:12px;
+    transition:transform var(--med) var(--spring)}
+  .card:hover{transform:translateY(-4px)}
+  .card .embossed{position:absolute; right:-12px; bottom:-40px; z-index:0;
+    font-family:var(--display); font-weight:900; font-size:12rem; line-height:1;
+    color:var(--paper); user-select:none; pointer-events:none;
+    transition:transform var(--med) var(--spring)}
+  .card:hover .embossed{transform:rotate(3deg)}
+  .card > *{position:relative; z-index:1}
+  .fig{height:84px; display:flex; align-items:flex-end}
+  .fig svg{height:84px; width:auto; overflow:visible}
+  .fig svg .draw{fill:none; stroke:var(--ink); stroke-width:1.5; stroke-linecap:round;
+    stroke-dasharray:1; stroke-dashoffset:1}
+  .fig svg .fill{fill:var(--sun); opacity:0; transition:opacity var(--slow) ease 400ms}
+  .in-view .fig svg .draw{animation:drawFig var(--slow) ease-out forwards}
+  .in-view .fig svg .fill{opacity:0.45}
+  @keyframes drawFig{to{stroke-dashoffset:0}}
+  .figcap{font-size:0.8125rem; color:var(--stone); text-transform:uppercase;
+    letter-spacing:0.06em; font-weight:500}
+  .card h3{font-size:1.5rem}
+  .card .tiers{display:inline-flex; gap:6px; margin-left:8px; vertical-align:middle}
+  .card .tiers i{font-style:normal; font-size:0.6875rem; font-weight:500;
+    text-transform:uppercase; letter-spacing:0.06em; color:var(--stone);
+    border:1px solid var(--stone); border-radius:999px; padding:2px 9px}
+  .card .topics{font-size:0.8125rem; color:var(--stone); text-transform:uppercase;
+    letter-spacing:0.05em; font-weight:500; line-height:1.9}
+  .card .cardlink{margin-top:auto; padding-top:10px}
+
+  /* ============ № 05 — the daily puzzle ============ */
+  .puzcard{background:var(--sun-tint); border:1px solid var(--rule);
+    border-radius:var(--radius-card); padding:clamp(24px,5vw,48px); position:relative}
+  .puzcard.shake{animation:shake 300ms ease}
+  @keyframes shake{25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+  .puz-q{font-family:var(--display); font-weight:600; font-size:clamp(1.5rem,5vw,2.5rem);
+    line-height:1.3; margin-bottom:1.6rem; text-wrap:balance}
+  .puz-row{display:flex; gap:14px; flex-wrap:wrap; align-items:center}
+  .puz-answer{font-family:var(--grotesk); font-weight:700; font-size:1.4rem;
+    width:9ch; background:transparent; border:none; color:var(--ink);
+    border-bottom:2px dashed var(--stone); padding:8px 4px; text-align:center;
+    font-variant-numeric:tabular-nums}
+  .puz-answer:focus{outline:none; background:var(--paper); border-bottom-color:var(--sun-deep)}
+  .puz-note{margin-top:1.2rem; min-height:1.5em}
+  .puz-note .good{color:var(--leaf); font-weight:500}
+  .puz-note .bad{color:var(--berry); font-family:var(--display); font-style:italic; font-weight:600}
+  .puz-note .why{display:block; color:var(--stone); margin-top:4px}
+  .puz-hint{margin-top:1rem; font-family:var(--display); font-style:italic; font-weight:600;
+    background:linear-gradient(transparent 55%, var(--sun) 55%, var(--sun) 92%, transparent 92%);
+    display:none; width:fit-content; padding-inline:2px}
+  .puz-hint.show{display:block}
+  :root[data-theme="dark"] .puz-hint{background:var(--sun); color:#221D16; padding:2px 8px; border-radius:4px}
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]) .puz-hint{background:var(--sun); color:#221D16; padding:2px 8px; border-radius:4px}
+  }
+  .puz-sun{position:absolute; top:20px; right:20px; width:22px; height:22px}
+  .puz-sun circle{fill:var(--sun); stroke:var(--sun-deep); stroke-width:1.5}
+  .puz-sun line{stroke:var(--sun-deep); stroke-width:2; stroke-linecap:round;
+    opacity:0; transition:opacity 400ms ease}
+  .puz-sun.rays line{opacity:1}
+  .puz-extra{margin-top:2rem; display:grid; gap:10px}
+  .puz-extra details{border-top:1px solid var(--rule); padding-top:10px}
+  .puz-extra summary{cursor:pointer; font-weight:500; font-size:0.9375rem;
+    text-transform:uppercase; letter-spacing:0.06em; list-style:none}
+  .puz-extra summary::-webkit-details-marker{display:none}
+  .puz-extra summary::before{content:"+"; font-family:var(--display); font-weight:900;
+    color:var(--sun-deep); display:inline-block; margin-right:10px;
+    transition:transform 200ms ease}
+  .puz-extra details[open] summary::before{transform:rotate(45deg)}
+  .puz-teaser,.puz-fact{color:var(--stone); font-size:0.9375rem}
+  .puz-fact em{font-family:var(--display); font-weight:600}
+
+  /* ============ № 06 — the sprint ============ */
+  .sprint{background:var(--sun); color:#221D16; border-top:1px solid var(--rule)}
+  .sprint .folio{color:#221D16; opacity:0.7}
+  .sprint .sub{color:#221D16; opacity:0.75}
+  .sprint ::selection{background:#221D16; color:var(--sun)}
+  .chips{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:1.6rem}
+  .chip{font-weight:500; font-size:0.8125rem; text-transform:uppercase;
+    letter-spacing:0.06em; padding:10px 18px; border-radius:999px;
+    border:1.5px solid #221D16; color:#221D16; min-height:44px;
+    transition:transform var(--med) var(--spring), background var(--fast)}
+  .chip[aria-checked="true"]{background:#221D16; color:var(--sun)}
+  .stage{position:relative; border:1.5px solid #221D16; border-radius:var(--radius-card);
+    padding:clamp(16px,4vw,32px); overflow:hidden; background:rgba(255,255,255,0.12)}
+  .stage.flash{animation:flash 240ms ease}
+  @keyframes flash{50%{background:var(--paper)}}
+  .hud{display:flex; justify-content:space-between; font-weight:700;
+    font-variant-numeric:tabular-nums; font-size:1.1rem; margin-bottom:6px}
+  .sprint-q{font-family:var(--display); font-weight:900; text-align:center;
+    font-size:clamp(3rem,12vw,6rem); line-height:1.1; min-height:1.2em; margin-block:0.2em;
+    font-variant-numeric:tabular-nums}
+  .sprint-q .typed{color:#7a5a00; border-bottom:4px solid #221D16; min-width:1ch;
+    display:inline-block; text-align:center}
+  .sprint-q.shake{animation:shake 300ms ease}
+  .graph{display:block; width:100%; height:auto; margin-top:8px}
+  .graph .axis{stroke:#221D16; stroke-width:1; opacity:0.5}
+  .graph .tickline{stroke:#221D16; stroke-width:1; opacity:0.2}
+  .graph text{font-family:var(--grotesk); font-size:11px; fill:#221D16; opacity:0.8;
+    text-transform:uppercase; letter-spacing:0.06em}
+  .graph .scoreline{fill:none; stroke:#221D16; stroke-width:2.5; stroke-linejoin:round}
+  .graph .tipdisc{fill:var(--paper); stroke:#221D16; stroke-width:2}
+  .graph .ray{stroke:#221D16; stroke-width:2; stroke-linecap:round; opacity:0;
+    transition:opacity 200ms ease}
+  .graph .rays.spin{animation:spinOnce 700ms var(--spring)}
+  @keyframes spinOnce{to{transform:rotate(360deg)}}
+  .graph .caption{font-size:10px}
+  .pad{display:grid; grid-template-columns:repeat(3,1fr); gap:8px;
+    max-width:340px; margin:14px auto 0}
+  .padkey{min-height:56px; border:1.5px solid #221D16; border-radius:14px;
+    font-weight:700; font-size:1.3rem; color:#221D16;
+    transition:transform var(--med) var(--spring), background var(--fast);
+    font-variant-numeric:tabular-nums}
+  .padkey:hover{background:rgba(255,255,255,0.35)}
+  .padkey.go{background:#221D16; color:var(--sun); grid-column:1 / -1}
+  .sprint-end{text-align:center; padding-block:12px}
+  .sprint-end .bigline{font-family:var(--display); font-weight:900;
+    font-size:clamp(1.6rem,5vw,2.6rem); margin-bottom:0.4em}
+  .sprint-end .rank{font-weight:500; text-transform:uppercase; letter-spacing:0.06em;
+    font-size:0.9375rem; margin-bottom:1.2rem}
+  .sprint-end .whisper{font-family:var(--display); font-style:italic; font-weight:600;
+    opacity:0.75; margin-top:1.4rem}
+  .sprint .pill{background:#221D16; color:var(--sun); border-color:#221D16}
+  .sprint .pill:hover{background:#000}
+  .sprint-idle{text-align:center; padding-block:8px}
+
+  /* ============ № 07 — in person & online ============ */
+  .venn{display:grid; gap:20px; margin-bottom:3.5rem}
+  .venn .circle{border:1px solid var(--ink); border-radius:var(--radius-card);
+    padding:24px; display:flex; flex-direction:column; justify-content:center; gap:8px;
+    background:var(--paper)}
+  .venn .circle h3{font-size:1.5rem}
+  .venn .circle p{color:var(--stone); font-size:0.9875rem}
+  .venn .both{background:var(--sun-tint); border:1.5px solid var(--sun-deep);
+    border-radius:var(--radius-card); padding:20px; text-align:center}
+  .venn .both h3{font-size:1.05rem; margin-bottom:6px}
+  .venn .both p{font-size:0.875rem; color:var(--stone)}
+  @media (min-width:900px){
+    .venn{grid-template-columns:1fr 1fr; gap:0; position:relative; max-width:980px}
+    .venn .circle{aspect-ratio:1; border-radius:50%; padding:clamp(40px,8vw,96px);
+      text-align:center; align-items:center}
+    .venn .circle.left{margin-right:-12%}
+    .venn .circle.right{margin-left:-12%}
+    .venn .both{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:2;
+      width:min(34%,300px)}
+  }
+  .steps{display:grid; gap:22px; position:relative; margin-bottom:2.5rem}
+  @media (min-width:900px){
+    .steps{grid-template-columns:repeat(3,1fr)}
+    .steps::before{content:""; position:absolute; top:19px; left:8%; right:8%;
+      height:1px; background:var(--rule)}
+  }
+  .step{position:relative; padding-top:0; display:flex; gap:14px; align-items:flex-start}
+  @media (min-width:900px){ .step{display:block; padding-top:58px} }
+  .step .dot{flex:none; width:38px; height:38px; border-radius:50%; background:var(--sun);
+    border:1.5px solid var(--sun-deep); box-shadow:var(--disc-glow);
+    display:flex; align-items:center; justify-content:center;
+    font-family:var(--display); font-weight:900; font-size:1.1rem; color:#221D16}
+  @media (min-width:900px){ .step .dot{position:absolute; top:0; left:0} }
+  .step b{display:block; font-family:var(--display); font-weight:900; font-size:1.2rem;
+    margin-bottom:4px}
+  .step p{color:var(--stone); font-size:0.9875rem}
+  .fees{color:var(--stone); font-size:0.9375rem; max-width:44em}
+
+  /* ============ № 08 — the countdown ============ */
+  .count-lead{font-weight:500; font-size:0.9375rem; text-transform:uppercase;
+    letter-spacing:0.08em; color:var(--stone); margin-bottom:2rem}
+  .clock{display:grid; grid-template-columns:repeat(2,1fr); gap:clamp(18px,4vw,40px);
+    max-width:900px; margin-bottom:2.5rem}
+  @media (min-width:720px){ .clock{grid-template-columns:repeat(4,1fr)} }
+  .clock .cell b{display:block; font-family:var(--display); font-weight:900;
+    font-size:clamp(3.4rem,11vw,6.5rem); line-height:1; font-variant-numeric:tabular-nums;
+    border-bottom:1px solid var(--rule); padding-bottom:10px; margin-bottom:8px;
+    transition:opacity var(--fast)}
+  .clock .cell b.tickfade{opacity:0.25}
+  .clock .cell span{font-size:0.8125rem; color:var(--stone); text-transform:uppercase;
+    letter-spacing:0.06em; font-weight:500}
+  .count-line{max-width:40em; margin-bottom:1.6rem}
+
+  /* ============ № 09 — questions, answered ============ */
+  .faq{max-width:860px}
+  .faq details{border-top:1px solid var(--rule)}
+  .faq details:last-child{border-bottom:1px solid var(--rule)}
+  .faq summary{cursor:pointer; list-style:none; display:flex; gap:16px; align-items:baseline;
+    font-family:var(--display); font-weight:600; font-size:clamp(1.15rem,3vw,1.5rem);
+    padding-block:20px}
+  .faq summary::-webkit-details-marker{display:none}
+  .faq summary::before{content:"+"; font-weight:900; color:var(--sun-deep); flex:none;
+    display:inline-block; transition:transform 200ms ease; transform-origin:50% 55%}
+  .faq details[open] summary::before{transform:rotate(45deg)}
+  .faq .ans{display:grid; grid-template-rows:1fr}
+  .faq .ans>.a{overflow:hidden; min-height:0}
+  .faq details[open] .ans{animation:accGrow var(--med) var(--spring)}
+  @keyframes accGrow{from{grid-template-rows:0fr}}
+  .faq .a{padding:0 0 22px 36px; color:var(--stone); max-width:60ch;
+    animation:accIn var(--med) ease}
+  @keyframes accIn{from{opacity:0; transform:translateY(-6px)}}
+
+  /* ============ № 10 — say hello ============ */
+  .hello-grid{display:grid; gap:clamp(2rem,5vw,3.5rem); align-items:start}
+  @media (min-width:960px){ .hello-grid{grid-template-columns:1fr 1fr} }
+  .field{margin-bottom:1.6rem; position:relative}
+  .field label{display:flex; align-items:center; gap:8px; font-weight:500; font-size:0.8125rem;
+    text-transform:uppercase; letter-spacing:0.06em; margin-bottom:8px}
+  .field .tick{width:16px; height:16px; opacity:0; transition:opacity 300ms ease}
+  .field .tick path{fill:none; stroke:var(--leaf); stroke-width:2.5; stroke-linecap:round;
+    stroke-linejoin:round; stroke-dasharray:1; stroke-dashoffset:1}
+  .field.done .tick{opacity:1}
+  .field.done .tick path{animation:drawFig 300ms ease forwards}
+  .field input[type="text"],.field select,.field textarea{
+    width:100%; font:inherit; font-size:1.0625rem; color:var(--ink);
+    background:transparent; border:none; border-bottom:1px solid var(--ink);
+    border-radius:0; padding:10px 4px; transition:background var(--fast)}
+  .field textarea{min-height:120px; resize:vertical; line-height:1.5}
+  .field input:focus,.field select:focus,.field textarea:focus{
+    outline:none; background:var(--sun-tint); border-bottom:2px solid var(--sun-deep)}
+  .field select{appearance:none; -webkit-appearance:none; cursor:pointer;
+    background-image:linear-gradient(45deg, transparent 50%, currentColor 50%),
+      linear-gradient(135deg, currentColor 50%, transparent 50%);
+    background-position:calc(100% - 18px) 50%, calc(100% - 12px) 50%;
+    background-size:6px 6px; background-repeat:no-repeat}
+  .field select option{color:#221D16; background:#FFFBF2}
+  .field.flag input,.field.flag textarea,.field.flag select{border-bottom:2px solid var(--berry)}
+  /* the :focus rules above zero the outline — restore it for keyboard focus */
+  .puz-answer:focus-visible,.field input:focus-visible,.field select:focus-visible,
+  .field textarea:focus-visible{outline:2px solid var(--ink); outline-offset:2px}
+  .field .note{display:none; margin-top:6px; font-family:var(--display); font-style:italic;
+    font-weight:600; color:var(--berry); font-size:0.9375rem}
+  .field.flag .note{display:block}
+  .field.shake{animation:shake 300ms ease}
+  .modes{display:flex; gap:10px; flex-wrap:wrap}
+  .modes .chip{border-color:var(--ink); color:var(--ink)}
+  .modes .chip[aria-checked="true"]{background:var(--ink); color:var(--paper)}
+  .letter{background:var(--sun-tint); border:1px solid var(--rule);
+    border-radius:var(--radius-card); padding:clamp(22px,4vw,36px); position:relative}
+  .letter .lhead{font-weight:500; font-size:0.8125rem; text-transform:uppercase;
+    letter-spacing:0.08em; color:var(--stone); border-bottom:1px solid var(--rule);
+    padding-bottom:12px; margin-bottom:18px}
+  .letter .ltext{font-family:var(--display); font-style:italic; font-weight:600;
+    font-size:1.15rem; line-height:1.75; white-space:pre-line}
+  .letter .gap{display:inline-block; min-width:4ch; border-bottom:3px solid var(--sun);
+    height:1em; vertical-align:baseline}
+  .postmark{position:absolute; top:14px; right:16px; width:92px; height:92px; border-radius:50%;
+    background:var(--sun); border:1.5px solid var(--sun-deep); box-shadow:var(--disc-glow);
+    color:#221D16; display:none; align-items:center; justify-content:center; text-align:center;
+    font-weight:700; font-size:0.6875rem; text-transform:uppercase; letter-spacing:0.05em;
+    line-height:1.35; padding:10px; transform:rotate(-12deg)}
+  .postmark.show{display:flex; animation:stampIn 400ms var(--spring)}
+  @keyframes stampIn{from{transform:rotate(-12deg) scale(1.6); opacity:0}}
+  .posted{display:none; margin-top:14px; color:var(--leaf); font-weight:500}
+  .posted.show{display:block}
+  .hello-actions{display:flex; gap:14px; flex-wrap:wrap; margin-top:0.5rem}
+  .hello-small{margin-top:1.2rem; color:var(--stone); font-size:0.875rem; max-width:44em}
+  .reach{margin-top:2rem}
+  .reach .lbl{font-weight:500; font-size:0.8125rem; text-transform:uppercase;
+    letter-spacing:0.06em; color:var(--stone); margin-bottom:10px}
+  .reach .chips2{display:flex; gap:10px; flex-wrap:wrap}
+  .reach a{display:inline-flex; align-items:center; gap:8px; text-decoration:none;
+    border:1px solid var(--ink); border-radius:999px; padding:10px 18px;
+    font-weight:500; font-size:0.9375rem; min-height:44px;
+    transition:transform var(--med) var(--spring), background var(--fast)}
+  .reach a:hover{background:var(--sun-tint)}
+  .reach a:active{transform:translateY(2px) scale(0.98)}
+  .reach .sundot{width:10px; height:10px; border-radius:50%; background:var(--sun);
+    border:1px solid var(--sun-deep)}
+
+  /* ============ № ∞ — the colophon ============ */
+  footer.colophon{position:relative; z-index:2; background:#221D16; color:#F4EBDA;
+    overflow:hidden; padding-block:clamp(4rem,10vw,7rem) clamp(2.5rem,6vw,4rem);
+    border-top:1px solid var(--rule)}
+  footer.colophon::after{content:""; position:absolute; left:50%; bottom:-90px;
+    width:180px; height:180px; margin-left:-90px; border-radius:50%;
+    background:var(--sun); border:1.5px solid var(--sun-deep); box-shadow:var(--disc-glow);
+    transition:transform var(--grand) var(--spring)}
+  :root[data-theme="dark"] footer.colophon::after{transform:translateY(64px)}
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]) footer.colophon::after{transform:translateY(64px)}
+  }
+  footer .folio{color:#A79C88; margin-bottom:2.5rem}
+  .foot-links{display:flex; flex-wrap:wrap; align-items:center; gap:6px 4px;
+    margin-bottom:2rem; font-weight:500; font-size:0.8125rem;
+    text-transform:uppercase; letter-spacing:0.08em}
+  .foot-links a{text-decoration:none; padding:8px 6px; position:relative}
+  .foot-links a::after{content:""; position:absolute; left:6px; right:6px; bottom:2px; height:7px;
+    background:var(--sun); border-radius:999px; transform:translateY(100%); opacity:0;
+    transition:transform var(--med) var(--spring), opacity var(--fast); z-index:-1}
+  .foot-links a:hover::after,.foot-links a:focus-visible::after{transform:translateY(30%); opacity:1}
+  .foot-links a:hover,.foot-links a:focus-visible{color:#221D16}
+  .foot-links .fx{font-family:var(--display); font-weight:900; color:var(--sun);
+    padding:8px; user-select:none}
+  .foot-links button.fx{cursor:pointer; min-width:44px; min-height:44px}
+  .foot-meta{display:flex; flex-wrap:wrap; align-items:center; gap:16px;
+    justify-content:space-between; margin-bottom:2.5rem}
+  .foot-meta .who{font-size:0.9375rem; color:#A79C88}
+  footer .sunset .horizon{background:#F4EBDA}
+  .qed-row{display:flex; justify-content:flex-end; margin-bottom:1.5rem}
+  .qed{font-family:var(--display); font-style:italic; font-weight:900; font-size:2rem;
+    position:relative; padding:8px 14px; cursor:default}
+  .qed .sunstop{animation:none; transform:none; width:0.18em; height:0.18em}
+  .qed svg{position:absolute; inset:0; width:100%; height:100%; overflow:visible; pointer-events:none}
+  .qed svg rect{fill:none; stroke:var(--sun); stroke-width:1.5;
+    stroke-dasharray:1; stroke-dashoffset:1; pathLength:1}
+  .qed:hover svg rect,.qed:focus-visible svg rect{animation:drawFig 400ms ease forwards}
+  .foot-fine{color:#A79C88; font-size:0.8125rem}
+
+  /* toast for the easter egg */
+  .toast{position:fixed; left:50%; bottom:28px; transform:translate(-50%, 120px);
+    z-index:90; background:var(--ink); color:var(--paper); font-family:var(--display);
+    font-style:italic; font-weight:600; padding:14px 26px; border-radius:999px;
+    transition:transform var(--slow) var(--spring); pointer-events:none;
+    max-width:88vw; text-align:center}
+  .toast.show{transform:translate(-50%, 0)}
+
+  /* confetti canvas overlay */
+  #confetti{position:fixed; inset:0; z-index:80; pointer-events:none}
+
+  /* ---------- reduced motion: everything lands in its final state ---------- */
+  @media (prefers-reduced-motion: reduce){
+    html{scroll-behavior:auto}
+    *,*::before,*::after{animation-duration:0.001s !important; animation-delay:0s !important;
+      transition-duration:0.001s !important}
+    .ticker .lane{animation:none; flex-wrap:wrap; width:auto}
+    .ticker .lane > div{white-space:normal; flex-wrap:wrap}
+    .ticker .lane > div[aria-hidden="true"]{display:none}
+    .ticker .lane .x{animation:none}
+    .scrollcue{animation:none}
+    .cover h1 .word{opacity:1; transform:none; animation:none}
+    .clicks svg path{stroke-dashoffset:0; animation:none}
+    .sunstop{transform:scale(1); animation:none}
+  }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="mast">
+  <div class="row">
+    <a class="wordmark" href="#top"><b>Maryam</b> — Maths Tutor</a>
+    <button class="sunset js-sunset" type="button" aria-pressed="false" aria-label="Dark mode">
+      <span class="horizon"></span><span class="disc"></span>
+    </button>
+    <a class="textlink" href="#hello">Say hello</a>
+  </div>
+</header>
+
+<main id="main">
+
+<!-- ============ № 01 — the cover ============ -->
+<section class="cover" id="top" aria-label="Welcome">
+  <div class="wrap">
+    <div class="cover-numeral js-numeral" aria-hidden="true"><span class="numghost js-numghost">16</span><span class="js-numface">16</span></div>
+    <div class="cover-copy">
+      <p class="folio cover-issue">№ <span class="js-issue">259</span> — <span class="js-dateline">16 September</span></p>
+      <h1><span class="word">Suddenly,</span> <span class="word">maths</span>
+        <span class="word"><span class="clicks">clicks<svg viewBox="0 0 100 14" aria-hidden="true" preserveAspectRatio="none"><path pathLength="1" d="M2 10 C 20 4, 45 12, 62 7 S 92 6, 98 8"/></svg></span><span class="sunstop" aria-hidden="true"></span></span>
+      </h1>
+      <p class="lede">Friendly one-to-one maths tutoring for KS2, KS3 and GCSE (Foundation and Higher) — in person across South West London, online anywhere.</p>
+      <div class="ctas">
+        <a class="pill" href="#hello">Say hello</a>
+        <a class="ghost" href="#puzzle">Try today’s puzzle ↓</a>
+      </div>
+    </div>
+  </div>
+  <span class="scrollcue" aria-hidden="true">=</span>
+</section>
+
+<!-- ============ № 02 — the ticker ============ -->
+<div class="ticker" aria-label="What Maryam teaches">
+  <div class="lane js-lane">
+    <div>
+      <span>KS2</span><span class="x">×</span><span>KS3</span><span class="x">×</span>
+      <span>GCSE Foundation</span><span class="x">×</span><span>GCSE Higher</span><span class="x">×</span>
+      <span>One-to-one</span><span class="x">×</span><span>In person across South West London</span><span class="x">×</span>
+      <span>Online anywhere</span><span class="x">×</span><span>A new puzzle every morning</span><span class="x">×</span>
+      <span>Times tables to trigonometry</span><span class="x">×</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============ № 03 — a word from Maryam ============ -->
+<section id="about" aria-labelledby="about-h">
+  <div class="wrap">
+    <p class="folio">№ 03 — A word from Maryam</p>
+    <div class="word-grid">
+      <div>
+        <h2 class="pullquote" id="about-h">“I don’t believe anyone is bad at maths. They just haven’t met the version of it that makes sense to them yet.”</h2>
+        <p class="word-body">I tutor one pupil at a time, from Year 3 number work right through to GCSE Higher. Lessons are calm, encouraging and built around how your child actually thinks — we find the gaps, mend them properly, and go at their pace. And when something clicks, we make a proper fuss of it.</p>
+        <div class="stats js-stats" hidden></div>
+      </div>
+      <figure class="portrait">
+        <div class="disc js-portrait"><span>Photograph of Maryam — coming soon</span></div>
+        <figcaption>Maryam — maths tutor, South West London</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- ============ № 04 — what we cover ============ -->
+<section id="cover-what" aria-labelledby="what-h">
+  <div class="wrap">
+    <p class="folio">№ 04 — What we cover</p>
+    <h2 class="h2" id="what-h">Three stages, one steady hand.</h2>
+    <p class="sub">Find your child’s stage — then come and say hello.</p>
+    <div class="cards">
+
+      <article class="card js-fig">
+        <span class="embossed" aria-hidden="true">2</span>
+        <div class="fig" aria-hidden="true">
+          <svg viewBox="0 0 100 100">
+            <path class="fill" d="M50 50 L50 8 A42 42 0 0 1 92 50 Z"/>
+            <circle class="draw" pathLength="1" cx="50" cy="50" r="42"/>
+            <path class="draw" pathLength="1" d="M50 50 L50 8 M50 50 L92 50"/>
+          </svg>
+        </div>
+        <p class="figcap">fig. 1 — one quarter, seen clearly</p>
+        <h3>KS2 — the foundations</h3>
+        <p>Number confidence, times tables and fractions without fear — built happily, at your child’s pace.</p>
+        <p class="topics js-topics" data-stage="ks2"></p>
+        <p class="cardlink"><a class="textlink js-prefill" data-year="Year 5" href="#hello">Enquire about KS2 →</a></p>
+      </article>
+
+      <article class="card js-fig">
+        <span class="embossed" aria-hidden="true">3</span>
+        <div class="fig" aria-hidden="true">
+          <svg viewBox="0 0 100 100">
+            <path class="draw" pathLength="1" d="M12 88 L12 12 M12 88 L88 88"/>
+            <path class="draw" pathLength="1" d="M18 74 L86 22"/>
+            <circle class="fill" cx="52" cy="48" r="4"/>
+          </svg>
+        </div>
+        <p class="figcap">fig. 2 — y = mx + c, tamed</p>
+        <h3>KS3 — the bridge years</h3>
+        <p>Algebra arrives. We make sure it arrives as a friend — with ratio, geometry and good habits alongside.</p>
+        <p class="topics js-topics" data-stage="ks3"></p>
+        <p class="cardlink"><a class="textlink js-prefill" data-year="Year 8" href="#hello">Enquire about KS3 →</a></p>
+      </article>
+
+      <article class="card js-fig">
+        <span class="embossed" aria-hidden="true">Σ</span>
+        <div class="fig" aria-hidden="true">
+          <svg viewBox="0 0 100 100">
+            <path class="fill" d="M22 88 C 30 46, 70 46, 78 88 Z"/>
+            <path class="draw" pathLength="1" d="M12 88 L12 12 M12 88 L88 88"/>
+            <path class="draw" pathLength="1" d="M14 88 C 28 30, 72 30, 86 88"/>
+          </svg>
+        </div>
+        <p class="figcap">fig. 3 — area under the curve, shaded in</p>
+        <h3>GCSE <span class="tiers"><i>Foundation</i><i>Higher</i></span></h3>
+        <p>Exam technique, past papers and steady nerves, right up to the big days.</p>
+        <p class="topics js-topics" data-stage="gcse"></p>
+        <p class="cardlink"><a class="textlink js-prefill" data-year="Year 11" href="#hello">Enquire about GCSE →</a></p>
+      </article>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============ № 05 — the daily puzzle ============ -->
+<section id="puzzle" aria-labelledby="puzzle-h">
+  <div class="wrap">
+    <p class="folio">№ 05 — The Daily Puzzle <em class="js-puzdate">16 September</em></p>
+    <h2 class="h2" id="puzzle-h">One puzzle, every morning.</h2>
+    <p class="sub">Everyone gets the same puzzle today, so the whole household can race. First to crack it chooses pudding.</p>
+
+    <div class="puzcard js-puzcard">
+      <svg class="puz-sun js-puzsun" viewBox="-16 -16 32 32" aria-hidden="true">
+        <line x1="0" y1="-11" x2="0" y2="-15"/><line x1="7.8" y1="-7.8" x2="10.6" y2="-10.6"/>
+        <line x1="11" y1="0" x2="15" y2="0"/><line x1="7.8" y1="7.8" x2="10.6" y2="10.6"/>
+        <line x1="0" y1="11" x2="0" y2="15"/><line x1="-7.8" y1="7.8" x2="-10.6" y2="10.6"/>
+        <line x1="-11" y1="0" x2="-15" y2="0"/><line x1="-7.8" y1="-7.8" x2="-10.6" y2="-10.6"/>
+        <circle cx="0" cy="0" r="8"/>
+      </svg>
+      <p class="puz-q js-puzq">Loading today’s puzzle…</p>
+      <div class="puz-row">
+        <input class="puz-answer" id="puz-answer" inputmode="numeric" autocomplete="off"
+          placeholder="?" aria-label="Your answer">
+        <button class="pill js-puzcheck" type="button">Check my answer</button>
+        <button class="textlink js-puznudge" type="button">Give me a nudge</button>
+      </div>
+      <p class="puz-hint js-puzhint" aria-live="polite"></p>
+      <p class="puz-note js-puznote" aria-live="polite"></p>
+    </div>
+
+    <div class="puz-extra">
+      <details>
+        <summary>Yesterday’s answer</summary>
+        <p class="puz-teaser js-yesterday" style="padding-top:8px"></p>
+      </details>
+      <p class="puz-teaser">Same time tomorrow — the puzzle changes at midnight.</p>
+      <p class="puz-fact"><em>Today’s true fact:</em> <span class="js-fact"></span></p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ № 06 — the sixty-second sprint ============ -->
+<section class="sprint" id="sprint" aria-labelledby="sprint-h">
+  <div class="wrap">
+    <p class="folio">№ 06 — The Sixty-Second Sprint</p>
+    <h2 class="h2" id="sprint-h">Sixty seconds. How high can your line climb?</h2>
+    <p class="sub">Press start. Every right answer plots a point — your score draws its own graph, and streaks grow your sun.</p>
+
+    <div class="chips js-modes" role="radiogroup" aria-label="Sprint difficulty"></div>
+
+    <div class="stage js-stage">
+      <p class="visually-hidden js-sr" role="status"></p>
+      <div class="sprint-idle js-idle">
+        <button class="pill js-start" type="button">Start the sprint</button>
+      </div>
+
+      <div class="js-play" hidden tabindex="-1">
+        <div class="hud"><span>Score <span class="js-score">0</span></span><span><span class="js-clock">60</span>s</span></div>
+        <p class="sprint-q"><span class="js-q">7 × 8</span> = <span class="typed js-typed">&nbsp;</span></p>
+        <div class="pad js-pad" aria-label="Number pad"></div>
+      </div>
+
+      <div class="sprint-end js-end" hidden>
+        <p class="bigline js-endline" tabindex="-1">Time.</p>
+        <p class="rank js-endrank"></p>
+        <button class="pill js-again" type="button">Go again</button>
+        <p class="whisper">Sixty good seconds. Imagine an hour a week.</p>
+      </div>
+
+      <svg class="graph js-graph" viewBox="0 0 600 230" aria-hidden="true">
+        <g class="js-ticks"></g>
+        <line class="axis" x1="24" y1="200" x2="584" y2="200"/>
+        <line class="axis" x1="24" y1="200" x2="24" y2="16"/>
+        <polyline class="scoreline js-line" points="24,200"></polyline>
+        <g class="js-tip" transform="translate(24,200)">
+          <g class="rays js-rays"></g>
+          <circle class="tipdisc" cx="0" cy="0" r="9"/>
+        </g>
+        <text class="caption js-gcap" x="580" y="212" text-anchor="end"></text>
+        <text x="24" y="222">0s</text><text x="584" y="222" text-anchor="end">60s</text>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<!-- ============ № 07 — in person & online ============ -->
+<section id="how" aria-labelledby="how-h">
+  <div class="wrap">
+    <p class="folio">№ 07 — In person &amp; online</p>
+    <h2 class="h2" id="how-h">Kitchen table, or shared whiteboard.</h2>
+    <p class="sub">The maths is the same either way.</p>
+
+    <div class="venn">
+      <div class="circle left">
+        <h3>In person</h3>
+        <p>Across South West London — your kitchen table or a quiet corner of the library. Send your postcode and we’ll see what’s doable.</p>
+      </div>
+      <div class="both">
+        <h3>Every lesson, either way</h3>
+        <p>One-to-one · a plan built around your child · a short note home afterwards</p>
+      </div>
+      <div class="circle right">
+        <h3>Online</h3>
+        <p>A video call and a shared whiteboard, from anywhere. All they need is a laptop or tablet and a pencil.</p>
+      </div>
+    </div>
+
+    <div class="steps">
+      <div class="step"><span class="dot">1</span><div><b>Say hello.</b><p>Tell me a little about your child.</p></div></div>
+      <div class="step"><span class="dot">2</span><div><b>We talk it through.</b><p>What’s going well, what’s wobbly, and whether I’m the right fit.</p></div></div>
+      <div class="step"><span class="dot">3</span><div><b>Lessons begin.</b><p>With a note home after every session.</p></div></div>
+    </div>
+
+    <p class="fees">Fees depend on stage and format, so there’s no price list here — ask, and I’ll talk you through it. No obligation, no hard sell.</p>
+  </div>
+</section>
+
+<!-- ============ № 08 — the countdown ============ -->
+<section id="countdown" aria-labelledby="count-h">
+  <div class="wrap">
+    <p class="folio">№ 08 — The Countdown</p>
+    <h2 class="count-lead js-countlead" id="count-h">GCSE exam season begins in</h2>
+    <div class="clock js-clock-grid">
+      <div class="cell"><b class="js-cd-days">—</b><span>days</span></div>
+      <div class="cell"><b class="js-cd-hours">—</b><span>hours</span></div>
+      <div class="cell"><b class="js-cd-mins">—</b><span>minutes</span></div>
+      <div class="cell"><b class="js-cd-secs">—</b><span>seconds</span></div>
+    </div>
+    <p class="count-line js-countline">That’s more time than you think — and exactly enough to build a calm, steady plan.</p>
+    <p><a class="textlink js-prefill" data-year="Year 11" href="#hello">Let’s start this week →</a></p>
+  </div>
+</section>
+
+<!-- ============ № 09 — questions, answered ============ -->
+<section id="faq" aria-labelledby="faq-h">
+  <div class="wrap">
+    <p class="folio">№ 09 — Questions, answered</p>
+    <h2 class="h2" id="faq-h">Sensible questions, straight answers.</h2>
+    <!-- FAQ copy is first-person Maryam — edit freely. -->
+    <div class="faq">
+      <details>
+        <summary>Whereabouts in South West London?</summary>
+        <div class="ans"><p class="a">I travel to pupils across South West London. Get in touch with your postcode and we’ll see if it works — and if it doesn’t, online lessons work beautifully.</p></div>
+      </details>
+      <details>
+        <summary>How do online lessons work?</summary>
+        <div class="ans"><p class="a">A video call plus a shared digital whiteboard. Your child needs a laptop or tablet, a pencil and some paper — that’s it.</p></div>
+      </details>
+      <details>
+        <summary>What do parents actually get?</summary>
+        <div class="ans"><p class="a">A short note after each session: what we covered, what clicked, and what’s next. You’ll never have to guess how it’s going.</p></div>
+      </details>
+      <details>
+        <summary>How much are lessons?</summary>
+        <div class="ans"><p class="a">Fees depend on stage and format, so there’s no price list here. Send a message and I’ll talk you through it — no obligation, no hard sell.</p></div>
+      </details>
+      <details>
+        <summary>What happens in the first lesson?</summary>
+        <div class="ans"><p class="a">Some talking and a little maths: finding what’s solid, what’s wobbly, and what we’ll do about it — with at least one genuinely surprising bit of maths along the way.</p></div>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ============ № 10 — say hello ============ -->
+<section id="hello" aria-labelledby="hello-h">
+  <div class="wrap">
+    <p class="folio">№ 10 — Say hello</p>
+    <h2 class="h2" id="hello-h">Tell me about your mathematician.</h2>
+    <p class="sub">A few details is plenty — I read and reply to every message myself.</p>
+
+    <div class="hello-grid">
+      <form class="js-form" novalidate>
+        <div class="field js-f-name">
+          <label for="f-name">Your name
+            <svg class="tick" viewBox="0 0 16 16" aria-hidden="true"><path pathLength="1" d="M2.5 8.5 L6.5 12.5 L13.5 3.5"/></svg>
+          </label>
+          <input type="text" id="f-name" name="name" autocomplete="name" maxlength="60">
+          <p class="note" aria-live="polite"></p>
+        </div>
+
+        <div class="field js-f-year">
+          <label for="f-year">Your child’s year group
+            <svg class="tick" viewBox="0 0 16 16" aria-hidden="true"><path pathLength="1" d="M2.5 8.5 L6.5 12.5 L13.5 3.5"/></svg>
+          </label>
+          <select id="f-year" name="year">
+            <option value="" selected>Choose a year group…</option>
+          </select>
+          <p class="note" aria-live="polite"></p>
+        </div>
+
+        <div class="field js-f-mode">
+          <span class="folio" style="margin-bottom:8px" id="mode-label">Where suits you?</span>
+          <div class="modes js-modechips" role="radiogroup" aria-labelledby="mode-label"></div>
+        </div>
+
+        <div class="field js-f-message">
+          <label for="f-message">What’s going well — and what’s wobbly?
+            <svg class="tick" viewBox="0 0 16 16" aria-hidden="true"><path pathLength="1" d="M2.5 8.5 L6.5 12.5 L13.5 3.5"/></svg>
+          </label>
+          <textarea id="f-message" name="message" maxlength="600"></textarea>
+          <p class="note" aria-live="polite"></p>
+        </div>
+
+        <div class="hello-actions">
+          <button class="pill" type="submit">Send my message →</button>
+          <button class="ghost js-copyletter" type="button">Copy the letter instead</button>
+        </div>
+        <p class="hello-small">Sending opens your own email app, so the message comes straight from you — nothing is sent behind your back.</p>
+      </form>
+
+      <div>
+        <div class="letter">
+          <p class="lhead">Your letter — writes itself</p>
+          <div class="ltext js-letter"></div>
+          <div class="postmark js-postmark"><span>Ready to send<br><span class="js-pmdate"></span></span></div>
+        </div>
+        <p class="posted js-posted">Your email app should now be open with the letter — press send there, or use “Copy the letter” if it didn’t appear.</p>
+        <div class="reach">
+          <p class="lbl">Or reach me directly:</p>
+          <div class="chips2 js-reach"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<!-- ============ № ∞ — the colophon ============ -->
+<footer class="colophon" aria-label="Footer">
+  <div class="wrap">
+    <p class="folio">№ ∞ — The Colophon</p>
+    <nav class="foot-links" aria-label="Footer navigation">
+      <a href="#puzzle">puzzle</a><button class="fx js-egg" type="button" aria-label="A little surprise">×</button>
+      <a href="#sprint">sprint</a><span class="fx" aria-hidden="true">×</span>
+      <a href="#how">in person &amp; online</a><span class="fx" aria-hidden="true">×</span>
+      <a href="#faq">questions</a><span class="fx" aria-hidden="true">×</span>
+      <a href="#hello">say hello</a>
+    </nav>
+    <div class="foot-meta">
+      <p class="who js-footline">Maryam — maths tutor · KS2, KS3 &amp; GCSE · South West London &amp; online</p>
+      <button class="sunset js-sunset" type="button" aria-pressed="false" aria-label="Dark mode">
+        <span class="horizon"></span><span class="disc"></span>
+      </button>
+    </div>
+    <div class="qed-row">
+      <span class="qed">Q.E.D<span class="sunstop" aria-hidden="true"></span><svg aria-hidden="true"><rect x="1" y="1" width="99%" height="94%" rx="6" pathLength="1"/></svg></span>
+    </div>
+    <p class="foot-fine">Made with care (and a protractor) in South West London. © <span class="js-year">2026</span> Maryam — Maths Tutor.</p>
+  </div>
+</footer>
+
+<div class="toast js-toast" role="status"></div>
+<canvas id="confetti"></canvas>
+
+<script src="engine.js"></script>
+<script>
+/* The page: DOM, paint and storage only. Every rule lives in engine.js. */
+(function () {
+  'use strict';
+  var E = MaryamEngine;
+
+  /* ============ EDIT ME — Maryam's details live here and nowhere else ============ */
+  var CONFIG = {
+    name: 'Maryam',
+    siteName: 'Maryam — Maths Tutor',
+    email: 'hello@your-domain-here.example',  // EDIT ME: real email (the form and the contact chip use this)
+    phone: null,                              // EDIT ME: e.g. '07xx xxx xxxx' — null hides the phone chip
+    area: 'South West London',
+    examSeasonStart: '2027-05-10T09:00:00',   // EDIT ME each year: first GCSE exam week
+    photoSrc: null,                           // e.g. 'maryam.jpg' — null keeps the sun-disc placeholder
+    stats: { yearsTutoring: null, pupilsSoFar: null } // null = hidden. Never invent numbers.
+  };
+  /* =============================================================================== */
+
+  var $ = function (sel) { return document.querySelector(sel); };
+  var $$ = function (sel) { return Array.prototype.slice.call(document.querySelectorAll(sel)); };
+  var reduceMotion = false;
+  try { reduceMotion = !!window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+
+  /* ---------------- the sunset toggle ---------------- */
+  function currentTheme() {
+    var t = document.documentElement.getAttribute('data-theme');
+    if (t === 'dark' || t === 'light') return t;
+    try { return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'; } catch (e) { return 'light'; }
+  }
+  function syncSunsets(t) {
+    $$('.js-sunset').forEach(function (b) {
+      b.setAttribute('aria-pressed', t === 'dark' ? 'true' : 'false');
+    });
+    var chrome = t === 'dark' ? '#171209' : '#FFFBF2';
+    $$('meta[name="theme-color"]').forEach(function (m) { m.setAttribute('content', chrome); });
+  }
+  function applyTheme(t) {
+    document.documentElement.setAttribute('data-theme', t);
+    try { localStorage.setItem('maryam-theme', t); } catch (e) {}
+    syncSunsets(t);
+  }
+  try {
+    var saved = localStorage.getItem('maryam-theme');
+    if (saved === 'dark' || saved === 'light') applyTheme(saved);
+  } catch (e) {}
+  syncSunsets(currentTheme()); // system-dark first visits get a set sun, no storage write
+  $$('.js-sunset').forEach(function (b) {
+    b.addEventListener('click', function () { applyTheme(currentTheme() === 'dark' ? 'light' : 'dark'); });
+  });
+
+  /* ---------------- the daily edition ---------------- */
+  var now = Date.now();
+  // The engine reads UTC; shift the seed so the edition, puzzle and fact all
+  // roll over at the viewer's LOCAL midnight (an hour matters during BST).
+  var dayNow = now;
+  try { dayNow = now - new Date(now).getTimezoneOffset() * 60000; } catch (e) {}
+  var cover = E.coverDate(dayNow);
+  var todayIso = E.isoDate(dayNow);
+  $('.js-issue').textContent = E.issueNumber(dayNow);
+  $('.js-dateline').textContent = cover.dateLine;
+  $('.js-puzdate').textContent = cover.dateLine;
+  $('.js-year').textContent = cover.year;
+  $('.js-numghost').textContent = cover.dayNumber;
+
+  var numFace = $('.js-numface');
+  if (reduceMotion) {
+    numFace.textContent = cover.dayNumber;
+  } else {
+    // count up 1 → today over ~900ms
+    numFace.textContent = '1';
+    var t0 = null;
+    var countUp = function (ts) {
+      if (t0 === null) t0 = ts;
+      var k = Math.min(1, (ts - t0) / 900);
+      numFace.textContent = Math.max(1, Math.round(k * cover.dayNumber));
+      if (k < 1) requestAnimationFrame(countUp);
+    };
+    requestAnimationFrame(countUp);
+  }
+  var numeral = $('.js-numeral');
+  numeral.addEventListener('click', function () {
+    numeral.classList.add('giggle');
+    setTimeout(function () { numeral.classList.remove('giggle'); }, 400);
+  });
+
+  // duplicate the ticker lane once for the seamless loop
+  var lane = $('.js-lane');
+  var laneCopy = lane.firstElementChild && lane.firstElementChild.cloneNode ? lane.firstElementChild.cloneNode(true) : null;
+  if (laneCopy && laneCopy.setAttribute) { laneCopy.setAttribute('aria-hidden', 'true'); lane.appendChild(laneCopy); }
+
+  /* ---------------- a word from Maryam: config-gated bits ---------------- */
+  if (CONFIG.photoSrc) {
+    $('.js-portrait').innerHTML = '<img src="' + E.escapeHTML(CONFIG.photoSrc) + '" alt="Maryam, smiling">';
+  }
+  var stats = [];
+  if (CONFIG.stats.yearsTutoring != null) stats.push({ n: CONFIG.stats.yearsTutoring, label: 'years of one-to-one tutoring' });
+  if (CONFIG.stats.pupilsSoFar != null) stats.push({ n: CONFIG.stats.pupilsSoFar, label: 'pupils so far' });
+  if (stats.length) {
+    var statsEl = $('.js-stats');
+    statsEl.hidden = false;
+    statsEl.innerHTML = stats.map(function (s) {
+      return '<div class="stat"><b data-n="' + E.escapeHTML(s.n) + '">' + E.escapeHTML(s.n) + '</b><span>' + E.escapeHTML(s.label) + '</span></div>';
+    }).join('');
+  }
+
+  /* ---------------- topic lines on the stage cards ---------------- */
+  $$('.js-topics').forEach(function (el) {
+    var stage = E.stageByKey(el.getAttribute('data-stage'));
+    if (stage) el.textContent = stage.topics.join(' · ');
+  });
+
+  /* ---------------- fig drawings draw themselves on first sight ---------------- */
+  var io = null;
+  try {
+    io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (en.isIntersecting) { en.target.classList.add('in-view'); io.unobserve(en.target); }
+      });
+    }, { threshold: 0.35 });
+  } catch (e) {}
+  $$('.js-fig').forEach(function (el) {
+    if (io && !reduceMotion) io.observe(el);
+    else el.classList.add('in-view');
+    el.addEventListener('mouseenter', function () {
+      if (reduceMotion || !el.classList.contains('in-view')) return;
+      el.classList.remove('in-view'); void el.offsetWidth; el.classList.add('in-view');
+    });
+  });
+
+  // honest counters count up on first sight (they stay hidden unless CONFIG fills them)
+  $$('.js-stats .stat b').forEach(function (b) {
+    var target = parseInt(b.getAttribute('data-n'), 10);
+    if (!io || reduceMotion || !(target > 1)) return;
+    b.textContent = '0';
+    var so = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (!en.isIntersecting) return;
+        so.unobserve(en.target);
+        var t0 = null;
+        var step = function (ts) {
+          if (t0 === null) t0 = ts;
+          var k = Math.min(1, (ts - t0) / 900);
+          b.textContent = Math.round(k * target);
+          if (k < 1) requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+      });
+    }, { threshold: 0.35 });
+    so.observe(b);
+  });
+
+  /* ---------------- confetti (deterministic physics, dumb painter) ---------------- */
+  var canvas = document.getElementById('confetti');
+  var particles = [];
+  var painting = false;
+  function fireConfetti(x, y, seed, n, colors) {
+    if (reduceMotion || !canvas.getContext) return;
+    var burst = E.confettiBurst(seed, n || 24);
+    for (var i = 0; i < burst.length; i++) {
+      var p = burst[i];
+      particles.push({ x: x, y: y, vx: p.vx, vy: p.vy, size: p.size, spin: p.spin,
+        drift: p.drift, glyph: p.glyph, rot: 0, life: 90, color: colors[i % colors.length] });
+    }
+    if (!painting) { painting = true; requestAnimationFrame(paint); }
+  }
+  function paint() {
+    var ctx = canvas.getContext('2d');
+    var w = canvas.width = window.innerWidth || 800;
+    var h = canvas.height = window.innerHeight || 600;
+    ctx.clearRect(0, 0, w, h);
+    var alive = [];
+    for (var i = 0; i < particles.length; i++) {
+      var p = particles[i];
+      p.x += p.vx + p.drift; p.y += p.vy; p.vy += 0.22; p.rot += p.spin; p.life--;
+      if (p.life <= 0 || p.y > h + 40) continue;
+      alive.push(p);
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      ctx.globalAlpha = Math.min(1, p.life / 30);
+      ctx.fillStyle = p.color;
+      ctx.font = '700 ' + p.size + 'px "Space Grotesk", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(p.glyph, 0, 0);
+      ctx.restore();
+    }
+    particles = alive;
+    if (particles.length) requestAnimationFrame(paint);
+    else { painting = false; ctx.clearRect(0, 0, w, h); }
+  }
+  function centerOf(el) {
+    var r = { left: 0, top: 0, width: 0, height: 0 };
+    try { r = el.getBoundingClientRect(); } catch (e) {}
+    return { x: (r.left || 0) + (r.width || 0) / 2, y: (r.top || 0) + (r.height || 0) / 2 };
+  }
+  var INK_CREAM = ['#221D16', '#FFFBF2'];
+  // over the paper ground, "ink" must follow the theme or dark-mode confetti vanishes
+  function inkSun() {
+    return currentTheme() === 'dark'
+      ? ['#F4EBDA', '#FFB703', '#E08E00']
+      : ['#221D16', '#FFB703', '#E08E00'];
+  }
+
+  /* ---------------- № 05 — the daily puzzle ---------------- */
+  var puzzle = E.dailyPuzzle(todayIso);
+  var yesterday = E.dailyPuzzle(E.isoDate(dayNow - E.DAY));
+  $('.js-puzq').textContent = puzzle.question;
+  $('.js-yesterday').textContent = yesterday.question + ' — the answer was ' + yesterday.answer + '.';
+  $('.js-fact').textContent = E.factOfDay(todayIso).fact;
+
+  var puzInput = $('.puz-answer');
+  var puzNote = $('.js-puznote');
+  var puzSolved = false;
+  function checkPuzzle() {
+    if (puzSolved) return;
+    if (E.checkAnswer(puzzle.answer, puzInput.value)) {
+      puzSolved = true;
+      $('.js-puzsun').classList.add('rays');
+      puzNote.innerHTML = '<span class="good">Solved — lovely work. A new puzzle arrives at midnight.</span>' +
+        '<span class="why">' + E.escapeHTML(puzzle.explain) + '</span>';
+      var c = centerOf($('.js-puzcard'));
+      fireConfetti(c.x, c.y, 'puzzle:' + todayIso, 20, inkSun());
+    } else {
+      var card = $('.js-puzcard');
+      card.classList.remove('shake');
+      void card.offsetWidth; // restart the animation
+      card.classList.add('shake');
+      puzNote.innerHTML = '<span class="bad">Not quite — have another go, or take the nudge.</span>';
+    }
+  }
+  $('.js-puzcheck').addEventListener('click', checkPuzzle);
+  puzInput.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') checkPuzzle(); });
+  $('.js-puznudge').addEventListener('click', function () {
+    var h = $('.js-puzhint');
+    h.classList.add('show');
+    // write the text once the region is rendered, so aria-live announces it
+    setTimeout(function () { h.textContent = puzzle.hint; }, 0);
+  });
+
+  /* ---------------- № 06 — the sixty-second sprint ---------------- */
+  var SPRINT_SECONDS = 60;
+  var sprint = {
+    running: false, mode: 'classic', score: 0, correct: 0, streak: 0, best: 0,
+    qIndex: 0, q: null, typed: '', startAt: 0, timer: 0, points: []
+  };
+
+  // mode chips
+  var modesEl = $('.js-modes');
+  modesEl.innerHTML = E.SPRINT_MODES.map(function (m) {
+    return '<button class="chip" type="button" role="radio" data-mode="' + m.key + '" aria-checked="' +
+      (m.key === 'classic') + '" title="' + E.escapeHTML(m.hint) + '">' + E.escapeHTML(m.label) + '</button>';
+  }).join('');
+  $$('.js-modes .chip').forEach(function (b) {
+    b.addEventListener('click', function () {
+      sprint.mode = b.getAttribute('data-mode');
+      $$('.js-modes .chip').forEach(function (o) { o.setAttribute('aria-checked', String(o === b)); });
+    });
+  });
+
+  // number pad — the '-' key matters: level-4 subtractions go below zero
+  var padEl = $('.js-pad');
+  var PAD = ['1','2','3','4','5','6','7','8','9','-','0','⌫','↵'];
+  padEl.innerHTML = PAD.map(function (k) {
+    var cls = k === '↵' ? 'padkey go' : 'padkey';
+    var label = k === '⌫' ? 'Delete' : (k === '↵' ? 'Answer' : (k === '-' ? 'Minus' : k));
+    var face = k === '-' ? '−' : k;
+    return '<button class="' + cls + '" type="button" data-key="' + k + '" aria-label="' + label + '">' + face + '</button>';
+  }).join('');
+
+  // startAt is the round nonce: "Go again" deals a fresh hand every time
+  function sprintSeed() { return todayIso + ':' + sprint.mode + ':' + sprint.startAt + ':' + sprint.qIndex; }
+  function nextQuestion() {
+    sprint.qIndex++;
+    var level = E.sprintLevelForMode(sprint.mode, sprint.streak);
+    sprint.q = E.sprintQuestion(level, sprintSeed());
+    sprint.typed = '';
+    $('.js-q').textContent = sprint.q.question.replace('.  x = ?', ',  x');
+    $('.js-typed').innerHTML = '&nbsp;';
+    $('.js-sr').textContent = sprint.q.question;
+  }
+  function drawTicks() {
+    var g = $('.js-ticks');
+    var t = '';
+    for (var s = 10; s < 60; s += 10) {
+      var x = 24 + (s / 60) * 560;
+      t += '<line class="tickline" x1="' + x + '" y1="16" x2="' + x + '" y2="200"/>';
+    }
+    g.innerHTML = t;
+  }
+  drawTicks();
+  function buildRays() {
+    var g = $('.js-rays');
+    var t = '';
+    for (var i = 0; i < 12; i++) {
+      var a = (i / 12) * Math.PI * 2 - Math.PI / 2;
+      var x1 = Math.cos(a) * 13, y1 = Math.sin(a) * 13;
+      var x2 = Math.cos(a) * 20, y2 = Math.sin(a) * 20;
+      t += '<line class="ray" x1="' + x1.toFixed(1) + '" y1="' + y1.toFixed(1) +
+           '" x2="' + x2.toFixed(1) + '" y2="' + y2.toFixed(1) + '"/>';
+    }
+    g.innerHTML = t;
+  }
+  buildRays();
+  function showRays() {
+    var rays = $$('.js-rays .ray');
+    var n = Math.min(sprint.streak, 12);
+    for (var i = 0; i < rays.length; i++) rays[i].style.opacity = i < n ? '1' : '0';
+  }
+  function graphY(score, yMax) { return 200 - (score / yMax) * 176; }
+  function redrawGraph(elapsed) {
+    var yMax = 40;
+    for (var i = 0; i < sprint.points.length; i++) yMax = Math.max(yMax, sprint.points[i].score);
+    yMax = Math.ceil(yMax / 40) * 40;
+    var pts = '24,200';
+    for (var j = 0; j < sprint.points.length; j++) {
+      var p = sprint.points[j];
+      pts += ' ' + (24 + (p.t / SPRINT_SECONDS) * 560).toFixed(1) + ',' + graphY(p.score, yMax).toFixed(1);
+    }
+    var tx = 24 + (Math.min(elapsed, SPRINT_SECONDS) / SPRINT_SECONDS) * 560;
+    var ty = graphY(sprint.score, yMax);
+    pts += ' ' + tx.toFixed(1) + ',' + ty.toFixed(1);
+    $('.js-line').setAttribute('points', pts);
+    $('.js-tip').setAttribute('transform', 'translate(' + tx.toFixed(1) + ',' + ty.toFixed(1) + ')');
+  }
+  function elapsedSec() { return (Date.now() - sprint.startAt) / 1000; }
+
+  function startSprint() {
+    sprint.running = true; sprint.score = 0; sprint.correct = 0; sprint.streak = 0;
+    sprint.best = 0; sprint.qIndex = 0; sprint.points = []; sprint.startAt = Date.now();
+    $('.js-idle').hidden = true; $('.js-end').hidden = true; $('.js-play').hidden = false;
+    $('.js-score').textContent = '0';
+    $('.js-gcap').textContent = '';
+    showRays();
+    nextQuestion();
+    redrawGraph(0);
+    try { $('.js-play').focus(); } catch (e) {}
+    clearInterval(sprint.timer);
+    sprint.timer = setInterval(function () {
+      var el = elapsedSec();
+      $('.js-clock').textContent = Math.max(0, Math.ceil(SPRINT_SECONDS - el));
+      redrawGraph(el);
+      if (el >= SPRINT_SECONDS) endSprint();
+    }, 100);
+  }
+  function endSprint() {
+    clearInterval(sprint.timer);
+    sprint.running = false;
+    $('.js-play').hidden = true; $('.js-end').hidden = false;
+    var best = 0;
+    try { best = parseInt(localStorage.getItem('maryam-sprint-best') || '0', 10) || 0; } catch (e) {}
+    var isPB = sprint.score > best;
+    if (isPB) { best = sprint.score; try { localStorage.setItem('maryam-sprint-best', String(best)); } catch (e) {} }
+    $('.js-endline').textContent = 'Time. You scored ' + sprint.score + ' — ' + sprint.correct +
+      ' right, best streak ' + sprint.best + '.' + (isPB ? ' A new personal best.' : ' Your personal best is ' + best + '.');
+    var rank = E.sprintRank(sprint.score);
+    $('.js-endrank').textContent = rank.name + ' — ' + rank.hint;
+    $('.js-gcap').textContent = ('The Sprint — ' + cover.dateLine + ' — ' + sprint.correct + ' right · maryam, maths tutor').toUpperCase();
+    redrawGraph(SPRINT_SECONDS);
+    try { $('.js-endline').focus(); } catch (e) {}
+  }
+  function answerSprint() {
+    if (!sprint.running || sprint.typed === '' || sprint.typed === '-') return;
+    var stage = $('.js-stage');
+    if (E.checkAnswer(sprint.q.answer, sprint.typed)) {
+      sprint.score += E.sprintPoints(sprint.streak);
+      sprint.streak++; sprint.correct++;
+      sprint.best = Math.max(sprint.best, sprint.streak);
+      sprint.points.push({ t: Math.min(elapsedSec(), SPRINT_SECONDS), score: sprint.score });
+      $('.js-score').textContent = sprint.score;
+      showRays();
+      if (sprint.streak > 0 && sprint.streak % 5 === 0 && !reduceMotion) {
+        var rg = $('.js-rays');
+        rg.classList.remove('spin'); void rg.getBoundingClientRect(); rg.classList.add('spin');
+        setTimeout(function () { rg.classList.remove('spin'); }, 750);
+      }
+      if (sprint.streak === 10) {
+        stage.classList.add('flash');
+        setTimeout(function () { stage.classList.remove('flash'); }, 260);
+        var c = centerOf($('.js-tip'));
+        fireConfetti(c.x, c.y, 'sprint:' + sprint.qIndex, 32, INK_CREAM);
+      }
+      nextQuestion();
+      redrawGraph(elapsedSec());
+    } else {
+      sprint.streak = 0;
+      showRays();
+      var q = $('.sprint-q');
+      q.classList.remove('shake'); void q.offsetWidth; q.classList.add('shake');
+      sprint.typed = '';
+      $('.js-typed').innerHTML = '&nbsp;';
+      $('.js-sr').textContent = 'Not quite — streak reset. ' + sprint.q.question;
+    }
+  }
+  function sprintKey(k) {
+    if (!sprint.running) return;
+    if (k === '↵' || k === 'Enter') { answerSprint(); return; }
+    if (k === '⌫' || k === 'Backspace') {
+      sprint.typed = sprint.typed.slice(0, -1);
+    } else if (/^[0-9]$/.test(k) && sprint.typed.length < 5) {
+      sprint.typed += k;
+    } else if (k === '-' && sprint.typed === '') {
+      sprint.typed = '-';
+    } else return;
+    var typedEl = $('.js-typed');
+    if (sprint.typed) typedEl.textContent = sprint.typed;
+    else typedEl.innerHTML = '&nbsp;';
+  }
+  padEl.addEventListener('click', function (ev) {
+    var t = ev.target;
+    var key = t && t.getAttribute ? t.getAttribute('data-key') : null;
+    if (key) sprintKey(key);
+  });
+  document.addEventListener('keydown', function (ev) {
+    if (!sprint.running) return;
+    // never steal keys from someone typing in the puzzle box or the form
+    var t = ev.target;
+    if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || '') || t.isContentEditable)) return;
+    if (/^[0-9]$/.test(ev.key) || ev.key === 'Backspace' || ev.key === 'Enter' || ev.key === '-') {
+      ev.preventDefault();
+      sprintKey(ev.key);
+    }
+  });
+  $('.js-start').addEventListener('click', startSprint);
+  $('.js-again').addEventListener('click', startSprint);
+
+  /* ---------------- № 08 — the countdown ---------------- */
+  var examTarget = Date.parse(CONFIG.examSeasonStart);
+  if (isNaN(examTarget)) examTarget = E.defaultExamStart(now);
+  var cdEls = {
+    days: $('.js-cd-days'), hours: $('.js-cd-hours'),
+    mins: $('.js-cd-mins'), secs: $('.js-cd-secs')
+  };
+  var lastCd = {};
+  function setCd(el, key, val) {
+    var s = String(val);
+    if (lastCd[key] === s) return;
+    lastCd[key] = s;
+    if (!reduceMotion) {
+      el.classList.add('tickfade');
+      setTimeout(function () { el.textContent = s; el.classList.remove('tickfade'); }, 80);
+    } else el.textContent = s;
+  }
+  function tickCountdown() {
+    var c = E.countdown(Date.now(), examTarget);
+    if (c.phase === 'underway') {
+      $('.js-countlead').textContent = 'GCSE season is underway';
+      $('.js-countline').textContent = 'Good luck to every Year 11. Next year’s pupils: now is a lovely time to say hello.';
+      $('.js-clock-grid').hidden = true;
+      return;
+    }
+    setCd(cdEls.days, 'd', c.days);
+    setCd(cdEls.hours, 'h', c.hours);
+    setCd(cdEls.mins, 'm', c.minutes);
+    setCd(cdEls.secs, 's', c.seconds);
+  }
+  tickCountdown();
+  setInterval(tickCountdown, 1000);
+
+  /* ---------------- № 10 — say hello ---------------- */
+  var form = $('.js-form');
+  var yearSel = $('#f-year');
+  var yearOptions = E.YEARS.map(function (y) {
+    var label = y === 'notsure' ? 'Not sure' : y;
+    return '<option value="' + y + '">' + label + '</option>';
+  }).join('');
+  yearSel.innerHTML = '<option value="" selected>Choose a year group…</option>' + yearOptions;
+
+  // mode radio pills
+  var modeVal = 'notsure';
+  var modeChipsEl = $('.js-modechips');
+  modeChipsEl.innerHTML = E.MODES.map(function (m) {
+    return '<button class="chip" type="button" role="radio" data-mode="' + m + '" aria-checked="' + (m === 'notsure') + '">' +
+      E.escapeHTML(E.MODE_LABELS[m]) + '</button>';
+  }).join('');
+  $$('.js-modechips .chip').forEach(function (b) {
+    b.addEventListener('click', function () {
+      modeVal = b.getAttribute('data-mode');
+      $$('.js-modechips .chip').forEach(function (o) { o.setAttribute('aria-checked', String(o === b)); });
+      renderLetter();
+    });
+  });
+
+  function fields() {
+    return {
+      name: $('#f-name').value,
+      year: yearSel.value,
+      mode: modeVal,
+      message: $('#f-message').value
+    };
+  }
+
+  var letterEl = $('.js-letter');
+  var letterTimer = 0;
+  function renderLetterNow() {
+    var d = E.draftLetter(fields());
+    var html = E.escapeHTML(d.text)
+      .replace(/____/g, '<span class="gap" role="img" aria-label="still blank"></span>');
+    letterEl.innerHTML = html;
+    // draw-on ticks for filled-in fields
+    var f = fields();
+    var v = E.validateEnquiry(f);
+    $('.js-f-name').classList.toggle('done', !v.notes.name && !!f.name.trim());
+    $('.js-f-year').classList.toggle('done', !v.notes.year);
+    $('.js-f-message').classList.toggle('done', !v.notes.message && !!f.message.trim());
+  }
+  function renderLetter() {
+    clearTimeout(letterTimer);
+    letterTimer = setTimeout(renderLetterNow, 600); // debounced for aria-live politeness
+  }
+  renderLetterNow();
+  ['f-name', 'f-message'].forEach(function (id) {
+    var el = document.getElementById(id);
+    el.addEventListener('input', renderLetter);
+  });
+  yearSel.addEventListener('change', renderLetterNow);
+
+  var FIELD_IDS = { name: 'f-name', year: 'f-year', message: 'f-message' };
+  function showNotes(v) {
+    var firstBad = null;
+    [['name', '.js-f-name'], ['year', '.js-f-year'], ['message', '.js-f-message']].forEach(function (pair) {
+      var key = pair[0], box = $(pair[1]);
+      var note = box.querySelector('.note');
+      var ctl = document.getElementById(FIELD_IDS[key]);
+      if (note && !note.id) note.id = 'note-' + key;
+      if (v.notes[key]) {
+        box.classList.add('flag');
+        box.classList.remove('shake'); void box.offsetWidth; box.classList.add('shake');
+        if (note) note.textContent = v.notes[key];
+        if (ctl) {
+          ctl.setAttribute('aria-invalid', 'true');
+          ctl.setAttribute('aria-describedby', 'note-' + key);
+          if (!firstBad) firstBad = ctl;
+        }
+      } else {
+        box.classList.remove('flag');
+        if (note) note.textContent = '';
+        if (ctl) { ctl.removeAttribute('aria-invalid'); ctl.removeAttribute('aria-describedby'); }
+      }
+    });
+    if (firstBad) { try { firstBad.focus(); } catch (e) {} }
+  }
+  form.addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var v = E.validateEnquiry(fields());
+    showNotes(v);
+    if (!v.ok) return;
+    var m = E.composeEnquiry(v.cleaned, CONFIG.email);
+    $('.js-pmdate').textContent = cover.dayNumber + ' ' + cover.monthName.slice(0, 3);
+    $('.js-postmark').classList.add('show');
+    $('.js-posted').classList.add('show');
+    window.location.href = m.mailto;
+  });
+  $('.js-copyletter').addEventListener('click', function () {
+    var v = E.validateEnquiry(fields());
+    showNotes(v);
+    if (!v.ok) return;
+    var m = E.composeEnquiry(v.cleaned, CONFIG.email);
+    var btn = $('.js-copyletter');
+    var done = function () {
+      btn.textContent = 'Copied ✓';
+      setTimeout(function () { btn.textContent = 'Copy the letter instead'; }, 2000);
+    };
+    try {
+      var p = navigator.clipboard.writeText('To: ' + CONFIG.email + '\nSubject: ' + m.subject + '\n\n' + m.body);
+      if (p && p.then) p.then(done, function () {});
+      else done();
+    } catch (e) {}
+  });
+
+  // contact chips from CONFIG — one object, edited in one place
+  var reach = [];
+  reach.push('<a href="mailto:' + E.escapeHTML(CONFIG.email) + '"><span class="sundot"></span>' + E.escapeHTML(CONFIG.email) + '</a>');
+  if (CONFIG.phone) {
+    reach.push('<a href="tel:' + E.escapeHTML(String(CONFIG.phone).replace(/\s/g, '')) + '"><span class="sundot"></span>' + E.escapeHTML(CONFIG.phone) + '</a>');
+  }
+  $('.js-reach').innerHTML = reach.join('');
+  $('.js-footline').textContent = CONFIG.name + ' — maths tutor · KS2, KS3 & GCSE · ' + CONFIG.area + ' & online';
+
+  /* ---------------- card links pre-fill the letter ---------------- */
+  $$('.js-prefill').forEach(function (a) {
+    a.addEventListener('click', function () {
+      yearSel.value = a.getAttribute('data-year');
+      renderLetterNow();
+    });
+  });
+
+  /* ---------------- № ∞ — the easter egg & toast ---------------- */
+  var eggTaps = 0, eggTimer = 0;
+  function toast(msg) {
+    var t = $('.js-toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(function () { t.classList.remove('show'); }, 3200);
+  }
+  $('.js-egg').addEventListener('click', function () {
+    eggTaps++;
+    clearTimeout(eggTimer);
+    eggTimer = setTimeout(function () { eggTaps = 0; }, 4000);
+    if (eggTaps >= 7) {
+      eggTaps = 0;
+      var c = centerOf($('.js-egg'));
+      fireConfetti(c.x, c.y, 'egg:' + todayIso, 40, inkSun());
+      toast('Seven times — somebody knows their tables.');
+    }
+  });
+
+  /* ---------------- offline shell ---------------- */
+  if (navigator && 'serviceWorker' in navigator) {
+    try {
+      var reg = navigator.serviceWorker.register('sw.js');
+      if (reg && reg.catch) reg.catch(function () {});
+    } catch (e) {}
+  }
+})();
+</script>
+</body>
+</html>

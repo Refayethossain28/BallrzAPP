@@ -1,0 +1,131 @@
+#!/usr/bin/env node
+/**
+ * Generates the Maryam app icons as real PNGs — no image libraries, just
+ * Node's built-in zlib (same minimal PNG encoder approach as
+ * gen-magpie-icons.mjs). Rasterizes the same motif as maryam/icon.svg: a
+ * cream rounded square, a marigold sun disc ringed in deep marigold, eight
+ * hairline ink rays, and the four operators (+ × ÷ =) in the corners.
+ *
+ * Run: node scripts/gen-maryam-icons.mjs   (writes icon-180/192/512.png into maryam/)
+ */
+import zlib from 'node:zlib';
+import { writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
+const OUT = join(dirname(fileURLToPath(import.meta.url)), '..', 'maryam');
+
+/* ---- minimal PNG (RGBA, no palette) ---- */
+const crcTable = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; }
+  return t;
+})();
+function crc32(buf) { let c = 0xFFFFFFFF; for (let i = 0; i < buf.length; i++) c = crcTable[(c ^ buf[i]) & 0xff] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function chunk(type, data) {
+  const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+  const td = Buffer.concat([Buffer.from(type, 'latin1'), data]);
+  const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(td));
+  return Buffer.concat([len, td, crc]);
+}
+function encodePNG(N, rgba) {
+  const sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(N, 0); ihdr.writeUInt32BE(N, 4); ihdr[8] = 8; ihdr[9] = 6; // 8-bit RGBA
+  const stride = N * 4;
+  const raw = Buffer.alloc((stride + 1) * N);
+  for (let y = 0; y < N; y++) { raw[y * (stride + 1)] = 0; rgba.copy(raw, y * (stride + 1) + 1, y * stride, y * stride + stride); }
+  const idat = zlib.deflateSync(raw, { level: 9 });
+  return Buffer.concat([sig, chunk('IHDR', ihdr), chunk('IDAT', idat), chunk('IEND', Buffer.alloc(0))]);
+}
+
+/* ---- helpers ---- */
+const lerp = (a, b, t) => a + (b - a) * t;
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+// distance to a capsule (segment; radius handled by caller)
+function capsuleDist(px, py, ax, ay, bx, by) {
+  const abx = bx - ax, aby = by - ay;
+  const t = clamp(((px - ax) * abx + (py - ay) * aby) / (abx * abx + aby * aby), 0, 1);
+  const dx = px - (ax + abx * t), dy = py - (ay + aby * t);
+  return Math.hypot(dx, dy);
+}
+
+const PAPER = [0xFF, 0xFB, 0xF2];
+const INK = [0x22, 0x1D, 0x16];
+const SUN = [0xFF, 0xB7, 0x03];
+const SUN_DEEP = [0xE0, 0x8E, 0x00];
+
+// the eight rays: from r=128 to r=192 around the disc (design space 512)
+const RAYS = [];
+for (let i = 0; i < 8; i++) {
+  const a = (i / 8) * Math.PI * 2 - Math.PI / 2;
+  RAYS.push([256 + Math.cos(a) * 128, 256 + Math.sin(a) * 128,
+             256 + Math.cos(a) * 168, 256 + Math.sin(a) * 168]);
+}
+
+// the corner operators as segment strokes (design space 512)
+const OPS = [
+  // + at top-left
+  [[72, 92, 112, 92], [92, 72, 92, 112]],
+  // × at top-right
+  [[404, 76, 436, 108], [436, 76, 404, 108]],
+  // ÷ at bottom-left: bar plus two dots (dots as zero-length capsules)
+  [[72, 420, 112, 420], [92, 400, 92, 400.01], [92, 440, 92, 440.01]],
+  // = at bottom-right
+  [[404, 408, 436, 408], [404, 432, 436, 432]],
+];
+
+function render(N) {
+  const rgba = Buffer.alloc(N * N * 4);
+  const S = N / 512; // design space is 512
+  const corner = 116 * S;
+  const aa = 1.0; // anti-alias feather in px
+  const cx = N / 2, cy = N / 2;
+  const sunR = 104 * S, ringW = 8 * S, rayW = 7 * S, opW = 7 * S;
+
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      const i = (y * N + x) * 4;
+      // rounded-square mask
+      const qx = Math.abs(x - cx) - (N / 2 - corner);
+      const qy = Math.abs(y - cy) - (N / 2 - corner);
+      const rd = Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) - corner;
+      const mask = clamp(0.5 - rd / aa, 0, 1);
+      if (mask <= 0) { rgba[i + 3] = 0; continue; }
+
+      let [r, g, b] = PAPER;
+
+      // ink rays
+      for (const [ax, ay, bx, by] of RAYS) {
+        const d = capsuleDist(x, y, ax * S, ay * S, bx * S, by * S) - rayW;
+        const a = clamp(0.5 - d / aa, 0, 1);
+        if (a > 0) { r = lerp(r, INK[0], a); g = lerp(g, INK[1], a); b = lerp(b, INK[2], a); }
+      }
+
+      // corner operators
+      for (const strokes of OPS) {
+        for (const [ax, ay, bx, by] of strokes) {
+          const d = capsuleDist(x, y, ax * S, ay * S, bx * S, by * S) - opW;
+          const a = clamp(0.5 - d / aa, 0, 1);
+          if (a > 0) { r = lerp(r, INK[0], a); g = lerp(g, INK[1], a); b = lerp(b, INK[2], a); }
+        }
+      }
+
+      // the sun: deep-marigold ring, marigold fill
+      const dc = Math.hypot(x - cx, y - cy);
+      const aRing = clamp(0.5 - (dc - (sunR + ringW / 2)) / aa, 0, 1);
+      if (aRing > 0) { r = lerp(r, SUN_DEEP[0], aRing); g = lerp(g, SUN_DEEP[1], aRing); b = lerp(b, SUN_DEEP[2], aRing); }
+      const aSun = clamp(0.5 - (dc - (sunR - ringW / 2)) / aa, 0, 1);
+      if (aSun > 0) { r = lerp(r, SUN[0], aSun); g = lerp(g, SUN[1], aSun); b = lerp(b, SUN[2], aSun); }
+
+      rgba[i] = Math.round(r); rgba[i + 1] = Math.round(g); rgba[i + 2] = Math.round(b);
+      rgba[i + 3] = Math.round(mask * 255);
+    }
+  }
+  return encodePNG(N, rgba);
+}
+
+for (const n of [180, 192, 512]) {
+  writeFileSync(join(OUT, `icon-${n}.png`), render(n));
+  console.log(`maryam/icon-${n}.png`);
+}
