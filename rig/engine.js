@@ -410,9 +410,12 @@
     var merkleRoot = reverseHex(sha256dHex(
       'rig-work:' + coin.id + ':' + (height === null ? 'practice' : height) + ':' + String(minerTag || 'anon') + ':' + timeSec
     ));
-    var blockTarget = isReal
+    // Quantize the target through the compact encoding so a sealed block
+    // always satisfies the target its own header's bits field declares —
+    // Bitcoin's consensus rule is bitsToTarget(bits), not the raw value.
+    var blockTarget = bitsToTarget(targetToBits(isReal
       ? targetFromDifficulty(coin.networkDifficulty)
-      : targetFromExpectedHashes(chain.expectedHashes);
+      : targetFromExpectedHashes(chain.expectedHashes)));
     return {
       coinId: coin.id,
       height: height,

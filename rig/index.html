@@ -171,19 +171,21 @@
     <div class="kv"><span>practice shares (all time)</span><b id="bShares">0</b></div>
     <div class="kv"><span>share difficulty (vardiff)</span><b id="bShareDiff">–</b></div>
     <div class="kv"><span>BTC balance</span><b>0.00000000 — and it will stay 0. Read why below.</b></div>
+    <div class="kv hidden" id="bNetHitRow"><span>⚡ network-target hash</span><b id="bNetHit" style="word-break:break-all"></b></div>
   </section>
 
   <section class="card reality" id="realityCard">
     <h2>Reality check — read this</h2>
-    <div class="kv"><span>real network difficulty</span><b id="rDiff">–</b></div>
-    <div class="kv"><span>real network hashrate</span><b id="rNet">–</b></div>
+    <div class="kv"><span>network difficulty (approx. — update below)</span><b id="rDiff">–</b></div>
+    <div class="kv"><span>network hashrate (from that difficulty)</span><b id="rNet">–</b></div>
     <div class="kv"><span>your slice of the network</span><b id="rShare">–</b></div>
     <div class="kv"><span>expected wait for ONE block</span><b id="rWait">–</b></div>
     <div class="kv"><span>that is</span><b id="rAges">–</b></div>
     <p class="verdict" id="rVerdict"></p>
     <p class="note">Every hash this app computes is genuine Bitcoin-style proof-of-work — the same double-SHA-256 over the same 80-byte header layout. What no phone or browser can do is compete with warehouses of ASIC hardware. Apps that promise you real bitcoin from tapping a phone are either simulations or scams. Rig will never pretend: BTC mode earns practice shares, not money. To mine BTC for real you'd need ASIC hardware and a mining pool.</p>
+    <p class="note">The difficulty above is a shipped estimate, not live data — and it goes stale in the flattering direction (real difficulty keeps rising, so the true wait is even longer). Look up today's value and set it here to keep the maths exact.</p>
     <div class="netdiff-row">
-      <span>network difficulty</span>
+      <span>today's difficulty</span>
       <input id="netDiffInput" inputmode="decimal" title="Approximate value; look up today's real difficulty and paste it here">
       <button class="btn" id="netDiffSet" style="margin-top:0">set</button>
     </div>
@@ -234,9 +236,26 @@
       chains: chains,
       wallets: wallets,
       btcShares: 0,
+      btcNetHits: [], // hashes that met the REAL network target ({hash, t}) — keep forever
       netDiff: E.coinById('btc').networkDifficulty,
       blockLog: {} // coinId -> [{height, hash, reward, t}] newest first, capped
     };
+  }
+
+  // Saved state is untrusted (old schemas, hand edits, corruption): adopt a
+  // field only when its whole shape is valid, otherwise keep the fresh one —
+  // a bad chain would crash the mining loop mid-run.
+  var HEX64 = /^[0-9a-f]{64}$/;
+  function isNum(v) { return typeof v === 'number' && isFinite(v); }
+  function validChain(c) {
+    if (!c || typeof c !== 'object') return false;
+    if (!isNum(c.height) || c.height < 0) return false;
+    if (typeof c.tipHash !== 'string' || !HEX64.test(c.tipHash)) return false;
+    if (!isNum(c.expectedHashes) || c.expectedHashes <= 0) return false;
+    if (!isNum(c.minedTotal)) return false;
+    if (!Array.isArray(c.windowTimes)) return false;
+    for (var i = 0; i < c.windowTimes.length; i++) if (!isNum(c.windowTimes[i])) return false;
+    return true;
   }
 
   function loadState() {
@@ -248,13 +267,33 @@
         if (saved && typeof saved === 'object') {
           if (saved.coinId && E.coinById(saved.coinId)) s.coinId = saved.coinId;
           if (typeof saved.minerTag === 'string' && saved.minerTag) s.minerTag = saved.minerTag;
-          if (typeof saved.btcShares === 'number' && isFinite(saved.btcShares)) s.btcShares = saved.btcShares;
-          if (typeof saved.netDiff === 'number' && saved.netDiff > 0) s.netDiff = saved.netDiff;
+          if (isNum(saved.btcShares) && saved.btcShares >= 0) s.btcShares = saved.btcShares;
+          if (isNum(saved.netDiff) && saved.netDiff > 0) s.netDiff = saved.netDiff;
           for (var id in s.chains) {
-            if (saved.chains && saved.chains[id] && typeof saved.chains[id].height === 'number') s.chains[id] = saved.chains[id];
-            if (saved.wallets && typeof saved.wallets[id] === 'number' && isFinite(saved.wallets[id])) s.wallets[id] = saved.wallets[id];
+            if (saved.chains && validChain(saved.chains[id])) s.chains[id] = saved.chains[id];
+            if (saved.wallets && isNum(saved.wallets[id]) && saved.wallets[id] >= 0) s.wallets[id] = saved.wallets[id];
           }
-          if (saved.blockLog && typeof saved.blockLog === 'object') s.blockLog = saved.blockLog;
+          if (saved.blockLog && typeof saved.blockLog === 'object') {
+            for (var cid in saved.blockLog) {
+              var log = saved.blockLog[cid], clean = [];
+              if (!Array.isArray(log) || !E.coinById(cid)) continue;
+              for (var j = 0; j < log.length && clean.length < 12; j++) {
+                var b = log[j];
+                if (b && isNum(b.height) && isNum(b.reward) && typeof b.hash === 'string') {
+                  clean.push({ height: b.height, hash: b.hash, reward: b.reward, t: isNum(b.t) ? b.t : 0 });
+                }
+              }
+              s.blockLog[cid] = clean;
+            }
+          }
+          if (Array.isArray(saved.btcNetHits)) {
+            for (var k = 0; k < saved.btcNetHits.length; k++) {
+              var hit = saved.btcNetHits[k];
+              if (hit && typeof hit.hash === 'string' && HEX64.test(hit.hash)) {
+                s.btcNetHits.push({ hash: hit.hash, t: isNum(hit.t) ? hit.t : 0 });
+              }
+            }
+          }
         }
       }
     } catch (err) { /* fresh start beats a crash */ }
@@ -350,9 +389,10 @@
       S.btcShares += res.shares.length + res.blocks.length;
       if (res.blocks.length) {
         // Statistically this never happens. If it does, it is a genuine
-        // network-difficulty hash and the person deserves to know.
+        // network-difficulty hash — persist it forever; the render loop
+        // shows it from state so it can never be repainted away.
         session.blocks += res.blocks.length;
-        setText('rVerdict', '⚡ A hash met the REAL network target: ' + res.blocks[0].hash + ' — screenshot this; a real pool would have paid a block for it.');
+        for (var k = 0; k < res.blocks.length; k++) S.btcNetHits.push({ hash: res.blocks[k].hash, t: Date.now() });
       }
       if (res.shares.length || res.blocks.length) saveState();
     } else {
@@ -407,8 +447,10 @@
     setText('stBest', session.best ? String(E.leadingZeroes(session.best.hash)) : '–');
 
     var hl = $('hashline');
-    if (hl && session.last) {
-      hl.innerHTML = hashHTML('now', session.last.hash) + '<br>' + (session.best ? hashHTML('best', session.best.hash) : '');
+    if (hl) {
+      hl.innerHTML = session.last
+        ? hashHTML('now', session.last.hash) + '<br>' + (session.best ? hashHTML('best', session.best.hash) : '')
+        : '<span class="lbl">press start — every line here is a genuine SHA-256d of a real 80-byte block header</span>';
     }
     renderCoinPanels(now, hr);
   }
@@ -435,9 +477,18 @@
       setText('rNet', E.formatHashrate(r.networkHashrate));
       setText('rShare', r.yourShare > 0 ? '1 in ' + E.formatInt(1 / r.yourShare) : '–');
       setText('rWait', E.formatDuration(r.secondsToBlock));
-      setText('rAges', isFinite(r.universeAges) && r.universeAges >= 0.1
-        ? E.formatInt(r.universeAges) + '× the age of the universe' : '–');
-      setText('rVerdict', r.verdict);
+      var ages = r.universeAges;
+      setText('rAges', isFinite(ages) && ages >= 0.05
+        ? (ages >= 10 ? E.formatInt(ages) : Math.round(ages * 10) / 10) + '× the age of the universe' : '–');
+      var hits = S.btcNetHits || [];
+      var hitRow = $('bNetHitRow');
+      if (hitRow) { if (hits.length) hitRow.classList.remove('hidden'); else hitRow.classList.add('hidden'); }
+      if (hits.length) {
+        setText('bNetHit', hits[hits.length - 1].hash);
+        setText('rVerdict', '⚡ This rig once computed a hash that met the REAL network target — genuine network-difficulty proof-of-work, saved above. Had it been done on a real pool’s job it would have won a block; as practice work it pays nothing, but it is mathematically extraordinary.');
+      } else {
+        setText('rVerdict', r.verdict);
+      }
     } else {
       var chain = S.chains[coin.id];
       setText('walletTitle', coin.name + ' wallet');
@@ -445,10 +496,9 @@
       setText('balSym', coin.symbol);
       setText('cHeight', E.formatInt(chain.height));
       setText('cDiff', E.formatInt(chain.expectedHashes));
-      var nextH = chain.height + 1;
-      setText('cReward', E.formatAmount(E.rewardAt(coin, nextH), coin.decimals) + ' ' + coin.symbol);
-      var untilHalving = coin.halvingEvery - (nextH % coin.halvingEvery);
-      setText('cHalving', E.formatInt(untilHalving === coin.halvingEvery ? coin.halvingEvery : untilHalving) + ' blocks');
+      setText('cReward', E.formatAmount(E.rewardAt(coin, chain.height + 1), coin.decimals) + ' ' + coin.symbol);
+      // blocks until the first block whose reward is halved (height is the tip)
+      setText('cHalving', E.formatInt(coin.halvingEvery - (chain.height % coin.halvingEvery)) + ' blocks');
       setText('cEta', hr > 0 ? E.formatDuration(chain.expectedHashes / hr) : 'start the rig');
       renderBlockFeed(coin);
     }
@@ -470,16 +520,23 @@
 
   function renderAll(now) {
     renderLive(now);
-    var input = $('netDiffInput');
-    if (input) input.value = String(S.netDiff);
   }
 
   /* ---------------- reality: editable network difficulty ---------------- */
+  // The input is only ever rewritten at boot and after an explicit "set" —
+  // never by unrelated renders, so half-typed values survive STOP or a
+  // coin switch.
+  function syncNetDiffInput() {
+    var input = $('netDiffInput');
+    if (input) input.value = String(S.netDiff);
+  }
   var netSetEl = $('netDiffSet');
   if (netSetEl) netSetEl.addEventListener('click', function () {
     var input = $('netDiffInput');
     var v = input ? Number(input.value) : NaN;
-    if (isFinite(v) && v > 0) { S.netDiff = v; saveState(); renderAll(Date.now()); }
+    if (isFinite(v) && v > 0) { S.netDiff = v; saveState(); }
+    syncNetDiffInput();
+    renderAll(Date.now());
   });
 
   /* ---------------- genesis proof ---------------- */
@@ -506,6 +563,7 @@
 
   /* ---------------- boot ---------------- */
   renderCoinRow();
+  syncNetDiffInput();
   renderAll(Date.now());
 
   if (typeof navigator !== 'undefined' && navigator && 'serviceWorker' in navigator) {

@@ -219,7 +219,9 @@ test('buildJob: local job chains off the tip, is deterministic, target matches c
   assert.equal(a.header.prevHash, chain.tipHash);
   assert.equal(a.height, 1);
   const h = E.expectedHashesForTarget(a.blockTarget);
-  assert.ok(Math.abs(h - chain.expectedHashes) / chain.expectedHashes < 1e-6);
+  assert.ok(Math.abs(h - chain.expectedHashes) / chain.expectedHashes < 1e-4); // compact-bits quantization
+  deepEq(Array.from(a.blockTarget), Array.from(E.bitsToTarget(a.header.bits)),
+    'a sealed block must meet the target its own header bits declare');
   const c = E.buildJob(BLZ, chain, 'other', NOW);
   assert.notEqual(c.header.merkleRoot, a.header.merkleRoot, 'merkle commits to the miner tag');
 });
@@ -230,6 +232,8 @@ test('buildJob: btc practice job uses the real network difficulty and version bi
   assert.equal(j.header.version, 0x20000000);
   const d = E.difficultyFromTarget(j.blockTarget);
   assert.ok(Math.abs(d - btc.networkDifficulty) / btc.networkDifficulty < 1e-3, `got ${d}`);
+  deepEq(Array.from(j.blockTarget), Array.from(E.bitsToTarget(j.header.bits)),
+    'practice target is exactly what the header bits encode');
 });
 test('vardiff share sizing: tracks hashrate, clamped both ends, never harder than the block', () => {
   assert.equal(E.shareHashesFor(100000, 6), 600000);
