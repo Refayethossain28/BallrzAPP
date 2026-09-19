@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Rig — a real proof-of-work miner</title>
+<meta name="description" content="Mine for real: genuine double-SHA-256 proof-of-work. A Bitcoin practice mode with an honest reality check, and local coins whose blocks you can actually win.">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="theme-color" content="#0a0908">
+<style>
+  :root {
+    --bg: #0a0908; --panel: #151109; --panel2: #1d1710; --line: rgba(247,147,26,0.16);
+    --ink: #f2e8d8; --dim: #a99a80; --faint: #6f6350;
+    --amber: #f7931a; --amber-soft: rgba(247,147,26,0.12);
+    --green: #6fdd8b; --red: #ff6b4a; --gold: #ffd166;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    background: var(--bg); color: var(--ink); min-height: 100vh;
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: max(14px, env(safe-area-inset-top)) 14px calc(30px + env(safe-area-inset-bottom));
+  }
+  .wrap { max-width: 560px; margin: 0 auto; }
+
+  header { display: flex; align-items: center; gap: 10px; padding: 4px 2px 14px; }
+  .logo { font-size: 26px; }
+  header h1 { font-size: 21px; letter-spacing: 3px; font-weight: 800; }
+  header .tag { font-size: 12px; color: var(--dim); margin-top: 1px; }
+  .genesis-pill {
+    margin-left: auto; font-size: 11px; color: var(--dim); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 99px; padding: 5px 10px; cursor: pointer;
+  }
+  .genesis-pill.ok { color: var(--green); border-color: rgba(111,221,139,0.35); }
+
+  .coins { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+  .coins::-webkit-scrollbar { display: none; }
+  .coin-chip {
+    flex: 0 0 auto; display: flex; align-items: center; gap: 7px; cursor: pointer;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 9px 13px; color: var(--dim); font-size: 14px; font-weight: 600;
+  }
+  .coin-chip .g { font-size: 16px; }
+  .coin-chip.on { color: var(--ink); border-color: var(--amber); background: var(--amber-soft); }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+    padding: 16px; margin-top: 12px;
+  }
+  .card h2 { font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--faint); margin-bottom: 10px; }
+
+  /* --- the rig panel --- */
+  .rate-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  #rate { font: 700 44px/1 var(--mono); color: var(--amber); letter-spacing: -1px; }
+  #rateUnit { font: 600 18px var(--mono); color: var(--dim); }
+  .rate-sub { font-size: 12px; color: var(--faint); margin-top: 2px; }
+  #power {
+    width: 100%; margin-top: 14px; border: 0; border-radius: 14px; padding: 15px;
+    font: 700 17px/1 inherit; letter-spacing: 2px; cursor: pointer;
+    background: var(--amber); color: #1a1002;
+  }
+  #power.running { background: var(--panel2); color: var(--red); border: 1px solid rgba(255,107,74,0.4); }
+  #power:active { transform: scale(0.985); }
+
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 14px; }
+  .stat { background: var(--panel2); border-radius: 10px; padding: 8px 6px; text-align: center; }
+  .stat b { display: block; font: 700 16px var(--mono); }
+  .stat span { font-size: 10.5px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.5px; }
+
+  .hashline {
+    margin-top: 14px; background: #060504; border: 1px solid var(--line); border-radius: 10px;
+    padding: 10px 12px; font: 12px/1.7 var(--mono); word-break: break-all; min-height: 58px;
+  }
+  .hashline .lz { color: var(--gold); font-weight: 700; }
+  .hashline .rest { color: var(--faint); }
+  .hashline .lbl { color: var(--dim); font-family: inherit; }
+
+  /* --- wallet & chain --- */
+  .balance { font: 700 30px var(--mono); }
+  .balance small { font-size: 15px; color: var(--dim); }
+  .kv { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; font-size: 13.5px; border-top: 1px solid rgba(255,255,255,0.04); }
+  .kv:first-of-type { border-top: 0; }
+  .kv span { color: var(--dim); }
+  .kv b { font-family: var(--mono); font-weight: 600; text-align: right; }
+
+  .feed { margin-top: 8px; }
+  .feed-item { display: flex; gap: 9px; align-items: center; padding: 7px 0; border-top: 1px solid rgba(255,255,255,0.05); font-size: 13px; }
+  .feed-item .em { font-size: 16px; }
+  .feed-item .h { font: 11px var(--mono); color: var(--faint); word-break: break-all; }
+  .feed-item .r { margin-left: auto; font: 600 13px var(--mono); color: var(--gold); white-space: nowrap; }
+
+  /* --- reality check --- */
+  .reality { border-color: rgba(255,107,74,0.35); }
+  .reality h2 { color: var(--red); }
+  .reality p.verdict { font-size: 14px; color: var(--ink); margin-top: 10px; }
+  .reality .note { font-size: 12.5px; color: var(--dim); margin-top: 8px; }
+  .netdiff-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 13px; color: var(--dim); }
+  .netdiff-row input {
+    flex: 1; min-width: 0; background: var(--panel2); border: 1px solid var(--line); border-radius: 8px;
+    color: var(--ink); font: 13px var(--mono); padding: 7px 9px;
+  }
+
+  .proof { font-size: 13px; color: var(--dim); }
+  .proof .hashes { font: 11px var(--mono); word-break: break-all; margin-top: 8px; color: var(--faint); }
+  .proof .hashes b { color: var(--green); font-weight: 600; }
+  .btn {
+    display: inline-block; margin-top: 10px; background: var(--panel2); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 10px; padding: 9px 14px; font: 600 13px inherit; cursor: pointer;
+  }
+
+  .crosslink { display: block; text-decoration: none; color: inherit; }
+  .crosslink .card { display: flex; gap: 12px; align-items: center; }
+  .crosslink .em { font-size: 26px; }
+  .crosslink b { display: block; font-size: 14.5px; }
+  .crosslink span { font-size: 12.5px; color: var(--dim); }
+
+  footer { text-align: center; font-size: 11.5px; color: var(--faint); margin-top: 22px; line-height: 1.6; }
+  .hidden { display: none !important; }
+  @media (max-width: 380px) { #rate { font-size: 36px; } .stats { grid-template-columns: repeat(2, 1fr); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="logo">⛏️</div>
+    <div>
+      <h1>RIG</h1>
+      <div class="tag">a real proof-of-work miner</div>
+    </div>
+    <button class="genesis-pill" id="genesisPill" title="Recompute the Bitcoin genesis block hash from raw bytes, right here">verify genesis</button>
+  </header>
+
+  <div class="coins" id="coinRow"></div>
+
+  <!-- the rig -->
+  <section class="card">
+    <h2 id="rigTitle">Rig</h2>
+    <div class="rate-row"><span id="rate">0</span><span id="rateUnit">H/s</span></div>
+    <div class="rate-sub" id="rateSub">real double-SHA-256, measured over the last 10 seconds</div>
+    <button id="power">START MINING</button>
+    <div class="stats">
+      <div class="stat"><b id="stHashes">0</b><span>hashes</span></div>
+      <div class="stat"><b id="stShares">0</b><span>shares</span></div>
+      <div class="stat"><b id="stBlocks">0</b><span>blocks</span></div>
+      <div class="stat"><b id="stBest">–</b><span>best zeros</span></div>
+    </div>
+    <div class="hashline" id="hashline"><span class="lbl">press start — every line here is a genuine SHA-256d of a real 80-byte block header</span></div>
+  </section>
+
+  <!-- local coin: wallet + chain -->
+  <section class="card" id="walletCard">
+    <h2 id="walletTitle">Wallet</h2>
+    <div class="balance"><span id="balAmount">0</span> <small id="balSym"></small></div>
+    <div style="margin-top:10px">
+      <div class="kv"><span>chain height</span><b id="cHeight">0</b></div>
+      <div class="kv"><span>difficulty (hashes / block)</span><b id="cDiff">–</b></div>
+      <div class="kv"><span>block reward</span><b id="cReward">–</b></div>
+      <div class="kv"><span>next halving</span><b id="cHalving">–</b></div>
+      <div class="kv"><span>ETA per block at your rate</span><b id="cEta">–</b></div>
+    </div>
+    <div class="feed" id="blockFeed"></div>
+  </section>
+
+  <!-- btc practice + reality -->
+  <section class="card" id="btcCard">
+    <h2>Bitcoin practice pool</h2>
+    <div class="kv"><span>practice shares (all time)</span><b id="bShares">0</b></div>
+    <div class="kv"><span>share difficulty (vardiff)</span><b id="bShareDiff">–</b></div>
+    <div class="kv"><span>BTC balance</span><b>0.00000000 — and it will stay 0. Read why below.</b></div>
+    <div class="kv hidden" id="bNetHitRow"><span>⚡ network-target hash</span><b id="bNetHit" style="word-break:break-all"></b></div>
+  </section>
+
+  <section class="card reality" id="realityCard">
+    <h2>Reality check — read this</h2>
+    <div class="kv"><span>network difficulty (approx. — update below)</span><b id="rDiff">–</b></div>
+    <div class="kv"><span>network hashrate (from that difficulty)</span><b id="rNet">–</b></div>
+    <div class="kv"><span>your slice of the network</span><b id="rShare">–</b></div>
+    <div class="kv"><span>expected wait for ONE block</span><b id="rWait">–</b></div>
+    <div class="kv"><span>that is</span><b id="rAges">–</b></div>
+    <p class="verdict" id="rVerdict"></p>
+    <p class="note">Every hash this app computes is genuine Bitcoin-style proof-of-work — the same double-SHA-256 over the same 80-byte header layout. What no phone or browser can do is compete with warehouses of ASIC hardware. Apps that promise you real bitcoin from tapping a phone are either simulations or scams. Rig will never pretend: BTC mode earns practice shares, not money. To mine BTC for real you'd need ASIC hardware and a mining pool.</p>
+    <p class="note">The difficulty above is a shipped estimate, not live data — and it goes stale in the flattering direction (real difficulty keeps rising, so the true wait is even longer). Look up today's value and set it here to keep the maths exact.</p>
+    <div class="netdiff-row">
+      <span>today's difficulty</span>
+      <input id="netDiffInput" inputmode="decimal" title="Approximate value; look up today's real difficulty and paste it here">
+      <button class="btn" id="netDiffSet" style="margin-top:0">set</button>
+    </div>
+  </section>
+
+  <!-- genesis proof -->
+  <section class="card hidden" id="proofCard">
+    <h2>Proof this miner is real</h2>
+    <div class="proof">
+      This just re-serialized the actual Bitcoin genesis block header (3 January 2009) and double-SHA-256'd its 80 raw bytes, in your browser:
+      <div class="hashes" id="proofOut"></div>
+      <button class="btn" id="proofClose">close</button>
+    </div>
+  </section>
+
+  <a class="crosslink" href="../coin/mine.html">
+    <div class="card">
+      <div class="em">⏱️</div>
+      <div><b>Want mining that counts beyond this device?</b>
+      <span>TimeCoin is this repo's full cryptocurrency — UTXO ledger, signatures, a chain other people share. Mine it in its own app.</span></div>
+    </div>
+  </a>
+
+  <footer>
+    Rig mines real SHA-256d proof-of-work. Local coins (Ballrz, Nugget, Ember) live on this device — real blocks, real difficulty, no cash value.<br>
+    Bitcoin mode is practice: real hashes, honest odds, no pretend payouts.
+  </footer>
+</div>
+
+<script src="engine.js"></script>
+<script>
+(function () {
+  'use strict';
+  var E = RigEngine;
+
+  /* ---------------- state ---------------- */
+  var STORE_KEY = 'rig-v1';
+
+  function freshState() {
+    var chains = {}, wallets = {};
+    for (var i = 0; i < E.COINS.length; i++) {
+      var c = E.COINS[i];
+      if (c.kind === 'local') { chains[c.id] = E.newChain(c); wallets[c.id] = 0; }
+    }
+    return {
+      coinId: 'btc',
+      minerTag: 'rig-' + Math.floor(Math.random() * 1e9).toString(36),
+      chains: chains,
+      wallets: wallets,
+      btcShares: 0,
+      btcNetHits: [], // hashes that met the REAL network target ({hash, t}) — keep forever
+      netDiff: E.coinById('btc').networkDifficulty,
+      blockLog: {} // coinId -> [{height, hash, reward, t}] newest first, capped
+    };
+  }
+
+  // Saved state is untrusted (old schemas, hand edits, corruption): adopt a
+  // field only when its whole shape is valid, otherwise keep the fresh one —
+  // a bad chain would crash the mining loop mid-run.
+  var HEX64 = /^[0-9a-f]{64}$/;
+  function isNum(v) { return typeof v === 'number' && isFinite(v); }
+  function validChain(c) {
+    if (!c || typeof c !== 'object') return false;
+    if (!isNum(c.height) || c.height < 0) return false;
+    if (typeof c.tipHash !== 'string' || !HEX64.test(c.tipHash)) return false;
+    if (!isNum(c.expectedHashes) || c.expectedHashes <= 0) return false;
+    if (!isNum(c.minedTotal)) return false;
+    if (!Array.isArray(c.windowTimes)) return false;
+    for (var i = 0; i < c.windowTimes.length; i++) if (!isNum(c.windowTimes[i])) return false;
+    return true;
+  }
+
+  function loadState() {
+    var s = freshState();
+    try {
+      var raw = localStorage.getItem(STORE_KEY);
+      if (raw) {
+        var saved = JSON.parse(raw);
+        if (saved && typeof saved === 'object') {
+          if (saved.coinId && E.coinById(saved.coinId)) s.coinId = saved.coinId;
+          if (typeof saved.minerTag === 'string' && saved.minerTag) s.minerTag = saved.minerTag;
+          if (isNum(saved.btcShares) && saved.btcShares >= 0) s.btcShares = saved.btcShares;
+          if (isNum(saved.netDiff) && saved.netDiff > 0) s.netDiff = saved.netDiff;
+          for (var id in s.chains) {
+            if (saved.chains && validChain(saved.chains[id])) s.chains[id] = saved.chains[id];
+            if (saved.wallets && isNum(saved.wallets[id]) && saved.wallets[id] >= 0) s.wallets[id] = saved.wallets[id];
+          }
+          if (saved.blockLog && typeof saved.blockLog === 'object') {
+            for (var cid in saved.blockLog) {
+              var log = saved.blockLog[cid], clean = [];
+              if (!Array.isArray(log) || !E.coinById(cid)) continue;
+              for (var j = 0; j < log.length && clean.length < 12; j++) {
+                var b = log[j];
+                if (b && isNum(b.height) && isNum(b.reward) && typeof b.hash === 'string') {
+                  clean.push({ height: b.height, hash: b.hash, reward: b.reward, t: isNum(b.t) ? b.t : 0 });
+                }
+              }
+              s.blockLog[cid] = clean;
+            }
+          }
+          if (Array.isArray(saved.btcNetHits)) {
+            for (var k = 0; k < saved.btcNetHits.length; k++) {
+              var hit = saved.btcNetHits[k];
+              if (hit && typeof hit.hash === 'string' && HEX64.test(hit.hash)) {
+                s.btcNetHits.push({ hash: hit.hash, t: isNum(hit.t) ? hit.t : 0 });
+              }
+            }
+          }
+        }
+      }
+    } catch (err) { /* fresh start beats a crash */ }
+    return s;
+  }
+
+  function saveState() {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch (err) { /* storage may be unavailable */ }
+  }
+
+  var S = loadState();
+
+  // per-session (not persisted)
+  var running = false;
+  var nonce = Math.floor(Math.random() * 4294967296) >>> 0;
+  var job = null;
+  var samples = [];
+  var session = { hashes: 0, shares: 0, blocks: 0, best: null, last: null };
+  var batchSize = 2000;
+  var lastPaint = 0;
+  var jobBuiltAt = 0;
+
+  /* ---------------- dom helpers ---------------- */
+  function $(id) { return document.getElementById(id); }
+  function setText(id, s) { var el = $(id); if (el) el.textContent = s; }
+
+  /* ---------------- coin row ---------------- */
+  function renderCoinRow() {
+    var html = '';
+    for (var i = 0; i < E.COINS.length; i++) {
+      var c = E.COINS[i];
+      html += '<div class="coin-chip' + (c.id === S.coinId ? ' on' : '') + '" data-coin="' + c.id + '">' +
+        '<span class="g" style="color:' + c.color + '">' + c.glyph + '</span>' + E.escapeHTML(c.symbol) + '</div>';
+    }
+    var row = $('coinRow');
+    if (row) row.innerHTML = html;
+  }
+
+  function pickCoin(id) {
+    if (!E.coinById(id) || id === S.coinId) return;
+    S.coinId = id;
+    job = null;
+    session = { hashes: 0, shares: 0, blocks: 0, best: null, last: null };
+    samples = [];
+    saveState();
+    renderCoinRow();
+    renderAll(Date.now());
+  }
+
+  var coinRowEl = $('coinRow');
+  if (coinRowEl) coinRowEl.addEventListener('click', function (ev) {
+    var t = ev.target;
+    while (t && t !== coinRowEl && !(t.getAttribute && t.getAttribute('data-coin'))) t = t.parentNode;
+    if (t && t.getAttribute && t.getAttribute('data-coin')) pickCoin(t.getAttribute('data-coin'));
+  });
+
+  /* ---------------- mining loop ---------------- */
+  function currentCoin() { return E.coinById(S.coinId); }
+
+  function refreshJob(now) {
+    var coin = currentCoin();
+    job = E.buildJob(coin, coin.kind === 'local' ? S.chains[coin.id] : null, S.minerTag, now);
+    jobBuiltAt = now;
+  }
+
+  function shareTarget(now) {
+    var hr = E.hashrateOf(samples, now);
+    return E.shareTargetFor(hr, 6, job.blockTarget);
+  }
+
+  function pump() {
+    if (!running) return;
+    var now = Date.now();
+    var coin = currentCoin();
+    if (!job || now - jobBuiltAt > 30000) refreshJob(now);
+
+    var t0 = now;
+    var res = E.mineRange(job.header, nonce, batchSize, { share: shareTarget(now), block: job.blockTarget });
+    nonce = (nonce + res.tried) >>> 0;
+    var elapsed = Math.max(1, Date.now() - t0);
+
+    // adapt the batch to ~60 ms so the UI stays alive
+    batchSize = Math.max(500, Math.min(100000, Math.round(batchSize * 60 / elapsed)));
+
+    session.hashes += res.tried;
+    samples.push({ t: Date.now(), n: res.tried });
+    samples = E.pruneSamples(samples, Date.now());
+    session.last = res.last;
+    if (res.best && (!session.best || E.compareHashes(res.best.hash, session.best.hash) < 0)) session.best = res.best;
+
+    if (coin.kind === 'real') {
+      session.shares += res.shares.length + res.blocks.length;
+      S.btcShares += res.shares.length + res.blocks.length;
+      if (res.blocks.length) {
+        // Statistically this never happens. If it does, it is a genuine
+        // network-difficulty hash — persist it forever; the render loop
+        // shows it from state so it can never be repainted away.
+        session.blocks += res.blocks.length;
+        for (var k = 0; k < res.blocks.length; k++) S.btcNetHits.push({ hash: res.blocks[k].hash, t: Date.now() });
+      }
+      if (res.shares.length || res.blocks.length) saveState();
+    } else {
+      session.shares += res.shares.length;
+      if (res.blocks.length) {
+        // Seal only the first win: the rest of the batch was hashed against
+        // the old tip, so — exactly like real mining — it is stale work the
+        // moment a block lands. The next batch mines the new tip.
+        var sealed = E.sealBlock(coin, S.chains[coin.id], res.blocks[0], Math.floor(Date.now() / 1000));
+        S.chains[coin.id] = sealed.chain;
+        S.wallets[coin.id] = Math.round((S.wallets[coin.id] + sealed.reward) * 1e8) / 1e8;
+        session.blocks++;
+        logBlock(coin, sealed.chain.height, res.blocks[0].hash, sealed.reward);
+        refreshJob(Date.now()); // chain moved — mine on the new tip
+        saveState();
+      }
+    }
+
+    if (Date.now() - lastPaint > 200) { renderLive(Date.now()); lastPaint = Date.now(); }
+    setTimeout(pump, 0);
+  }
+
+  function logBlock(coin, height, hash, reward) {
+    var log = S.blockLog[coin.id] || (S.blockLog[coin.id] = []);
+    log.unshift({ height: height, hash: hash, reward: reward, t: Date.now() });
+    if (log.length > 12) log.length = 12;
+  }
+
+  function setRunning(on) {
+    running = on;
+    var b = $('power');
+    if (b) {
+      b.textContent = on ? 'STOP' : 'START MINING';
+      if (on) b.classList.add('running'); else b.classList.remove('running');
+    }
+    if (on) { refreshJob(Date.now()); lastPaint = 0; pump(); }
+    else renderAll(Date.now());
+  }
+
+  var powerEl = $('power');
+  if (powerEl) powerEl.addEventListener('click', function () { setRunning(!running); });
+
+  /* ---------------- rendering ---------------- */
+  function renderLive(now) {
+    var hr = E.hashrateOf(samples, now);
+    var parts = E.formatHashrate(hr).split(' ');
+    setText('rate', parts[0]);
+    setText('rateUnit', parts[1] || 'H/s');
+    setText('stHashes', E.formatInt(session.hashes));
+    setText('stShares', E.formatInt(session.shares));
+    setText('stBlocks', E.formatInt(session.blocks));
+    setText('stBest', session.best ? String(E.leadingZeroes(session.best.hash)) : '–');
+
+    var hl = $('hashline');
+    if (hl) {
+      hl.innerHTML = session.last
+        ? hashHTML('now', session.last.hash) + '<br>' + (session.best ? hashHTML('best', session.best.hash) : '')
+        : '<span class="lbl">press start — every line here is a genuine SHA-256d of a real 80-byte block header</span>';
+    }
+    renderCoinPanels(now, hr);
+  }
+
+  function hashHTML(label, hash) {
+    var lz = E.leadingZeroes(hash);
+    return '<span class="lbl">' + label + ' </span><span class="lz">' + hash.slice(0, lz) + '</span><span class="rest">' + hash.slice(lz) + '</span>';
+  }
+
+  function renderCoinPanels(now, hr) {
+    var coin = currentCoin();
+    var isBtc = coin.kind === 'real';
+    var wc = $('walletCard'), bc = $('btcCard'), rc = $('realityCard');
+    if (wc) { if (isBtc) wc.classList.add('hidden'); else wc.classList.remove('hidden'); }
+    if (bc) { if (isBtc) bc.classList.remove('hidden'); else bc.classList.add('hidden'); }
+    if (rc) { if (isBtc) rc.classList.remove('hidden'); else rc.classList.add('hidden'); }
+    setText('rigTitle', coin.name + ' · ' + coin.algo + (isBtc ? ' · practice' : ' · local chain'));
+
+    if (isBtc) {
+      setText('bShares', E.formatInt(S.btcShares));
+      setText('bShareDiff', E.formatInt(E.shareHashesFor(hr, 6)) + ' hashes/share');
+      var r = E.btcReality(hr, S.netDiff);
+      setText('rDiff', E.formatDifficulty(r.networkDifficulty));
+      setText('rNet', E.formatHashrate(r.networkHashrate));
+      setText('rShare', r.yourShare > 0 ? '1 in ' + E.formatInt(1 / r.yourShare) : '–');
+      setText('rWait', E.formatDuration(r.secondsToBlock));
+      var ages = r.universeAges;
+      setText('rAges', isFinite(ages) && ages >= 0.05
+        ? (ages >= 10 ? E.formatInt(ages) : Math.round(ages * 10) / 10) + '× the age of the universe' : '–');
+      var hits = S.btcNetHits || [];
+      var hitRow = $('bNetHitRow');
+      if (hitRow) { if (hits.length) hitRow.classList.remove('hidden'); else hitRow.classList.add('hidden'); }
+      if (hits.length) {
+        setText('bNetHit', hits[hits.length - 1].hash);
+        setText('rVerdict', '⚡ This rig once computed a hash that met the REAL network target — genuine network-difficulty proof-of-work, saved above. Had it been done on a real pool’s job it would have won a block; as practice work it pays nothing, but it is mathematically extraordinary.');
+      } else {
+        setText('rVerdict', r.verdict);
+      }
+    } else {
+      var chain = S.chains[coin.id];
+      setText('walletTitle', coin.name + ' wallet');
+      setText('balAmount', E.formatAmount(S.wallets[coin.id], coin.decimals));
+      setText('balSym', coin.symbol);
+      setText('cHeight', E.formatInt(chain.height));
+      setText('cDiff', E.formatInt(chain.expectedHashes));
+      setText('cReward', E.formatAmount(E.rewardAt(coin, chain.height + 1), coin.decimals) + ' ' + coin.symbol);
+      // blocks until the first block whose reward is halved (height is the tip)
+      setText('cHalving', E.formatInt(coin.halvingEvery - (chain.height % coin.halvingEvery)) + ' blocks');
+      setText('cEta', hr > 0 ? E.formatDuration(chain.expectedHashes / hr) : 'start the rig');
+      renderBlockFeed(coin);
+    }
+  }
+
+  function renderBlockFeed(coin) {
+    var el = $('blockFeed');
+    if (!el) return;
+    var log = S.blockLog[coin.id] || [];
+    var html = '';
+    for (var i = 0; i < log.length; i++) {
+      var b = log[i];
+      html += '<div class="feed-item"><span class="em">🧱</span>' +
+        '<div><div>#' + E.formatInt(b.height) + '</div><div class="h">' + E.escapeHTML(String(b.hash).slice(0, 24)) + '…</div></div>' +
+        '<span class="r">+' + E.formatAmount(b.reward, coin.decimals) + '</span></div>';
+    }
+    el.innerHTML = html || '<div class="feed-item"><span class="em">🧱</span><span style="color:var(--faint)">no blocks yet — they land here when a hash beats the target</span></div>';
+  }
+
+  function renderAll(now) {
+    renderLive(now);
+  }
+
+  /* ---------------- reality: editable network difficulty ---------------- */
+  // The input is only ever rewritten at boot and after an explicit "set" —
+  // never by unrelated renders, so half-typed values survive STOP or a
+  // coin switch.
+  function syncNetDiffInput() {
+    var input = $('netDiffInput');
+    if (input) input.value = String(S.netDiff);
+  }
+  var netSetEl = $('netDiffSet');
+  if (netSetEl) netSetEl.addEventListener('click', function () {
+    var input = $('netDiffInput');
+    var v = input ? Number(input.value) : NaN;
+    if (isFinite(v) && v > 0) { S.netDiff = v; saveState(); }
+    syncNetDiffInput();
+    renderAll(Date.now());
+  });
+
+  /* ---------------- genesis proof ---------------- */
+  function showProof() {
+    var v = E.verifyGenesis();
+    var out = $('proofOut');
+    if (out) {
+      out.innerHTML = 'computed &nbsp;<b>' + v.computed + '</b><br>known&nbsp;&nbsp;&nbsp;&nbsp;<b>' + v.expected + '</b><br>' +
+        (v.ok ? '✅ identical — the SHA-256, the header layout and the byte order in this app are the real thing.'
+              : '❌ mismatch — this build is broken, do not trust it.');
+    }
+    var pill = $('genesisPill');
+    if (pill && v.ok) { pill.classList.add('ok'); pill.textContent = 'genesis ✓'; }
+    var card = $('proofCard');
+    if (card) card.classList.remove('hidden');
+  }
+  var pillEl = $('genesisPill');
+  if (pillEl) pillEl.addEventListener('click', showProof);
+  var proofCloseEl = $('proofClose');
+  if (proofCloseEl) proofCloseEl.addEventListener('click', function () {
+    var card = $('proofCard');
+    if (card) card.classList.add('hidden');
+  });
+
+  /* ---------------- boot ---------------- */
+  renderCoinRow();
+  syncNetDiffInput();
+  renderAll(Date.now());
+
+  if (typeof navigator !== 'undefined' && navigator && 'serviceWorker' in navigator) {
+    try { navigator.serviceWorker.register('sw.js'); } catch (err) { /* offline shell is a bonus, not a need */ }
+  }
+})();
+</script>
+</body>
+</html>
