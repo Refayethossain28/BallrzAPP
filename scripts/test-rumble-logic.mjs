@@ -66,9 +66,10 @@ test('roster: eight original fighters, unique ids and names, full data', () => {
   assert.equal(ids.size, 8); assert.equal(names.size, 8);
   assert.ok(ids.has('onyx'), 'the champion exists');
 });
-test('special names are original (no borrowed move names)', () => {
+test('fighter and move names are original (no borrowed identities)', () => {
   const all = E.ROSTER.flatMap((c) => [c.name, c.specials.a.name, c.specials.b.name, c.specials.c.name]).join(' ').toLowerCase();
-  for (const banned of ['hadoken', 'shoryuken', 'tatsumaki', 'sonic boom', 'ryu', 'ken ', 'chun', 'guile', 'blanka', 'zangief', 'dhalsim', 'honda', 'bison', 'sagat']) {
+  for (const banned of ['hadoken', 'shoryuken', 'tatsumaki', 'sonic boom', 'ryu', 'ken ', 'chun', 'guile', 'blanka', 'zangief', 'dhalsim', 'honda', 'bison', 'sagat',
+                        'tundra', 'sub-zero', 'subzero', 'scorpion', 'raiden', 'kano', 'kitana']) {
     assert.ok(!all.includes(banned), `no "${banned}" anywhere in the roster`);
   }
 });
@@ -353,6 +354,132 @@ test('meter caps at 100', () => {
   m.f[0].x = 450; m.f[1].x = 500;
   run(m, 16, { hp: true });
   assert.equal(m.f[0].meter, E.METER_MAX);
+});
+
+/* ---------- fixes from the adversarial review ---------- */
+test('a well-timed jump clears a projectile', () => {
+  // The genre's core counterplay: shots must be jumpable.
+  let cleared = false;
+  for (let delay = 0; delay <= 30 && !cleared; delay++) {
+    const m = startFight(match());
+    m.f[0].x = 300; m.f[1].x = 700;
+    m.shots.push({ x: 480, y: 86, vx: -6, owner: 1, dmg: 12, power: 1, name: 'x' });
+    run(m, delay);
+    if (m.f[0].hp < E.MAX_HP) continue;
+    E.step(m, { u: true }, {});
+    run(m, 90);
+    if (m.f[0].hp === E.MAX_HP) cleared = true;
+  }
+  assert.ok(cleared, 'some jump timing clears the shot untouched');
+});
+test('simultaneous hits trade: both fighters take damage', () => {
+  const m = startFight(match({ p2: 'volt' })); // mirror match for symmetry
+  m.f[0].x = 450; m.f[1].x = 510;
+  run(m, 8, { lp: true }, { lp: true });
+  assert.ok(m.f[0].hp < E.MAX_HP, 'player 1 is hit in the trade');
+  assert.ok(m.f[1].hp < E.MAX_HP, 'player 2 is hit in the trade');
+  assert.equal(m.f[0].hp, m.f[1].hp, 'a mirror trade is even');
+});
+test('a light-punch quarter-circle never spends the surge meter', () => {
+  const m = startFight(match());
+  m.f[0].meter = E.METER_MAX;
+  runSeq(m, QCF_LP);
+  run(m, 12);
+  assert.equal(m.f[0].meter, E.METER_MAX, 'meter untouched');
+  assert.equal(m.shots.length, 1);
+  assert.equal(m.shots[0].power, 1, 'ordinary shot');
+});
+test('a long crouch rolled into quarter-circle-forward still fires the shot', () => {
+  const m = startFight(match());
+  run(m, 60, { d: true }); // blocking low for a full second first
+  const evs = runSeq(m, [{ d: true, r: true }, { r: true }, { r: true, lp: true }]);
+  assert.ok(evs.some((e) => e.type === 'special' && e.name === 'Arc Bolt'), 'held-direction motion reads');
+});
+test('walking forward into a quarter-circle fires the signature, not the rising strike', () => {
+  const m = startFight(match());
+  run(m, 10, { r: true }); // stroll toward the opponent first
+  const evs = runSeq(m, QCF_LP);
+  assert.ok(evs.some((e) => e.type === 'special' && e.name === 'Arc Bolt'));
+  assert.ok(!evs.some((e) => e.type === 'special' && e.name === 'Coil Rise'));
+});
+test('the rising strike has real startup: it never hits on its input tick', () => {
+  const m = startFight(match());
+  m.f[0].x = 480; m.f[1].x = 540;
+  const evs = runSeq(m, DP_LP);
+  evs.push(...run(m, 12));
+  const sp = evs.find((e) => e.type === 'special' && e.name === 'Coil Rise');
+  const hit = evs.find((e) => e.type === 'hit');
+  assert.ok(sp && hit, 'special started and connected');
+  assert.ok(hit.tick > sp.tick + E.SPECIAL.b.startup, 'the hit lands only after startup');
+});
+test('a clash removes both shots on the very tick it happens', () => {
+  const m = startFight(match({ p2: 'ember' }));
+  m.shots.push({ x: 402, y: 86, vx: 6, owner: 0, dmg: 12, power: 1, name: 'a' });
+  m.shots.push({ x: 450, y: 86, vx: -6.5, owner: 1, dmg: 11, power: 1, name: 'b' });
+  let clashed = false;
+  for (let i = 0; i < 30 && !clashed; i++) {
+    E.step(m, NONE, NONE);
+    if (m.events.some((e) => e.type === 'clash')) clashed = true;
+  }
+  assert.ok(clashed, 'the shots clash');
+  assert.equal(m.shots.length, 0, 'no ghost projectile survives the clash tick');
+});
+test('Lance Dart connects: full damage and hitstun', () => {
+  const m = startFight(match({ p1: 'sable' }));
+  m.f[0].x = 400; m.f[1].x = 560;
+  runSeq(m, QCF_LP);
+  run(m, 20);
+  assert.equal(m.f[1].hp, E.MAX_HP - 15);
+});
+test('Girder Grip knocks down; a blocked lunge chips quarter damage', () => {
+  const m = startFight(match({ p1: 'brick' }));
+  m.f[0].x = 400; m.f[1].x = 540;
+  runSeq(m, QCF_LP);
+  run(m, 20);
+  assert.equal(m.f[1].phase, 'knockdown');
+  assert.equal(m.f[1].hp, E.MAX_HP - 20);
+  const m2 = startFight(match({ p1: 'sable' }));
+  m2.f[0].x = 400; m2.f[1].x = 560;
+  runSeq(m2, QCF_LP, { r: true });
+  run(m2, 20, NONE, { r: true });
+  assert.equal(m2.f[1].hp, E.MAX_HP - Math.ceil(15 / 4), 'blocked Lance Dart chips');
+});
+test('a surge lunge spends the meter, hits harder and knocks down', () => {
+  const m = startFight(match({ p1: 'sable' }));
+  m.f[0].meter = E.METER_MAX;
+  m.f[0].x = 400; m.f[1].x = 560;
+  runSeq(m, QCF_HP);
+  assert.equal(m.f[0].meter, 0, 'meter spent');
+  run(m, 20);
+  assert.equal(m.f[1].hp, E.MAX_HP - Math.round(15 * 1.5), 'surge damage');
+  assert.equal(m.f[1].phase, 'knockdown', 'surge lunges always knock down');
+});
+test('in the corner the wall-pinned fighter shoves the other back', () => {
+  const m = startFight(match());
+  m.f[0].x = E.WALL_R - 30; m.f[1].x = E.WALL_R - 1;
+  run(m, 2);
+  assert.ok(m.f[1].x - m.f[0].x >= E.BODY_W - 0.01, 'body width restored');
+  assert.ok(m.f[1].x <= E.WALL_R, 'nobody leaves the arena');
+});
+test('the surge meter carries across rounds', () => {
+  const m = startFight(match());
+  m.f[0].meter = 55; m.f[1].meter = 40;
+  m.f[0].x = 450; m.f[1].x = 500; m.f[1].hp = 3;
+  run(m, 8, { lp: true }); // KO jab: attacker +5, victim +ceil(5/2)
+  run(m, 300);             // through the round-over pause into round 2
+  assert.equal(m.round, 2);
+  assert.equal(m.f[0].meter, 60);
+  assert.equal(m.f[1].meter, 43);
+});
+test('a blocker recovers to an actionable state', () => {
+  const m = startFight(match());
+  m.f[0].x = 450; m.f[1].x = 500;
+  run(m, 8, { lp: true }, { r: true }); // blocked jab
+  run(m, 20);                            // neutral: blockstun expires
+  assert.ok(m.f[1].phase === 'idle' || m.f[1].phase === 'walk', `actionable again (${m.f[1].phase})`);
+  const x0 = m.f[1].x;
+  run(m, 10, NONE, { l: true });
+  assert.ok(m.f[1].x < x0, 'and walking works again');
 });
 
 /* ---------- rounds, KO, the clock ---------- */

@@ -55,6 +55,7 @@
   var ROUND_SECONDS = 99;
   var ROUNDS_TO_WIN = 2;
   var METER_MAX = 100, SURGE_COST = 100;
+  var SHOT_Y = 86, SHOT_HW = 20, SHOT_HH = 12;  // low enough that a timed jump clears it
   var INTRO_T = 110, KO_T = 80, ROUNDOVER_T = 130;
   var MOTION_WINDOW = 26;          // whole motion inside this many ticks
   var MOTION_LINK = 12;            // button within this many ticks of last direction
@@ -68,7 +69,8 @@
    *   b = forward, down, down-forward + punch (rising anti-air strike)
    *   c = quarter-circle-back + kick (a sweeping dash, knocks down)
    * With a full surge meter, a + heavy punch spends it on the surge
-   * version: heavier, faster, and it beats normal projectiles.
+   * version: shots get heavier, faster and beat normal projectiles;
+   * lunges close further, hit harder and always knock down.
    */
   var ROSTER = [
     { id: 'volt', name: 'Volt', home: 'Neon Depot', tag: 'The live-wire line engineer.',
@@ -99,7 +101,7 @@
                   b: { name: 'Sirocco Rise', dmg: 12 },
                   c: { name: 'Phantom Flip', dmg: 12 } },
       quote: 'You fought the heat haze. It won.' },
-    { id: 'tundra', name: 'Tundra', home: 'Frost Quay', tag: 'Harbour wrestler of the frozen north.',
+    { id: 'boreal', name: 'Boreal', home: 'Frost Quay', tag: 'Harbour wrestler of the frozen north.',
       spd: 2.8, pow: 1.2, reach: 1.0, look: 'scarf',
       colors: { gear: '#7fc4e8', trim: '#f2f6fa', skin: '#e8c9a8', hair: '#e3ba6f' },
       specials: { a: { kind: 'shot', name: 'Floe Shard', dmg: 13, vel: 5 },
@@ -207,7 +209,12 @@
     return map[d] || d;
   }
 
-  function detectMotion(buf, pattern, nowTick, facing) {
+  // Returns the tick of the motion's final direction, or -1 when the
+  // buffer doesn't contain the motion. When two motions both match (a
+  // walk-forward quarter-circle also spells out the rising pattern), the
+  // caller compares these ticks: the motion completed LATER is the one
+  // the player actually performed.
+  function motionLastT(buf, pattern, nowTick, facing) {
     var want = [];
     for (var i = 0; i < pattern.length; i++) {
       want.push(facing > 0 ? pattern[i] : mirrorDir(pattern[i]));
@@ -222,7 +229,12 @@
         p++;
       }
     }
-    return p === want.length && nowTick - lastT <= MOTION_LINK && lastT - firstT <= MOTION_WINDOW;
+    if (p === want.length && nowTick - lastT <= MOTION_LINK && lastT - firstT <= MOTION_WINDOW) return lastT;
+    return -1;
+  }
+
+  function detectMotion(buf, pattern, nowTick, facing) {
+    return motionLastT(buf, pattern, nowTick, facing) >= 0;
   }
 
   /* ---------------- match construction ---------------- */
@@ -357,12 +369,16 @@
     var ch = charById(f.id);
     var fighting = m.phase === 'fight';
 
-    // --- input buffer for motions (world-space numpad dirs, edges only)
+    // --- input buffer for motions (world-space numpad dirs, edges only).
+    // The still-held direction stays fresh: a long crouch (blocking low)
+    // rolled into down-forward, forward must still read as the motion.
     var d = dirFrom(inp);
     if (d !== f.lastDir) {
       f.buf.push({ t: m.tick, d: d });
       if (f.buf.length > BUF_MAX) f.buf.shift();
       f.lastDir = d;
+    } else if (f.buf.length) {
+      f.buf[f.buf.length - 1].t = m.tick;
     }
 
     var press = {
@@ -423,15 +439,16 @@
         if (sp.kind === 'shot') {
           if (f.t === SPECIAL.a.startup && fighting) {
             var vel = (f.surge ? sp.vel + 2 : sp.vel) * f.facing;
-            m.shots.push({ x: f.x + f.facing * 46, y: 108, vx: vel, owner: i,
+            m.shots.push({ x: f.x + f.facing * 46, y: SHOT_Y, vx: vel, owner: i,
                            dmg: f.surge ? Math.round(sp.dmg * 1.8) : sp.dmg,
                            power: f.surge ? 2 : 1, name: sp.name });
             emit(m, 'shot', { p: i, name: sp.name, surge: f.surge });
           }
           if (f.t >= SPECIAL.a.startup + SPECIAL.a.recover) { f.phase = 'idle'; f.t = 0; f.move = null; }
-        } else { // lunge
+        } else { // lunge — a surge lunge closes further
           var L = SPECIAL.lunge;
-          if (f.t > L.startup && f.t <= L.startup + L.travel) f.x += (sp.dist / L.travel) * f.facing;
+          var dist = f.surge ? sp.dist + 50 : sp.dist;
+          if (f.t > L.startup && f.t <= L.startup + L.travel) f.x += (dist / L.travel) * f.facing;
           f.x = Math.max(WALL_L, Math.min(WALL_R, f.x));
           if (f.t >= L.startup + L.travel + L.recover) { f.phase = 'idle'; f.t = 0; f.move = null; }
         }
@@ -459,10 +476,14 @@
 
     if (!fighting) { f.phase = 'idle'; return; }
 
-    // specials first (they eat the button press)
+    // specials first (they eat the button press). Both patterns can match
+    // at once — walking forward before a quarter-circle also spells the
+    // rising motion — so the motion that COMPLETED later wins.
     if (press.lp || press.hp) {
-      if (detectMotion(f.buf, MOTIONS.dp, m.tick, f.facing)) { startSpecial(m, i, 'b'); return; }
-      if (detectMotion(f.buf, MOTIONS.qcf, m.tick, f.facing)) {
+      var dpT = motionLastT(f.buf, MOTIONS.dp, m.tick, f.facing);
+      var qcfT = motionLastT(f.buf, MOTIONS.qcf, m.tick, f.facing);
+      if (dpT >= 0 && dpT > qcfT) { startSpecial(m, i, 'b'); return; }
+      if (qcfT >= 0) {
         startSpecial(m, i, 'a', press.hp && f.meter >= SURGE_COST);
         return;
       }
@@ -525,10 +546,11 @@
         var L = SPECIAL.lunge;
         if (f.t > L.startup && f.t <= L.startup + L.travel) {
           return { box: hitBoxFor(f, { x0: 14, x1: 88, y0: 60, y1: 150 }, ch.reach),
-                   dmg: sp.dmg, stun: 24, push: 22, kd: !!sp.kd, hits: 'mid', chips: true };
+                   dmg: f.surge ? Math.round(sp.dmg * 1.5) : sp.dmg,
+                   stun: 24, push: 22, kd: !!sp.kd || f.surge, hits: 'mid', chips: true };
         }
       }
-      if (f.move === 'b' && f.vy > 2) {
+      if (f.move === 'b' && f.t > SPECIAL.b.startup && f.vy > 2) {
         return { box: hitBoxFor(f, { x0: -6, x1: 66, y0: 60, y1: 200 }, 1),
                  dmg: sp.dmg, stun: 22, push: 14, kd: true, hits: 'mid', chips: true };
       }
@@ -545,15 +567,20 @@
 
   function resolveCombat(m, in1, in2) {
     var inputs = [in1, in2];
+    // Gather both melee hits against the PRE-hit state, then apply both —
+    // otherwise whichever player is processed first wins every trade.
+    var pend = [null, null];
     for (var i = 0; i < 2; i++) {
       var f = m.f[i], o = m.f[1 - i], ch = charById(f.id);
       if (f.phase === 'air-attack') f.atkT = (f.atkT || 0) + 1;
       if (o.phase === 'knockdown' || o.phase === 'getup' || o.phase === 'ko') continue;
       var hit = activeHit(f, ch);
-      if (!hit) continue;
-      if (rectsOverlap(hit.box, hurtBox(o))) {
-        f.hitDone = true;
-        applyHit(m, i, 1 - i, hit, inputs[1 - i]);
+      if (hit && rectsOverlap(hit.box, hurtBox(o))) pend[i] = hit;
+    }
+    for (var p = 0; p < 2; p++) {
+      if (pend[p]) {
+        m.f[p].hitDone = true;
+        applyHit(m, p, 1 - p, pend[p], inputs[1 - p]);
       }
     }
 
@@ -562,14 +589,14 @@
     for (var s = 0; s < m.shots.length; s++) {
       var sh = m.shots[s];
       sh.x += sh.vx;
-      var box = { x0: sh.x - 20, x1: sh.x + 20, y0: sh.y - 16, y1: sh.y + 16 };
+      var box = { x0: sh.x - SHOT_HW, x1: sh.x + SHOT_HW, y0: sh.y - SHOT_HH, y1: sh.y + SHOT_HH };
       var target = m.f[1 - sh.owner];
       var dead = false;
       // clash with opposing shots
       for (var s2 = 0; s2 < m.shots.length; s2++) {
         var other = m.shots[s2];
         if (other === sh || other.owner === sh.owner || other.dead) continue;
-        var obox = { x0: other.x - 20, x1: other.x + 20, y0: other.y - 16, y1: other.y + 16 };
+        var obox = { x0: other.x - SHOT_HW, x1: other.x + SHOT_HW, y0: other.y - SHOT_HH, y1: other.y + SHOT_HH };
         if (rectsOverlap(box, obox)) {
           var min = Math.min(sh.power, other.power);
           sh.power -= min; other.power -= min;
@@ -588,7 +615,10 @@
       }
       if (!dead && !sh.dead && sh.x > -60 && sh.x < STAGE_W + 60) alive.push(sh);
     }
-    m.shots = alive;
+    // a later-indexed shot's clash can kill an earlier one already kept
+    var kept = [];
+    for (var k = 0; k < alive.length; k++) if (!alive[k].dead) kept.push(alive[k]);
+    m.shots = kept;
   }
 
   /* ---------------- body push (fighters can't stand inside each other) ---------------- */

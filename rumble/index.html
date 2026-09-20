@@ -136,37 +136,47 @@
     var wrap = document.getElementById('touch');
     if (!wrap || !wrap.appendChild) return;
     var defs = [
-      // 2×2 attack cluster, bottom right
+      // 2×2 attack cluster, bottom right. Off the fight screen, attack
+      // buttons confirm and K+ goes back — so menus are fully touchable.
       { t: 'P', k: 'lp', r: '19%', b: '26%', s: 62 }, { t: 'P+', k: 'hp', r: '5%', b: '34%', s: 62 },
-      { t: 'K', k: 'lk', r: '23%', b: '7%', s: 62 }, { t: 'K+', k: 'hk', r: '9%', b: '13%', s: 62 },
+      { t: 'K', k: 'lk', r: '23%', b: '7%', s: 62 }, { t: 'K+', k: 'hk', menu: 'Escape', r: '9%', b: '13%', s: 62 },
       // special macro strip
       { t: '✦ SIG', m: 'a', r: '30%', b: '46%', w: 72, h: 34 },
       { t: '✦ RISE', m: 'b', r: '17%', b: '52%', w: 72, h: 34 },
       { t: '✦ DASH', m: 'c', r: '4%', b: '58%', w: 72, h: 34 },
+      // pause during a fight, back anywhere else
+      { t: '⏸', pause: true, r: '3%', tTop: '3%', s: 44 },
     ];
     for (var i = 0; i < defs.length; i++) {
       (function (d) {
         var el = document.createElement('div');
         el.className = 'tbtn' + (d.m ? ' tspec' : '');
         el.textContent = d.t;
-        el.style.right = d.r; el.style.bottom = d.b;
+        el.style.right = d.r;
+        if (d.tTop) el.style.top = d.tTop; else el.style.bottom = d.b;
         el.style.width = (d.w || d.s) + 'px'; el.style.height = (d.h || d.s) + 'px';
+        var release = function (ev) {
+          if (ev) ev.preventDefault();
+          if (d.k) touchIn[d.k] = false;
+          el.classList.remove('on');
+        };
         el.addEventListener('touchstart', function (ev) {
           ev.preventDefault(); wakeAudio();
-          if (d.m) queueSpecial(d.m);
-          else { touchIn[d.k] = true; onPress('touch'); }
+          var inFight = app.screen === 'fight';
+          if (d.pause) onPress(inFight ? 'KeyP' : 'Escape');
+          else if (!inFight) { if (!d.m) onPress(d.menu || 'touch'); }
+          else if (d.m) queueSpecial(d.m);
+          else touchIn[d.k] = true;
           el.classList.add('on');
         }, { passive: false });
-        el.addEventListener('touchend', function (ev) {
-          ev.preventDefault();
-          if (!d.m) touchIn[d.k] = false;
-          el.classList.remove('on');
-        }, { passive: false });
+        el.addEventListener('touchend', release, { passive: false });
+        el.addEventListener('touchcancel', release, { passive: false });
         wrap.appendChild(el);
       })(defs[i]);
     }
     var pad = document.getElementById('tpad');
     if (!pad || !pad.addEventListener) return;
+    var prevPad = {};
     function padDir(ev) {
       var rect = pad.getBoundingClientRect();
       var t = ev.touches && ev.touches[0];
@@ -175,10 +185,25 @@
       var dx = t.clientX - cx, dy = t.clientY - cy;
       touchIn.l = dx < -18; touchIn.r = dx > 18;
       touchIn.u = dy < -34; touchIn.d = dy > 26;
+      // off the fight screen the pad steers menus: rising edges become
+      // the same presses the keyboard would send
+      if (app.screen !== 'fight') {
+        var map = { u: 'KeyW', d: 'KeyS', l: 'KeyA', r: 'KeyD' };
+        for (var k in map) {
+          if (touchIn[k] && !prevPad[k]) onPress(map[k]);
+        }
+      }
+      prevPad = { l: touchIn.l, r: touchIn.r, u: touchIn.u, d: touchIn.d };
     }
-    pad.addEventListener('touchstart', function (ev) { ev.preventDefault(); wakeAudio(); padDir(ev); onPress('touch'); }, { passive: false });
+    function padClear(ev) {
+      if (ev) ev.preventDefault();
+      touchIn.l = touchIn.r = touchIn.u = touchIn.d = false;
+      prevPad = {};
+    }
+    pad.addEventListener('touchstart', function (ev) { ev.preventDefault(); wakeAudio(); padDir(ev); }, { passive: false });
     pad.addEventListener('touchmove', function (ev) { ev.preventDefault(); padDir(ev); }, { passive: false });
-    pad.addEventListener('touchend', function (ev) { ev.preventDefault(); touchIn.l = touchIn.r = touchIn.u = touchIn.d = false; }, { passive: false });
+    pad.addEventListener('touchend', padClear, { passive: false });
+    pad.addEventListener('touchcancel', padClear, { passive: false });
   }
   buildTouchButtons();
 
@@ -349,11 +374,13 @@
       SFX.move();
     }
     if (code === 'Escape') { app.screen = 'title'; return; }
-    // P1 cluster
-    if (code === 'KeyA') moveCursor(0, -1, 0);
-    else if (code === 'KeyD') moveCursor(0, 1, 0);
-    else if (code === 'KeyW') moveCursor(0, 0, -1);
-    else if (code === 'KeyS') moveCursor(0, 0, 1);
+    // P1 cluster — in solo modes the arrow keys also drive P1's cursor,
+    // matching the on-screen "move WASD/arrows" hint.
+    var solo = app.mode !== 'versus';
+    if (code === 'KeyA' || (solo && code === 'ArrowLeft')) moveCursor(0, -1, 0);
+    else if (code === 'KeyD' || (solo && code === 'ArrowRight')) moveCursor(0, 1, 0);
+    else if (code === 'KeyW' || (solo && code === 'ArrowUp')) moveCursor(0, 0, -1);
+    else if (code === 'KeyS' || (solo && code === 'ArrowDown')) moveCursor(0, 0, 1);
     else if (code === 'KeyF' || code === 'KeyG' || code === 'KeyC' || code === 'KeyV' || code === 'Enter' || code === 'Space' || code === 'touch') {
       if (!app.locked[0]) lockIn(0);
     }
@@ -399,6 +426,9 @@
       tick();
       acc -= STEP;
     }
+    // drop any backlog beyond one step: after a long stall the match
+    // resumes at normal speed instead of fast-forwarding to catch up
+    if (acc > STEP) acc = STEP;
     render(now);
     requestAnimationFrame(frame);
   }
@@ -421,10 +451,13 @@
 
     var m = app.match;
     var in1 = heldInputs(P1MAP);
-    for (var k in touchIn) if (touchIn[k]) in1[k] = true;
     if (macro.length) {
+      // a queued special plays its motion alone: live pad directions
+      // merged in would corrupt the sequence into a different move
       var fr = macro.shift();
       for (var mk in fr) in1[mk] = true;
+    } else {
+      for (var k in touchIn) if (touchIn[k]) in1[k] = true;
     }
     var in2 = app.mode === 'versus' ? heldInputs(P2MAP)
             : app.mode === 'practice' ? {}
@@ -887,7 +920,7 @@
 
   function drawSelect(now) {
     if (app.attract) drawFight(app.attract, now, true);
-    txt('CHOOSE YOUR FIGHTER', W / 2, 48, 30, '#ffe25e');
+    txt('WHO STEPS INTO THE CIRCLE?', W / 2, 48, 30, '#ffe25e');
     var cols = 4, cw = 128, chh = 118, gx = (W - cols * cw - (cols - 1) * 14) / 2, gy = 84;
     for (var i = 0; i < E.ROSTER.length; i++) {
       var c = i % cols, r = (i / cols) | 0;
