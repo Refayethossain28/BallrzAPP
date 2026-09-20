@@ -375,10 +375,18 @@
       mode: app.mode === 'versus' ? 'versus' : app.mode === 'practice' ? 'practice' : 'cpu',
       level: level || 2, seed: newSeed(),
     });
-    app.dispHp = [1, 1]; app.sparks = []; app.shake = 0; app.paused = false;
-    app.prevY = [0, 0]; app.ambientStage = null;
-    hitstop = 0; macro = [];
+    resetFx();
+    app.paused = false; app.ambientStage = null;
     app.screen = 'vs'; app.vsT = 0;
+  }
+
+  // Clear all transient presentation state so nothing (screen shake,
+  // decaying particles, a pending hitstop freeze, a KO parity, queued
+  // touch-macro frames, stale jump heights) bleeds across a match start,
+  // a practice reset, or a quit back to the title.
+  function resetFx() {
+    app.dispHp = [1, 1]; app.sparks = []; app.shake = 0; app.prevY = [0, 0];
+    hitstop = 0; koPhase = false; macro = [];
   }
 
   function lockIn(p) {
@@ -440,11 +448,11 @@
     }
     if (app.screen === 'fight') {
       if (code === 'KeyP' || code === 'Escape') { app.paused = !app.paused; SFX.move(); return; }
-      if (app.paused && code === 'KeyQ') { app.screen = 'title'; app.match = null; startAttract(); return; }
+      if (app.paused && code === 'KeyQ') { app.screen = 'title'; app.match = null; app.paused = false; resetFx(); startAttract(); return; }
       if (app.mode === 'practice' && code === 'KeyR' && app.match) {
         var keepP1 = app.match.f[0].id, keepP2 = app.match.f[1].id;
         app.match = E.createMatch({ p1: keepP1, p2: keepP2, mode: 'practice', seed: newSeed() });
-        app.match.phase = 'fight'; app.dispHp = [1, 1];
+        app.match.phase = 'fight'; resetFx();
       }
       return;
     }
