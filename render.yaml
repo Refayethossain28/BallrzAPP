@@ -112,6 +112,54 @@ services:
       - key: FARE_KEY
         generateValue: true
 
+  # Genie — the agent that does what you tell it (genie/README.md). A phone
+  # console over the Claude Agent SDK: shell, files, web and subagents run on
+  # the server, approvals are answered from your phone. Zero dependencies
+  # beyond the SDK, nothing to build.
+  #
+  # After the first deploy: open the service's Environment tab, paste your
+  # ANTHROPIC_API_KEY (without it Genie boots in rehearsal mode — nothing runs
+  # for real, and it says so), read the generated GENIE_KEY, and open
+  #   https://<this-service>.onrender.com/?key=<GENIE_KEY>
+  # on your phone (Safari → Share → Add to Home Screen). The hosted console at
+  # https://refayethossain28.github.io/BallrzAPP/genie/ can point at this
+  # server too — GENIE_ALLOW_ORIGIN below is what lets it.
+  #
+  # NOTE: the free filesystem is EPHEMERAL — memory, conversations and standing
+  # orders under GENIE_HOME are wiped on every deploy and restart (GENIE_KEY
+  # survives because Render stores it as an env var). Fine for trying it; for
+  # state that must last, move to a paid instance, add a disk (like `fare`
+  # above) and set GENIE_HOME to its mount path. Everything Genie's shell does
+  # runs on THIS instance as the service user: keep the key secret and treat a
+  # public Genie as a public shell.
+  - type: web
+    name: genie
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node genie/server.mjs
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22.11.0"
+      # Bind all interfaces so Render can reach the process (PORT is injected).
+      - key: HOST
+        value: 0.0.0.0
+      # ask | trust | auto — trust acts freely and only pauses on destructive commands.
+      - key: GENIE_MODE
+        value: trust
+      # The bearer key the console needs. Render generates it; read it in the
+      # dashboard (Environment tab) and put it in the phone URL (?key=…).
+      - key: GENIE_KEY
+        generateValue: true
+      # Live Claude. Leave blank and Genie runs the honest offline rehearsal.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      # Lets the GitHub Pages copy of the console talk to this server (CORS).
+      - key: GENIE_ALLOW_ORIGIN
+        value: https://refayethossain28.github.io
+
 databases:
   - name: fixr-db
     plan: free
