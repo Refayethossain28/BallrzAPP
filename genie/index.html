@@ -474,7 +474,7 @@ var S = {
   convId: null, meta: null, seq: 0,
   conversations: [], schedules: [], memory: [], commands: [],
   running: false, runId: null, runStart: 0,
-  streamGen: 0, streamCtrl: null, streamOpen: false, backoff: 1000, retryTimer: 0, pollTimer: 0,
+  streamGen: 0, streamCtrl: null, streamOpen: false, streamPending: false, backoff: 1000, retryTimer: 0, pollTimer: 0,
   bubbles: {}, tools: {}, asks: {}, thinkingEl: null, runningTools: {},
   pendingUser: null, recentLocal: null, recentSys: null,
   drawerTab: 'conversations', acItems: [], acIndex: -1,
@@ -658,23 +658,28 @@ function fillSelects(st) {
     var e = document.createElement('option'); e.value = str(efforts[j]); e.textContent = str(efforts[j]); es.appendChild(e);
   }
 }
-function loadSettings() {
+/* keepForm: leave the settings form alone — the periodic refresh must not
+ * overwrite a half-edited draft — while the mode chips and the rule list
+ * still follow the server */
+function loadSettings(keepForm) {
   return api('GET', '/api/settings').then(function (r) {
     if (!r.ok || !r.data) return;
     var s = (r.data.settings && typeof r.data.settings === 'object') ? r.data.settings : r.data;
     S.settings = obj(s);
-    renderSettings();
+    renderSettings(keepForm);
   }).catch(function () {});
 }
-function renderSettings() {
+function renderSettings(keepForm) {
   var s = obj(S.settings);
   if (typeof s.mode === 'string') applyModeUI(s.mode);
-  if (s.model != null) $('smodel').value = str(s.model);
-  if (s.effort != null) $('seffort').value = str(s.effort);
-  $('scwd').value = str(s.cwd || '');
-  $('sowner').value = str(s.owner || '');
-  $('sturns').value = s.maxTurns != null ? String(s.maxTurns) : '';
-  $('susd').value = s.maxUsd != null ? String(s.maxUsd) : '';
+  if (!keepForm) {
+    if (s.model != null) $('smodel').value = str(s.model);
+    if (s.effort != null) $('seffort').value = str(s.effort);
+    $('scwd').value = str(s.cwd || '');
+    $('sowner').value = str(s.owner || '');
+    $('sturns').value = s.maxTurns != null ? String(s.maxTurns) : '';
+    $('susd').value = s.maxUsd != null ? String(s.maxUsd) : '';
+  }
   renderRules();
 }
 /* why Auto is off the table right now (live driver, root outside a sandbox), or '' */
@@ -742,7 +747,7 @@ function renderRules() {
   var box = $('rules'); box.textContent = '';
   var rules = arr(obj(S.settings).rules);
   if (!rules.length) { box.appendChild(h('div', 'none', 'none — "Always allow" on an approval adds one, or write one below')); return; }
-  rules.forEach(function (rule, idx) {
+  rules.forEach(function (rule) {
     rule = obj(rule);
     var row = h('div', 'rule');
     row.appendChild(h('span', 'k', str(rule.tool) + ':' + str(rule.match)));
@@ -750,8 +755,8 @@ function renderRules() {
     row.appendChild(h('span', 'b' + (rule.behavior === 'deny' ? ' deny' : ''), str(rule.behavior || 'allow')));
     var x = h('button', 'x', '✕'); x.title = 'remove rule';
     x.addEventListener('click', function () {
-      var next = rules.slice(); next.splice(idx, 1);
-      patchSettings({ rules: next });
+      // by content, not by position: the server's list may have moved on since this one was drawn
+      patchSettings({ removeRule: { tool: str(rule.tool), match: str(rule.match), behavior: str(rule.behavior || 'allow') } });
     });
     row.appendChild(x);
     box.appendChild(row);
@@ -777,17 +782,24 @@ function addRuleForm() {
     var r = obj(rules[i]);
     if (r.tool === tool && r.match === match && r.behavior === behavior) { $('rerr').textContent = 'that rule is already in the list'; return; }
   }
-  patchSettings({ rules: rules.concat([rule]) }, function (ok, reply) {
+  // the server adds onto its own list, so a rule written elsewhere since this
+  // console last loaded settings is kept; the reply is the whole list as it stands
+  patchSettings({ addRule: rule }, function (ok, reply) {
     if (!ok) { $('rerr').textContent = reply ? errOf(reply, 'not added') : 'server unreachable'; return; }
     $('rmatch').value = '';
+    var changed = obj(reply.data).changed;
+    if (Array.isArray(changed) && changed.indexOf('rules') < 0) { $('rerr').textContent = 'that rule is already in the list'; return; }
     toast('Rules', behavior + ' ' + tool + ':' + match + ' (' + ruleKind(rule) + ')');
   });
 }
+/* the 30 s tick and every return to the tab: the status, and the settings
+ * behind it — a rule written by another console, the API or an "Always
+ * allow" tap on another device shows up without a reload */
 function refreshStatus() {
   if (!S.connected) return;
   api('GET', '/api/status').then(function (r) {
     if (r.status === 401) { disconnect(); toast('Genie', 'the key was rejected', true); return; }
-    if (r.ok && r.data && typeof r.data === 'object') renderStatus(r.data);
+    if (r.ok && r.data && typeof r.data === 'object') { renderStatus(r.data); loadSettings(true); }
   }).catch(function () {});
 }
 function renderAbout() {
@@ -836,15 +848,22 @@ function afterConnect() {
 /* ── 6. streaming client: NDJSON over fetch, reconnect by seq ── */
 function closeStream() {
   S.streamGen++;
-  S.streamOpen = false;
+  S.streamOpen = false; S.streamPending = false;
   if (S.retryTimer) { clearTimeout(S.retryTimer); S.retryTimer = 0; }
   if (S.pollTimer) { clearTimeout(S.pollTimer); S.pollTimer = 0; }
   if (S.streamCtrl) { try { S.streamCtrl.abort(); } catch (e) {} S.streamCtrl = null; }
 }
+/* One live stream at a time. A fetch still waiting for its headers counts as
+ * open (S.streamPending) for the guards that decide whether to open one, and
+ * the controller of any earlier fetch is aborted before a new one starts: a
+ * stream nobody reads keeps its connection (browsers allow six per host) and
+ * its server listener until the page dies. */
 function openStream() {
   if (!S.connected || !S.convId) return;
   if (S.retryTimer) { clearTimeout(S.retryTimer); S.retryTimer = 0; }
+  if (S.streamCtrl) { try { S.streamCtrl.abort(); } catch (e) {} S.streamCtrl = null; }
   var gen = ++S.streamGen, id = S.convId;
+  S.streamOpen = false; S.streamPending = false;
   var canStream = typeof TextDecoder !== 'undefined';
   if (!canStream) { pollEvents(gen); return; }
   var ctrl = null;
@@ -853,8 +872,10 @@ function openStream() {
   var opts = { headers: apiHeaders(false), cache: 'no-store' };
   if (ctrl) opts.signal = ctrl.signal;
   var url = S.base + '/api/conversations/' + id + '/events?since=' + S.seq;
+  S.streamPending = true;
   fetch(url, opts).then(function (res) {
-    if (gen !== S.streamGen) return;
+    if (gen !== S.streamGen) { dropBody(res); return; }
+    S.streamPending = false;
     if (Number(res.status) === 401) { disconnect(); toast('Genie', 'the key was rejected', true); return; }
     if (!res.ok) throw new Error('stream ' + res.status);
     if (!res.body || typeof res.body.getReader !== 'function') { pollEvents(gen); return; }
@@ -877,9 +898,17 @@ function openStream() {
     return pump();
   }).catch(function () { if (gen === S.streamGen) streamEnded(gen); });
 }
+/* a response whose stream was superseded before its headers arrived: release
+ * the body (without AbortController nothing else will) */
+function dropBody(res) {
+  try {
+    var p = (res && res.body && typeof res.body.cancel === 'function') ? res.body.cancel() : null;
+    if (p && typeof p.then === 'function') p.then(null, function () {});
+  } catch (e) {}
+}
 function streamEnded(gen) {
   if (gen !== S.streamGen) return;
-  S.streamOpen = false; S.streamCtrl = null;
+  S.streamOpen = false; S.streamPending = false; S.streamCtrl = null;
   setOffline(true);
   scheduleReconnect();
 }
@@ -910,7 +939,7 @@ function onStreamEvent(evt) {
 }
 function onVisibility() {
   if (isHidden()) return;
-  if (S.connected && S.convId && !S.streamOpen) { S.backoff = 1000; openStream(); }
+  if (S.connected && S.convId && !S.streamOpen && !S.streamPending && !S.loadingConv) { S.backoff = 1000; openStream(); }
   if (S.connected) refreshStatus();
 }
 
@@ -1520,9 +1549,9 @@ function sendText(text) {
         S.meta.title = str(E.titleFrom(text)); $('ctitle').textContent = S.meta.title;
       }
       // "queued behind n runs" arrives as the conversation's own system event.
-      // While the transcript is still loading its GET opens the stream itself:
-      // opening one here too would replay the run's head on top of it
-      if (!S.streamOpen && !S.loadingConv) { S.backoff = 1000; openStream(); }
+      // A stream that is open, still waiting for its headers, or about to be
+      // opened by the transcript GET is the live one: do not start a second
+      if (!S.streamOpen && !S.streamPending && !S.loadingConv) { S.backoff = 1000; openStream(); }
     }
   }).catch(function () {
     $('send').disabled = false;

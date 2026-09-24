@@ -369,6 +369,64 @@ test('parseSchedule dotted meridiems and dotted minutes: "9 p.m.", "9p.m.", "7 a
   assert.equal(E.parseSchedule('at 9.60', TZ).ok, false, 'dotted minutes are still minutes');
   assert.equal(sched('every 2.5h x').schedule.everyMs, 150 * MINUTE, 'a decimal interval is not a time');
 });
+test('parseSchedule: "at" may be left out (or written @) when the time carries a marker — minutes, am/pm, noon, midnight; a bare number is task text', () => {
+  const fri = sched('every friday 5pm deploy');
+  assert.equal(fri.schedule.label, 'on Fri at 17:00'); assert.equal(rest('every friday 5pm deploy'), 'deploy');
+  assert.equal(sched('weekdays 8:30 stand-up').schedule.label, 'weekdays at 08:30'); assert.equal(rest('weekdays 8:30 stand-up'), 'stand-up');
+  assert.equal(sched('daily 7am summary').schedule.label, 'daily at 07:00'); assert.equal(rest('daily 7am summary'), 'summary');
+  assert.equal(sched('every day 7am summary').schedule.label, 'daily at 07:00', 'a marked time makes "every day" a clock time, not an interval');
+  assert.equal(sched('every mon-fri 8am standup').schedule.label, 'weekdays at 08:00');
+  assert.equal(sched('weekends noon brunch').schedule.label, 'weekends at 12:00'); assert.equal(rest('weekends noon brunch'), 'brunch');
+  assert.equal(sched('every day 9.30 x').schedule.label, 'daily at 09:30');
+  assert.equal(sched('every day @ 9 x').schedule.label, 'daily at 09:00'); assert.equal(rest('every day @ 9 x'), 'x');
+  assert.equal(sched('every day @9:15 x').schedule.label, 'daily at 09:15');
+  assert.equal(sched('weekdays @ 6pm x').schedule.label, 'weekdays at 18:00');
+  // a bare number after the head is not a time
+  assert.equal(sched('every monday 5 things').schedule.label, 'on Mon at 09:00'); assert.equal(rest('every monday 5 things'), '5 things');
+  assert.equal(sched('every friday 10 items').schedule.label, 'on Fri at 09:00');
+  assert.equal(sched('every day 9 x').schedule.label, 'every 1 d'); assert.equal(rest('every day 9 x'), '9 x');
+  assert.equal(sched('every day 5 minutes x').schedule.label, 'every 1 d');
+  for (const bad of ['every day 25:00 x', 'every day 9:99 x', 'every day 13pm x']) assert.equal(E.parseSchedule(bad, TZ).ok, false, `rejects ${bad}`);
+});
+test('parseSchedule: the part of day settles a bare hour — "every evening at 6" is 18:00, "every night at 12" is midnight', () => {
+  assert.equal(sched('every evening at 6 wind down').schedule.label, 'daily at 18:00'); assert.equal(rest('every evening at 6 wind down'), 'wind down');
+  assert.equal(sched('every afternoon at 2:30 check').schedule.label, 'daily at 14:30');
+  assert.equal(sched('every night at 11 backup').schedule.label, 'daily at 23:00');
+  assert.equal(sched('every evening at 6.30 x').schedule.label, 'daily at 18:30');
+  assert.equal(sched('every evening 6.30 x').schedule.label, 'daily at 18:30', 'without "at" too');
+  assert.equal(sched('every afternoon at 12').schedule.label, 'daily at 12:00');
+  assert.equal(sched('every night at 12').schedule.label, 'daily at 00:00');
+  // a morning hour, an explicit meridiem, noon and midnight are already settled
+  assert.equal(sched('every morning at 8.30').schedule.label, 'daily at 08:30');
+  assert.equal(sched('every morning at 11').schedule.label, 'daily at 11:00');
+  assert.equal(sched('every evening at 6pm').schedule.label, 'daily at 18:00');
+  assert.equal(sched('every evening at 6am').schedule.label, 'daily at 06:00');
+  assert.equal(sched('every evening at noon').schedule.label, 'daily at 12:00');
+  assert.equal(sched('every night at midnight').schedule.label, 'daily at 00:00');
+  assert.equal(sched('every evening at 18:00').schedule.label, 'daily at 18:00');
+  assert.equal(sched('every evening').schedule.label, 'daily at 18:00');
+});
+test('parseSchedule refuses schedule text it could not read after the head, instead of storing it as the task', () => {
+  for (const bad of ['every day at 930 x', 'every day at 1730 send report', 'daily at 930 x', 'every day at 19h x', 'every day at 9.5 x',
+    'at 9:30 on mondays x', 'every week on monday at 9 x', 'every 30 minutes on weekdays x', 'mon wed fri at 9 x', 'every mon-fri, at 7am x', 'thurs. at 9 x',
+    'every weekday morning at 8 x', 'every day at 12 midnight x', 'every day at 17:00h x', 'every hour at :30 x', 'every monday 9am-5pm log hours',
+    'cron 0 0 9 * * 1-5 report', 'cron 0 0 9 * * mon-fri report', 'cron 0 0 9 * * ? report', 'cron */5 * * * * */2 x']) {
+    const r = E.parseSchedule(bad, TZ);
+    assert.equal(r.ok, false, `should refuse ${JSON.stringify(bad)} — got ${r.ok && r.schedule.label + ' | ' + bad.slice(r.consumed)}`);
+    assert.ok(/could not read/.test(r.error), r.error);
+  }
+  // a task that merely starts with a look-alike word is a task
+  assert.equal(rest('at 9pm every day'), 'every day');
+  assert.equal(rest('every 30m night mode check'), 'night mode check');
+  assert.equal(rest('daily at 9 on-call handoff'), 'on-call handoff');
+  assert.equal(rest('every day at 9 at-risk report'), 'at-risk report');
+  assert.equal(rest('every 10m 5-minute stretch'), '5-minute stretch');
+  assert.equal(rest('every 30m 2h-window report'), '2h-window report');
+  assert.equal(rest('every day at 9 noon-ish check'), 'noon-ish check');
+  assert.equal(rest('cron 0 9 * * 1-5 5-minute stretch'), '5-minute stretch');
+  assert.equal(rest('cron 0 9 * * mon-fri report'), 'report');
+  assert.equal(rest('every monday 5 things'), '5 things');
+});
 test('parseSchedule weekday forms: weekdays, weekends, named days, lists, "on tuesdays"', () => {
   const wd = sched('weekdays at 08:30').schedule;
   assert.equal(wd.kind, 'daily'); assert.equal(wd.hour, 8); assert.equal(wd.minute, 30);
@@ -412,6 +470,8 @@ test('parseSchedule: a day name is a whole word — "monthly", "every month", "m
   deepEq(sched('every fri-mon at 7').schedule.days, [0, 1, 5, 6], 'a range wraps past Sunday');
   deepEq(sched('every mon-wed, fri at 7').schedule.days, [1, 2, 3, 5], 'ranges mix with lists');
   deepEq(sched('every tue–thu at 7').schedule.days, [2, 3, 4], 'an en dash too');
+  deepEq(sched('every mon—fri at 9 x').schedule.days, [1, 2, 3, 4, 5], 'and the em dash a phone types for --');
+  assert.equal(rest('every mon—fri at 9 x'), 'x');
 });
 test('parseSchedule cron: 5 fields with steps, ranges, lists, names, 7 = Sunday; bad fields rejected', () => {
   const c = sched('cron 0 9 * * 1-5').schedule;
@@ -608,6 +668,22 @@ const DANGEROUS = [
   '"sudo" reboot', "'sudo' reboot", 'ls; "sudo" reboot', 'ls && "sudo" ls', '"reboot"', '"shutdown" -h now', '"killall" node',
   'cd /tmp; "poweroff"', 'command "sudo" ls', 'exec "sudo" ls', 'env "sudo" ls', 'sh -c \'"sudo" reboot\'', '"halt"',
   'bash -c " sudo ls"', 'sh -c \' reboot\'', 'ssh host " sudo ls"',
+  // …inside a subshell or a group too, and in the $'…' / $"…" quoting forms
+  '$("sudo" reboot)', 'echo $("sudo" reboot)', 'x=$("reboot")', '{ "sudo" reboot; }', '( "halt" )', '("shutdown" -h now)', "$'sudo' reboot", '$"sudo" reboot', "ls; $'reboot'", "bash -c $'sudo ls'",
+  // eval runs its argument
+  'eval "sudo apt install x"', "eval 'killall node'", 'eval "reboot"', 'eval sudo ls', 'ls; eval "sudo ls"',
+  // an environment prefix or an absolute path is still the same command
+  'DEBIAN_FRONTEND=noninteractive sudo apt-get install -y x', 'env FOO=bar sudo apt install x', 'FOO=bar reboot', 'LC_ALL=C killall node', 'bash -c "FOO=bar sudo ls"',
+  '/usr/bin/sudo apt install x', '/sbin/reboot', '/sbin/shutdown -h now', '/bin/su -', '/usr/bin/killall node',
+  // ssh: the first word after the host and its options is what runs there
+  'ssh -p 22 host sudo ls', 'ssh -t host sudo -i', 'ssh -o StrictHostKeyChecking=no host reboot', 'ssh user@host reboot', 'ssh host -- sudo ls', 'ssh host -t sudo -i', 'ssh host -p 22 reboot', 'ssh -J jump host sudo ls',
+  // a heredoc with an UNQUOTED delimiter expands, and so does anything after the heredoc
+  'git commit -m "$(cat <<EOF\n$(reboot)\nEOF\n)"', 'git commit -m "$(cat <<\'EOF\'\nx\nEOF\n; reboot)"', 'git commit -m "$(cat <<\'EOF\'\nx\nEOF\n)" && sudo reboot',
+  'git commit -m "$(cat <<\'EOF\'\nx\nEOF\n)$(reboot)"', 'git commit -m "fix `halt` handler"',
+  // find over the whole root, home or working directory that deletes what it finds; rm of the working directory by name
+  'find / -delete', 'find / -exec rm -rf {} +', 'find / -exec rm -rf {} \\;', 'find ~ -delete', 'find ~ -exec rm -rf {} +', 'find $HOME -exec rm -rf {} +', 'find "$HOME" -delete',
+  'find /home/alice -delete', 'find / -type f -delete', 'find . -delete', 'find -delete', 'find / -print0 | xargs -0 rm -rf', 'find / -path /proc -prune -o -delete', 'find / ! -name x -delete',
+  'rm -rf $PWD', 'rm -rf "$PWD"', 'rm -rf ${PWD}', 'rm -rf "$(pwd)"', 'rm -rf `pwd`', 'rm -rf $PWD/*',
 ];
 const SAFE = [
   'ls', 'ls -la', 'pwd', 'git status', 'git commit -m "wip"', 'git push', 'git push origin main', 'git log --oneline -5', 'git diff',
@@ -627,6 +703,25 @@ const SAFE = [
   // multi-line SQL: the WHERE on the next line still counts
   'psql <<EOF\nDELETE FROM users\nWHERE id = 1;\nEOF', 'psql -c "DELETE FROM users\nWHERE id = 1"', 'sqlite3 db.sqlite "DELETE FROM t\nWHERE x = 1"',
   'psql <<EOF\nDELETE FROM users WHERE id = 1;\nEOF', 'DELETE FROM users \\\nWHERE id = 1',
+  // a bracket glued to a word is a call, not a subshell; $ before a bare word is a variable
+  'foo("halt")', 'arr[0]("halt")', 'ruby -e "halt(1)"', 'echo $(date)', 'x=$(echo hi)', 'echo $((1+2))', '$sudo ls', '$reboot',
+  // eval of a shell hook is the everyday idiom
+  'eval "$(ssh-agent -s)"', 'eval "$(direnv hook bash)"', 'eval "$(pyenv init -)"', 'eval $(opam env)', 'eval "echo hi"', 'grep -rn "eval" src/',
+  // a table word inside a longer word, an assignment or a path is not the command
+  'make CC=gcc halt', 'grep x=1 reboot', 'npm install sudo-prompt', 'cat docs/sudo.md', 'ls /etc/', '/opt/halt-tool/run', '/home/u/reboot-scripts/x.sh', '/tmp/reboot.sh', 'cat /usr/bin/sudo', 'halt-tool',
+  // the agent's own commit format: a quoted-delimiter heredoc body is inert, whatever it mentions; so is an escaped character
+  'git commit -m "$(cat <<\'EOF\'\nShutdown hook waits for in-flight requests\nEOF\n)"',
+  'git commit -m "$(cat <<\'EOF\'\nAdd drop table migration\n\nGuard against git reset --hard in CI.\n\n🤖 Generated with Claude Code\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)"',
+  'git commit -m "$(cat <<\'EOF\'\nfix: reboot handler\n\nsudo is no longer required\nEOF\n)"', 'git commit -m "$(cat <<\\EOF\nStop using kubectl delete in deploy script\nEOF\n)"',
+  'git commit -m "fix \\`halt\\` handler"', 'git commit -m "\\$(reboot)"',
+  // an ordinary remote command names a table word as an argument
+  'ssh host grep reboot /var/log/syslog', 'ssh host tail -f shutdown.log', 'ssh host ls halt-dir', 'ssh prod systemctl status reboot-required', 'ssh host grep -c sudo /var/log/auth.log',
+  'ssh host -t grep reboot log', 'ssh host -p 22 grep reboot log', 'ssh host -- grep reboot log', 'ssh host "grep reboot /var/log/syslog"',
+  // find narrowed to some files, or rooted lower down, is a cleanup; rm below the working directory
+  'find . -name "*.pyc" -delete', 'find -name "*.pyc" -delete', 'find ./build -delete', 'find /tmp/x -delete', 'find /tmp -mtime +7 -delete', 'find /var/log -name "*.gz" -delete',
+  'find ~/Downloads -name "*.dmg" -delete', 'find "$HOME/.cache" -delete', 'find ~ -name \'*.pyc\' -delete', 'find ~ -empty -type d -delete', 'find ~ -type d -name node_modules -prune -exec rm -rf {} +',
+  'find / -xdev -name core -type f -delete', 'find / -name core -type f', 'find / -perm -4000', 'find / -exec cat {} +', 'find / -type f | xargs grep foo', 'grep -rn "find / -delete" docs/',
+  'git commit -m "find / -delete"', 'rm -rf $PWD/build', 'echo $PWD',
 ];
 test(`dangerousCommand flags every entry of the danger table (${DANGEROUS.length} commands) with a reason`, () => {
   assert.ok(DANGEROUS.length >= 25);
@@ -657,18 +752,30 @@ test('dangerousCommand: the reason names what was found, not what a message mere
   assert.equal(E.dangerousCommand('git commit -m "$(rm -rf /)"').reason, 'deletes recursively at or near the root, your home, the current directory or .git');
   assert.equal(E.dangerousCommand('"sudo" reboot').reason, 'runs as root (sudo)');
   assert.equal(E.dangerousCommand('ls; "reboot"').reason, 'powers off or reboots the machine');
+  assert.equal(E.dangerousCommand('$("sudo" reboot)').reason, 'runs as root (sudo)');
+  assert.equal(E.dangerousCommand('eval "sudo apt install x"').reason, 'runs as root (sudo)');
+  assert.equal(E.dangerousCommand('DEBIAN_FRONTEND=noninteractive sudo apt-get install -y x').reason, 'runs as root (sudo)');
+  assert.equal(E.dangerousCommand('/sbin/reboot').reason, 'powers off or reboots the machine');
+  assert.equal(E.dangerousCommand('find / -delete').reason, 'deletes everything under the root, your home or the current directory (find … -delete / -exec rm)');
+  assert.equal(E.dangerousCommand('rm -rf $PWD').reason, 'deletes recursively at or near the root, your home, the current directory or .git');
+  assert.equal(E.dangerousCommand('git commit -m "$(cat <<EOF\n$(reboot)\nEOF\n)"').reason, 'powers off or reboots the machine', 'an unquoted heredoc delimiter expands');
   assert.equal(E.classifyTool('Bash', { command: 'git commit -m "shutdown hook"' }).level, 'exec');
+  assert.equal(E.classifyTool('Bash', { command: 'git commit -m "$(cat <<\'EOF\'\nShutdown hook waits for in-flight requests\nEOF\n)"' }).level, 'exec', 'the heredoc commit format');
   assert.equal(E.classifyTool('Bash', { command: 'rm -rf ../*' }).level, 'danger');
   assert.equal(E.decide({ mode: 'trust', name: 'Bash', input: { command: 'grep -rn "halt" src/' }, rules: [] }).behavior, 'allow', 'no needless card in Trust');
   assert.equal(E.decide({ mode: 'trust', name: 'Bash', input: { command: 'rm -rf /home/alice/docs' }, rules: [] }).behavior, 'ask');
 });
 test('dangerousCommand: what bash expands or unquotes is the command — $(…) in a message, a quoted command word — and Trust mode stops for it', () => {
-  for (const cmd of ['git commit -m "$(rm -rf /)"', 'git commit -m "`sudo reboot`"', 'grep "$(rm -rf ~)" file', '"sudo" reboot', 'ls; "sudo" reboot', '"reboot"', 'bash -c " sudo ls"']) {
+  for (const cmd of ['git commit -m "$(rm -rf /)"', 'git commit -m "`sudo reboot`"', 'grep "$(rm -rf ~)" file', '"sudo" reboot', 'ls; "sudo" reboot', '"reboot"', 'bash -c " sudo ls"',
+    '$("sudo" reboot)', '{ "sudo" reboot; }', "$'sudo' reboot", 'eval "sudo apt install x"', 'eval sudo ls', 'DEBIAN_FRONTEND=noninteractive sudo apt-get install -y x', '/sbin/reboot',
+    'find / -delete', 'find ~ -exec rm -rf {} +', 'git commit -m "$(cat <<EOF\n$(reboot)\nEOF\n)"']) {
     const d = E.decide({ mode: 'trust', name: 'Bash', input: { command: cmd }, rules: [] });
     assert.equal(d.behavior, 'ask', `trust must ask for ${cmd}`);
     assert.equal(d.level, 'danger');
   }
-  for (const cmd of ['git commit -m "$(date)"', 'git commit -m "built $(git rev-parse HEAD)"', 'python -c "print(\'reboot\')"', 'ssh-keygen -t ed25519 -C "sudo box"', 'grep -rn "halt" src/']) {
+  for (const cmd of ['git commit -m "$(date)"', 'git commit -m "built $(git rev-parse HEAD)"', 'python -c "print(\'reboot\')"', 'ssh-keygen -t ed25519 -C "sudo box"', 'grep -rn "halt" src/',
+    'foo("halt")', 'node -e "reboot()"', 'git commit -m "$(cat <<\'EOF\'\nShutdown hook waits for in-flight requests\nEOF\n)"', 'git commit -m "fix \\`halt\\` handler"',
+    'ssh host grep reboot /var/log/syslog', 'ssh host tail -f shutdown.log', 'make CC=gcc halt', 'npm install sudo-prompt', 'find . -name "*.pyc" -delete']) {
     const d = E.decide({ mode: 'trust', name: 'Bash', input: { command: cmd }, rules: [] });
     assert.equal(d.behavior, 'allow', `trust runs ${cmd} without a card (${d.reason})`);
     assert.equal(d.level, 'exec');

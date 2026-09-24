@@ -434,7 +434,7 @@
   // A day name is a whole word: "mon" is Monday, "monthly" and "monitor" are not.
   // A list is names joined by , / & and; an item may be a range: "mon-fri", "fri to sun".
   var DAY_SRC = '(?:sunday|monday|tuesday|wednesday|thursday|friday|saturday|sun|mon|tues|tue|wed|thurs|thur|thu|fri|sat)';
-  var DAY_RANGE_SEP = '\\s*(?:-|–|\\bto\\b|\\bthrough\\b)\\s*';
+  var DAY_RANGE_SEP = '\\s*(?:-|–|—|\\bto\\b|\\bthrough\\b)\\s*';
   var DAYITEM_SRC = DAY_SRC + 's?\\b(?:' + DAY_RANGE_SEP + DAY_SRC + 's?\\b)?';
   var DAYLIST_SRC = '(' + DAYITEM_SRC + '(?:\\s*(?:,|/|&|\\band\\b)\\s*' + DAYITEM_SRC + ')*)';
   var MONTH_NAMES = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
@@ -443,7 +443,11 @@
   // lookahead rather than \b, because \b never holds after the dot of "p.m." —
   // and never just before ".30": that dot is a minute separator, not an end.
   var TIME_SRC = '(?:(noon|midnight)|(\\d{1,2})(?:[:.](\\d{2}))?\\s*(a\\.?m\\.?|p\\.?m\\.?)?)(?!\\w|\\.\\d)';
-  var AT_SRC = '(?:\\s+at\\s+' + TIME_SRC + ')';
+  // The "at" may be left out ("every friday 5pm", "weekdays 8:30") or written
+  // "@" when the time carries its own marker — minutes, am/pm, noon, midnight.
+  // A bare number after a day name stays task text: "every monday 5 things".
+  var MARKED_TIME = '(?=\\d{1,2}(?:[:.]\\d{2}|\\s*[ap]\\.?m\\b)|noon\\b|midnight\\b)';
+  var AT_SRC = '(?:\\s+(?:at\\s+|@\\s*|' + MARKED_TIME + ')' + TIME_SRC + ')';
   var SCHEDULE_HINT = 'every 30m · every 2h · daily at 09:00 · weekdays at 08:30 · every mon,wed,fri at 7am · cron 0 9 * * 1-5';
 
   function rx(src) { return new RegExp(src, 'i'); }
@@ -460,6 +464,19 @@
   var SCHED_SEP       = /^\s*[:,\-–—]?\s*/;
   // Calendar periods the grammar does not speak: point at cron instead of guessing.
   var SCHED_PERIOD    = rx('^\\s*(?:every\\s+|each\\s+)?(month(?:ly)?|year(?:ly)?|annually|quarter(?:ly)?)\\b');
+  // What a task never starts with: a time or day qualifier the head did not
+  // read ("at 930", "on mondays", "wed fri at 9", "midnight", "17h"). Left in,
+  // it would silently become the task of a schedule that says something else.
+  // Hyphenated words ("at-risk", "on-call", "2h-window", "noon-ish") are prose.
+  var SCHED_LEFTOVER  = rx('^\\s*[.,]?\\s*(?:' +
+    '(?:at|@)\\s*(?::?\\d|noon\\b|midnight\\b)|' +
+    'on\\s+(?:' + DAY_SRC + 's?\\b|weekdays?\\b|weekends?\\b|workdays?\\b)|' +
+    DAY_SRC + 's?\\b(?=\\s+at\\b|\\s*$|\\s*[,&/]|\\s+' + DAY_SRC + ')|' +
+    '(?:morning|afternoon|evening|night)\\s+at\\b|' +
+    '(?:noon|midnight)(?![\\w-])|' +
+    '\\d{1,2}(?::\\d{2}|\\.\\d{2}\\b|\\s*[ap]\\.?m\\b|h(?![\\w-])))');
+  // A sixth cron field ("cron 0 0 9 * * 1-5", the Quartz form) is not a task either.
+  var CRON_LEFTOVER   = rx('^\\s*(?:[*?]|\\d+(?:[-,/]\\d+)*|\\S*/\\d+|' + DAY_SRC + '(?:[-,]' + DAY_SRC + ')+)(?=\\s|$)');
 
   // Groups from TIME_SRC (offset `o` = index of the first group) → {hour, minute} | {error}
   function clockFrom(m, o, fallback) {
@@ -511,12 +528,17 @@
 
   function fail(error) { return { ok: false, error: error }; }
 
+  // The head parsed; what follows is the task — unless it is more schedule the
+  // grammar could not read, which is refused rather than stored as the task.
   function finishSchedule(schedule, consumed, text, tz) {
     schedule.label = describeSchedule(schedule);
     schedule.tzOffsetMin = tz;
-    var rest = text.slice(consumed);
-    var sep = SCHED_SEP.exec(rest);
+    var sep = SCHED_SEP.exec(text.slice(consumed));
     if (sep) consumed += sep[0].length;
+    var rest = text.slice(consumed);
+    if ((schedule.kind === 'cron' ? CRON_LEFTOVER : SCHED_LEFTOVER).test(rest)) {
+      return fail('could not read "' + oneLine(rest, 30) + '" as part of the schedule — try: ' + SCHEDULE_HINT);
+    }
     return { ok: true, schedule: schedule, consumed: consumed };
   }
 
@@ -550,7 +572,14 @@
     if ((m = SCHED_PARTOFDAY.exec(text))) {
       var part = m[1].toLowerCase();
       var dflt = part === 'morning' ? NINE : part === 'afternoon' ? { hour: 14, minute: 0 } : part === 'evening' ? { hour: 18, minute: 0 } : { hour: 22, minute: 0 };
-      return dailySchedule(clockFrom(m, 2, dflt), all, m[0].length, text, tz);
+      var pclock = clockFrom(m, 2, dflt);
+      // The part of day settles a bare hour: "every evening at 6" is 18:00,
+      // "every night at 12" is midnight. am/pm, noon and midnight are already settled.
+      if (pclock && !pclock.error && m[3] && !m[5] && part !== 'morning') {
+        if (pclock.hour >= 1 && pclock.hour <= 11) pclock.hour += 12;
+        else if (pclock.hour === 12 && part === 'night') pclock.hour = 0;
+      }
+      return dailySchedule(pclock, all, m[0].length, text, tz);
     }
     if ((m = SCHED_DAILY.exec(text))) {
       var clock = clockFrom(m, 2, null);
@@ -807,29 +836,55 @@
    * Fragments used more than once are spelled out here so the rules stay
    * readable:
    *   SEG   — "stay inside this shell segment" (never cross ; & | or a newline)
-   *   CMD   — "in command position": start of line/segment, after sudo/exec…,
-   *           the string handed to `sh -c`, or anything `ssh host …` runs —
-   *           with or without the quotes bash strips off a word first, so
-   *           `"sudo" reboot` and `ls; "sudo" reboot` are sudo. A quote on
-   *           its own is NOT command position: `grep "halt" src/` searches
-   *           for a word, and `python -c "print('reboot')"` only prints one.
+   *   CMD   — "in command position": start of line/segment or subshell,
+   *           after sudo/exec/eval…, the string handed to `sh -c`, the first
+   *           word `ssh host …` runs — past any VAR=value prefixes and with or
+   *           without the quotes bash strips off a word first (`"sudo"`,
+   *           `$'sudo'`), so `"sudo" reboot`, `ls; "sudo" reboot` and
+   *           `$("sudo" reboot)` are sudo. A quote on its own is NOT command
+   *           position: `grep "halt" src/` searches for a word; nor is a
+   *           bracket glued to a word: `python -c "print('reboot')"` prints one.
+   *   BINDIR — the directory an absolute path spells the binary with (/sbin/reboot)
+   *   CMDEND — where a command word ends: not inside a longer word or a path
    *   HOME  — the owner's home in any spelling (~, $HOME, /home/x, /Users/x, /root)
+   *   CWD   — the working directory in any spelling (., $PWD, $(pwd), `pwd`)
    * All rules are case-insensitive except the one that must tell -D from -d.
    */
   var SEG = '[^;&|\\n]*';
-  var CMD = '(?:(?:^|[;&|`\\n]\\s*|\\b(?:sudo|exec|nohup|then|do|else|time|command|builtin|env|doas)\\s+|' +
-    '\\b(?:sh|bash|zsh|dash|ksh|fish)\\s+(?:-\\S+\\s+)*-[a-z]*c\\s+|\\bssh\\s[^;&|\\n"\']*[\\s"\'])["\']{0,2}\\s*|[({]\\s*)';
+  // ssh options run before the host and, since ssh reads them there too, after
+  // it; the listed flags take a value, so in `-p 22 host` the host is not 22.
+  // A flag whose case decides that (-c cipher, -C) is read both ways, which is
+  // why the run is capped: eight is more than any real command line carries.
+  var SSH_OPTS = '(?:-[bcDEeFIiJLlmOopQRSWw]\\s+[^\\s-]\\S*\\s+|-\\S+\\s+){0,8}';
+  var ASSIGNS = '(?:\\w+=\\S*\\s+)*';
+  var CMD = '(?:(?:^|[;&|`\\n]\\s*|(?:^|[^\\w)\\]])[({]\\s*|' +
+    '\\b(?:sudo|exec|nohup|then|do|else|time|command|builtin|env|doas|eval)\\s+|' +
+    '\\b(?:sh|bash|zsh|dash|ksh|fish)\\s+(?:-\\S+\\s+)*-[a-z]*c\\s+|' +
+    '\\bssh\\s+' + SSH_OPTS + '\\S+\\s+' + SSH_OPTS + '(?:--\\s+)?)' +
+    ASSIGNS + '(?:(?:\\$(?=["\']))?["\']{1,2}\\s*' + ASSIGNS + ')?)';
+  var BINDIR = '(?:(?:/[\\w.+-]+)*/)?';
+  var CMDEND = '(?![\\w.+=/-])';
   var HOME = '(?:~|\\$home|\\$\\{home\\}|/home/[^/\\s"\']+|/root|/users/[^/\\s"\']+)';
   var HOMEROOT = '(?:~|\\$home|\\$\\{home\\})';
+  var CWD = '(?:\\.|\\$pwd|\\$\\{pwd\\}|\\$\\(\\s*pwd\\s*\\)|`pwd`)';
   // rm targets: /, /x, /x/y (≤ 2 segments); the home directory or up to two
   // levels under it, in any spelling and with the quote of "$HOME"/x tolerated;
-  // *, ., ./, ./*; any chain of .. (../.., ../../) optionally ending in /*; .git
+  // *, the working directory (., $PWD, ./, ./*); any chain of .. (../.., ../../)
+  // optionally ending in /*; .git
   var RM_TARGET = '(?:' +
     '/(?:[^/\\s"\']+(?:/[^/\\s"\']+)?)?/?' + '|' +
     HOME + '["\']?(?:/[^/\\s"\']*){0,2}/?' + '|' +
-    '\\*|\\.(?:/\\*?)?|\\.\\.(?:/\\.\\.)*(?:/\\*?)?|\\.git/?' +
+    '\\*|' + CWD + '(?:/\\*?)?|\\.\\.(?:/\\.\\.)*(?:/\\*?)?|\\.git/?' +
   ')';
   var END = '(?=\\s|$|[;&|)])';
+  // find rooted at /, home or the working directory (no path means "here")
+  // that deletes what it finds — every file, unless a test narrows the walk
+  // to some of them. `!`, `-not` and `-o` turn a test into "everything else".
+  var FIND_ROOT = '(?:\\s+["\']?(?:/|' + HOME + '/?|' + CWD + ')["\']?(?=\\s)|(?=\\s+-))';
+  var FIND_TEST = '-i?(?:name|path|wholename|regex|lname)\\b|-[acm](?:time|min)\\b|-newer|' +
+    '-(?:size|empty|user|group|uid|gid|perm|inum|samefile|links|used|fstype|nouser|nogroup|readable|writable|executable)\\b';
+  var FIND_WHOLE = '(?:(?=' + SEG + '(?:!|-not\\b|-or?\\b))|(?!' + SEG + '\\s(?:' + FIND_TEST + ')))';
+  var FIND_DELETES = '(?:\\s(?:-delete\\b|-exec(?:dir)?\\s+(?:sudo\\s+)?rm\\b)|\\s*\\|\\s*xargs\\s+(?:-\\S+\\s+|\\{\\}\\s+)*(?:sudo\\s+)?rm\\b)';
   // recursive chmod/chown targets: /, /*, home, or a top-level system directory
   var ROOTISH = '(?:/\\*?|' + HOMEROOT + '/?\\*?|/(?:usr|etc|var|bin|sbin|lib|lib64|boot|home|root|opt|sys|proc|dev|srv|mnt|system|library|applications)/?\\*?)';
   // files nobody should write into without a tap
@@ -839,13 +894,14 @@
   var DANGER_RULES = [
     { re: rx('--no-preserve-root'), reason: 'rm with --no-preserve-root' },
     { re: rx('\\brm(?=' + SEG + '\\s-(?:-recursive|[a-z]*r))(?=' + SEG + '\\s-(?:-force|[a-z]*f))' + SEG + '\\s["\']?' + RM_TARGET + '["\']?' + END), reason: 'deletes recursively at or near the root, your home, the current directory or .git' },
-    { re: rx(CMD + 'sudo\\b'), reason: 'runs as root (sudo)' },
-    { re: rx(CMD + 'su(?:\\s|$)'), reason: 'switches user (su)' },
+    { re: rx(CMD + BINDIR + 'find(?:\\s+-[hlp]\\b)*' + FIND_ROOT + FIND_WHOLE + SEG + FIND_DELETES), reason: 'deletes everything under the root, your home or the current directory (find … -delete / -exec rm)' },
+    { re: rx(CMD + BINDIR + 'sudo' + CMDEND), reason: 'runs as root (sudo)' },
+    { re: rx(CMD + BINDIR + 'su' + END), reason: 'switches user (su)' },
     { re: rx('\\bmkfs(?:\\.\\w+)?\\b'), reason: 'formats a filesystem (mkfs)' },
     { re: rx('\\b(?:wipefs|fdisk|sfdisk|parted|shred)\\b'), reason: 'rewrites a disk or partition table' },
     { re: rx('\\bdd\\b' + SEG + '\\bif='), reason: 'raw disk copy (dd if=)' },
     { re: rx('(?:>\\s*|\\bof=)/dev/(?:sd|nvme|hd|xvd|vd|disk|mmcblk)'), reason: 'writes straight to a block device' },
-    { re: rx(CMD + '(?:shutdown|reboot|halt|poweroff|init\\s+[06])\\b'), reason: 'powers off or reboots the machine' },
+    { re: rx(CMD + BINDIR + '(?:(?:shutdown|reboot|halt|poweroff)' + CMDEND + '|init\\s+[06]\\b)'), reason: 'powers off or reboots the machine' },
     { re: rx('\\bchmod(?=' + SEG + '\\s(?:-[a-z]*r\\b|--recursive))' + SEG + '\\s["\']?' + ROOTISH + '["\']?' + END), reason: 'recursive chmod on a system path' },
     { re: rx('\\bchown(?=' + SEG + '\\s(?:-[a-z]*r\\b|--recursive))' + SEG + '\\s["\']?' + ROOTISH + '["\']?' + END), reason: 'recursive chown on a system path' },
     { re: rx('\\bgit\\s+push\\b' + SEG + '(?:\\s--force(?:-with-lease)?\\b|\\s-f\\b|\\s\\+\\S)'), reason: 'force-push rewrites remote history' },
@@ -862,7 +918,7 @@
     { re: rx(':\\s*\\(\\s*\\)\\s*\\{'), reason: 'fork bomb' },
     { re: rx('\\bkill\\s+(?:-9|-kill|-sigkill|-s\\s+(?:sig)?kill)\\s+-1\\b'), reason: 'kills every process you own' },
     { re: rx('\\bpkill\\b(?=' + SEG + '\\s-9\\b)(?=' + SEG + '\\s-f\\b)'), reason: 'force-kills processes by pattern' },
-    { re: rx(CMD + 'killall\\b'), reason: 'kills processes by name' },
+    { re: rx(CMD + BINDIR + 'killall' + CMDEND), reason: 'kills processes by name' },
     { re: rx('\\bdrop\\s+(?:table|database|schema)\\b'), reason: 'DROP TABLE / DATABASE' },
     { re: rx('\\btruncate\\s+table\\b'), reason: 'TRUNCATE TABLE' },
     // the WHERE may sit on a later line of a heredoc, so this lookahead crosses newlines
@@ -894,16 +950,22 @@
   // migration"` and `rg "sudo" docs/` read as the everyday commands they are.
   // A double-quoted string holding `$(…)`, a backtick or `${…}` is not data:
   // bash runs it before git or grep ever see the message, so it stays in view.
-  // Single quotes expand nothing, so their contents are always data.
+  // Single quotes expand nothing, so their contents are always data. Nor does
+  // bash expand a backslash-escaped character or the body of a heredoc with a
+  // quoted delimiter — `git commit -m "$(cat <<'EOF' … EOF)"` is how the agent
+  // writes every commit, and its message is data whatever it mentions. An
+  // unquoted `<<EOF` body does expand, and so does anything after the heredoc.
   var QUOTED = '("(?:[^"\\\\]|\\\\.)*"|\'[^\']*\')';
   var DATA_ARGS = [
     new RegExp('(\\s-[a-z]*m\\s*|\\s--message(?:=|\\s+)|\\s--grep(?:=|\\s+)|\\s--regexp(?:=|\\s+))' + QUOTED, 'gi'),
     new RegExp('(\\b(?:grep|egrep|fgrep|rg|ag|ack)\\b(?:\\s+-[^\\s"\']*)*\\s+(?:-e\\s+)?)' + QUOTED, 'gi')
   ];
   var SHELL_EXPANDS = /\$\(|`|\$\{/;
+  // (a body never runs on into the next heredoc: that keeps the scan linear)
+  var INERT = /\\.|\$\(\s*cat\s*<<-?\s*['"\\](\w+)['"]?\s*\n(?:(?!\$\(\s*cat\s*<<)[\s\S])*?\n\s*\1\s*\n\s*\)/g;
 
   function blankData(match, flag, quoted) {
-    if (quoted.charAt(0) === '"' && SHELL_EXPANDS.test(quoted)) return match;
+    if (quoted.charAt(0) === '"' && SHELL_EXPANDS.test(quoted.replace(INERT, ''))) return match;
     return flag + '""';
   }
 

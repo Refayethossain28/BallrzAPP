@@ -7,8 +7,10 @@
  * stream), the static allowlist with its traversal guard, a full ask-mode run
  * read from the NDJSON event stream (exact event order, the approval
  * round-trip answered while the stream is open, allow / deny / always /
- * timeout), the exact-rule guarantee behind "Always allow" and the rule
- * precedence a user can write through the API, the agent's own questions
+ * timeout), the exact-rule guarantee behind "Always allow", the rule
+ * precedence a user can write through the API and rule edits that name one
+ * rule (addRule / removeRule) so a stale console copy drops nothing, the
+ * agent's own questions
  * (AskUserQuestion) answered from the phone in ask AND auto mode, transcript
  * persistence rules, slash commands, the schedules API including run-now, a
  * due `every` order re-arming from its due time rather than the tick, cron
@@ -687,6 +689,74 @@ test('rules through the API: a prefix rule covers everyday commands but never th
     assert.ok(['done', 'failed'].includes(denied.end.status));
   } finally { await set(before); }
   deepEq((await api(PORT_A, 'GET', '/api/settings')).body.rules, before, 'the always-rule is back for the tests that follow');
+});
+
+test('rule edits name one rule (addRule / removeRule): a stale console copy drops nothing "always" or another client wrote; bad ones → 400', async () => {
+  const at0 = (await api(PORT_A, 'GET', '/api/settings')).body;
+  const before = at0.rules;
+  const has = (rules, rule) => rules.some((r) => r.tool === rule.tool && r.match === rule.match && r.behavior === rule.behavior);
+  const current = async () => (await api(PORT_A, 'GET', '/api/settings')).body.rules;
+  const patch = async (body) => { const r = await api(PORT_A, 'PATCH', '/api/settings', body); assert.equal(r.status, 200, `${JSON.stringify(body)} → ${r.text}`); return r.body; };
+  const deny = { tool: 'WebFetch', match: 'https://evil*', behavior: 'deny' };
+  const theirs = { tool: 'Bash', match: 'npm test', behavior: 'allow' };
+  const twin = { ...theirs, behavior: 'deny' };
+  const mine = { tool: 'Edit', match: '/srv/app/*', behavior: 'deny' };
+  try {
+    // addRule lands, and the reply is the full settings like any other PATCH.
+    const added = await patch({ addRule: deny });
+    deepEq(added.changed, ['rules']);
+    assert.equal(added.mode, 'ask');
+    assert.ok(has(added.rules, deny) && has(added.settings.rules, deny), JSON.stringify(added.rules));
+    assert.ok(has(await current(), deny), 'GET shows it');
+    assert.ok(has(JSON.parse(readFileSync(join(HOME_A, 'settings.json'), 'utf8')).rules, deny), 'and it is on disk');
+    // The same rule again, whitespace and all, is a no-op rather than a duplicate.
+    const again = await patch({ addRule: { tool: ' WebFetch ', match: ' https://evil* ', behavior: 'deny' } });
+    deepEq(again.changed, []);
+    assert.equal(again.rules.filter((r) => has([r], deny)).length, 1);
+
+    // A console loads its copy now — and misses the rule another client adds
+    // and the one an "Always allow" tap mints right after.
+    const stale = await current();
+    await patch({ addRule: theirs });
+    const conv = await newConversation(PORT_A, 'stale rules');
+    const { ask } = await runPrompt(PORT_A, conv, 'tell me what time it is', { decision: 'always' });
+    const minted = { tool: 'Bash', match: ask.input.command, behavior: 'allow' };
+    assert.ok(!has(stale, theirs) && !has(stale, minted), 'the console copy predates both');
+    assert.ok(has(await current(), minted), `the tap minted ${JSON.stringify(minted)}`);
+    // Its own add keeps them both: it names its rule instead of sending the list back.
+    const now = await patch({ addRule: mine });
+    for (const rule of [deny, theirs, minted, mine]) assert.ok(has(now.rules, rule), `${rule.tool}:${rule.match} is there: ${JSON.stringify(now.rules)}`);
+
+    // removeRule takes exactly the rule it names — the allow, not the deny twin beside it.
+    await patch({ addRule: twin });
+    const removed = await patch({ removeRule: theirs });
+    deepEq(removed.changed, ['rules']);
+    assert.ok(!has(removed.rules, theirs), 'the allow twin is gone');
+    for (const rule of [deny, minted, mine, twin]) assert.ok(has(removed.rules, rule), `${rule.tool}:${rule.match} (${rule.behavior}) stays`);
+    assert.equal(removed.rules.length, now.rules.length, 'one in, one out');
+    // A ✕ on a rule someone else already removed is a no-op; the reply is simply the list as it is.
+    deepEq((await patch({ removeRule: theirs })).changed, []);
+    // Both edits ride along with other keys in one patch…
+    const combo = await patch({ effort: 'medium', removeRule: mine, addRule: { tool: 'Read', match: '*', behavior: 'allow' } });
+    deepEq([...combo.changed].sort(), ['effort', 'rules']);
+    assert.equal(combo.effort, 'medium');
+    assert.ok(!has(combo.rules, mine) && has(combo.rules, { tool: 'Read', match: '*', behavior: 'allow' }), JSON.stringify(combo.rules));
+    // …and a whole-list `rules` still replaces the list, with an edit applied on top of it.
+    deepEq((await patch({ rules: [deny], addRule: twin })).rules, [deny, twin]);
+
+    // Anything but a rule → 400, and nothing in that patch is applied.
+    for (const bad of [{ tool: 'Bash', match: 'x' }, { tool: 'Bash', match: '  ', behavior: 'allow' }, { tool: '', match: 'x', behavior: 'allow' }, { tool: 'Bash', match: 'x', behavior: 'maybe' }, 'Bash:x', null, 7, []]) {
+      for (const key of ['addRule', 'removeRule']) {
+        const r = await api(PORT_A, 'PATCH', '/api/settings', { [key]: bad, effort: 'low' });
+        assert.equal(r.status, 400, `${key}=${JSON.stringify(bad)} → ${r.text}`);
+        assert.ok(typeof r.body.error === 'string' && r.body.error.includes(key), r.text);
+      }
+    }
+    const after = (await api(PORT_A, 'GET', '/api/settings')).body;
+    assert.equal(after.effort, 'medium', 'the effort beside a bad rule never moved');
+    deepEq(after.rules, [deny, twin], 'nor did the rules');
+  } finally { await patch({ rules: before, effort: at0.effort }); }
+  deepEq(await current(), before, 'the always-rule is back for the tests that follow');
 });
 
 test('a question (AskUserQuestion) lands on the phone as a question card in ask mode, and the answer reads back to the tool', async () => {

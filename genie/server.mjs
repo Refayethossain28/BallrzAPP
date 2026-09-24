@@ -727,6 +727,16 @@ function loadCommand(name) {
 /** Live auto mode cannot work as root outside a declared sandbox — the CLI refuses it on every run. */
 const autoBlocked = () => Boolean(driver && driver.kind === 'live' && ROOT_UNSANDBOXED);
 
+const sameRule = (a, b) => a.tool === b.tool && a.match === b.match && a.behavior === b.behavior;
+
+/**
+ * A patch may carry `addRule` / `removeRule` — one rule each, by content —
+ * next to any other settings key. The list itself stays the server's, so a
+ * console that has not reloaded settings cannot overwrite what another
+ * console, the API or an "Always allow" tap wrote in the meantime. Adding a
+ * rule already there or removing one already gone is a no-op, not an error.
+ * A whole-list `rules` still replaces the list, and an edit applies on top.
+ */
 function patchSettings(patch) {
   if (patch.cwd !== undefined) {
     const vc = E.validateCwd(patch.cwd);
@@ -734,7 +744,22 @@ function patchSettings(patch) {
     if (!isDir(patch.cwd)) return { ok: false, error: `cwd must be an existing directory: ${patch.cwd}` };
   }
   if (String(patch.mode ?? '').trim().toLowerCase() === 'auto' && autoBlocked()) return { ok: false, error: AUTO_BLOCKED_REASON };
-  const r = E.applySettings(settings, patch);
+  const { addRule, removeRule, ...next } = patch;
+  if (addRule !== undefined || removeRule !== undefined) {
+    for (const [key, rule] of [['addRule', addRule], ['removeRule', removeRule]]) {
+      if (rule !== undefined && !E.validRule(rule)) return { ok: false, error: `${key} needs tool, match and behavior (allow|deny)` };
+    }
+    const base = E.applySettings(settings, next); // validates a whole-list `rules` when one came along
+    if (!base.ok) return base;
+    let rules = base.settings.rules;
+    if (removeRule) {
+      const gone = { tool: removeRule.tool.trim(), match: removeRule.match.trim(), behavior: removeRule.behavior };
+      rules = rules.filter((r) => !sameRule(r, gone));
+    }
+    if (addRule) rules = E.addRule(rules, addRule);
+    next.rules = rules;
+  }
+  const r = E.applySettings(settings, next);
   if (!r.ok) return r;
   settings = r.settings;
   persistSettings();

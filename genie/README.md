@@ -160,7 +160,7 @@ JSON over HTTP; every route but `/api/health` and the static console needs
 |---|---|
 | `GET /api/health` | `{ ok, name:'genie', version, needsKey }` — unauthenticated |
 | `GET /api/status` | driver, model, mode, effort, cwd, busy, queue, memory/schedule counts, sdk, credentials, `rootUnsandboxed` + `autoBlockedReason` |
-| `GET` / `PATCH /api/settings` | mode, model, effort, cwd (must exist), owner, maxTurns, maxUsd, rules |
+| `GET` / `PATCH /api/settings` | mode, model, effort, cwd (must exist), owner, maxTurns, maxUsd, rules — or `addRule` / `removeRule` `{ tool, match, behavior }` to edit one rule by content, so two consoles never overwrite each other |
 | `GET` / `POST /api/conversations`, `GET` / `DELETE /api/conversations/:id` | list · create · transcript · delete (409 while running) |
 | `POST /api/conversations/:id/say` `{ text, tz? }` | a prompt → `{ runId, queued }`; a slash command → `{ handled, reply }` |
 | `GET /api/conversations/:id/events?since=<seq>` | NDJSON: stored + live events, then stays open (`ping` every 15 s) |
