@@ -65,7 +65,9 @@
 
   // How risky a tool call is, least to most. `danger` is exec plus a
   // destructive command — the one level even Trust mode stops for.
-  var RISK_LEVELS = ['read', 'write', 'exec', 'network', 'danger'];
+  // `question` is not a risk at all: the agent wants an answer from the
+  // owner (AskUserQuestion), so it waits for a tap in every mode, Auto too.
+  var RISK_LEVELS = ['read', 'write', 'exec', 'network', 'danger', 'question'];
 
   var MEMORY_MAX = 200;     // memory entries
   var PROMPT_MAX = 20000;   // chars in one prompt
@@ -203,25 +205,55 @@
   // contains unescaped input, and only http(s) ever becomes an href.
   function renderMarkdown(text) {
     var lines = escapeHTML(sanitize(text)).split('\n');
-    var out = [], para = [], quote = [], list = null;
+    var out = [], para = [], quote = [];
     function flushPara() { if (para.length) { out.push('<p>' + para.map(inlineMD).join('<br>') + '</p>'); para = []; } }
     function flushQuote() { if (quote.length) { out.push('<blockquote>' + quote.map(inlineMD).join('<br>') + '</blockquote>'); quote = []; } }
-    function flushList() {
-      if (!list) return;
-      var items = list.items.map(function (it) { return '<li>' + inlineMD(it) + '</li>'; }).join('');
-      out.push('<' + list.tag + '>' + items + '</' + list.tag + '>');
-      list = null;
+
+    // Lists nest by indentation: a deeper item opens a child list INSIDE the
+    // open <li>, a shallower one closes back out, so "1. step / - detail /
+    // 2. step" keeps its numbering. An ordered list that starts at N ≠ 1
+    // carries start="N" so a list split by a paragraph or a code block reads on.
+    var lists = [], listHtml = '';
+    function openList(tag, indent, start) {
+      lists.push({ tag: tag, indent: indent });
+      listHtml += '<' + tag + (tag === 'ol' && start !== 1 ? ' start="' + start + '"' : '') + '>';
     }
+    function closeList() { listHtml += '</li></' + lists.pop().tag + '>'; }
+    function listItem(tag, indent, start, item) {
+      var top = lists.length ? lists[lists.length - 1] : null;
+      // Dedent: close inner lists until the item fits. An item that is still
+      // deeper than the enclosing item stays a sibling in the list it lands in,
+      // and a list that began indented is not closed by dedenting past it.
+      while (top && indent < top.indent) {
+        var parent = lists.length > 1 ? lists[lists.length - 2] : null;
+        if (!parent || indent >= parent.indent + 2) break;
+        closeList(); top = lists.length ? lists[lists.length - 1] : null;
+      }
+      if (top && indent >= top.indent + 2) openList(tag, indent, start);          // deeper: nest inside the open item
+      else if (top && top.tag === tag) listHtml += '</li>';                       // a sibling
+      else { if (top) closeList(); openList(tag, indent, start); }                // a different kind of list here
+      listHtml += '<li>' + inlineMD(item);
+    }
+    function flushList() {
+      while (lists.length) closeList();
+      if (listHtml) { out.push(listHtml); listHtml = ''; }
+    }
+    function indentOf(ws) { return ws.replace(/\t/g, '    ').length; }
     function flushAll() { flushPara(); flushQuote(); flushList(); }
 
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i], m;
-      if ((m = /^\s*```\s*([\w+#.-]*)\s*$/.exec(line))) {
+      // A fence is three or more backticks plus an info string (language,
+      // then anything: a title, a filename, attributes). It closes only on a
+      // line of at least as many backticks, so a ```` fence can show ``` inside.
+      if ((m = /^\s*(`{3,})([^`]*)$/.exec(line))) {
         flushAll();
-        var lang = m[1].toLowerCase().replace(/[^\w-]/g, '');
+        var ticks = m[1].length;
+        var lang = (/^[\w+#.-]*/.exec(m[2].trim()) || [''])[0].toLowerCase().replace(/[^\w-]/g, '');
+        var closer = new RegExp('^\\s*`{' + ticks + ',}\\s*$');
         var code = [];
         i++;
-        while (i < lines.length && !/^\s*```\s*$/.test(lines[i])) { code.push(lines[i]); i++; }
+        while (i < lines.length && !closer.test(lines[i])) { code.push(lines[i]); i++; }
         out.push('<pre><code' + (lang ? ' class="lang-' + lang + '"' : '') + '>' + code.join('\n') + '</code></pre>');
         continue;
       }
@@ -233,16 +265,14 @@
         continue;
       }
       if ((m = /^&gt;\s?(.*)$/.exec(line))) { flushPara(); flushList(); quote.push(m[1]); continue; }
-      if ((m = /^\s*[-*]\s+(.+)$/.exec(line))) {
+      if ((m = /^(\s*)[-*]\s+(.+)$/.exec(line))) {
         flushPara(); flushQuote();
-        if (!list || list.tag !== 'ul') { flushList(); list = { tag: 'ul', items: [] }; }
-        list.items.push(m[1]);
+        listItem('ul', indentOf(m[1]), 1, m[2]);
         continue;
       }
-      if ((m = /^\s*\d+[.)]\s+(.+)$/.exec(line))) {
+      if ((m = /^(\s*)(\d+)[.)]\s+(.+)$/.exec(line))) {
         flushPara(); flushQuote();
-        if (!list || list.tag !== 'ol') { flushList(); list = { tag: 'ol', items: [] }; }
-        list.items.push(m[1]);
+        listItem('ol', indentOf(m[1]), Number(m[2]), m[3]);
         continue;
       }
       flushQuote(); flushList();
@@ -271,6 +301,14 @@
     try { return JSON.stringify(input); } catch (e) { return String(input); }
   }
 
+  // AskUserQuestion input is { questions: [{ question, header, options, multiSelect }] };
+  // the first question's text is what a card or a title shows.
+  function firstQuestion(input) {
+    var qs = input && Array.isArray(input.questions) ? input.questions : [];
+    var q = qs.length ? qs[0] : null;
+    return q ? String((q && typeof q === 'object' ? q.question : q) || '') : '';
+  }
+
   // The one line a tool card shows under the tool name.
   function summarizeInput(toolName, input) {
     input = (input && typeof input === 'object') ? input : {};
@@ -288,6 +326,7 @@
       case 'Task': case 'Agent': s = input.description || String(input.prompt || '').slice(0, 200); break;
       case 'TodoWrite': s = (Array.isArray(input.todos) ? input.todos.length : 0) + ' todos'; break;
       case 'Skill': s = input.skill || input.command || input.name; break;
+      case 'AskUserQuestion': s = firstQuestion(input); break;
       default:
         // Genie's own tools read best by their first string argument; anything
         // else (an MCP tool we do not know) shows its compact JSON input.
@@ -310,6 +349,7 @@
       case 'WebSearch': case 'WebFetch': return '🌐';
       case 'Task': case 'Agent': return '🧞';
       case 'TodoWrite': case 'TodoRead': return '✅';
+      case 'AskUserQuestion': return '❓';
       default: return '🔧';
     }
   }
@@ -391,11 +431,17 @@
     thursday: 4, thurs: 4, thur: 4, thu: 4, friday: 5, fri: 5, saturday: 6, sat: 6
   };
   var DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  // A day name is a whole word: "mon" is Monday, "monthly" and "monitor" are not.
+  // A list is names joined by , / & and; an item may be a range: "mon-fri", "fri to sun".
   var DAY_SRC = '(?:sunday|monday|tuesday|wednesday|thursday|friday|saturday|sun|mon|tues|tue|wed|thurs|thur|thu|fri|sat)';
-  var DAYLIST_SRC = '(' + DAY_SRC + 's?(?:\\s*(?:,|/|&|\\band\\b)\\s*' + DAY_SRC + 's?)*)';
+  var DAY_RANGE_SEP = '\\s*(?:-|–|\\bto\\b|\\bthrough\\b)\\s*';
+  var DAYITEM_SRC = DAY_SRC + 's?\\b(?:' + DAY_RANGE_SEP + DAY_SRC + 's?\\b)?';
+  var DAYLIST_SRC = '(' + DAYITEM_SRC + '(?:\\s*(?:,|/|&|\\band\\b)\\s*' + DAYITEM_SRC + ')*)';
   var MONTH_NAMES = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
-  // "at 9", "at 09:30", "at 7pm", "at 7:15 a.m.", "at noon", "at midnight"
-  var TIME_SRC = '(?:(noon|midnight)|(\\d{1,2})(?::(\\d{2}))?\\s*(am|pm|a\\.m\\.|p\\.m\\.)?)\\b';
+  // "at 9", "at 09:30", "at 7pm", "at 7:15 a.m.", "at 9p.m.", "at noon", "at midnight".
+  // The time ends where a word does not follow — a lookahead rather than \b,
+  // because \b never holds after the dot of "p.m.".
+  var TIME_SRC = '(?:(noon|midnight)|(\\d{1,2})(?::(\\d{2}))?\\s*(am|pm|a\\.m\\.|p\\.m\\.)?)(?!\\w)';
   var AT_SRC = '(?:\\s+at\\s+' + TIME_SRC + ')';
   var SCHEDULE_HINT = 'every 30m · every 2h · daily at 09:00 · weekdays at 08:30 · every mon,wed,fri at 7am · cron 0 9 * * 1-5';
 
@@ -411,6 +457,8 @@
   var SCHED_AT        = rx('^\\s*at\\s+' + TIME_SRC);
   var SCHED_CRON      = rx('^\\s*cron\\s+(\\S+\\s+\\S+\\s+\\S+\\s+\\S+\\s+\\S+)(?=\\s|$)');
   var SCHED_SEP       = /^\s*[:,\-–—]?\s*/;
+  // Calendar periods the grammar does not speak: point at cron instead of guessing.
+  var SCHED_PERIOD    = rx('^\\s*(?:every\\s+|each\\s+)?(month(?:ly)?|year(?:ly)?|annually|quarter(?:ly)?)\\b');
 
   // Groups from TIME_SRC (offset `o` = index of the first group) → {hour, minute} | {error}
   function clockFrom(m, o, fallback) {
@@ -429,16 +477,24 @@
 
   var NINE = { hour: 9, minute: 0 };
 
+  function dayNumber(word) {
+    var w = String(word).trim();
+    var d = DAY_NAMES[w];
+    if (d == null) d = DAY_NAMES[w.replace(/s$/, '')];
+    return d == null ? null : d;
+  }
+
+  var DAY_RANGE_RE = new RegExp('^(\\S+?)' + DAY_RANGE_SEP + '(\\S+)$', 'i');
+
   function daysFrom(listText) {
     var out = [], seen = {};
     var parts = String(listText).toLowerCase().split(/\s*(?:,|\/|&|\band\b)\s*/);
+    function add(d) { if (!seen[d]) { seen[d] = 1; out.push(d); } }
     for (var i = 0; i < parts.length; i++) {
-      var w = parts[i].trim().replace(/s$/, '');
-      if (w === 'thur') w = 'thu';
-      var d = DAY_NAMES[w];
-      if (d == null) d = DAY_NAMES[parts[i].trim()];
-      if (d == null) continue;
-      if (!seen[d]) { seen[d] = 1; out.push(d); }
+      var r = DAY_RANGE_RE.exec(parts[i].trim());
+      var from = dayNumber(r ? r[1] : parts[i]), to = r ? dayNumber(r[2]) : from;
+      if (from == null || to == null) continue;
+      for (var d = from; ; d = (d + 1) % 7) { add(d); if (d === to) break; } // a range wraps: "fri-mon" is Fri, Sat, Sun, Mon
     }
     return out.sort(function (a, b) { return a - b; });
   }
@@ -488,6 +544,7 @@
       if (!parsed.ok) return fail(parsed.error);
       return finishSchedule({ kind: 'cron', expr: parsed.expr }, m[0].length, text, tz);
     }
+    if ((m = SCHED_PERIOD.exec(text))) return fail('"' + m[1].toLowerCase() + '" needs cron — e.g. "cron 0 9 1 * *" for the 1st of every month at 09:00');
     if ((m = SCHED_HOURLY.exec(text))) return everySchedule(1, 'h', m[0].length, text, tz);
     if ((m = SCHED_PARTOFDAY.exec(text))) {
       var part = m[1].toLowerCase();
@@ -563,13 +620,17 @@
   }
 
   // One cron field → { star, set } where set[v] === true for every matching value.
+  // `?` (the Quartz spelling of "any") is `*`. `star` follows Vixie cron: a
+  // field that STARTS with `*` (so `*/2` too) counts as unrestricted when the
+  // two day fields decide between AND and OR.
   function parseCronField(spec, def) {
     spec = String(spec == null ? '' : spec).trim();
+    if (spec === '?') spec = '*';
     if (!spec) return { ok: false, error: def.name + ': empty field' };
     var size = def.name === 'day of week' ? 7 : def.max + 1;
     var set = [];
     for (var v = 0; v < size; v++) set[v] = false;
-    var star = spec === '*';
+    var star = spec.charAt(0) === '*';
     var items = spec.split(',');
     for (var i = 0; i < items.length; i++) {
       var item = items[i];
@@ -578,7 +639,7 @@
       var lo, hi, step = m[2] != null ? Number(m[2]) : 1;
       if (m[2] != null && !(step >= 1)) return { ok: false, error: def.name + ': step must be ≥ 1' };
       var range = m[1];
-      if (range === '*' || range === '?') { lo = def.min; hi = def.max; }
+      if (range === '*') { lo = def.min; hi = def.max; }
       else {
         var r = /^([^-]+)-([^-]+)$/.exec(range);
         if (r) { lo = cronAtom(r[1], def); hi = cronAtom(r[2], def); }
@@ -604,13 +665,12 @@
     return { ok: true, expr: parts.join(' '), fields: fields };
   }
 
-  // Vixie semantics: when BOTH day fields are restricted, either may match.
+  // Vixie semantics: when BOTH day fields are restricted, either may match;
+  // when either is a star, both must.
   function cronDayMatches(f, d) {
     var domOk = f.dom.set[d.getUTCDate()] === true;
     var dowOk = f.dow.set[d.getUTCDay()] === true;
-    if (f.dom.star && f.dow.star) return true;
-    if (f.dom.star) return dowOk;
-    if (f.dow.star) return domOk;
+    if (f.dom.star || f.dow.star) return domOk && dowOk;
     return domOk || dowOk;
   }
 
@@ -738,24 +798,33 @@
   var NETWORK_TOOLS = { WebSearch: 1, WebFetch: 1 };
 
   /* ---- the destructive-command table ----
-   * Each rule is { re, reason }. dangerousCommand() normalises whitespace,
-   * turns newlines into `;`, and tries the rules in order — so the table IS
-   * the policy, and can be audited line by line. Fragments used more than
-   * once are spelled out here so the rules stay readable:
-   *   SEG   — "stay inside this shell segment" (never cross ; & |)
-   *   CMD   — "in command position" (start of line/segment, after sudo/exec…)
-   *   HOME  — the owner's home in any spelling
+   * Each rule is { re, reason }. dangerousCommand() normalises whitespace
+   * (a newline stays a newline — its own separator, so a heredoc's SQL can
+   * put WHERE on the next line), blanks the quoted text that is data rather
+   * than command (commit messages, search patterns), and tries the rules in
+   * order — so the table IS the policy, and can be audited line by line.
+   * Fragments used more than once are spelled out here so the rules stay
+   * readable:
+   *   SEG   — "stay inside this shell segment" (never cross ; & | or a newline)
+   *   CMD   — "in command position": start of line/segment, after sudo/exec…,
+   *           the string handed to `sh -c`, or anything `ssh host …` runs.
+   *           A quote on its own is NOT command position: `grep "halt" src/`
+   *           searches for a word, it does not halt anything.
+   *   HOME  — the owner's home in any spelling (~, $HOME, /home/x, /Users/x, /root)
    * All rules are case-insensitive except the one that must tell -D from -d.
    */
-  var SEG = '[^;&|]*';
-  var CMD = '(?:^|[;&|({`"\']\\s*|\\b(?:sudo|exec|nohup|then|do|else|time|command|builtin|env|doas)\\s+)';
+  var SEG = '[^;&|\\n]*';
+  var CMD = '(?:^|[;&|({`\\n]\\s*|\\b(?:sudo|exec|nohup|then|do|else|time|command|builtin|env|doas)\\s+|' +
+    '\\b(?:sh|bash|zsh|dash|ksh|fish)\\s+(?:-\\S+\\s+)*-[a-z]*c\\s+["\']?|\\bssh\\s[^;&|\\n"\']*[\\s"\'])';
   var HOME = '(?:~|\\$home|\\$\\{home\\}|/home/[^/\\s"\']+|/root|/users/[^/\\s"\']+)';
   var HOMEROOT = '(?:~|\\$home|\\$\\{home\\})';
-  // rm targets: /, /x, /x/y (≤ 2 segments), ~, ~/x, ~/x/y, $HOME…, *, ./*, ., .., ./, ../, .git
+  // rm targets: /, /x, /x/y (≤ 2 segments); the home directory or up to two
+  // levels under it, in any spelling and with the quote of "$HOME"/x tolerated;
+  // *, ., ./, ./*; any chain of .. (../.., ../../) optionally ending in /*; .git
   var RM_TARGET = '(?:' +
     '/(?:[^/\\s"\']+(?:/[^/\\s"\']+)?)?/?' + '|' +
-    HOMEROOT + '(?:/[^/\\s"\']*){0,2}/?' + '|' +
-    '\\*|\\./\\*|\\.\\.?/?|\\.git/?' +
+    HOME + '["\']?(?:/[^/\\s"\']*){0,2}/?' + '|' +
+    '\\*|\\.(?:/\\*?)?|\\.\\.(?:/\\.\\.)*(?:/\\*?)?|\\.git/?' +
   ')';
   var END = '(?=\\s|$|[;&|)])';
   // recursive chmod/chown targets: /, /*, home, or a top-level system directory
@@ -793,6 +862,7 @@
     { re: rx(CMD + 'killall\\b'), reason: 'kills processes by name' },
     { re: rx('\\bdrop\\s+(?:table|database|schema)\\b'), reason: 'DROP TABLE / DATABASE' },
     { re: rx('\\btruncate\\s+table\\b'), reason: 'TRUNCATE TABLE' },
+    // the WHERE may sit on a later line of a heredoc, so this lookahead crosses newlines
     { re: rx('\\bdelete\\s+from\\s+[\\w."`\\[\\]]+(?![^;|&]*\\bwhere\\b)'), reason: 'DELETE without a WHERE clause' },
     { re: rx('\\bcrontab\\b' + SEG + '\\s-[a-z]*r\\b'), reason: 'crontab -r wipes every cron job' },
     { re: rx('\\bhistory\\s+-c\\b'), reason: 'clears the shell history' },
@@ -808,21 +878,35 @@
     { re: rx('\\bterraform\\s+destroy\\b'), reason: 'terraform destroy' },
     { re: rx('\\bterraform\\s+apply\\b' + SEG + '-auto-approve'), reason: 'terraform apply without review' },
     { re: rx('\\bkubectl\\s+delete\\b'), reason: 'kubectl delete' },
-    { re: rx('\\bexport\\s+' + KEYVARS + '\\b'), reason: 'sets or exposes an API key' },
-    { re: rx('\\$\\{?' + KEYVARS + '\\b'), reason: 'expands an API key into a command' },
-    { re: rx('\\b(?:printenv|grep|rg|env)\\b' + SEG + KEYVARS), reason: 'looks up an API key' },
-    { re: rx(HOME + '/(?:\\.genie/key|\\.claude/\\.credentials\\.json)\\b'), reason: 'touches the Genie key or Claude credentials' }
+    // the key rules read the quoted data too: a key in a search pattern or a commit message is still leaving
+    { re: rx('\\bexport\\s+' + KEYVARS + '\\b'), reason: 'sets or exposes an API key', inData: true },
+    { re: rx('\\$\\{?' + KEYVARS + '\\b'), reason: 'expands an API key into a command', inData: true },
+    { re: rx('\\b(?:printenv|grep|rg|env)\\b' + SEG + KEYVARS), reason: 'looks up an API key', inData: true },
+    { re: rx(HOME + '/(?:\\.genie/key|\\.claude/\\.credentials\\.json)\\b'), reason: 'touches the Genie key or Claude credentials', inData: true }
+  ];
+
+  // Quoted text that is an argument's DATA, never a command: what follows a
+  // commit-message or search-pattern flag, and the pattern a grep-family tool
+  // takes. It is blanked before the table runs so `git commit -m "drop table
+  // migration"` and `rg "sudo" docs/` read as the everyday commands they are.
+  var QUOTED = '("(?:[^"\\\\]|\\\\.)*"|\'[^\']*\')';
+  var DATA_ARGS = [
+    new RegExp('(\\s-[a-z]*m\\s*|\\s--message(?:=|\\s+)|\\s--grep(?:=|\\s+)|\\s--regexp(?:=|\\s+))' + QUOTED, 'gi'),
+    new RegExp('(\\b(?:grep|egrep|fgrep|rg|ag|ack)\\b(?:\\s+-[^\\s"\']*)*\\s+(?:-e\\s+)?)' + QUOTED, 'gi')
   ];
 
   function dangerousCommand(cmd) {
     var s = String(cmd == null ? '' : cmd)
-      .replace(/\\\r?\n/g, ' ')      // line continuations join
-      .replace(/\r?\n/g, ' ; ')      // other newlines separate commands
-      .replace(/\s+/g, ' ')
+      .replace(/\\\r?\n/g, ' ')        // a backslash continuation joins the lines
+      .replace(/[^\S\n]+/g, ' ')       // blanks collapse; newlines stay as separators
+      .replace(/\s*\n\s*/g, ' \n ')
       .trim();
     if (!s) return { danger: false, reason: '' };
+    var raw = s;
+    for (var d = 0; d < DATA_ARGS.length; d++) s = s.replace(DATA_ARGS[d], '$1""');
     for (var i = 0; i < DANGER_RULES.length; i++) {
-      if (DANGER_RULES[i].re.test(s)) return { danger: true, reason: DANGER_RULES[i].reason };
+      var rule = DANGER_RULES[i];
+      if (rule.re.test(rule.inData ? raw : s)) return { danger: true, reason: rule.reason };
     }
     return { danger: false, reason: '' };
   }
@@ -833,6 +917,7 @@
     if (READ_TOOLS[name]) return { level: 'read', reason: 'reads only' };
     if (WRITE_TOOLS[name]) return { level: 'write', reason: isGenieTool(name) ? 'changes Genie\'s memory or standing orders' : 'writes a file' };
     if (NETWORK_TOOLS[name]) return { level: 'network', reason: 'reaches the web' };
+    if (name === 'AskUserQuestion') return { level: 'question', reason: 'the agent is asking you something' };
     if (name === 'Bash') {
       var dc = dangerousCommand(input.command);
       if (dc.danger) return { level: 'danger', reason: dc.reason };
@@ -842,21 +927,40 @@
     return { level: 'exec', reason: 'unknown tool — treated as a command' };
   }
 
-  /* ---- "always allow" / deny rules ---- */
+  /* ---- "always allow" / deny rules ----
+   * A rule's `match` is one of three things: '*' (any call of that tool), a
+   * prefix ending in a bare '*' (owner-authored, e.g. 'npm *'), or an exact
+   * string. A rule minted from the "Always allow" button is always exact:
+   * ruleKey() escapes a command's own trailing star as '\*' ('git add \*'),
+   * and matchRule() reads that back as the literal command.
+   */
 
-  // The part of a tool call a rule is matched against.
+  // The part of a tool call a rule is matched against ('' when the tool has nothing specific).
   function ruleValue(name, input) {
     input = (input && typeof input === 'object') ? input : {};
     switch (String(name || '')) {
-      case 'Bash': return sanitize(input.command).replace(/\s+/g, ' ').trim() || '*';
-      case 'Write': case 'Edit': case 'MultiEdit': case 'NotebookEdit': return String(input.file_path || input.notebook_path || '*');
-      case 'WebFetch': return String(input.url || '*');
-      default: return '*';
+      case 'Bash': return sanitize(input.command).replace(/\s+/g, ' ').trim();
+      case 'Write': case 'Edit': case 'MultiEdit': case 'NotebookEdit': return String(input.file_path || input.notebook_path || '');
+      case 'WebFetch': return String(input.url || '');
+      default: return '';
     }
   }
 
   function ruleKey(name, input) {
-    return String(name || '') + ':' + ruleValue(name, input);
+    var value = ruleValue(name, input);
+    if (!value) return String(name || '') + ':*';
+    if (value.charAt(value.length - 1) === '*') value = value.slice(0, -1) + '\\*';
+    return String(name || '') + ':' + value;
+  }
+
+  function isPrefixRule(rule) {
+    var m = rule.match;
+    return m !== '*' && m.length > 1 && m.charAt(m.length - 1) === '*' && m.charAt(m.length - 2) !== '\\';
+  }
+
+  // An exact rule names one full command or path — never a prefix, never a wildcard.
+  function isExactRule(rule) {
+    return rule.match !== '*' && !isPrefixRule(rule);
   }
 
   function validRule(r) {
@@ -880,7 +984,8 @@
     if (rule.tool !== '*' && rule.tool !== name) return false;
     var m = rule.match;
     if (m === '*') return true;
-    if (m.length > 1 && m.charAt(m.length - 1) === '*') return value.indexOf(m.slice(0, -1)) === 0;
+    if (isPrefixRule(rule)) return value.indexOf(m.slice(0, -1)) === 0;
+    if (/\\\*$/.test(m)) return value === m.slice(0, -2) + '*';
     return value === m;
   }
 
@@ -918,16 +1023,21 @@
     return list;
   }
 
-  // The whole policy in one place: rules first, then Genie's own tools, then mode.
+  // The whole policy in one place: a question always waits for the owner;
+  // then rules (deny beats allow, and an allow rule clears a DESTRUCTIVE
+  // command only when it names that exact command — a prefix or wildcard
+  // rule must not wave through `git status; rm -rf /`); then Genie's own
+  // tools; then the mode.
   function decide(o) {
     o = o || {};
     var mode = MODES.indexOf(o.mode) >= 0 ? o.mode : DEFAULT_MODE;
     var name = String(o.name || '');
     var input = (o.input && typeof o.input === 'object') ? o.input : {};
     var c = classifyTool(name, input);
+    if (c.level === 'question') return { behavior: 'ask', level: 'question', reason: c.reason };
     var rule = findRule(o.rules, name, input);
     if (rule && rule.behavior === 'deny') return { behavior: 'deny', level: c.level, reason: 'denied by rule ' + rule.tool + ':' + rule.match };
-    if (rule) return { behavior: 'allow', level: c.level, reason: 'allowed by rule ' + rule.tool + ':' + rule.match };
+    if (rule && (c.level !== 'danger' || isExactRule(rule))) return { behavior: 'allow', level: c.level, reason: 'allowed by rule ' + rule.tool + ':' + rule.match };
     if (isGenieTool(name)) return { behavior: 'allow', level: c.level, reason: 'Genie\'s own tool' };
     if (mode === 'auto') return { behavior: 'allow', level: c.level, reason: 'auto mode' };
     if (c.level === 'danger') return { behavior: 'ask', level: 'danger', reason: c.reason };
@@ -943,6 +1053,7 @@
   // The sentence on the approval card.
   function askTitle(name, input, level, reason) {
     name = String(name || '');
+    if (level === 'question' || name === 'AskUserQuestion') return 'Genie has a question for you';
     var summary = summarizeInput(name, input);
     if (level === 'danger') return '⚠️ Destructive: `' + summary + '` — ' + (reason || 'this can\'t be undone');
     switch (name) {
@@ -1035,8 +1146,10 @@
       } else if (ev.type === 'content_block_delta') {
         var delta = ev.delta || {};
         if (delta.type === 'text_delta') {
+          // Deltas are for the screen only; the canonical text arrives whole in
+          // the assistant message, so nothing is accumulated here.
           var txt = String(delta.text == null ? '' : delta.text);
-          if (txt) { state.text += txt; out.push({ t: 'text', text: txt, parent: parent }); }
+          if (txt) out.push({ t: 'text', text: txt, parent: parent });
         } else if (delta.type === 'thinking_delta') {
           var th = String(delta.thinking == null ? '' : delta.thinking);
           if (th) out.push({ t: 'thinking', text: th });
@@ -1167,12 +1280,13 @@
           break;
         }
         case 'ask': {
-          var ask = { role: 'ask', requestId: e.requestId, toolId: e.toolId, name: e.name, summary: e.summary, title: e.title, level: e.level, reason: e.reason, decision: null, by: null, at: at };
+          var ask = { role: 'ask', requestId: e.requestId, toolId: e.toolId, name: e.name, summary: e.summary, title: e.title, level: e.level, reason: e.reason,
+            kind: e.kind || 'permission', questions: e.questions || null, decision: null, by: null, answers: null, at: at };
           byAsk[e.requestId] = ask; items.push(ask); break;
         }
         case 'ask_resolved': {
           var a = byAsk[e.requestId];
-          if (a) { a.decision = e.decision; a.by = e.by; }
+          if (a) { a.decision = e.decision; a.by = e.by; a.answers = e.answers || null; }
           break;
         }
         case 'system': case 'status':
@@ -1303,7 +1417,7 @@
     var lines = [];
     lines.push('# Genie');
     lines.push('You are Genie, ' + owner + '\'s personal agent — the agent that does what they tell it. You ACT: when asked for something, do it (run the command, edit the file, fetch the page, write the report) rather than describing how it could be done. Take the shortest sensible path, and finish the job.');
-    lines.push('Approvals are handled by the harness. Never ask for permission in prose — call the tool; if the owner declines, adapt or say briefly what you would need. Report what you did plainly and briefly: what changed, what you found, what is left.');
+    lines.push('Approvals are handled by the harness. Never ask for permission in prose — call the tool; if the owner declines, adapt or say briefly what you would need. When you truly need the owner to choose or fill in a detail, use the AskUserQuestion tool: it reaches their phone. Report what you did plainly and briefly: what changed, what you found, what is left.');
     lines.push('Durable facts about the owner, their machine or their preferences go through `mcp__genie__remember` (never edit the memory file by hand); `mcp__genie__forget` removes one. Standing orders go through `mcp__genie__schedule` with `when` + `task` — when grammar: ' + SCHEDULE_HINT + '; `mcp__genie__unschedule` and `mcp__genie__list_schedules` manage them. Use `mcp__genie__notify` for a phone notification when a long job finishes or needs the owner\'s attention.');
     lines.push('Now: ' + isoLocal(o.now, o.tzOffsetMin) + ' (owner\'s local time). Mode: ' + info.label + ' — ' + info.blurb + '.' + (o.cwd ? ' Working directory: ' + sanitize(o.cwd).trim() + '.' : ''));
     if (o.driver === 'rehearsal') lines.push('This is a rehearsal: no tool runs for real.');
@@ -1529,6 +1643,15 @@
 
   var REHEARSAL_CLOSING = 'Rehearsal complete. Set ANTHROPIC_API_KEY (or log in with `claude`) and restart to make this real.';
 
+  // The one question the rehearsal asks, when the prompt mentions asking —
+  // so the question card, its answers and the driver's answer plumbing can
+  // be exercised without a model.
+  var REHEARSAL_QUESTION = {
+    question: 'Which way should the rehearsal go?', header: 'Path',
+    options: [{ label: 'Quick', description: 'the short route' }, { label: 'Thorough', description: 'the long route' }],
+    multiSelect: false
+  };
+
   function rehearsalScript(prompt, o) {
     o = o || {};
     prompt = String(prompt == null ? '' : prompt);
@@ -1543,8 +1666,11 @@
     var intro = '🎭 Rehearsal mode — no SDK or credentials, so nothing runs for real. Here is how Genie would take this on:\n\n' +
       '1. ' + plan[0] + '\n2. ' + plan[1] + '\n3. ' + plan[2];
     var head = oneLine(prompt, 60).replace(/["'`\\$]/g, '');
+    var asks = /\bask\b/i.test(prompt);
     var toolId = 'toolu_rehearsal_' + shortId(prompt);
+    var questionId = 'toolu_rehearsal_q_' + shortId(prompt);
     var msg1 = 'msg_rehearsal_' + shortId(prompt + ':1'), msg2 = 'msg_rehearsal_' + shortId(prompt + ':2'), msg3 = 'msg_rehearsal_' + shortId(prompt + ':3');
+    var msgQ = 'msg_rehearsal_' + shortId(prompt + ':q');
     var script = [];
 
     script.push({
@@ -1565,6 +1691,21 @@
       message: { id: msg1, type: 'message', role: 'assistant', model: 'rehearsal', content: [{ type: 'text', text: intro }], stop_reason: 'end_turn', usage: zeroUsage() }
     });
 
+    if (asks) {
+      // The driver substitutes the owner's answer (or the decline) for 'no answer'.
+      script.push({
+        type: 'assistant', parent_tool_use_id: null, session_id: sid, uuid: uuid(),
+        message: {
+          id: msgQ, type: 'message', role: 'assistant', model: 'rehearsal', stop_reason: 'tool_use', usage: zeroUsage(),
+          content: [{ type: 'tool_use', id: questionId, name: 'AskUserQuestion', input: { questions: [REHEARSAL_QUESTION] } }]
+        }
+      });
+      script.push({
+        type: 'user', parent_tool_use_id: null, session_id: sid, uuid: uuid(),
+        message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: questionId, content: 'no answer', is_error: false }] }
+      });
+    }
+
     script.push({
       type: 'assistant', parent_tool_use_id: null, session_id: sid, uuid: uuid(),
       message: {
@@ -1581,7 +1722,7 @@
       message: { id: msg3, type: 'message', role: 'assistant', model: 'rehearsal', content: [{ type: 'text', text: REHEARSAL_CLOSING }], stop_reason: 'end_turn', usage: zeroUsage() }
     });
     script.push({
-      type: 'result', subtype: 'success', is_error: false, result: REHEARSAL_CLOSING, num_turns: 2, total_cost_usd: 0,
+      type: 'result', subtype: 'success', is_error: false, result: REHEARSAL_CLOSING, num_turns: asks ? 3 : 2, total_cost_usd: 0,
       duration_ms: 1200, duration_api_ms: 0, usage: zeroUsage(), permission_denials: [], errors: [], stop_reason: 'end_turn',
       session_id: sid, uuid: uuid()
     });

@@ -121,9 +121,10 @@ services:
   # ANTHROPIC_API_KEY (without it Genie boots in rehearsal mode — nothing runs
   # for real, and it says so), read the generated GENIE_KEY, and open
   #   https://<this-service>.onrender.com/?key=<GENIE_KEY>
-  # on your phone (Safari → Share → Add to Home Screen). The hosted console at
-  # https://refayethossain28.github.io/BallrzAPP/genie/ can point at this
-  # server too — GENIE_ALLOW_ORIGIN below is what lets it.
+  # on your phone (Safari → Share → Add to Home Screen). The hosted console
+  # (https://apexvip.uk/genie/ — the github.io address redirects there, since
+  # Pages serves this repo from its custom domain) can point at this server
+  # too — GENIE_ALLOW_ORIGIN below is what lets it.
   #
   # NOTE: the free filesystem is EPHEMERAL — memory, conversations and standing
   # orders under GENIE_HOME are wiped on every deploy and restart (GENIE_KEY
@@ -156,9 +157,17 @@ services:
       # Live Claude. Leave blank and Genie runs the honest offline rehearsal.
       - key: ANTHROPIC_API_KEY
         sync: false
-      # Lets the GitHub Pages copy of the console talk to this server (CORS).
+      # Lets the hosted copy of the console talk to this server (CORS). A
+      # comma-separated list of exact origins: the custom domain the Pages site
+      # actually serves from, plus the github.io address in case the redirect
+      # ever goes away. The server echoes whichever one the page came from.
       - key: GENIE_ALLOW_ORIGIN
-        value: https://refayethossain28.github.io
+        value: "https://apexvip.uk,https://refayethossain28.github.io"
+      # Auto mode with a live driver needs a non-root process, or a process that
+      # declares its container disposable. Only if the boot log warns that this
+      # service runs as root outside a sandbox (this instance IS disposable):
+      #   - key: IS_SANDBOX
+      #     value: "1"
 
 databases:
   - name: fixr-db

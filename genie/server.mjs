@@ -20,12 +20,15 @@
  * Env: PORT (8800) · HOST (127.0.0.1) · GENIE_HOME (~/.genie) · GENIE_KEY ·
  * GENIE_MODEL · GENIE_MODE · GENIE_EFFORT · GENIE_CWD · GENIE_OWNER ·
  * GENIE_MAX_TURNS · GENIE_MAX_USD · GENIE_DRIVER (auto|live|rehearsal) ·
- * GENIE_ALLOW_ORIGIN · GENIE_ASK_TIMEOUT_MS (600000) · GENIE_SETTING_SOURCES ·
- * GENIE_SCHEDULER_MS (20000).
+ * GENIE_ALLOW_ORIGIN (comma-separated exact origins, or *) ·
+ * GENIE_ASK_TIMEOUT_MS (600000) · GENIE_SETTING_SOURCES · GENIE_SCHEDULER_MS (20000).
  *
  * Safety posture (candidly): the agent's Bash/Edit reach whatever this process
- * user can reach; `auto` mode never asks. The key is the only lock. Bind
- * loopback by default; run untrusted jobs in a container.
+ * user can reach; `auto` mode never asks (except when the agent itself has a
+ * question for you — that always reaches your phone). The key is the only
+ * lock. Bind loopback by default; run untrusted jobs in a container, and as
+ * a non-root user: the Claude Code CLI refuses auto mode for root outside a
+ * declared sandbox (IS_SANDBOX=1).
  */
 import http from 'node:http';
 import vm from 'node:vm';
@@ -54,10 +57,20 @@ const HOST = process.env.HOST || '127.0.0.1';
 const HOME = resolvePath(process.env.GENIE_HOME || join(homedir(), '.genie'));
 const WORKSPACE = resolvePath(process.env.GENIE_CWD || join(HOME, 'workspace'));
 const DRIVER_KIND = String(process.env.GENIE_DRIVER || 'auto').toLowerCase();
-const ALLOW_ORIGIN = process.env.GENIE_ALLOW_ORIGIN || '';
-const ASK_TIMEOUT_MS = Math.max(1000, num(process.env.GENIE_ASK_TIMEOUT_MS, 600000));
-const SCHEDULER_MS = Math.max(250, num(process.env.GENIE_SCHEDULER_MS, 20000));
+const ALLOW_ORIGINS = String(process.env.GENIE_ALLOW_ORIGIN || '').split(',').map((s) => s.trim()).filter(Boolean);
+// Node truncates a timer above 2^31-1 ms to ONE millisecond, so an operator's
+// "never expire" (30 days) must become "24.8 days", not "deny everything at once".
+const TIMER_MAX_MS = 2 ** 31 - 1;
+const ASK_TIMEOUT_MS = Math.min(TIMER_MAX_MS, Math.max(1000, num(process.env.GENIE_ASK_TIMEOUT_MS, 600000)));
+const SCHEDULER_MS = Math.min(TIMER_MAX_MS, Math.max(250, num(process.env.GENIE_SCHEDULER_MS, 20000)));
 const BODY_MAX = 256 * 1024;
+const NOTIFY_TITLE_MAX = 200;  // a phone notification, not a report
+const NOTIFY_BODY_MAX = 2000;
+// The Claude Code CLI refuses bypassPermissions for root unless the process
+// declares itself sandboxed, so live auto mode cannot work here.
+const ROOT_UNSANDBOXED = process.platform !== 'win32' && typeof process.getuid === 'function' && process.getuid() === 0
+  && process.env.IS_SANDBOX !== '1' && !process.env.CLAUDE_CODE_BUBBLEWRAP;
+const AUTO_BLOCKED_REASON = 'auto mode needs a non-root user, or IS_SANDBOX=1 inside a disposable container';
 const PING_MS = 15000;
 const TRANSCRIPT_MAX = 2000;   // transcript events kept per conversation on disk
 const TRANSCRIPT_GET = 500;    // returned by GET /api/conversations/:id
@@ -181,11 +194,46 @@ function loadConversations() {
     if (!data || !data.meta || !E.isConversationId(data.meta.id)) continue;
     const events = Array.isArray(data.events) ? data.events : [];
     const seq = Math.max(Number(data.meta.seq) || 0, ...events.map((e) => Number(e?.seq) || 0));
-    convs.set(data.meta.id, {
+    const conv = {
       meta: { ...data.meta, status: 'idle', seq },
       events, listeners: new Set(), seq, activeRun: null, dirty: false, timer: null,
-    });
+    };
+    convs.set(conv.meta.id, conv);
+    const cutOff = closeInterruptedRun(conv);
+    if (cutOff) {
+      log(`run ${cutOff} in ${conv.meta.id} was cut off by a restart — closed`);
+      safe(() => persistConv(conv));
+    }
   }
+}
+
+/**
+ * A run cut off by a hard crash (SIGKILL, OOM, power) leaves its transcript
+ * open on disk: a run_start with no run_end, tool cards with no result and
+ * maybe an ask nobody can answer any more. Close it the way a stop would, so
+ * the console replays a finished run instead of live cards. Returns the
+ * closed run's id, or null when the last run ended properly.
+ */
+function closeInterruptedRun(conv) {
+  const events = conv.events;
+  let start = -1;
+  for (let i = events.length - 1; i >= 0; i--) {
+    const t = events[i]?.t;
+    if (t === 'run_end') return null;
+    if (t === 'run_start') { start = i; break; }
+  }
+  if (start < 0) return null;
+  const runId = events[start].runId ?? null;
+  const tail = events.slice(start);
+  const answered = new Set(tail.filter((e) => e.t === 'ask_resolved').map((e) => e.requestId));
+  const now = Date.now();
+  const push = (evt) => events.push({ ...evt, seq: ++conv.seq, at: now, runId });
+  for (const ask of tail) if (ask.t === 'ask' && !answered.has(ask.requestId)) push({ t: 'ask_resolved', requestId: ask.requestId, decision: 'deny', by: 'stop' });
+  push({ t: 'error', message: 'server restarted mid-run' });
+  push({ t: 'run_end', runId, status: 'stopped', cost: 0 });
+  if (tail.some((e) => e.t === 'init')) conv.meta.runs = (conv.meta.runs || 0) + 1; // it had started, so it counts
+  conv.meta.seq = conv.seq;
+  return runId;
 }
 function persistConv(conv) {
   if (conv.timer) { clearTimeout(conv.timer); conv.timer = null; }
@@ -299,7 +347,10 @@ async function executeRun(run) {
     let evts = [];
     try { evts = E.reduce(state, msg, Date.now()) || []; } catch (err) { evts = [{ t: 'error', message: `reducer: ${String(err?.message || err).slice(0, 200)}` }]; }
     for (const ev of evts) {
-      const e = emit(conv, ev, run.runId);
+      // A tool card shows the input, it does not archive it: a Write of a large
+      // file must not become a multi-MB transcript event replayed on every
+      // reconnect. The reducer's state keeps the untouched input.
+      const e = emit(conv, ev.t === 'tool' ? { ...ev, input: clipInput(ev.input) } : ev, run.runId);
       if (e.t === 'result') run.resultEvent = e;
     }
   };
@@ -315,8 +366,9 @@ async function executeRun(run) {
 
   const out = await driver.run({
     prompt: run.prompt, conversation: conv.meta, settings, systemAppend, mcpServers,
-    allowedTools: [...E.GENIE_TOOLS], agents: courtiers(settings.model),
-    canUseTool: makeCanUseTool(run), abortController: run.abortController, onMessage,
+    agents: courtiers(settings.model),
+    canUseTool: makeCanUseTool(run), getRules: () => settings.rules || [],
+    abortController: run.abortController, onMessage,
   });
   if (run.finished) return; // shutdown already closed it
   const sessionId = out?.sessionId || state.sessionId;
@@ -363,17 +415,61 @@ function stopConversation(conv) {
 }
 
 /* ────────────────────────────── approvals ────────────────────────────── */
-/** The ask event's copy of the input: long strings (a Write body) clipped; the SDK still gets the real thing. */
-function clipInput(input) {
-  if (!input || typeof input !== 'object') return input;
+/**
+ * An event's copy of a tool input: every long string (a Write body, a
+ * MultiEdit's new_string) clipped to OUTPUT_MAX, nested a few levels deep.
+ * The SDK still gets the real thing; only what we show and store is clipped.
+ */
+function clipInput(input, depth = 0) {
+  if (!input || typeof input !== 'object' || depth > 4) return input;
   const max = Number(E.OUTPUT_MAX) || 4000;
   const out = Array.isArray(input) ? [] : {};
   for (const [k, v] of Object.entries(input)) {
-    out[k] = typeof v === 'string' && v.length > max ? `${v.slice(0, max)}… (+${v.length - max} chars)` : v;
+    if (typeof v === 'string') out[k] = v.length > max ? `${v.slice(0, max)}… (+${v.length - max} chars)` : v;
+    else if (v && typeof v === 'object') out[k] = clipInput(v, depth + 1);
+    else out[k] = v;
   }
   return out;
 }
 
+/**
+ * The questions of an AskUserQuestion, in the shape the console renders:
+ * `{ question, header, options:[{ label, description }], multiSelect }`.
+ * Texts are kept verbatim (capped, not sanitized) because the answer keys
+ * must round-trip to the tool exactly.
+ */
+function questionsOf(input) {
+  const cap = (v, n) => String(v ?? '').slice(0, n);
+  const list = Array.isArray(input?.questions) ? input.questions : [];
+  return list.filter((q) => q && typeof q === 'object').slice(0, 20).map((q) => ({
+    question: cap(q.question, Number(E.OUTPUT_MAX) || 4000),
+    header: cap(q.header, 80),
+    options: (Array.isArray(q.options) ? q.options : []).filter((o) => o && typeof o === 'object').slice(0, 20)
+      .map((o) => ({ label: cap(o.label, 200), description: cap(o.description, 500) })),
+    multiSelect: q.multiSelect === true,
+  }));
+}
+
+/** The owner's answers from POST /api/approve, keyed by question text. */
+function answersOf(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const out = {};
+  for (const [q, a] of Object.entries(raw).slice(0, 20)) {
+    if (!q) continue;
+    const text = Array.isArray(a) ? a.map((x) => String(x ?? '')).join(', ') : String(a ?? '');
+    out[q] = E.sanitize(text).slice(0, 2000);
+  }
+  return out;
+}
+
+/**
+ * The SDK's permission callback. Two kinds of ask reach the phone:
+ *   permission  — the policy said ask; Allow / Always allow / Deny.
+ *   question    — the agent called AskUserQuestion; it is not a permission
+ *                 at all but a question for the owner, so it asks in every
+ *                 mode (auto included), no rule can answer it, and the
+ *                 answers go back to the tool as `updatedInput.answers`.
+ */
 function makeCanUseTool(run) {
   return async (name, input, opts = {}) => {
     const conv = run.conv;
@@ -384,40 +480,65 @@ function makeCanUseTool(run) {
     } catch (err) {
       return { behavior: 'deny', message: `policy error: ${String(err?.message || err).slice(0, 120)}` };
     }
-    if (decision.behavior === 'allow') return { behavior: 'allow' };
-    if (decision.behavior === 'deny') return { behavior: 'deny', message: decision.reason || 'denied by a rule' };
+    const question = name === 'AskUserQuestion' || decision.level === 'question';
+    if (!question) {
+      if (decision.behavior === 'allow') return { behavior: 'allow' };
+      if (decision.behavior === 'deny') return { behavior: 'deny', message: decision.reason || 'denied by a rule' };
+    }
     if (run.finished || run.abortController.signal.aborted) return { behavior: 'deny', message: 'stopped' };
 
     const requestId = newId('q', 10);
     const toolId = opts.toolUseID || opts.toolUseId || null;
-    const summary = safe(() => E.summarizeInput(name, safeInput)) || name;
-    const title = opts.title || safe(() => E.askTitle(name, safeInput, decision.level, decision.reason)) || `Genie wants to use ${name}`;
-    const ask = {
-      t: 'ask', requestId, toolId, name, input: clipInput(safeInput), summary, title, level: decision.level, reason: decision.reason,
-    };
-    if (Array.isArray(opts.suggestions) && opts.suggestions.length) ask.suggestions = opts.suggestions;
+    let ask;
+    if (question) {
+      const questions = questionsOf(safeInput);
+      const reason = decision.level === 'question' && decision.reason ? decision.reason : 'the agent is asking you something';
+      ask = {
+        t: 'ask', requestId, toolId, name, kind: 'question',
+        title: safe(() => E.askTitle(name, safeInput, 'question', reason)) || 'Genie has a question for you',
+        summary: safe(() => E.summarizeInput(name, safeInput)) || questions[0]?.question || name,
+        questions, level: 'question', reason,
+      };
+    } else {
+      ask = {
+        t: 'ask', requestId, toolId, name, kind: 'permission',
+        input: clipInput(safeInput),
+        summary: safe(() => E.summarizeInput(name, safeInput)) || name,
+        title: opts.title || safe(() => E.askTitle(name, safeInput, decision.level, decision.reason)) || `Genie wants to use ${name}`,
+        level: decision.level, reason: decision.reason,
+      };
+      if (Array.isArray(opts.suggestions) && opts.suggestions.length) ask.suggestions = opts.suggestions;
+    }
     const event = emit(conv, ask, run.runId);
 
     return new Promise((resolve) => {
       let done = false;
-      const finish = (verdict, by) => {
+      const finish = (verdict, by, answers) => {
         if (done) return;
         done = true;
         clearTimeout(timer);
         run.pendingAsks.delete(requestId);
         try { opts.signal?.removeEventListener('abort', onAbort); } catch { /* fine */ }
+        const allowed = verdict === 'allow' || verdict === 'always';
+        if (question) {
+          const given = allowed ? answersOf(answers) : null;
+          emit(conv, { t: 'ask_resolved', requestId, decision: verdict, by, ...(given ? { answers: given } : {}) }, run.runId);
+          if (allowed) resolve({ behavior: 'allow', updatedInput: { ...safeInput, answers: given } });
+          else resolve({ behavior: 'deny', message: by === 'timeout' ? 'the owner did not answer in time' : by === 'stop' ? 'stopped by the owner' : 'the owner declined to answer' });
+          return;
+        }
         emit(conv, { t: 'ask_resolved', requestId, decision: verdict, by }, run.runId);
         if (verdict === 'always') {
+          // The engine's key is always an exact rule (a trailing * is escaped), so
+          // one tap on "git add *" never becomes a blanket "git add …" grant.
           safe(() => {
             const key = E.ruleKey(name, safeInput);
-            const i = key.indexOf(':');
-            const rule = { tool: i > 0 ? key.slice(0, i) : name, match: i > 0 ? key.slice(i + 1) : '*', behavior: 'allow' };
-            settings = { ...settings, rules: E.addRule(settings.rules || [], rule) };
+            settings = { ...settings, rules: E.addRule(settings.rules || [], key, 'allow') };
             persistSettings();
             system(conv, `always allow ${key}`, run.runId);
           });
         }
-        if (verdict === 'allow' || verdict === 'always') resolve({ behavior: 'allow' });
+        if (allowed) resolve({ behavior: 'allow' });
         else resolve({ behavior: 'deny', message: by === 'timeout' ? 'the owner did not answer in time' : by === 'stop' ? 'stopped by the owner' : 'the owner declined' });
       };
       const timer = setTimeout(() => finish('deny', 'timeout'), ASK_TIMEOUT_MS);
@@ -428,12 +549,12 @@ function makeCanUseTool(run) {
   };
 }
 
-function approve(requestId, decision) {
+function approve(requestId, decision, answers) {
   if (!E.isRequestId(requestId)) return false;
   const runs = active ? [active, ...queue] : [...queue];
   for (const run of runs) {
     const p = run.pendingAsks.get(requestId);
-    if (p) { p.resolve(decision, 'user'); return true; }
+    if (p) { p.resolve(decision, 'user', answers); return true; }
   }
   return false;
 }
@@ -505,7 +626,11 @@ function mcpHandlers(run) {
       return schedules.length ? schedules.map(scheduleLine).join('\n') : 'no standing orders';
     },
     async notify({ title, body }) {
-      emit(conv, { t: 'notify', title: E.sanitize(title || 'Genie'), body: E.sanitize(body || '') }, run.runId);
+      emit(conv, {
+        t: 'notify',
+        title: E.truncate(E.sanitize(title || 'Genie'), NOTIFY_TITLE_MAX),
+        body: E.truncate(E.sanitize(body || ''), NOTIFY_BODY_MAX),
+      }, run.runId);
       return 'notified';
     },
   };
@@ -515,7 +640,16 @@ function mcpHandlers(run) {
 function fireSchedule(rec, now = Date.now()) {
   const i = schedules.findIndex((s) => s.id === rec.id);
   if (i < 0) return { ok: false, error: 'no such schedule' };
+  const due = schedules[i].nextRunAt;
   let updated = E.afterRun(schedules[i], now);
+  // An `every` cadence stays anchored to when it was DUE, not to the tick that
+  // noticed (which lands 0…SCHEDULER_MS late, and that lateness would compound).
+  // A firing missed by more than a whole period restarts from now, and a
+  // "run now" ahead of time keeps afterRun's next = now + period.
+  if (updated.schedule?.kind === 'every' && typeof due === 'number' && due <= now) {
+    const anchored = safe(() => E.nextFrom(updated.schedule, due));
+    if (typeof anchored === 'number' && anchored > now) updated = { ...updated, nextRunAt: anchored };
+  }
   let conv = updated.conversationId ? convs.get(updated.conversationId) : null;
   if (!conv) {
     conv = createConversation({ title: `⏰ ${E.titleFrom(updated.task)}`, source: 'schedule', scheduleId: updated.id });
@@ -566,12 +700,16 @@ function loadCommand(name) {
 }
 
 /* ────────────────────────────── slash commands (server-side) ────────────────────────────── */
+/** Live auto mode cannot work as root outside a declared sandbox — the CLI refuses it on every run. */
+const autoBlocked = () => Boolean(driver && driver.kind === 'live' && ROOT_UNSANDBOXED);
+
 function patchSettings(patch) {
   if (patch.cwd !== undefined) {
     const vc = E.validateCwd(patch.cwd);
     if (!vc.ok) return { ok: false, error: vc.error || 'bad cwd' };
     if (!isDir(patch.cwd)) return { ok: false, error: `cwd must be an existing directory: ${patch.cwd}` };
   }
+  if (String(patch.mode ?? '').trim().toLowerCase() === 'auto' && autoBlocked()) return { ok: false, error: AUTO_BLOCKED_REASON };
   const r = E.applySettings(settings, patch);
   if (!r.ok) return r;
   settings = r.settings;
@@ -579,15 +717,18 @@ function patchSettings(patch) {
   return r;
 }
 
-function statusText() {
+function statusText(conv) {
   const chip = safe(() => E.statusChip({ driver: driver.kind, live: driver.kind === 'live', model: settings.model })) || driver.kind;
+  const spentAll = [...convs.values()].reduce((sum, c) => sum + (Number(c.meta.cost) || 0), 0);
   const lines = [
     `**${chip}** · mode ${settings.mode} · effort ${settings.effort}`,
     `cwd ${settings.cwd}`,
     `${active ? `running ${active.runId} in ${active.conv.meta.id}` : 'idle'}${queue.length ? ` · ${queue.length} queued` : ''}`,
+    `spent ${E.formatUsd(conv.meta.cost)} in this conversation · ${E.formatUsd(spentAll)} across all`,
     `${memoryItems().length} memories · ${schedules.length} standing orders · ${convs.size} conversations`,
   ];
   if (driver.kind !== 'live') lines.push(`rehearsal: ${driverInfo.reason}`);
+  if (autoBlocked()) lines.push(`auto mode unavailable: ${AUTO_BLOCKED_REASON}`);
   return lines.join('\n');
 }
 
@@ -604,7 +745,7 @@ function handleCommand(conv, cmd, body) {
       return reply(`started a new conversation: ${fresh.meta.title}`, { conversationId: fresh.meta.id });
     }
     case 'stop': return reply(stopConversation(conv) ? 'stopping…' : 'nothing is running here');
-    case 'status': return reply(statusText());
+    case 'status': return reply(statusText(conv));
     case 'mode': case 'model': case 'effort': {
       if (!args) return reply(`${cmd.name} is ${settings[cmd.name]}`);
       const r = patchSettings({ [cmd.name]: cmd.name === 'model' ? args : args.toLowerCase() });
@@ -659,10 +800,11 @@ function handleCommand(conv, cmd, body) {
 }
 
 /* ────────────────────────────── http plumbing ────────────────────────────── */
+/** CORS for a hosted console: echo the request's origin when it is on the list (or `*`). */
 function corsHeaders(req) {
-  if (!ALLOW_ORIGIN) return {};
-  const origin = req.headers.origin;
-  const allow = ALLOW_ORIGIN === '*' ? '*' : (origin === ALLOW_ORIGIN ? ALLOW_ORIGIN : null);
+  if (!ALLOW_ORIGINS.length) return {};
+  const origin = String(req.headers.origin || '');
+  const allow = ALLOW_ORIGINS.includes('*') ? '*' : (origin && ALLOW_ORIGINS.includes(origin) ? origin : null);
   if (!allow) return {};
   return {
     'access-control-allow-origin': allow,
@@ -768,7 +910,7 @@ async function handle(req, res) {
   const method = req.method;
 
   if (method === 'OPTIONS') {
-    res.writeHead(ALLOW_ORIGIN ? 204 : 404, corsHeaders(req));
+    res.writeHead(ALLOW_ORIGINS.length ? 204 : 404, corsHeaders(req));
     return res.end();
   }
 
@@ -797,6 +939,7 @@ async function handle(req, res) {
       memoryCount: memoryItems().length, schedules: schedules.length,
       sdk: { installed: driverInfo.sdkInstalled, version: driverInfo.sdkVersion }, credentials: driverInfo.credentials,
       reason: driverInfo.reason, host: HOST, port: PORT,
+      rootUnsandboxed: ROOT_UNSANDBOXED, autoBlockedReason: autoBlocked() ? AUTO_BLOCKED_REASON : null,
       modes: E.MODE_INFO, models: E.MODELS.map(({ id, label, note }) => ({ id, label, note })), efforts: [...E.EFFORTS],
     });
   }
@@ -887,7 +1030,8 @@ async function handle(req, res) {
     const body = await readJSONBody(req, res); if (!body) return undefined;
     const decision = String(body.decision || '').toLowerCase();
     if (!['allow', 'deny', 'always'].includes(decision)) return sendJSON(req, res, 400, { error: 'decision must be allow, deny or always' });
-    const ok = approve(String(body.requestId || ''), decision);
+    if (body.answers !== undefined && (!body.answers || typeof body.answers !== 'object' || Array.isArray(body.answers))) return sendJSON(req, res, 400, { error: 'answers must be an object of question → answer' });
+    const ok = approve(String(body.requestId || ''), decision, body.answers);
     return ok ? sendJSON(req, res, 200, { ok: true }) : sendJSON(req, res, 404, { error: 'unknown or already resolved request' });
   }
 
@@ -989,7 +1133,12 @@ function banner() {
   if (HOST !== '127.0.0.1' && HOST !== 'localhost' && HOST !== '::1') {
     console.log(`      ⚠⚠⚠   bound to ${HOST} — reachable beyond this machine. The agent can run commands and edit files as ${process.env.USER || 'this user'}; the key is the only lock.`);
   }
-  if (ALLOW_ORIGIN) console.log(`      cors    ${ALLOW_ORIGIN}`);
+  if (autoBlocked()) {
+    console.log('      ⚠⚠⚠   running as root outside a declared sandbox — the Claude Code CLI refuses auto mode here, so switching to auto is blocked.');
+    console.log('             Run Genie as a non-root user (docker run --user node …), or set IS_SANDBOX=1 inside a container you accept as disposable.');
+    if (settings.mode === 'auto') console.log('             settings already say auto: every live run will fail with the CLI\'s own message until one of those changes.');
+  }
+  if (ALLOW_ORIGINS.length) console.log(`      cors    ${ALLOW_ORIGINS.join(', ')}`);
   console.log('');
 }
 

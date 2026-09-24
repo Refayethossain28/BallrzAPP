@@ -3,14 +3,20 @@
  * Integration tests for genie/server.mjs — spawns the REAL console server in
  * rehearsal mode (GENIE_DRIVER=rehearsal: no SDK, no credentials, nothing is
  * executed) against throwaway GENIE_HOME directories, then asserts over real
- * HTTP: bearer auth, the static allowlist with its traversal guard, a full
- * ask-mode run read from the NDJSON event stream (exact event order, the
- * approval round-trip answered while the stream is open, allow / deny /
- * always / timeout), transcript persistence rules, slash commands, the
- * schedules API including run-now, the global run queue, stop, 409/413/400,
- * an auto-mode server that never asks, and a restart with the same home.
+ * HTTP: bearer auth, CORS for a listed origin (on the API and on the event
+ * stream), the static allowlist with its traversal guard, a full ask-mode run
+ * read from the NDJSON event stream (exact event order, the approval
+ * round-trip answered while the stream is open, allow / deny / always /
+ * timeout), the exact-rule guarantee behind "Always allow" and the rule
+ * precedence a user can write through the API, the agent's own questions
+ * (AskUserQuestion) answered from the phone in ask AND auto mode, transcript
+ * persistence rules, slash commands, the schedules API including run-now, a
+ * due `every` order re-arming from its due time rather than the tick, cron
+ * with a Quartz `?`, the global run queue, stop, 409/413/400, an auto-mode
+ * server that never asks for permission, a restart with the same home, and a
+ * run cut off by a hard crash being closed at the next boot.
  *
- * Server A: 8801 (mode ask, 5 s ask timeout)   Server B: 8802 (mode auto)
+ * Server A: 8801 (mode ask, 5 s ask timeout, two CORS origins)   Server B: 8802 (mode auto)
  * Server A': 8803 (A restarted on the same GENIE_HOME — persistence check)
  *
  * No network beyond 127.0.0.1; no real key is ever used.
@@ -61,10 +67,11 @@ async function api(port, method, path, body, { auth = true, headers = {} } = {})
   return { status: res.status, headers: res.headers, body: json, text };
 }
 
-// Raw request so the path is NOT client-normalized (traversal must reach the server).
-function rawGet(port, path) {
+// Raw request: the path is NOT client-normalized (traversal must reach the
+// server) and headers go out exactly as given (an Origin the browser would set).
+function raw(port, path, { method = 'GET', headers = {} } = {}) {
   return new Promise((resolve, reject) => {
-    const req = http.request({ host: '127.0.0.1', port, path, method: 'GET' }, (res) => {
+    const req = http.request({ host: '127.0.0.1', port, path, method, headers }, (res) => {
       let body = '';
       res.on('data', (c) => (body += c));
       res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body }));
@@ -73,6 +80,7 @@ function rawGet(port, path) {
     req.end();
   });
 }
+const rawGet = (port, path) => raw(port, path);
 
 async function until(fn, { timeout = 3000, every = 50, label = 'condition' } = {}) {
   const t0 = Date.now();
@@ -90,7 +98,7 @@ async function until(fn, { timeout = 3000, every = 50, label = 'condition' } = {
  * stream must be OPEN while approvals are answered: the server blocks the run
  * on them, and the `ask` only reaches us through this stream. */
 const STREAMS = new Set();
-function openStream(port, convId, since = 0) {
+function openStream(port, convId, since = 0, headers = {}) {
   const events = [];
   const waiters = [];
   let closed = false, carry = '';
@@ -99,7 +107,7 @@ function openStream(port, convId, since = 0) {
   const req = http.request({
     host: '127.0.0.1', port, method: 'GET',
     path: `/api/conversations/${convId}/events?since=${since}`,
-    headers: { authorization: `Bearer ${KEY}` },
+    headers: { authorization: `Bearer ${KEY}`, ...headers },
   });
   const failWaiters = (err) => { for (const w of waiters.splice(0)) { clearTimeout(w.timer); w.reject(err); } };
   const seen = () => events.map((e) => e.t).join(',') || '(nothing yet)';
@@ -251,7 +259,9 @@ function stopChild(child) {
   });
 }
 
-const ENV_A = { GENIE_MODE: 'ask', GENIE_ASK_TIMEOUT_MS: '5000', GENIE_SCHEDULER_MS: '500' };
+// Two exact origins: the hosted console may be served from either of two hosts.
+const ORIGINS = ['https://a.example', 'https://b.example'];
+const ENV_A = { GENIE_MODE: 'ask', GENIE_ASK_TIMEOUT_MS: '5000', GENIE_SCHEDULER_MS: '500', GENIE_ALLOW_ORIGIN: ORIGINS.join(',') };
 let srvA = null, srvB = null, srvA2 = null;
 
 /* ---- shared state across the ordered tests ---- */
@@ -259,9 +269,22 @@ let conv1 = null;            // the ask-mode conversation that collects the allo
 let run1 = null;             // { runId, events, all } of the first full run
 let conv1Runs = 0;           // how many runs conv1 has completed
 const P_ALWAYS = 'show me the git status of the workspace';
+const P_QUESTION = 'please ask me which path to take';   // the word "ask" makes the rehearsal ask a question
+const QUESTION = 'Which way should the rehearsal go?';   // the one question the rehearsal asks
 let schedId = null;          // the /schedule'd "every 30m" record
 let keptSchedId = null;      // a schedule that must survive the restart
 let transcriptBefore = null; // conv1's transcript right before the restart
+
+// Seeded into HOME_B before B boots: an `every 1 min` order that fell due 10 s
+// ago, i.e. late by less than one period. The first scheduler tick fires it;
+// what we then read back tells us what the server re-armed it from.
+const DRIFT_ID = 'sdrift0001';
+const DRIFT_DUE = Date.now() - 10_000;
+const DRIFT_PERIOD = 60_000;
+// Written into HOME_A between A's exit and A' boot: the transcript a hard
+// crash (SIGKILL, OOM, power) leaves behind — a run with an open ask and no
+// run_end. Same shape the server writes, ids in the shapes it validates.
+const CUT_ID = 'ccutoff00001', CUT_RUN = 'rcutoff01', CUT_REQ = 'qcutoff001', CUT_TOOL = 'toolu_cutoff';
 
 /* =============================== tests =============================== */
 
@@ -272,6 +295,29 @@ test('health answers without a key and says one is needed', async () => {
   assert.equal(r.body.name, 'genie');
   assert.equal(r.body.needsKey, true);
   assert.equal(r.body.version, '1.0.0');
+});
+
+test('scheduler (server B): a due `every` order re-arms from the time it was DUE, not from the tick that noticed it', async () => {
+  // Seeded 10 s overdue, so B's first 500 ms tick fired it a little late. The
+  // lateness must not carry into the next firing (it would compound forever).
+  const rec = await until(async () => (await api(PORT_B, 'GET', '/api/schedules')).body.schedules.find((s) => s.id === DRIFT_ID && s.runs >= 1),
+    { timeout: 6000, label: 'the seeded schedule to fire' });
+  assert.equal(rec.runs, 1);
+  assert.equal(rec.description, 'every 1 min');
+  assert.ok(rec.lastRunAt > DRIFT_DUE, `the tick came after the due time (${rec.lastRunAt - DRIFT_DUE} ms late)`);
+  assert.equal(rec.nextRunAt, DRIFT_DUE + DRIFT_PERIOD, `next = due + period, not tick + period (tick was ${rec.lastRunAt - DRIFT_DUE} ms late)`);
+  assert.ok(isConvId(rec.conversationId), `it got its own conversation: ${rec.conversationId}`);
+  const s = openStream(PORT_B, rec.conversationId, 0);
+  try {
+    const end = await s.waitFor((e) => e.t === 'run_end', 10_000, 'the scheduled run_end');
+    assert.equal(end.status, 'done', 'auto mode: the run went through without a tap');
+    const start = s.events.find((e) => e.t === 'run_start');
+    assert.equal(start.source, 'schedule');
+    assert.equal(start.scheduleId, DRIFT_ID);
+    assert.equal(start.prompt, 'drift probe');
+  } finally { s.close(); }
+  // Its job is done; it must not fire again while the rest of the suite runs on B.
+  assert.equal((await api(PORT_B, 'DELETE', `/api/schedules/${DRIFT_ID}`)).status, 200);
 });
 
 test('auth: status without a key, with a wrong key, or with a same-length wrong key → 401; ?key= works', async () => {
@@ -305,6 +351,10 @@ test('status with the key: rehearsal driver, not live, mode ask, catalogue attac
   deepEq(Object.keys(s.modes), ['ask', 'trust', 'auto']);
   deepEq(s.models.map((m) => m.id), ['claude-opus-5', 'claude-fable-5-1', 'claude-sonnet-5', 'claude-haiku-4-5']);
   assert.ok(s.efforts.includes('high'));
+  // Root outside a sandbox is reported for the console's benefit, but in
+  // rehearsal it never blocks anything (this suite may well run as root).
+  assert.equal(typeof s.rootUnsandboxed, 'boolean');
+  assert.equal(s.autoBlockedReason, null, 'nothing is blocked in rehearsal');
   assert.ok(existsSync(join(HOME_A, 'workspace')), 'GENIE_HOME/workspace is created at boot');
 });
 
@@ -344,6 +394,40 @@ test('create a conversation → { id } in the conversation-id shape, listed as i
   assert.equal(me.source, 'user');
 });
 
+test('CORS: each listed origin is echoed back (API, preflight and the event stream); an unlisted one gets nothing', async () => {
+  const auth = { authorization: `Bearer ${KEY}` };
+  for (const origin of ORIGINS) {
+    const r = await raw(PORT_A, '/api/status', { headers: { ...auth, origin } });
+    assert.equal(r.status, 200);
+    assert.equal(r.headers['access-control-allow-origin'], origin, `${origin} gets itself back, not the whole list`);
+    assert.ok(/origin/i.test(r.headers.vary || ''), 'vary: origin, so a shared cache keeps the origins apart');
+    const pre = await raw(PORT_A, '/api/status', { method: 'OPTIONS', headers: { origin, 'access-control-request-method': 'GET', 'access-control-request-headers': 'authorization' } });
+    assert.equal(pre.status, 204, 'the preflight the Authorization header forces');
+    assert.equal(pre.headers['access-control-allow-origin'], origin);
+    assert.ok(/authorization/i.test(pre.headers['access-control-allow-headers'] || ''), 'the bearer header is allowed');
+  }
+  // The stream is what the hosted console lives on; it carries the header too.
+  const sb = openStream(PORT_A, conv1, 0, { origin: ORIGINS[1] });
+  try { assert.equal((await sb.ready)['access-control-allow-origin'], ORIGINS[1]); } finally { sb.close(); }
+
+  // Not on the list: the API still answers (CORS is the browser's gate, not
+  // ours), but without the header the browser will not hand over the response.
+  const stranger = 'https://c.example';
+  const c = await raw(PORT_A, '/api/status', { headers: { ...auth, origin: stranger } });
+  assert.equal(c.status, 200);
+  assert.equal(c.headers['access-control-allow-origin'], undefined);
+  const preC = await raw(PORT_A, '/api/status', { method: 'OPTIONS', headers: { origin: stranger, 'access-control-request-method': 'GET' } });
+  assert.equal(preC.headers['access-control-allow-origin'], undefined);
+  const sc = openStream(PORT_A, conv1, 0, { origin: stranger });
+  try { assert.equal((await sc.ready)['access-control-allow-origin'], undefined); } finally { sc.close(); }
+
+  // Server B has no GENIE_ALLOW_ORIGIN at all: no CORS headers for anyone, and no preflight route.
+  const nb = await raw(PORT_B, '/api/status', { headers: { ...auth, origin: ORIGINS[1] } });
+  assert.equal(nb.status, 200);
+  assert.equal(nb.headers['access-control-allow-origin'], undefined);
+  assert.equal((await raw(PORT_B, '/api/status', { method: 'OPTIONS', headers: { origin: ORIGINS[1] } })).status, 404);
+});
+
 test('a full ask-mode run: exact event order, the ask names Bash/exec, approving from a second request unblocks it', async () => {
   assert.ok(conv1, 'needs the conversation from the earlier test');
   const s = openStream(PORT_A, conv1, 0);
@@ -362,6 +446,7 @@ test('a full ask-mode run: exact event order, the ask names Bash/exec, approving
     const { ask } = await approveWhenAsked(s, runId, 'allow');
     assert.equal(ask.name, 'Bash');
     assert.equal(ask.level, 'exec');
+    assert.equal(ask.kind, 'permission', 'an ordinary approval card, as opposed to a question');
     assert.equal(typeof ask.title, 'string');
     assert.equal(typeof ask.reason, 'string');
     assert.equal(typeof ask.summary, 'string');
@@ -498,17 +583,25 @@ test('deny: the tool_result comes back isError:true and the run still ends', asy
   conv1Runs++;
 });
 
-test('always: the rule Bash:echo … lands in settings, and the same prompt no longer asks', async () => {
-  const { events } = await runPrompt(PORT_A, conv1, P_ALWAYS, { decision: 'always' });
+test('always: an EXACT rule for the echo command lands in settings; the same command stops asking, a longer one still asks', async () => {
+  const { ask, events } = await runPrompt(PORT_A, conv1, P_ALWAYS, { decision: 'always' });
   assert.equal(firstOf(events, 'ask_resolved').decision, 'always');
   assert.equal(firstOf(events, 'tool_result').isError, false);
   conv1Runs++;
+  const command = ask.input.command;
+  assert.ok(/^echo "rehearsal: /.test(command), `the rehearsal tool is an echo: ${command}`);
   const st = await api(PORT_A, 'GET', '/api/settings');
   assert.equal(st.status, 200, st.text);
   const rules = st.body.rules;
   assert.ok(Array.isArray(rules) && rules.length >= 1, `rules: ${JSON.stringify(rules)}`);
-  const rule = rules.find((r) => r.tool === 'Bash' && r.behavior === 'allow' && /^echo /.test(String(r.match)));
-  assert.ok(rule, `an allow rule for the echo command: ${JSON.stringify(rules)}`);
+  // "Always allow" names the one command it was tapped on, in full — never a
+  // prefix. (Had the command ended in a bare `*`, the engine would have stored
+  // it escaped as `\*`; a rehearsal echo ends in a quote, so this one is stored
+  // as-is.) Either way the stored match must not read as a prefix pattern.
+  const rule = rules.find((r) => r.tool === 'Bash' && r.behavior === 'allow' && r.match === command);
+  assert.ok(rule, `an allow rule naming exactly ${JSON.stringify(command)}: ${JSON.stringify(rules)}`);
+  assert.ok(!/[^\\]\*$/.test(rule.match), `a minted rule never ends in a bare *: ${rule.match}`);
+  assert.ok(events.some((e) => e.t === 'system' && e.text.includes(`always allow Bash:${command}`)), 'every client is told which rule was added');
   const disk = JSON.parse(readFileSync(join(HOME_A, 'settings.json'), 'utf8'));
   assert.ok((disk.rules || []).some((r) => r.tool === 'Bash' && r.match === rule.match && r.behavior === 'allow'), `settings.json persisted the rule: ${JSON.stringify(disk.rules)}`);
   // The rule matches the exact command, so repeating the prompt is allowed without an ask.
@@ -517,6 +610,138 @@ test('always: the rule Bash:echo … lands in settings, and the same prompt no l
   assert.equal(firstOf(again.events, 'tool_result').isError, false);
   assert.equal(again.end.status, 'done');
   conv1Runs++;
+  // Exact means exact: a command that merely STARTS with the allowed one asks again.
+  const longer = await runPrompt(PORT_A, conv1, `${P_ALWAYS} please`, { decision: 'deny' });
+  assert.ok(longer.ask, 'the longer command is not covered');
+  assert.ok(longer.ask.input.command.startsWith(command.slice(0, -1)), `and it does start the same way: ${longer.ask.input.command}`);
+  assert.equal(longer.ask.level, 'exec');
+  conv1Runs++;
+});
+
+test('rules through the API: a prefix rule covers everyday commands but never the destructive check; an exact rule does; deny beats all', async () => {
+  const before = (await api(PORT_A, 'GET', '/api/settings')).body.rules;
+  const conv = await newConversation(PORT_A, 'rules');
+  const risky = 'sudo rm -rf / please'; // its rehearsal echo still reads as destructive to the classifier
+  const set = async (rules) => { const r = await api(PORT_A, 'PATCH', '/api/settings', { rules }); assert.equal(r.status, 200, r.text); };
+  try {
+    // A user-authored prefix rule (a trailing bare `*`) is honoured for ordinary commands…
+    await set([{ tool: 'Bash', match: 'echo *', behavior: 'allow' }]);
+    const plain = await runPrompt(PORT_A, conv, 'list the files in the workspace');
+    assert.ok(!plain.events.some((e) => e.t === 'ask'), 'the prefix rule covers an ordinary echo');
+    assert.equal(firstOf(plain.events, 'tool_result').isError, false);
+    // …but it never talks the destructive-command check out of asking.
+    const danger = await runPrompt(PORT_A, conv, risky, { decision: 'deny' });
+    assert.equal(danger.ask.level, 'danger', `a prefix rule does not silence danger: ${JSON.stringify(danger.ask)}`);
+    assert.equal(danger.ask.kind, 'permission');
+    assert.ok(/⚠️|destructive/i.test(danger.ask.title), danger.ask.title);
+    assert.equal(firstOf(danger.events, 'tool_result').isError, true);
+    // An exact rule for that very command (what "Always allow" mints) does hold, danger or not.
+    const command = danger.ask.input.command;
+    await set([{ tool: 'Bash', match: command, behavior: 'allow' }]);
+    const exact = await runPrompt(PORT_A, conv, risky);
+    assert.ok(!exact.events.some((e) => e.t === 'ask'), 'an exact rule on the full command is honoured even for danger');
+    assert.equal(firstOf(exact.events, 'tool_result').isError, false);
+    // A deny rule wins over any allow, in ask mode too — no card, the tool just hears no.
+    await set([{ tool: 'Bash', match: command, behavior: 'allow' }, { tool: 'Bash', match: '*', behavior: 'deny' }]);
+    const denied = await runPrompt(PORT_A, conv, risky);
+    assert.ok(!denied.events.some((e) => e.t === 'ask'), 'no card for a rule-denied tool');
+    const tr = firstOf(denied.events, 'tool_result');
+    assert.equal(tr.isError, true);
+    assert.ok(/denied by rule/i.test(tr.output), tr.output);
+    assert.ok(['done', 'failed'].includes(denied.end.status));
+  } finally { await set(before); }
+  deepEq((await api(PORT_A, 'GET', '/api/settings')).body.rules, before, 'the always-rule is back for the tests that follow');
+});
+
+test('a question (AskUserQuestion) lands on the phone as a question card in ask mode, and the answer reads back to the tool', async () => {
+  const conv = await newConversation(PORT_A, 'question');
+  const s = openStream(PORT_A, conv, 0);
+  let done = false;
+  try {
+    await s.ready;
+    const r = await say(PORT_A, conv, P_QUESTION);
+    assert.equal(r.status, 200, r.text);
+    const runId = r.body.runId;
+    const q = await s.waitFor((e) => e.t === 'ask' && e.runId === runId, 10_000, 'the question');
+    assert.equal(q.kind, 'question');
+    assert.equal(q.name, 'AskUserQuestion');
+    assert.equal(q.level, 'question');
+    assert.equal(q.title, 'Genie has a question for you');
+    assert.equal(typeof q.reason, 'string');
+    assert.ok(isRequestId(q.requestId));
+    assert.ok(Array.isArray(q.questions) && q.questions.length === 1, JSON.stringify(q.questions));
+    const [qq] = q.questions;
+    assert.equal(qq.question, QUESTION);
+    assert.equal(qq.header, 'Path');
+    deepEq(qq.options.map((o) => o.label), ['Quick', 'Thorough']);
+    assert.ok(qq.options.every((o) => typeof o.description === 'string'));
+    assert.equal(qq.multiSelect, false);
+    assert.equal(q.summary, QUESTION, 'the summary is the question itself');
+    const qTool = firstOf(runEvents(s, runId), 'tool');
+    assert.equal(qTool.name, 'AskUserQuestion');
+    assert.equal(q.toolId, qTool.id, 'the card sits on the AskUserQuestion tool card');
+    assert.equal(qTool.icon, '❓');
+
+    const ans = await api(PORT_A, 'POST', '/api/approve', { requestId: q.requestId, decision: 'allow', answers: { [QUESTION]: 'Quick' } });
+    assert.equal(ans.status, 200, ans.text);
+    const resolved = await s.waitFor((e) => e.t === 'ask_resolved' && e.requestId === q.requestId, 5000, 'the question resolved');
+    assert.equal(resolved.decision, 'allow');
+    assert.equal(resolved.by, 'user');
+    deepEq(resolved.answers, { [QUESTION]: 'Quick' }, 'ask_resolved carries the answers');
+    const tr = await s.waitFor((e) => e.t === 'tool_result' && e.id === q.toolId, 5000, 'the question tool_result');
+    assert.equal(tr.isError, false);
+    assert.ok(tr.output.includes('Quick') && tr.output.includes(QUESTION), `the tool reads the answer back: ${tr.output}`);
+
+    // The rehearsal's Bash step follows and is an ordinary permission ask — an
+    // answered question answers nothing else.
+    const perm = await s.waitFor((e) => e.t === 'ask' && e.runId === runId && e.requestId !== q.requestId, 10_000, 'the Bash ask');
+    assert.equal(perm.kind, 'permission');
+    assert.equal(perm.name, 'Bash');
+    assert.equal(perm.level, 'exec');
+    assert.equal(perm.questions, undefined, 'a permission ask carries no questions');
+    assert.equal((await api(PORT_A, 'POST', '/api/approve', { requestId: perm.requestId, decision: 'allow' })).status, 200);
+    const end = await s.waitFor((e) => e.t === 'run_end' && e.runId === runId, 10_000, 'run_end');
+    done = true;
+    assert.equal(end.status, 'done');
+    const evs = runEvents(s, runId);
+    assert.equal(evs.filter((e) => e.t === 'ask').length, 2, 'one question, one permission');
+    assert.equal(firstOf(evs, 'result').ok, true);
+  } finally { s.close(); if (!done) await stopQuiet(PORT_A, conv); }
+  // The transcript keeps the question and what was answered, so history renders the same card.
+  const stored = (await api(PORT_A, 'GET', `/api/conversations/${conv}`)).body.events;
+  const sq = stored.find((e) => e.t === 'ask' && e.kind === 'question');
+  assert.ok(sq && sq.questions[0].question === QUESTION, 'the question is persisted');
+  assert.ok(stored.some((e) => e.t === 'ask_resolved' && e.answers && e.answers[QUESTION] === 'Quick'), 'so are the answers');
+});
+
+test('declining a question: malformed answers are a 400 and leave it pending; Deny tells the tool the owner declined', async () => {
+  const conv = await newConversation(PORT_A, 'declined question');
+  const s = openStream(PORT_A, conv, 0);
+  let done = false;
+  try {
+    await s.ready;
+    const r = await say(PORT_A, conv, P_QUESTION);
+    assert.equal(r.status, 200, r.text);
+    const runId = r.body.runId;
+    const q = await s.waitFor((e) => e.t === 'ask' && e.runId === runId && e.kind === 'question', 10_000, 'the question');
+    const bad = await api(PORT_A, 'POST', '/api/approve', { requestId: q.requestId, decision: 'allow', answers: 'Quick' });
+    assert.equal(bad.status, 400, bad.text);
+    assert.ok(!s.events.some((e) => e.t === 'ask_resolved' && e.requestId === q.requestId), 'still pending after the bad body');
+    const no = await api(PORT_A, 'POST', '/api/approve', { requestId: q.requestId, decision: 'deny' });
+    assert.equal(no.status, 200, no.text);
+    const resolved = await s.waitFor((e) => e.t === 'ask_resolved' && e.requestId === q.requestId, 5000, 'declined');
+    assert.equal(resolved.decision, 'deny');
+    assert.equal(resolved.answers, undefined, 'no answers on a decline');
+    const tr = await s.waitFor((e) => e.t === 'tool_result' && e.id === q.toolId, 5000, 'the question tool_result');
+    assert.equal(tr.isError, true);
+    assert.ok(/declined/i.test(tr.output), tr.output);
+    // The run carries on to its Bash step regardless.
+    const perm = await s.waitFor((e) => e.t === 'ask' && e.runId === runId && e.kind === 'permission', 10_000, 'the Bash ask');
+    assert.equal((await api(PORT_A, 'POST', '/api/approve', { requestId: perm.requestId, decision: 'allow' })).status, 200);
+    const end = await s.waitFor((e) => e.t === 'run_end' && e.runId === runId, 10_000, 'run_end');
+    done = true;
+    assert.equal(end.status, 'done');
+  } finally { s.close(); if (!done) await stopQuiet(PORT_A, conv); }
 });
 
 test('timeout: an unanswered ask resolves deny with by:timeout after GENIE_ASK_TIMEOUT_MS', async () => {
@@ -643,6 +868,9 @@ test('POST /api/schedules/:id/run → a source:schedule run in the schedule\'s o
   assert.ok(isConvId(rec.conversationId), `the schedule now owns a conversation: ${rec.conversationId}`);
   assert.equal(rec.runs, 1);
   assert.ok(rec.lastRunAt >= t0 - 1000 && rec.lastRunAt <= Date.now() + 1000);
+  // Run-now comes AHEAD of the due time, so the cadence restarts from this run
+  // (spec: afterRun → now + period). Only a DUE firing re-arms from its due
+  // time — the scheduler test on B covers that.
   assert.ok(rec.nextRunAt >= rec.lastRunAt + 29 * 60_000 && rec.nextRunAt <= rec.lastRunAt + 31 * 60_000, 'nextRunAt recomputed from the run');
   const s = openStream(PORT_A, rec.conversationId, 0);
   let done = false;
@@ -693,6 +921,25 @@ test('POST /api/schedules accepts the grammar (weekdays at 08:30) and rejects no
   keptSchedId = rec.id;
 });
 
+test('POST /api/schedules: a cron with a Quartz "?" day field is a Saturday-only order (? is a wildcard, not "any day")', async () => {
+  const r = await api(PORT_A, 'POST', '/api/schedules', { when: 'cron 0 9 ? * 6', task: 'run the weekly report', tz: TZ });
+  assert.equal(r.status, 200, r.text);
+  const rec = r.body.schedule;
+  assert.ok(isScheduleId(rec.id));
+  assert.equal(rec.schedule.kind, 'cron');
+  assert.ok(/^cron /.test(rec.description), rec.description);
+  const local = new Date(rec.nextRunAt + TZ * 60_000); // wall clock in the request's tz
+  assert.equal(local.getUTCDay(), 6, `the next firing is a Saturday in the request's tz, not tomorrow: ${local.toISOString()}`);
+  assert.equal(local.getUTCHours(), 9);
+  assert.equal(local.getUTCMinutes(), 0);
+  assert.ok(rec.nextRunAt > Date.now() && rec.nextRunAt <= Date.now() + 7 * 86_400_000, 'within the week');
+  // Written with a * instead, it is the very same order.
+  const star = await api(PORT_A, 'POST', '/api/schedules', { when: 'cron 0 9 * * 6', task: 'run the weekly report (control)', tz: TZ });
+  assert.equal(star.status, 200, star.text);
+  assert.equal(star.body.schedule.nextRunAt, rec.nextRunAt, '? and * agree on the next firing');
+  for (const id of [rec.id, star.body.schedule.id]) assert.equal((await api(PORT_A, 'DELETE', `/api/schedules/${id}`)).status, 200);
+});
+
 test('custom command: GENIE_HOME/commands/<name>.md is listed and /name args runs as a prompt', async () => {
   mkdirSync(join(HOME_A, 'commands'), { recursive: true });
   writeFileSync(join(HOME_A, 'commands', 'greet.md'), '# say hello to someone\nSay hello to $ARGUMENTS and nothing else.\n');
@@ -736,6 +983,13 @@ test('/mode trust switches the setting and posts a system event; /help, /status,
   const st = await say(PORT_A, conv1, '/status');
   assert.equal(st.body.handled, true);
   assert.equal(typeof st.body.reply, 'string');
+  assert.ok(/rehearsal/.test(st.body.reply) && /mode trust/.test(st.body.reply), st.body.reply);
+  assert.ok(/spent \$\d/.test(st.body.reply), `/status shows the spend so far (a $ figure): ${st.body.reply}`);
+
+  // In rehearsal auto is never refused — root or not, nothing runs for real.
+  const auto = await api(PORT_A, 'PATCH', '/api/settings', { mode: 'auto' });
+  assert.equal(auto.status, 200, auto.text);
+  assert.equal((await api(PORT_A, 'GET', '/api/status')).body.mode, 'auto');
 
   const nu = await say(PORT_A, conv1, '/new');
   assert.equal(nu.body.handled, true);
@@ -841,6 +1095,36 @@ test('auto mode (server B): a full run has NO ask and init.permissionMode is byp
   assert.equal((await api(PORT_B, 'GET', '/api/status')).body.busy, false);
 });
 
+test('auto mode (server B): a question STILL asks — one ask, kind question, and nothing else waits for a tap', async () => {
+  const conv = await newConversation(PORT_B, 'auto question');
+  const s = openStream(PORT_B, conv, 0);
+  let done = false;
+  try {
+    await s.ready;
+    const r = await say(PORT_B, conv, P_QUESTION);
+    assert.equal(r.status, 200, r.text);
+    const runId = r.body.runId;
+    const q = await s.waitFor((e) => e.t === 'ask' && e.runId === runId, 10_000, 'the question');
+    assert.equal(q.kind, 'question');
+    assert.equal(q.name, 'AskUserQuestion');
+    assert.equal(q.level, 'question');
+    deepEq(q.questions[0].options.map((o) => o.label), ['Quick', 'Thorough']);
+    const ans = await api(PORT_B, 'POST', '/api/approve', { requestId: q.requestId, decision: 'allow', answers: { [QUESTION]: 'Thorough' } });
+    assert.equal(ans.status, 200, ans.text);
+    const end = await s.waitFor((e) => e.t === 'run_end' && e.runId === runId, 10_000, 'run_end');
+    done = true;
+    const evs = runEvents(s, runId);
+    assert.equal(evs.filter((e) => e.t === 'ask').length, 1, `the question is the only ask: [${evs.map((e) => e.t).join(', ')}]`);
+    assert.equal(firstOf(evs, 'init').permissionMode, 'bypassPermissions');
+    const qr = evs.find((e) => e.t === 'tool_result' && e.id === q.toolId);
+    assert.ok(qr && qr.isError === false && qr.output.includes('Thorough'), `the answer reached the tool: ${JSON.stringify(qr)}`);
+    const bash = evs.find((e) => e.t === 'tool' && e.name === 'Bash');
+    const br = evs.find((e) => e.t === 'tool_result' && e.id === bash.id);
+    assert.equal(br.isError, false, 'the Bash step ran without asking');
+    assert.equal(end.status, 'done');
+  } finally { s.close(); if (!done) await stopQuiet(PORT_B, conv); }
+});
+
 test('restart A on the same GENIE_HOME: conversations, transcript, memory, schedules and rules persist', async () => {
   const dog = await api(PORT_A, 'POST', '/api/memory', { fact: 'the dog is called Biscuit' });
   assert.equal(dog.status, 200, dog.text);
@@ -851,11 +1135,26 @@ test('restart A on the same GENIE_HOME: conversations, transcript, memory, sched
 
   await stopChild(srvA);
   assert.notEqual(srvA.exitCode, null, 'A exited on SIGTERM');
+  // While nothing is running, plant what a hard crash leaves on disk: a run
+  // that got as far as its approval card and no further (see the next test).
+  const at = Date.now() - 60_000;
+  const cut = (n, e) => ({ ...e, seq: n, at, runId: CUT_RUN });
+  writeFileSync(join(HOME_A, 'conversations', `${CUT_ID}.json`), JSON.stringify({
+    meta: { id: CUT_ID, title: 'cut off', createdAt: at, updatedAt: at, sessionId: null, runs: 0, cost: 0, status: 'running', source: 'user', scheduleId: null, seq: 6 },
+    events: [
+      cut(1, { t: 'run_start', prompt: 'count the files', source: 'user' }),
+      cut(2, { t: 'user', text: 'count the files' }),
+      cut(3, { t: 'init', sessionId: 'rehearsal-cutoff', model: 'rehearsal', tools: ['Bash'], cwd: HOME_A, permissionMode: 'default', version: '1.0.0' }),
+      cut(4, { t: 'text_final', text: 'On it.', parent: null, msgId: 'msg_cutoff' }),
+      cut(5, { t: 'tool', id: CUT_TOOL, name: 'Bash', input: { command: 'ls | wc -l' }, summary: 'ls | wc -l', icon: '💻', parent: null }),
+      cut(6, { t: 'ask', requestId: CUT_REQ, toolId: CUT_TOOL, name: 'Bash', kind: 'permission', input: { command: 'ls | wc -l' }, summary: 'ls | wc -l', title: 'Genie wants to run `ls | wc -l`', level: 'exec', reason: 'runs a shell command' }),
+    ],
+  }));
   srvA2 = boot(PORT_A2, HOME_A, ENV_A);
   await waitHealthy(PORT_A2, srvA2, 'server A (restarted)');
 
   const list = (await api(PORT_A2, 'GET', '/api/conversations')).body.conversations;
-  deepEq(list.map((c) => c.id).sort(), listBefore.map((c) => c.id).sort(), 'the same conversations are back');
+  deepEq(list.map((c) => c.id).sort(), [...listBefore.map((c) => c.id), CUT_ID].sort(), 'the same conversations are back (plus the planted one)');
   const me = list.find((c) => c.id === conv1);
   assert.equal(me.runs, conv1Runs);
   assert.equal(me.title, listBefore.find((c) => c.id === conv1).title);
@@ -880,6 +1179,33 @@ test('restart A on the same GENIE_HOME: conversations, transcript, memory, sched
   assert.ok(rules.some((r) => r.tool === 'Bash' && /^echo /.test(String(r.match))), 'the always-rule survived');
 });
 
+test('a run cut off by a hard crash is closed at boot: its ask resolved by stop, an error and a stopped run_end appended', async () => {
+  const { meta, events } = (await api(PORT_A2, 'GET', `/api/conversations/${CUT_ID}`)).body;
+  assert.equal(meta.status, 'idle');
+  assert.equal(meta.runs, 1, 'the run had started (init), so it counts');
+  deepEq(events.slice(0, 6).map((e) => [e.seq, e.t]), [[1, 'run_start'], [2, 'user'], [3, 'init'], [4, 'text_final'], [5, 'tool'], [6, 'ask']], 'what was on disk is untouched');
+  deepEq(events.slice(6).map((e) => e.t), ['ask_resolved', 'error', 'run_end'], `closed the way a stop would: [${events.map((e) => e.t).join(', ')}]`);
+  const [resolved, error, end] = events.slice(6);
+  assert.equal(resolved.requestId, CUT_REQ);
+  assert.equal(resolved.decision, 'deny');
+  assert.equal(resolved.by, 'stop');
+  assert.ok(/restart/i.test(error.message), error.message);
+  assert.equal(end.status, 'stopped');
+  assert.equal(end.runId, CUT_RUN);
+  for (let i = 1; i < events.length; i++) assert.ok(events[i].seq > events[i - 1].seq, 'seq keeps climbing past the planted tail');
+  assert.equal(meta.seq, events[events.length - 1].seq, 'meta.seq caught up');
+  // The stale card can no longer be answered, and the closure is on disk, not just in memory.
+  assert.equal((await api(PORT_A2, 'POST', '/api/approve', { requestId: CUT_REQ, decision: 'allow' })).status, 404);
+  const disk = JSON.parse(readFileSync(join(HOME_A, 'conversations', `${CUT_ID}.json`), 'utf8'));
+  assert.equal(disk.events[disk.events.length - 1].t, 'run_end');
+  assert.equal(disk.meta.runs, 1);
+  // And the conversation is simply usable again.
+  const { end: again, events: evs } = await runPrompt(PORT_A2, CUT_ID, 'and again', { decision: 'allow' });
+  assert.equal(again.status, 'done');
+  assert.ok(evs.every((e) => e.seq > end.seq), 'the new run continues the sequence');
+  assert.equal((await api(PORT_A2, 'GET', `/api/conversations/${CUT_ID}`)).body.meta.runs, 2);
+});
+
 test('after the restart the persisted conversation still runs (and the transcript keeps growing)', async () => {
   const { events, end } = await runPrompt(PORT_A2, conv1, 'what did we do so far', { decision: 'allow' });
   assert.equal(end.status, 'done');
@@ -896,6 +1222,12 @@ test('after the restart the persisted conversation still runs (and the transcrip
 const t0 = Date.now();
 try {
   await Promise.all([PORT_A, PORT_B, PORT_A2].map(assertPortFree));
+  // B boots with one overdue standing order on disk (see the scheduler test).
+  writeFileSync(join(HOME_B, 'schedules.json'), JSON.stringify([{
+    id: DRIFT_ID, task: 'drift probe',
+    schedule: { kind: 'every', everyMs: DRIFT_PERIOD, label: 'every 1 min', tzOffsetMin: 0 },
+    createdAt: DRIFT_DUE - DRIFT_PERIOD, lastRunAt: null, nextRunAt: DRIFT_DUE, enabled: true, runs: 0, conversationId: null,
+  }]));
   srvA = boot(PORT_A, HOME_A, ENV_A);
   srvB = boot(PORT_B, HOME_B, { GENIE_MODE: 'auto', GENIE_SCHEDULER_MS: '500' });
   await waitHealthy(PORT_A, srvA, 'server A');

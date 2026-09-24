@@ -15,6 +15,13 @@
  * a crash. The server (server.mjs) owns memory/schedules/approvals and feeds
  * every SDK-shaped message back through the pure engine (engine.js) via
  * `onMessage`; this file never interprets messages beyond session bookkeeping.
+ *
+ * Two policy hooks belong here because they are SDK plumbing: the owner's
+ * deny rules are enforced through a PreToolUse hook (the one gate the SDK
+ * consults in every permission mode, including bypassPermissions), and an
+ * AskUserQuestion answered by the owner reaches the tool as
+ * `updatedInput.answers`, exactly as the Claude Code permission component
+ * would hand them over.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -158,6 +165,34 @@ function lostSession(text) {
 }
 
 /**
+ * The owner's deny rules as a PreToolUse hook. `canUseTool` is skipped by the
+ * SDK in bypassPermissions (auto) and for auto-allowed tools, but a hook runs
+ * before every tool call in every mode, so a deny rule is a hard stop
+ * wherever it is written. `getRules` is a getter: a rule added mid-run counts.
+ */
+function denyRuleHook(engine, getRules) {
+  return async (input) => {
+    const toolInput = input?.tool_input && typeof input.tool_input === 'object' ? input.tool_input : {};
+    let rule = null;
+    try { rule = engine.findRule(getRules() || [], input?.tool_name, toolInput); } catch { return {}; }
+    if (!rule || rule.behavior !== 'deny') return {};
+    return {
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: `denied by rule ${rule.tool}:${rule.match}`,
+      },
+    };
+  };
+}
+
+/** The answers an allow decision carries for AskUserQuestion, or null. */
+function answersOf(decision) {
+  const a = decision?.updatedInput?.answers;
+  return a && typeof a === 'object' && !Array.isArray(a) ? a : null;
+}
+
+/**
  * Drive one query() to completion. Every message but the final `result` is
  * forwarded as it arrives; the result is returned to the caller, who decides
  * whether to forward it (a lost-session retry must not emit two results).
@@ -188,12 +223,16 @@ function liveDriver(sdk, engine, env, log) {
     kind: 'live',
     async run(job) {
       const {
-        prompt, conversation = {}, settings = {}, systemAppend = '', mcpServers, allowedTools, agents,
+        prompt, conversation = {}, settings = {}, systemAppend = '', mcpServers, agents,
         canUseTool, abortController, onMessage = async () => {},
       } = job;
       const startedAt = Date.now();
       const mode = settings.mode || 'trust';
+      const getRules = typeof job.getRules === 'function' ? job.getRules : () => settings.rules || [];
       let stderrTail = '';
+      // No `allowedTools`: a bare entry there is auto-approved before canUseTool
+      // sees it, which would put Genie's own tools beyond the reach of a deny
+      // rule. decide() already allows them; the hook below denies by rule.
       const base = compact({
         model: settings.model,
         cwd: settings.cwd || undefined,
@@ -205,11 +244,11 @@ function liveDriver(sdk, engine, env, log) {
         permissionMode: engine.sdkPermissionMode(mode),
         allowDangerouslySkipPermissions: mode === 'auto',
         canUseTool,
+        hooks: { PreToolUse: [{ hooks: [denyRuleHook(engine, getRules)] }] },
         abortController,
         settingSources: settingSourcesFrom(env),
         systemPrompt: { type: 'preset', preset: 'claude_code', append: systemAppend, snapshot: false },
         mcpServers,
-        allowedTools,
         agents,
         title: conversation.title || undefined,
         stderr: (data) => { stderrTail = (stderrTail + String(data)).slice(-4000); },
@@ -261,7 +300,7 @@ function rehearsalDriver(engine, log) {
 
       let sessionId = null;
       let result = null;
-      const denied = new Map(); // tool_use id → deny message
+      const outcomes = new Map(); // tool_use id → { content, is_error } standing in for the scripted tool_result
       const denials = [];
 
       for (const raw of script) {
@@ -278,11 +317,9 @@ function rehearsalDriver(engine, log) {
           continue;
         }
 
-        if (msg.type === 'user' && Array.isArray(msg.message?.content) && denied.size) {
+        if (msg.type === 'user' && Array.isArray(msg.message?.content) && outcomes.size) {
           const content = msg.message.content.map((b) => (
-            b && b.type === 'tool_result' && denied.has(b.tool_use_id)
-              ? { ...b, content: denied.get(b.tool_use_id), is_error: true }
-              : b
+            b && b.type === 'tool_result' && outcomes.has(b.tool_use_id) ? { ...b, ...outcomes.get(b.tool_use_id) } : b
           ));
           msg = { ...msg, message: { ...msg.message, content } };
         }
@@ -301,8 +338,15 @@ function rehearsalDriver(engine, log) {
               decision = { behavior: 'deny', message: errText(err) };
             }
             if (decision && decision.behavior === 'deny') {
-              denied.set(b.id, decision.message || 'denied');
+              outcomes.set(b.id, { content: decision.message || 'denied', is_error: true });
               denials.push({ tool_name: b.name, tool_use_id: b.id, tool_input: input });
+              continue;
+            }
+            // An answered question reads back what the owner said, as the real tool would.
+            const answers = answersOf(decision);
+            if (answers) {
+              const answered = Object.entries(answers).map(([q, a]) => `${q} → ${a}`).join('; ');
+              outcomes.set(b.id, { content: `answered: ${answered}`, is_error: false });
             }
           }
         }

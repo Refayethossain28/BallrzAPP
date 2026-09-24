@@ -1,11 +1,12 @@
 /* Offline service worker for the Genie console. One HTML file plus the
- * engine, so navigations are network-first (you always get the latest console
- * when online, the cached copy when offline) and the remaining static assets
- * are cache-first for speed. The agent API (/api/) is never cached — the
- * NDJSON event stream, approvals and settings stay live — and nothing
+ * engine, so navigations AND engine.js are network-first (you always get the
+ * latest matching pair when online, the cached copies when offline — a stale
+ * cached engine must never run under a newer page) and the remaining static
+ * assets are cache-first for speed. The agent API (/api/) is never cached —
+ * the NDJSON event stream, approvals and settings stay live — and nothing
  * cross-origin is touched, so a hosted console talking to a remote Genie
  * passes straight through. Bump CACHE to force a clean reinstall. */
-const CACHE = 'genie-v1';
+const CACHE = 'genie-v2';
 const ASSETS = ['./', './index.html', './engine.js', './manifest.json',
                 './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png'];
 
@@ -34,16 +35,18 @@ self.addEventListener('fetch', (e) => {
 
   const isPage = req.mode === 'navigate' ||
                  (req.destination === '' && /\/(index\.html)?(\?.*)?$/.test(url.pathname));
+  const isEngine = /\/engine\.js$/.test(url.pathname);
 
-  if (isPage) {
+  if (isPage || isEngine) {
+    const cacheKey = isEngine ? './engine.js' : './index.html';
     e.respondWith(
       fetch(req).then((resp) => {
         if (resp.ok) { // a transient 404/500 must never overwrite a good copy
           const copy = resp.clone();
-          caches.open(CACHE).then((c) => c.put('./index.html', copy)).catch(() => {});
+          caches.open(CACHE).then((c) => c.put(cacheKey, copy)).catch(() => {});
         }
         return resp;
-      }).catch(() => caches.match(req).then((hit) => hit || caches.match('./index.html')))
+      }).catch(() => caches.match(req).then((hit) => hit || caches.match(cacheKey)))
     );
     return;
   }

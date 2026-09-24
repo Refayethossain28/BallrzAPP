@@ -6,7 +6,7 @@ You tell it what you want; it *does it* — with the full Claude Code tool set
 through the **Claude Agent SDK**: shell, files, web search and fetch, subagents,
 MCP. You watch it happen token by token, with live tool cards, a cost meter and
 a stop button, and when it wants to do something you'd rather sign off on, the
-approval lands on your phone.
+approval lands on your phone — as does any question it has for you.
 
 It remembers (a memory file it writes when you say *"remember…"*), it resumes
 (multi-turn conversations, several side by side, all persisted on disk), it
@@ -47,13 +47,36 @@ or created once at `~/.genie/key` (32 hex chars); the console stores it in
 |---|---|---|
 | **Ask** | Reads freely; every write, command and web call waits for your tap. | Unfamiliar code, someone else's machine, anything you want to watch closely. |
 | **Trust** (default) | Acts freely; only destructive commands wait for your tap. | Day-to-day work in your own repos. |
-| **Auto** | Never asks — do whatever I tell it. Maps to the SDK's `bypassPermissions`. | Isolated containers and throwaway environments only. |
+| **Auto** | Never asks for permission — do whatever I tell it. Maps to the SDK's `bypassPermissions`. | Isolated containers and throwaway environments only. |
 
 Switch with the header chips, `/mode <ask|trust|auto>`, or `GENIE_MODE`.
-"Always allow" from an approval card adds a rule (`Bash:npm test`,
-`Write:/path`, `WebFetch:https://…`, `Read:*`) that is honoured before the mode
-logic; deny rules beat allow rules. Rules live in Settings and can be removed
-one by one.
+
+Whatever the mode, **a question is not a permission**. When the agent needs
+you to choose or fill in a detail it calls `AskUserQuestion`, and that lands
+on your phone as a question card — the question, one button per option, a
+"Something else…" field, Answer / Decline — in every mode, Auto included. No
+rule answers it for you; your answer goes back to the tool, a decline tells
+the model you declined.
+
+Auto has one precondition when the driver is live: the Claude Code CLI refuses
+`bypassPermissions` for **root outside a declared sandbox**. Run Genie as a
+non-root user, or set `IS_SANDBOX=1` inside a container you accept as
+disposable. Otherwise the boot log says so, `/api/status` reports
+`rootUnsandboxed` and an `autoBlockedReason`, the Auto chip is greyed, and
+`/mode auto` (or `PATCH /api/settings`) is refused with a 400 rather than
+letting every run fail with the CLI's own message.
+
+**Rules.** "Always allow" from an approval card adds an **exact** rule for the
+one command or path you tapped on (`Bash:npm test`, `Write:/path`,
+`WebFetch:https://…`): a trailing `*` is stored escaped as `\*`, so one tap on
+`git add *` never turns into "anything starting with `git add`". Prefix rules
+(`Bash:git status*`) are yours to write in Settings; they are honoured for
+reads, writes, commands and web calls, but they never override the
+destructive-command check — only an exact rule for the full command does.
+Deny rules beat allow rules, and they hold in every mode, Auto included, and
+for Genie's own tools: the live driver enforces them through a `PreToolUse`
+hook, the one gate the SDK consults even when it is bypassing permissions.
+Rules live in Settings and can be removed one by one.
 
 What counts as **destructive** (and therefore asks even in Trust): `rm -rf` on
 `/`, `~`, `*`, `.`, `.git` or a shallow path; `sudo`/`su`; `mkfs`, `dd if=`,
@@ -91,7 +114,10 @@ and anything that looks like key exfiltration. Everyday commands (`git status`,
   `hourly`, `every day at 09:00`, `daily at 6pm`, `every morning`, `weekdays at
   08:30`, `weekends at 10`, `every mon,wed,fri at 07:00`, `on tuesdays at 9`,
   `at 22:00`, or `cron 0 9 * * 1-5` (lists, ranges, steps, month and day
-  names). Minimum interval 60 s. The scheduler polls every 20 s.
+  names; a Quartz-style `?` in a day field is a wildcard). Minimum interval
+  60 s. The scheduler polls every 20 s, and an `every` order re-arms from the
+  time it was due, not from the tick that noticed it, so a late tick never
+  compounds into drift (one missed by more than a period restarts from now).
 - **Custom commands** — drop `~/.genie/commands/<name>.md` (optional first line
   `# description`, then a prompt template with `$ARGUMENTS`, `$1`…`$9`) and
   `/name args` runs it. They show up in the composer's `/` autocomplete.
@@ -106,7 +132,7 @@ and anything that looks like key exfiltration. Everyday commands (`git status`,
 | `/help` | what Genie can do and how to talk to it |
 | `/new` | start a fresh conversation |
 | `/stop` | stop the run in this conversation |
-| `/status` | driver, model, mode, cwd, cost so far |
+| `/status` | driver, model, mode, cwd, spend so far (this conversation and all of them) |
 | `/mode <ask\|trust\|auto>` | how much Genie asks before acting |
 | `/model <id>` | switch the model |
 | `/effort <level>` | `low` · `medium` · `high` · `xhigh` · `max` |
@@ -132,12 +158,12 @@ JSON over HTTP; every route but `/api/health` and the static console needs
 | Route | Purpose |
 |---|---|
 | `GET /api/health` | `{ ok, name:'genie', version, needsKey }` — unauthenticated |
-| `GET /api/status` | driver, model, mode, effort, cwd, busy, queue, memory/schedule counts, sdk, credentials |
+| `GET /api/status` | driver, model, mode, effort, cwd, busy, queue, memory/schedule counts, sdk, credentials, `rootUnsandboxed` + `autoBlockedReason` |
 | `GET` / `PATCH /api/settings` | mode, model, effort, cwd (must exist), owner, maxTurns, maxUsd, rules |
 | `GET` / `POST /api/conversations`, `GET` / `DELETE /api/conversations/:id` | list · create · transcript · delete (409 while running) |
 | `POST /api/conversations/:id/say` `{ text, tz? }` | a prompt → `{ runId, queued }`; a slash command → `{ handled, reply }` |
 | `GET /api/conversations/:id/events?since=<seq>` | NDJSON: stored + live events, then stays open (`ping` every 15 s) |
-| `POST /api/approve` `{ requestId, decision:'allow'\|'deny'\|'always' }` | answer an approval |
+| `POST /api/approve` `{ requestId, decision:'allow'\|'deny'\|'always', answers? }` | answer an approval — or a question, with `answers: { [question]: text }` |
 | `POST /api/stop` `{ conversationId }` | abort the active run, drop queued ones |
 | `GET` / `POST /api/memory`, `DELETE /api/memory/:n` | the memory file |
 | `GET` / `POST /api/schedules`, `PATCH` / `DELETE /api/schedules/:id`, `POST /api/schedules/:id/run` | standing orders |
@@ -148,9 +174,17 @@ own language, reduced from SDK messages by the engine: `run_start`, `user`,
 `init`, `thinking`, `text` (streamed delta), `text_final` (canonical block —
 replaces the streamed bubble), `tool`, `tool_result`, `progress`, `status`,
 `ask` / `ask_resolved`, `notify`, `system`, `result`, `error`, `run_end`,
-`ping`. Each carries a per-conversation `seq`, so a client that reconnects
-with `?since=` never misses or duplicates one. Only durable events are written
-to disk (never `text`, `thinking`, `progress` or `ping`).
+`ping`. An `ask` is `kind:'permission'` (Allow / Always allow / Deny) or
+`kind:'question'` (the agent's `questions`, each with `header`, `options` and
+`multiSelect`), and a question's `ask_resolved` carries the `answers`. Each
+event carries a per-conversation `seq`, so a client that reconnects with
+`?since=` never misses or duplicates one. Only durable events are written to
+disk (never `text`, `thinking`, `progress` or `ping`), and a `tool` event
+stores a clipped copy of its input — the SDK gets the whole file, the
+transcript does not. A run cut off by a hard crash (SIGKILL, OOM, power) is
+closed at the next boot the way a stop would close it — its open ask resolved
+`deny` by `stop`, then an `error` and a `run_end {status:'stopped'}` — so the
+console never replays a live card nobody can answer.
 
 ## Safety posture
 
@@ -163,10 +197,20 @@ What the code actually enforces — and what it doesn't:
 - **Modes are a gate on the SDK's `canUseTool`, not a policy language.** Ask
   and Trust hold the tool call until you answer (or until
   `GENIE_ASK_TIMEOUT_MS` — ten minutes — expires and it is denied). **Auto
-  never asks**: it passes `bypassPermissions` and `allowDangerouslySkipPermissions`
-  to the SDK, and the console makes you confirm before switching to it. Rules
-  are exact-or-prefix matches on a command or path — good for `npm test`,
-  not a substitute for thinking.
+  never asks for permission**: it passes `bypassPermissions` and
+  `allowDangerouslySkipPermissions` to the SDK, and the console makes you
+  confirm before switching to it. The one thing that still reaches your phone
+  in Auto is a *question* the agent asks you — that is not a permission, and
+  no mode or rule answers it on your behalf. Live Auto also needs a non-root
+  user or `IS_SANDBOX=1`: the CLI refuses it for root outside a sandbox, and
+  Genie refuses the switch rather than let every run fail.
+- **Rules are matches on a command or path, and only "Always allow" is
+  guaranteed exact.** What you tap becomes one exact rule (a trailing `*`
+  escaped, never a prefix). Prefix rules are user-authored, and never talk
+  the destructive-command check out of asking. Deny rules are enforced in
+  every mode — the live driver runs them as a `PreToolUse` hook, which the SDK
+  consults even when it bypasses permissions — and Genie's own tools are not
+  exempt. Good for `npm test`; not a substitute for thinking.
 - **The destructive-command classifier is a pattern list.** It catches the
   classic footguns (it is unit-tested against a table of them) and it is
   case- and chaining-aware, but an obfuscated command walks past it. Treat it
@@ -180,20 +224,29 @@ What the code actually enforces — and what it doesn't:
 - **The key is the only lock**, and it travels as a bearer token over plain
   HTTP. Loopback by default; `HOST=0.0.0.0` prints a loud warning. On
   anything but a trusted LAN put TLS in front of it (a reverse proxy or a
-  tunnel). `GENIE_ALLOW_ORIGIN` adds CORS headers for one origin (or `*`) and
-  is off unless you set it.
+  tunnel). `GENIE_ALLOW_ORIGIN` adds CORS headers for a comma-separated list
+  of exact origins (or `*`) — the matching origin is echoed back, nothing is
+  echoed for a stranger — and is off unless you set it.
 - **Budgets are per run, enforced by the SDK** (`maxTurns`, `maxBudgetUsd`).
   They are not per day: a standing order runs unattended while you sleep, and
   every firing is a fresh budget. Check the cost meter and the conversation
-  list; `/status` shows the spend so far.
+  list; `/status` shows the spend so far, for the conversation and across all
+  of them.
 - **Standing orders fire whether or not you're watching**, into their own
   conversation, under the current mode. In Ask mode an unattended run will
   simply time out at its first gated tool — Trust is what makes schedules
-  useful, so choose the tasks accordingly.
+  useful, so choose the tasks accordingly. A question the agent asks waits for
+  you too, in any mode, until `GENIE_ASK_TIMEOUT_MS` declines it.
+- **Timeouts are clamped to what a Node timer can hold** (2³¹−1 ms, about
+  24.8 days): a larger `GENIE_ASK_TIMEOUT_MS` or `GENIE_SCHEDULER_MS` would
+  otherwise fire after one millisecond, which for the ask timeout means
+  "deny everything at once".
 - **State on disk is plain files** under `GENIE_HOME` (`key`, `settings.json`,
   `MEMORY.md`, `schedules.json`, `conversations/*.json`, `commands/*.md`).
-  Transcripts include tool output — the same thing you saw on screen. Writes
-  are atomic (temp file + rename) so a crash can't half-write them.
+  Transcripts include tool output — the same thing you saw on screen — and a
+  clipped copy of tool inputs. Writes are atomic (temp file + rename) so a
+  crash can't half-write them, and a run the crash cut off is closed at the
+  next boot (see the API notes) rather than left open on disk.
 - **Rehearsal never spends money and never runs anything.** It is a pure,
   network-free script that replays the shape of a run and labels itself.
 
@@ -210,8 +263,17 @@ docker run -d --name genie -p 8800:8800 \
   -v genie-home:/data -v "$PWD":/app -w /app \
   -e GENIE_HOME=/data -e HOST=0.0.0.0 -e GENIE_KEY=<32 hex chars> \
   -e ANTHROPIC_API_KEY=sk-ant-... \
+  -e IS_SANDBOX=1 \
   node:22-alpine sh -c "npm ci --omit=dev && node genie/server.mjs"
 ```
+
+`IS_SANDBOX=1` is there for Auto: the process in that image is root, and the
+Claude Code CLI refuses `bypassPermissions` for root unless the environment
+declares itself a sandbox — without it Auto is refused at the switch, Ask and
+Trust work as usual. Setting it says "I accept this container as
+disposable", which for a container is the truth. The stricter alternative is
+a non-root user (`--user node`), in which case give that user a `GENIE_HOME`
+it can write (a bind mount it owns, or `chown -R 1000` the volume once).
 
 The container is also the honest answer to "what can it break": everything
 inside it, nothing outside it.
@@ -220,18 +282,27 @@ inside it, nothing outside it.
 (free plan, `node genie/server.mjs`, health check on `/api/health`,
 `HOST=0.0.0.0`, `GENIE_MODE=trust`, a generated `GENIE_KEY`, an
 `ANTHROPIC_API_KEY` you paste in the dashboard, and `GENIE_ALLOW_ORIGIN` set to
-the GitHub Pages origin). Deploy it as a Blueprint, read `GENIE_KEY` from the
-Environment tab, and open `https://<service>.onrender.com/?key=<GENIE_KEY>` on
-your phone. **The free disk is ephemeral**: memory, conversations and standing
-orders are wiped on every deploy and restart (the key survives because it is
-an env var). For state that must last, use a paid instance with a disk and
-point `GENIE_HOME` at its mount.
+both origins the hosted console can be served from). Deploy it as a Blueprint,
+read `GENIE_KEY` from the Environment tab, and open
+`https://<service>.onrender.com/?key=<GENIE_KEY>` on your phone. **The free
+disk is ephemeral**: memory, conversations and standing orders are wiped on
+every deploy and restart (the key survives because it is an env var). For
+state that must last, use a paid instance with a disk and point `GENIE_HOME`
+at its mount. If the boot log warns that the service runs as root outside a
+sandbox, add `IS_SANDBOX=1` to its environment before reaching for Auto.
 
-**The hosted console.** The copy at
-<https://refayethossain28.github.io/BallrzAPP/genie/> is the console only — no
-server behind it. Its Connect screen takes a server URL and key, so it can
-drive a Genie you run anywhere, provided that server sends CORS headers for
-the page's origin: `GENIE_ALLOW_ORIGIN=https://refayethossain28.github.io`.
+**The hosted console.** The copy published from this repo is the console only —
+no server behind it. GitHub Pages serves the site from its custom domain, so
+the page you actually load is <https://apexvip.uk/genie/>; the
+<https://refayethossain28.github.io/BallrzAPP/genie/> address redirects there.
+Its Connect screen takes a server URL and key, so it can drive a Genie you run
+anywhere, provided that server sends CORS headers for the page's origin —
+list both, and the config keeps working whichever host serves the page:
+
+```bash
+GENIE_ALLOW_ORIGIN=https://apexvip.uk,https://refayethossain28.github.io
+```
+
 Without a server it shows the run command and stops there.
 
 ## Environment
@@ -250,10 +321,11 @@ Without a server it shows the run command and stops there.
 | `GENIE_MAX_TURNS` | `200` | per-run turn ceiling (1–1000) |
 | `GENIE_MAX_USD` | `20` | per-run spend ceiling (0.1–1000) |
 | `GENIE_DRIVER` | `auto` | `auto` · `live` · `rehearsal` |
-| `GENIE_ALLOW_ORIGIN` | unset (no CORS) | exact origin or `*` |
-| `GENIE_ASK_TIMEOUT_MS` | `600000` | unanswered approvals resolve to deny |
+| `GENIE_ALLOW_ORIGIN` | unset (no CORS) | comma-separated exact origins, or `*`; the matching one is echoed |
+| `GENIE_ASK_TIMEOUT_MS` | `600000` | unanswered approvals (and questions) resolve to deny; clamped to 1 s … 2³¹−1 ms |
 | `GENIE_SETTING_SOURCES` | none | comma list passed to the SDK's `settingSources` |
-| `GENIE_SCHEDULER_MS` | `20000` | how often standing orders are checked |
+| `GENIE_SCHEDULER_MS` | `20000` | how often standing orders are checked; clamped to 250 ms … 2³¹−1 ms |
+| `IS_SANDBOX` | unset | `1` tells the Claude Code CLI a root process is inside a disposable sandbox, which live Auto needs when running as root |
 | `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` / `CLAUDE_CODE_OAUTH_TOKEN` | — | credentials (or `~/.claude/.credentials.json`) |
 
 Settings changed from the console (`PATCH /api/settings`) are saved to
@@ -271,14 +343,21 @@ npm run icons:genie         # regenerate icon-180/192/512.png from the lamp moti
 ```
 
 The engine tests cover the markdown renderer's XSS canaries, the schedule
-grammar and next-run walker across midnight and month/year edges, the
-danger table, `decide` across every mode and rule shape, the SDK-message
-reducer over a scripted run (subagents included), memory, cost, the system
-prompt and the rehearsal script. The server tests spawn `server.mjs` twice
-(Ask on 8801, Auto on 8802): auth, static allowlist and traversal, a full run
-through the NDJSON stream with approve / deny / always / timeout, slash
-commands, schedules firing, stop, 409/413/400, and a restart on 8803 that
-proves conversations and memory persist. Both are part of root `npm test`.
+grammar and next-run walker across midnight and month/year edges (cron `?`
+included), the danger table, `decide` across every mode and rule shape (exact
+vs prefix vs escaped `\*`, danger vs allow rules, questions in every mode),
+the SDK-message reducer over a scripted run (subagents included), memory,
+cost, the system prompt and the rehearsal script. The server tests spawn
+`server.mjs` twice (Ask on 8801 with two CORS origins, Auto on 8802): auth,
+CORS on the API and on the stream, static allowlist and traversal, a full run
+through the NDJSON stream with approve / deny / always / timeout, the
+exact-rule guarantee and rule precedence through the settings API, a question
+answered and declined from the phone in Ask and in Auto, slash commands
+(`/status` with its spend figure), schedules firing — a due `every` order
+re-arming from its due time, run-now, a Saturday-only cron `?` — stop,
+409/413/400, a restart on 8803 that proves conversations and memory persist,
+and a run cut off by a hard crash being closed at that boot. Both are part of
+root `npm test`.
 
 ## Architecture (house rules)
 
@@ -289,9 +368,11 @@ proves conversations and memory persist. Both are part of root `npm test`.
   in `node:vm` and via `module.exports`.
 - `agent.mjs` — the driver: live (Agent SDK) and rehearsal (offline). Never
   throws into the server; retries once without `resume` when a session is
-  gone.
+  gone; enforces deny rules through a `PreToolUse` hook and hands a
+  question's answers back to the tool as `updatedInput.answers`.
 - `server.mjs` — `node:http` console server: static allowlist, JSON/NDJSON
-  API, one-at-a-time run queue, approvals, scheduler, atomic persistence.
+  API with CORS for a list of origins, one-at-a-time run queue, approvals and
+  question cards, scheduler, atomic persistence, crash reconciliation at boot.
 - `index.html` — the console, one smoke-test-clean file. `manifest.json` +
   `sw.js` make it an installable PWA with an offline shell (network-first
   navigations, cache-first assets, `/api/` never cached).

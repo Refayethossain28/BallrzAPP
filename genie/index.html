@@ -33,9 +33,11 @@
   button:disabled { opacity: .5; cursor: default; }
   a { color: var(--gold); }
   [hidden] { display: none !important; }
+  /* controls sit at 16px: iOS Safari zooms the page into any focused field
+     smaller than that, and pasting the key is the first tap on a phone */
   input, textarea, select {
     width: 100%; background: var(--panel2); color: var(--text); border: 1px solid var(--line);
-    border-radius: 10px; padding: 9px 11px; font: inherit; font-size: 15px;
+    border-radius: 10px; padding: 9px 11px; font: inherit; font-size: 16px;
   }
   input:focus, textarea:focus, select:focus { outline: none; border-color: var(--amber-dim); }
   label.lbl { display: block; color: var(--dim); font-size: 11.5px; margin: 10px 0 4px; letter-spacing: .05em; text-transform: uppercase; }
@@ -79,6 +81,7 @@
   .modes button.on { background: var(--amber); color: #241d0c; }
   .modes button.on[data-mode="auto"] { background: var(--bad); color: #2a0e0e; }
   .modes button.on[data-mode="ask"] { background: var(--blue); color: #0e1a2a; }
+  .modes button.blocked { opacity: .4; cursor: not-allowed; }
   #stop { background: #3a1d1d; border: 1px solid var(--bad); color: var(--bad); border-radius: 999px; padding: 5px 12px; font-size: 13px; font-weight: 700; white-space: nowrap; }
   #menu { font-size: 20px; }
 
@@ -156,10 +159,11 @@
   .ask.level-write { border-left-color: var(--blue); }
   .ask.level-network { border-left-color: var(--teal); }
   .ask.level-read { border-left-color: var(--ok); }
+  .ask.level-question { border-left-color: var(--gold); background: #1c1834; }
   .ask .atitle { font-weight: 600; font-size: 15px; } .ask .atitle p { margin: 0; }
   .ask .ameta { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-top: 6px; font-size: 12.5px; color: var(--dim); }
   .badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; border: 1px solid currentColor; }
-  .badge.danger { color: var(--bad); } .badge.exec { color: var(--amber); } .badge.write { color: var(--blue); } .badge.network { color: var(--teal); } .badge.read { color: var(--ok); }
+  .badge.danger { color: var(--bad); } .badge.exec { color: var(--amber); } .badge.write { color: var(--blue); } .badge.network { color: var(--teal); } .badge.read { color: var(--ok); } .badge.question { color: var(--gold); }
   .ask pre.acmd { margin: 8px 0 0; background: #0a0916; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: 12.5px/1.5 var(--mono); white-space: pre-wrap; word-break: break-word; max-height: 30vh; overflow: auto; }
   .ask .abtns { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
   .ask .abtns button { flex: 1; min-width: 90px; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel2); color: var(--text); font-weight: 600; }
@@ -170,6 +174,25 @@
   .ask.resolved { opacity: .75; }
   .ask.resolved.allowed .adec, .ask.resolved.always .adec { color: var(--ok); }
   .ask.resolved.denied .adec { color: var(--bad); }
+  .ask .abtns button.answer { background: var(--ok); color: #0e2a18; border: 0; }
+
+  /* ── question card (the agent asked the owner something) ── */
+  .ask .q { margin-top: 10px; }
+  .ask .qhead { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; background: var(--panel3); color: var(--gold); margin-bottom: 4px; }
+  .ask .qtext { font-size: 14.5px; }
+  .ask .qopts { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+  .ask .qopt { display: flex; gap: 8px; align-items: baseline; text-align: left; background: var(--panel2); border: 1px solid var(--line); color: var(--text); border-radius: 10px; padding: 8px 12px; cursor: pointer; font: inherit; }
+  .ask .qopt.on { border-color: var(--amber); background: var(--user); }
+  .ask .qopt:disabled, .ask .qopt.off { cursor: default; }
+  .ask .qopt .qbox { color: var(--dim); flex: none; }
+  .ask .qopt.on .qbox { color: var(--amber); }
+  .ask .qopt input.qbox { width: 16px; height: 16px; padding: 0; margin: 0; border-radius: 4px; accent-color: var(--amber); align-self: center; }
+  .ask .qopt .ql { font-weight: 600; }
+  .ask .qopt .qd { color: var(--dim); font-size: 12.5px; flex: 1; min-width: 0; }
+  .ask input.qother { margin-top: 8px; }
+  .ask .qans { margin-top: 4px; color: var(--text); font-size: 13.5px; }
+  .ask .qans div { margin-top: 2px; }
+  .ask .qans b { color: var(--gold); font-weight: 600; }
 
   /* ── composer ── */
   #composer { flex: none; border-top: 1px solid var(--line); background: var(--ink); padding: 8px 10px calc(8px + var(--sab)); padding-left: calc(10px + var(--sal)); padding-right: calc(10px + var(--sar)); position: relative; }
@@ -449,10 +472,25 @@ function lsGet(k) { try { var v = localStorage.getItem(k); return typeof v === '
 function lsSet(k, v) { try { if (v == null || v === '') localStorage.removeItem(k); else localStorage.setItem(k, String(v)); } catch (e) {} }
 function tzMin() { return -new Date().getTimezoneOffset(); }
 function isHidden() { try { return document.visibilityState === 'hidden' || document.hidden === true; } catch (e) { return false; } }
+/* the console's own scheme ('https:' when hosted) — '' when there is no real location */
+function pageProtocol() {
+  var p = (typeof location !== 'undefined' && location) ? location.protocol : '';
+  return typeof p === 'string' ? p : '';
+}
 function normBase(u) {
   u = str(u).trim().replace(/\/+$/, '');
-  if (u && !/^https?:\/\//i.test(u)) u = 'http://' + u;
+  // a bare host takes the page's own scheme: an https console cannot fetch http
+  if (u && !/^https?:\/\//i.test(u)) u = (pageProtocol() === 'https:' ? 'https://' : 'http://') + u;
   return u;
+}
+/* an https page may only reach an http Genie on this machine (loopback is exempt from mixed content) */
+function mixedContent(base) {
+  if (pageProtocol() !== 'https:' || !/^http:\/\//i.test(base)) return false;
+  return !/^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(base);
+}
+function unreachableText(base, auto) {
+  if (mixedContent(base)) return 'A hosted console can only reach a Genie served over https (or one on localhost): the browser blocks http from an https page.';
+  return 'No Genie server at ' + (base || 'this origin') + '.' + (auto ? ' Start it and tap Connect.' : '');
 }
 
 /* ── toasts ── */
@@ -536,7 +574,7 @@ function connectWith(base, key, auto) {
     btn.disabled = false; btn.textContent = 'Connect';
     if (r.status === 401) { setConnectError('The server rejected that key.'); showConnect(true); lsSet('genie.key', null); return; }
     if (!r.ok || !r.data || typeof r.data !== 'object') {
-      setConnectError(r.status ? 'That server answered ' + r.status + ' — is it Genie?' : 'No Genie server at ' + (base || 'this origin') + '. ' + (auto ? 'Start it and tap Connect.' : ''));
+      setConnectError(r.status ? 'That server answered ' + r.status + ' — is it Genie?' : unreachableText(base, auto));
       showConnect(true); return;
     }
     lsSet('genie.key', key); lsSet('genie.base', base);
@@ -546,7 +584,7 @@ function connectWith(base, key, auto) {
     afterConnect();
   }).catch(function () {
     btn.disabled = false; btn.textContent = 'Connect';
-    setConnectError('No Genie server at ' + (base || 'this origin') + '.');
+    setConnectError(unreachableText(base, auto));
     showConnect(true);
   });
 }
@@ -615,29 +653,44 @@ function renderSettings() {
   $('susd').value = s.maxUsd != null ? String(s.maxUsd) : '';
   renderRules();
 }
+/* why Auto is off the table right now (live driver, root outside a sandbox), or '' */
+function autoBlockedReason() {
+  var st = obj(S.status);
+  return (st.live && st.rootUnsandboxed) ? str(st.autoBlockedReason || 'auto mode is unavailable on this server') : '';
+}
 function applyModeUI(mode) {
+  var blocked = autoBlockedReason();
   var btns = $('modes').querySelectorAll('button');
   for (var i = 0; i < btns.length; i++) {
     var b = btns[i]; if (!b) break;
-    b.className = b.getAttribute('data-mode') === mode ? 'on' : '';
+    var m = b.getAttribute('data-mode'), cls = [];
+    if (m === mode) cls.push('on');
+    if (m === 'auto' && blocked) cls.push('blocked');
+    b.className = cls.join(' ');
+    if (m === 'auto') b.title = blocked; // stays tappable: the server's refusal says why
   }
   var mi = modeInfo(mode);
   $('hint').innerHTML = '<b>' + esc(mi.label) + '</b> · ' + esc(mi.blurb);
   if (S.settings) S.settings.mode = mode;
 }
+/* onDone(ok, reply|null) owns the failure message when given; otherwise a toast does */
 function patchSettings(patch, onDone) {
   return api('PATCH', '/api/settings', patch).then(function (r) {
-    if (!r.ok) { toast('Settings', errOf(r, 'not saved'), true); if (onDone) onDone(false, r); return; }
+    if (!r.ok) { if (onDone) onDone(false, r); else toast('Settings', errOf(r, 'not saved'), true); return; }
     var s = (r.data && r.data.settings && typeof r.data.settings === 'object') ? r.data.settings : r.data;
     S.settings = obj(s);
     renderSettings();
     if (onDone) onDone(true, r);
-  }).catch(function () { toast('Settings', 'server unreachable', true); if (onDone) onDone(false, null); });
+  }).catch(function () { if (onDone) onDone(false, null); else toast('Settings', 'server unreachable', true); });
 }
 function setMode(mode) {
   if (!S.connected) return;
-  if (mode === 'auto' && !confirm('Genie will never ask before acting. Continue?')) return;
-  patchSettings({ mode: mode }, function (ok) { if (ok) toast('Mode', modeInfo(mode).label + ' — ' + modeInfo(mode).blurb); });
+  // a blocked Auto skips the confirm: the server's own 400 says why it refused
+  if (mode === 'auto' && !autoBlockedReason() && !confirm('Genie will never ask before acting. Continue?')) return;
+  patchSettings({ mode: mode }, function (ok, r) {
+    if (ok) toast('Mode', modeInfo(mode).label + ' — ' + modeInfo(mode).blurb);
+    else toast('Mode', r ? errOf(r, 'not changed') : 'server unreachable', true);
+  });
 }
 function saveSettingsForm() {
   var patch = {
@@ -649,7 +702,7 @@ function saveSettingsForm() {
   if (cwd) patch.cwd = cwd;
   $('sserr').textContent = '';
   patchSettings(patch, function (ok, r) {
-    if (ok) toast('Settings', 'saved'); else $('sserr').textContent = errOf(r, 'not saved');
+    if (ok) toast('Settings', 'saved'); else $('sserr').textContent = r ? errOf(r, 'not saved') : 'server unreachable';
   });
 }
 function renderRules() {
@@ -687,6 +740,7 @@ function renderAbout() {
     ['Host', str(st.host || '') + (st.port ? ':' + st.port : '')],
     ['Memory', String(Number(st.memoryCount) || 0) + ' facts'], ['Schedules', String(Number(st.schedules) || 0)]
   ];
+  if (autoBlockedReason()) rows.push(['Auto mode', 'unavailable — ' + autoBlockedReason()]);
   rows.forEach(function (r) { dl.appendChild(h('dt', null, r[0])); dl.appendChild(h('dd', null, r[1])); });
   var tbl = $('modestbl'); tbl.textContent = '';
   var modes = arr(E.MODES).length ? arr(E.MODES) : ['ask', 'trust', 'auto'];
@@ -832,6 +886,10 @@ function append(el, parent) {
 function showEmpty() {
   clearFeed();
   $('ctitle').textContent = 'New conversation';
+  renderWelcome();
+}
+/* the lamp, a nudge and four try-me prompts — what an empty feed shows */
+function renderWelcome() {
   var e = h('div', 'empty');
   e.appendChild(h('div', 'big', '🪔'));
   e.appendChild(h('h2', null, 'What do you need?'));
@@ -845,11 +903,17 @@ function showEmpty() {
   e.appendChild(tries);
   $('inner').appendChild(e);
 }
+/* the welcome goes as soon as anything lands in the feed */
+function dropWelcome() {
+  var inner = $('inner'), first = inner.firstChild;
+  if (first && first.className === 'empty') inner.removeChild(first);
+}
 
 /* ── 7. applyEvent — one renderer for live and stored events ── */
 function applyEvent(evt, live) {
   evt = obj(evt);
   var t = evt.t;
+  dropWelcome();
   try {
     if (t === 'run_start') onRunStart(evt, live);
     else if (t === 'user') onUser(evt, live);
@@ -882,13 +946,21 @@ function onRunStart(evt, live) {
   }
   if (live) refreshStatus();
 }
+/* a /command (built-in or custom) reads in mono, whether it just left the composer or came from disk */
+function userBubbleClass(text, extra) {
+  var isCmd = typeof E.parseCommand === 'function' && E.parseCommand(text).kind === 'command';
+  return 'bubble user' + (isCmd ? ' cmd' : '') + (extra ? ' ' + extra : '');
+}
+/* the bubble the composer added is confirmed (or the reply came and none will) */
+function settleUser() {
+  if (!S.pendingUser) return;
+  S.pendingUser.el.className = userBubbleClass(S.pendingUser.text);
+  S.pendingUser = null;
+}
 function onUser(evt) {
   var text = str(evt.text);
-  if (S.pendingUser && S.pendingUser.text === text) {
-    S.pendingUser.el.className = 'bubble user';
-    S.pendingUser = null; return;
-  }
-  append(h('div', 'bubble user', text), null);
+  if (S.pendingUser && S.pendingUser.text === text) { settleUser(); return; }
+  append(h('div', userBubbleClass(text), text), null);
 }
 function onInit(evt) {
   if (evt.permissionMode === 'bypassPermissions' && S.settings && S.settings.mode !== 'auto') addLine('running with permissions bypassed', 'status');
@@ -1013,61 +1085,175 @@ function tick() {
   }
 }
 
-/* approval cards */
+/* asks — a permission card (Allow / Always allow / Deny), or a question card
+ * when the agent asked the owner something (AskUserQuestion): the answers go
+ * back with the approval and the tool sees them as its input */
 function onAsk(evt, live) {
   var rid = str(evt.requestId); if (!rid) return;
-  var level = str(evt.level || 'exec');
+  var question = evt.kind === 'question' || evt.level === 'question';
+  var level = question ? 'question' : str(evt.level || 'exec');
   var card = h('div', 'ask level-' + level); card.id = 'ask-' + rid;
-  var title = h('div', 'atitle'); title.innerHTML = md(str(evt.title || ('Genie wants to use ' + str(evt.name)))); card.appendChild(title);
+  var fallback = question ? 'Genie has a question for you' : 'Genie wants to use ' + str(evt.name);
+  var title = h('div', 'atitle'); title.innerHTML = md(str(evt.title || fallback)); card.appendChild(title);
   var meta = h('div', 'ameta');
   meta.appendChild(h('span', 'badge ' + level, level));
   meta.appendChild(h('span', null, str(evt.name)));
   if (evt.reason) meta.appendChild(h('span', null, '— ' + str(evt.reason)));
   card.appendChild(meta);
-  var cmd = str(evt.summary || summ(evt.name, evt.input));
-  if (cmd) { var pre = h('pre', 'acmd', cmd); card.appendChild(pre); }
   var btns = h('div', 'abtns');
-  var bAllow = h('button', 'allow', 'Allow'), bAlways = h('button', 'always', 'Always allow'), bDeny = h('button', 'deny', 'Deny');
-  bAllow.addEventListener('click', function () { approve(rid, 'allow'); });
-  bAlways.addEventListener('click', function () { approve(rid, 'always'); });
-  bDeny.addEventListener('click', function () { approve(rid, 'deny'); });
-  btns.appendChild(bAllow); btns.appendChild(bAlways); btns.appendChild(bDeny);
+  if (question) {
+    card.questions = buildQuestions(card, arr(evt.questions));
+    var bAnswer = h('button', 'answer', 'Answer'), bDecline = h('button', 'deny', 'Decline');
+    bAnswer.disabled = true;
+    bAnswer.addEventListener('click', function () { approve(rid, 'allow', collectAnswers(card)); });
+    bDecline.addEventListener('click', function () { approve(rid, 'deny'); });
+    btns.appendChild(bAnswer); btns.appendChild(bDecline);
+    card.answerBtn = bAnswer;
+  } else {
+    var cmd = str(evt.summary || summ(evt.name, evt.input));
+    if (cmd) card.appendChild(h('pre', 'acmd', cmd));
+    var bAllow = h('button', 'allow', 'Allow'), bAlways = h('button', 'always', 'Always allow'), bDeny = h('button', 'deny', 'Deny');
+    bAllow.addEventListener('click', function () { approve(rid, 'allow'); });
+    bAlways.addEventListener('click', function () { approve(rid, 'always'); });
+    bDeny.addEventListener('click', function () { approve(rid, 'deny'); });
+    btns.appendChild(bAllow); btns.appendChild(bAlways); btns.appendChild(bDeny);
+  }
   card.appendChild(btns);
   var dec = h('div', 'adec'); dec.hidden = true; card.appendChild(dec);
   card.btns = btns; card.dec = dec;
   S.asks[rid] = card;
   append(card, null);
   if (live) {
-    var plain = str(evt.title || '').replace(/[`*_]/g, '') || ('Genie wants to use ' + str(evt.name));
-    toast('Approval needed', plain);
-    desktopNotify('Genie needs your approval', plain);
+    var plain = str(evt.title || '').replace(/[`*_]/g, '') || fallback;
+    if (question) {
+      var first = str(obj(arr(evt.questions)[0]).question) || plain;
+      toast('Genie has a question', first);
+      desktopNotify('Genie has a question', first);
+    } else {
+      toast('Approval needed', plain);
+      desktopNotify('Genie needs your approval', plain);
+    }
   }
 }
-function approve(rid, decision) {
+/* one block per question: header chip, the question, its options, a free-text line */
+function buildQuestions(card, questions) {
+  var states = [];
+  questions.forEach(function (q) {
+    q = obj(q);
+    var text = str(q.question); if (!text) return;
+    var state = { question: text, multi: q.multiSelect === true, picked: [], other: null, options: [] };
+    var block = h('div', 'q');
+    if (q.header) block.appendChild(h('span', 'qhead', str(q.header)));
+    block.appendChild(h('div', 'qtext', text));
+    var opts = h('div', 'qopts');
+    arr(q.options).forEach(function (o) {
+      o = obj(o);
+      var label = str(o.label); if (!label) return;
+      var row, box;
+      if (state.multi) {
+        row = h('label', 'qopt');
+        box = h('input', 'qbox'); box.type = 'checkbox';
+        box.addEventListener('change', function () { pickOption(card, state, label, box.checked); });
+      } else {
+        row = h('button', 'qopt'); row.type = 'button';
+        box = h('span', 'qbox', '○');
+        row.addEventListener('click', function () { pickOption(card, state, label, state.picked.indexOf(label) === -1); });
+      }
+      row.appendChild(box);
+      row.appendChild(h('span', 'ql', label));
+      if (o.description) row.appendChild(h('span', 'qd', str(o.description)));
+      state.options.push({ el: row, box: box, label: label });
+      opts.appendChild(row);
+    });
+    block.appendChild(opts);
+    var other = h('input', 'qother'); other.type = 'text'; other.placeholder = 'Something else…'; other.autocomplete = 'off';
+    other.addEventListener('input', function () {
+      if (str(other.value).trim() && state.picked.length) { state.picked = []; paintOptions(state); }
+      refreshAnswer(card);
+    });
+    other.addEventListener('keydown', function (e) { if (e.key === 'Enter' && card.answerBtn && !card.answerBtn.disabled) card.answerBtn.click(); });
+    state.other = other;
+    block.appendChild(other);
+    card.appendChild(block);
+    states.push(state);
+  });
+  return states;
+}
+function pickOption(card, state, label, on) {
+  var i = state.picked.indexOf(label);
+  if (state.multi) { if (i !== -1) state.picked.splice(i, 1); if (on) state.picked.push(label); }
+  else state.picked = on ? [label] : [];
+  if (on && state.other) state.other.value = '';
+  paintOptions(state);
+  refreshAnswer(card);
+}
+function paintOptions(state) {
+  state.options.forEach(function (o) {
+    var on = state.picked.indexOf(o.label) !== -1;
+    o.el.className = 'qopt' + (on ? ' on' : '');
+    if (state.multi) o.box.checked = on; else o.box.textContent = on ? '●' : '○';
+  });
+}
+/* the typed line wins; otherwise the picked labels, joined with ', ' for multi-select */
+function answerOf(state) {
+  var typed = str(state.other && state.other.value).trim();
+  return typed || state.picked.join(', ');
+}
+function collectAnswers(card) {
+  var out = {};
+  arr(card.questions).forEach(function (q) { out[q.question] = answerOf(q); });
+  return out;
+}
+function refreshAnswer(card) {
+  var ready = arr(card.questions).length > 0;
+  arr(card.questions).forEach(function (q) { if (!answerOf(q)) ready = false; });
+  if (card.answerBtn) card.answerBtn.disabled = !ready;
+}
+function approve(rid, decision, answers) {
   var card = S.asks[rid]; if (!card) return;
   var bs = card.btns.querySelectorAll('button');
   for (var i = 0; i < bs.length; i++) bs[i].disabled = true;
-  api('POST', '/api/approve', { requestId: rid, decision: decision }).then(function (r) {
+  var body = { requestId: rid, decision: decision };
+  if (answers) body.answers = answers;
+  api('POST', '/api/approve', body).then(function (r) {
     if (r.ok) return;
     for (var j = 0; j < bs.length; j++) bs[j].disabled = false;
+    if (card.answerBtn) refreshAnswer(card);
     if (r.status === 404) resolveAskCard(card, 'expired', '');
     else toast('Approval', errOf(r, 'failed'), true);
   }).catch(function () {
     for (var j = 0; j < bs.length; j++) bs[j].disabled = false;
+    if (card.answerBtn) refreshAnswer(card);
     toast('Approval', 'server unreachable', true);
   });
 }
-function resolveAskCard(card, decision, by) {
-  var cls = decision === 'allow' ? 'allowed' : (decision === 'always' ? 'always' : (decision === 'deny' ? 'denied' : 'expired'));
+function resolveAskCard(card, decision, by, answers) {
+  var allowed = decision === 'allow' || decision === 'always';
+  var cls = allowed ? (decision === 'always' ? 'always' : 'allowed') : (decision === 'deny' ? 'denied' : 'expired');
   card.className = card.className.replace(/ resolved.*$/, '') + ' resolved ' + cls;
   card.btns.hidden = true;
   card.dec.hidden = false;
-  var label = decision === 'allow' ? '✓ allowed' : (decision === 'always' ? '✓ allowed — always' : (decision === 'deny' ? '✗ denied' : '— expired'));
+  var label;
+  if (card.questions) {
+    label = allowed ? '✓ answered' : (decision === 'deny' ? '✗ declined' : '— expired');
+    var fields = card.querySelectorAll('.qopt, .qopt input, .qother');
+    for (var i = 0; i < fields.length; i++) { fields[i].disabled = true; fields[i].className += ' off'; }
+  } else label = decision === 'allow' ? '✓ allowed' : (decision === 'always' ? '✓ allowed — always' : (decision === 'deny' ? '✗ denied' : '— expired'));
   card.dec.textContent = label + (by && by !== 'user' ? ' (' + by + ')' : '');
+  if (card.questions && answers && typeof answers === 'object') {
+    var list = h('div', 'qans');
+    for (var q in answers) {
+      var row = h('div');
+      row.appendChild(document.createTextNode(q + ' — '));
+      row.appendChild(h('b', null, str(answers[q]) || '(no answer)'));
+      list.appendChild(row);
+    }
+    card.dec.appendChild(list);
+  }
 }
 function onAskResolved(evt) {
   var card = S.asks[str(evt.requestId)]; if (!card) return;
-  resolveAskCard(card, str(evt.decision), str(evt.by));
+  resolveAskCard(card, str(evt.decision), str(evt.by), evt.answers);
   if (evt.decision === 'always') loadSettings();
 }
 
@@ -1100,7 +1286,7 @@ function onRunEnd(evt, live) {
   }
   if (evt.status === 'stopped') addLine('⏹ stopped', 'status');
   if (evt.status === 'failed' && !evt.cost) addLine('run failed', 'status');
-  if (S.pendingUser) { S.pendingUser.el.className = 'bubble user'; S.pendingUser = null; }
+  settleUser();
   if (live) { loadConversations(); refreshStatus(); }
 }
 
@@ -1112,7 +1298,19 @@ function loadConversations(done) {
     if (done) done();
   }).catch(function () { if (done) done(); });
 }
+/* the server names a conversation on its first run; the header follows the list */
+function syncTitle() {
+  if (!S.convId || S.loadingConv || !S.meta) return;
+  for (var i = 0; i < S.conversations.length; i++) {
+    var c = obj(S.conversations[i]);
+    if (c.id !== S.convId) continue;
+    if (Number(c.runs) > Number(S.meta.runs || 0)) S.meta.runs = Number(c.runs);
+    if (c.title && c.title !== S.meta.title) { S.meta.title = str(c.title); $('ctitle').textContent = str(c.title); }
+    return;
+  }
+}
 function renderConversations() {
+  syncTitle();
   var box = $('convlist'); box.textContent = '';
   if (!S.conversations.length) { box.appendChild(h('div', 'none', 'none yet — say something')); return; }
   S.conversations.forEach(function (c) {
@@ -1172,6 +1370,7 @@ function openConversation(id) {
       applyEvent(evt, false);
     }
     if (Number(r.data.seq) > S.seq) S.seq = Number(r.data.seq);
+    if (!events.length) renderWelcome();
     // a run may still be going: the stream replays its live tail after S.seq
     S.running = S.meta.status === 'running' || S.meta.status === 'queued';
     $('stop').hidden = !S.running;
@@ -1201,26 +1400,27 @@ function sendText(text) {
   if (!S.convId) { newConversation(function () { sendText(text); }); return; }
   var parsed = typeof E.parseCommand === 'function' ? E.parseCommand(text) : { kind: 'prompt' };
   var isCmd = parsed.kind === 'command';
-  // the empty-state welcome goes as soon as the first message lands
-  var inner = $('inner');
-  if (inner.firstChild && inner.firstChild.className === 'empty') inner.textContent = '';
-  var bubble = h('div', 'bubble user' + (isCmd ? ' cmd' : ' pending'), text);
+  dropWelcome();
+  var bubble = h('div', userBubbleClass(text, 'pending'), text);
   append(bubble, null); scrollBottom(true);
-  if (!isCmd) S.pendingUser = { el: bubble, text: text };
+  // a run echoes the message back as a `user` event (a custom command included);
+  // that event settles this bubble, and a handled command or a refusal settles it here
+  S.pendingUser = { el: bubble, text: text };
   var convId = S.convId;
   $('send').disabled = true;
   api('POST', '/api/conversations/' + convId + '/say', { text: text, tz: tzMin() }).then(function (r) {
     $('send').disabled = false;
     var d = obj(r.data);
     if (!r.ok) {
-      bubble.className = 'bubble user failed';
-      S.pendingUser = null;
+      settleUser();
+      bubble.className = userBubbleClass(text, 'failed');
       var msg = errOf(r, 'not sent');
       if (r.status === 409) msg = 'Genie is still busy in this conversation — wait or press Stop.';
       addLine(msg, 'status'); toast('Not sent', msg, true);
       return;
     }
     if (d.handled) {
+      settleUser();
       var reply = str(d.reply);
       if (reply) {
         if (S.recentSys && S.recentSys.text === reply && Date.now() - S.recentSys.at < 8000) S.recentSys = null;
@@ -1234,12 +1434,17 @@ function sendText(text) {
     }
     if (d.runId) {
       S.running = true; $('stop').hidden = false;
-      if (d.queued) addLine('queued behind another run', 'status');
+      // the first run names the conversation after the prompt (the list confirms it at run end)
+      if (!isCmd && S.meta && !Number(S.meta.runs) && (!S.meta.title || S.meta.title === 'New conversation') && typeof E.titleFrom === 'function') {
+        S.meta.title = str(E.titleFrom(text)); $('ctitle').textContent = S.meta.title;
+      }
+      // "queued behind n runs" arrives as the conversation's own system event
       if (!S.streamOpen) { S.backoff = 1000; openStream(); }
     }
   }).catch(function () {
     $('send').disabled = false;
-    bubble.className = 'bubble user failed'; S.pendingUser = null;
+    settleUser();
+    bubble.className = userBubbleClass(text, 'failed');
     toast('Not sent', 'server unreachable', true);
   });
 }
