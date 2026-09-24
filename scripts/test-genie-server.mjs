@@ -14,10 +14,12 @@
  * due `every` order re-arming from its due time rather than the tick, cron
  * with a Quartz `?`, the global run queue, stop, 409/413/400, an auto-mode
  * server that never asks for permission, a restart with the same home, and a
- * run cut off by a hard crash being closed at the next boot.
+ * run cut off by a hard crash being closed at the next boot — also when the
+ * run outgrew the stored transcript and its run_start is no longer on disk.
  *
  * Server A: 8801 (mode ask, 5 s ask timeout, two CORS origins)   Server B: 8802 (mode auto)
  * Server A': 8803 (A restarted on the same GENIE_HOME — persistence check)
+ * Server C: 8804 (booted twice on a home holding two overlong crashed runs — reconciliation check)
  *
  * No network beyond 127.0.0.1; no real key is ever used.
  * Run: node scripts/test-genie-server.mjs
@@ -43,10 +45,11 @@ let passed = 0; const tests = []; const test = (n, f) => tests.push([n, f]);
 const deepEq = (a, b, m) => assert.equal(JSON.stringify(a), JSON.stringify(b), m);
 
 /* ---- ports, homes, key ---- */
-const PORT_A = 8801, PORT_B = 8802, PORT_A2 = 8803;
+const PORT_A = 8801, PORT_B = 8802, PORT_A2 = 8803, PORT_C = 8804;
 const KEY = 'test-key-not-real';
 const HOME_A = mkdtempSync(join(tmpdir(), 'genie-test-a-'));
 const HOME_B = mkdtempSync(join(tmpdir(), 'genie-test-b-'));
+const HOME_C = mkdtempSync(join(tmpdir(), 'genie-test-c-'));
 const TZ = -new Date().getTimezoneOffset() || 0; // `|| 0` folds -0 (UTC hosts) into 0 so it round-trips through JSON
 
 /* ---- HTTP helpers (every /api call carries the bearer unless told otherwise) ---- */
@@ -262,7 +265,7 @@ function stopChild(child) {
 // Two exact origins: the hosted console may be served from either of two hosts.
 const ORIGINS = ['https://a.example', 'https://b.example'];
 const ENV_A = { GENIE_MODE: 'ask', GENIE_ASK_TIMEOUT_MS: '5000', GENIE_SCHEDULER_MS: '500', GENIE_ALLOW_ORIGIN: ORIGINS.join(',') };
-let srvA = null, srvB = null, srvA2 = null;
+let srvA = null, srvB = null, srvA2 = null, srvC = null;
 
 /* ---- shared state across the ordered tests ---- */
 let conv1 = null;            // the ask-mode conversation that collects the allow/deny/always runs
@@ -285,6 +288,39 @@ const DRIFT_PERIOD = 60_000;
 // crash (SIGKILL, OOM, power) leaves behind — a run with an open ask and no
 // run_end. Same shape the server writes, ids in the shapes it validates.
 const CUT_ID = 'ccutoff00001', CUT_RUN = 'rcutoff01', CUT_REQ = 'qcutoff001', CUT_TOOL = 'toolu_cutoff';
+// Planted into HOME_C before C boots: the same crash after a run of 1100 tool
+// calls — more than the 2000 transcript events a file keeps. One file holds
+// only the run's tail (no run_start, no init); the other has its run_start
+// pinned in front of the tail, the way the server writes it.
+const LONG_ID = 'clongtail001', LONG_RUN = 'rlongtail1', LONG_REQ = 'qlongtail01';
+const PIN_ID = 'clongpinned01', PIN_RUN = 'rlongpin01', PIN_REQ = 'qlongpin001';
+
+// A crashed run of 1100 tool calls as its file holds it: 2205 events with ids
+// in the shapes the server validates, ending in a tool still "running" and an
+// approval nobody can answer. `stored` is the file's window — the newest 2000
+// events, with the run_start pinned in front of them or not.
+function plantLongCrashedRun(id, runId, reqId, { pinned }) {
+  const at = Date.now() - 60_000;
+  const all = [];
+  const put = (e) => all.push({ ...e, seq: all.length + 1, at, runId });
+  put({ t: 'run_start', prompt: 'read every file', source: 'user' });
+  put({ t: 'user', text: 'read every file' });
+  put({ t: 'init', sessionId: `rehearsal-${id}`, model: 'rehearsal', tools: ['Read', 'Bash'], cwd: HOME_C, permissionMode: 'default', version: '1.0.0' });
+  for (let i = 1; i <= 1100; i++) {
+    put({ t: 'tool', id: `toolu_${id}_${i}`, name: 'Read', input: { file_path: `/f/${i}` }, summary: `/f/${i}`, icon: '📄', parent: null });
+    put({ t: 'tool_result', toolId: `toolu_${id}_${i}`, output: `file ${i}`, isError: false, parent: null });
+  }
+  put({ t: 'tool', id: `toolu_${id}_last`, name: 'Bash', input: { command: 'rm -rf build' }, summary: 'rm -rf build', icon: '💻', parent: null });
+  put({ t: 'ask', requestId: reqId, toolId: `toolu_${id}_last`, name: 'Bash', kind: 'permission', input: { command: 'rm -rf build' }, summary: 'rm -rf build', title: 'Genie wants to run `rm -rf build`', level: 'exec', reason: 'runs a shell command' });
+  const stored = pinned ? [all[0], ...all.slice(-1999)] : all.slice(-2000);
+  const file = join(HOME_C, 'conversations', `${id}.json`);
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, JSON.stringify({
+    meta: { id, title: 'a long one', createdAt: at, updatedAt: at, sessionId: `rehearsal-${id}`, runs: 0, cost: 0, status: 'running', source: 'user', scheduleId: null, seq: all.length },
+    events: stored,
+  }));
+  return { id, runId, reqId, all, stored, file };
+}
 
 /* =============================== tests =============================== */
 
@@ -1206,6 +1242,73 @@ test('a run cut off by a hard crash is closed at boot: its ask resolved by stop,
   assert.equal((await api(PORT_A2, 'GET', `/api/conversations/${CUT_ID}`)).body.meta.runs, 2);
 });
 
+test('a crashed run that outgrew the stored transcript is closed at boot too, once, with or without its run_start on disk', async () => {
+  const tail = plantLongCrashedRun(LONG_ID, LONG_RUN, LONG_REQ, { pinned: false });
+  const pinned = plantLongCrashedRun(PIN_ID, PIN_RUN, PIN_REQ, { pinned: true });
+  assert.equal(tail.stored.length, 2000);
+  assert.ok(!tail.stored.some((e) => e.t === 'run_start' || e.t === 'init'), 'the tail file holds neither boundary');
+  assert.equal(pinned.stored[0].t, 'run_start');
+  assert.ok(!pinned.stored.some((e) => e.t === 'init'), 'the pinned file lost its init all the same');
+
+  // Closed the way a stop would, on top of what was on disk, untouched.
+  const expectClosed = async (label, planted) => {
+    const { meta, events } = (await api(PORT_C, 'GET', `/api/conversations/${planted.id}`)).body;
+    assert.equal(meta.status, 'idle', label);
+    assert.equal(meta.runs, 1, `${label}: it had run (tool cards), so it counts`);
+    const kept = events.slice(0, -3);
+    deepEq(kept.map((e) => [e.seq, e.t]), planted.stored.slice(-kept.length).map((e) => [e.seq, e.t]), `${label}: what was on disk is untouched`);
+    deepEq(events.slice(-3).map((e) => e.t), ['ask_resolved', 'error', 'run_end'], `${label}: closed the way a stop would: […${events.slice(-5).map((e) => e.t).join(', ')}]`);
+    const [resolved, error, end] = events.slice(-3);
+    assert.equal(resolved.requestId, planted.reqId, label);
+    assert.equal(resolved.decision, 'deny', label);
+    assert.equal(resolved.by, 'stop', label);
+    assert.ok(/restart/i.test(error.message), error.message);
+    assert.equal(end.status, 'stopped', label);
+    assert.equal(end.runId, planted.runId, label);
+    assert.equal(events.filter((e) => e.t === 'run_end').length, 1, `${label}: one run_end`);
+    for (let i = 1; i < events.length; i++) assert.ok(events[i].seq > events[i - 1].seq, `${label}: seq keeps climbing past the planted tail`);
+    assert.equal(end.seq, planted.all.length + 3, `${label}: the closure continues the run's own sequence`);
+    assert.equal(meta.seq, end.seq, `${label}: meta.seq caught up`);
+    // On disk: still at the cap, one run_end, and the closure is the last word.
+    const disk = JSON.parse(readFileSync(planted.file, 'utf8'));
+    assert.equal(disk.meta.status, 'idle', label);
+    assert.equal(disk.meta.runs, 1, label);
+    assert.equal(disk.events.length, 2000, `${label}: the file stays at the cap`);
+    assert.equal(disk.events.filter((e) => e.t === 'run_end').length, 1, `${label}: one run_end on disk`);
+    assert.equal(disk.events[disk.events.length - 1].seq, end.seq, label);
+    return { end, first: disk.events[0] };
+  };
+
+  srvC = boot(PORT_C, HOME_C, ENV_A);
+  try {
+    await waitHealthy(PORT_C, srvC, 'server C');
+    await until(() => /cut off by a restart/.test(srvC.log), { label: 'the boot log naming a cut-off run' });
+    for (const p of [tail, pinned]) assert.match(srvC.log, new RegExp(`run ${p.runId} in ${p.id} was cut off by a restart`), `${p.id} is named in the boot log`);
+    const first = { tail: await expectClosed('first boot (tail)', tail), pinned: await expectClosed('first boot (pinned)', pinned) };
+    assert.notEqual(first.tail.first.t, 'run_start', 'a file without a run_start stays the run\'s tail');
+    assert.equal(first.pinned.first.t, 'run_start', 'a pinned run_start survives the re-cap after the closure');
+    assert.equal(first.pinned.first.seq, 1);
+    assert.equal((await api(PORT_C, 'POST', '/api/approve', { requestId: LONG_REQ, decision: 'allow' })).status, 404, 'the stale card cannot be answered');
+
+    // Booting again on the same home finds two closed runs and leaves them be.
+    await stopChild(srvC);
+    srvC = boot(PORT_C, HOME_C, ENV_A);
+    await waitHealthy(PORT_C, srvC, 'server C (rebooted)');
+    await until(() => /G E N I E/.test(srvC.log), { label: 'the banner' });
+    assert.ok(!/cut off by a restart/.test(srvC.log), `nothing to close the second time:\n${srvC.log}`);
+    assert.equal((await expectClosed('second boot (tail)', tail)).end.seq, first.tail.end.seq, 'no second closure');
+    assert.equal((await expectClosed('second boot (pinned)', pinned)).end.seq, first.pinned.end.seq, 'no second closure');
+
+    // And the conversation is simply usable again.
+    const { end: again, events: evs } = await runPrompt(PORT_C, LONG_ID, 'and again', { decision: 'allow' });
+    assert.equal(again.status, 'done');
+    assert.ok(evs.every((e) => e.seq > first.tail.end.seq), 'the new run continues the sequence');
+    assert.equal((await api(PORT_C, 'GET', `/api/conversations/${LONG_ID}`)).body.meta.runs, 2);
+  } finally {
+    await stopChild(srvC);
+  }
+});
+
 test('after the restart the persisted conversation still runs (and the transcript keeps growing)', async () => {
   const { events, end } = await runPrompt(PORT_A2, conv1, 'what did we do so far', { decision: 'allow' });
   assert.equal(end.status, 'done');
@@ -1221,7 +1324,7 @@ test('after the restart the persisted conversation still runs (and the transcrip
 /* ---- boot both servers, run, tear down ---- */
 const t0 = Date.now();
 try {
-  await Promise.all([PORT_A, PORT_B, PORT_A2].map(assertPortFree));
+  await Promise.all([PORT_A, PORT_B, PORT_A2, PORT_C].map(assertPortFree));
   // B boots with one overdue standing order on disk (see the scheduler test).
   writeFileSync(join(HOME_B, 'schedules.json'), JSON.stringify([{
     id: DRIFT_ID, task: 'drift probe',
@@ -1244,13 +1347,13 @@ try {
   process.exitCode = 1;
 } finally {
   for (const s of STREAMS) { try { s.close(); } catch { /* fine */ } }
-  await Promise.all([stopChild(srvA), stopChild(srvB), stopChild(srvA2)]);
+  await Promise.all([stopChild(srvA), stopChild(srvB), stopChild(srvA2), stopChild(srvC)]);
   if (process.exitCode) {
-    for (const [label, c] of [['A', srvA], ['B', srvB], ["A'", srvA2]]) {
+    for (const [label, c] of [['A', srvA], ['B', srvB], ["A'", srvA2], ['C', srvC]]) {
       if (c && c.log.trim()) console.error(`\n--- server ${label} log tail ---\n${c.log.trim()}`);
     }
   }
-  for (const dir of [HOME_A, HOME_B]) { try { rmSync(dir, { recursive: true, force: true }); } catch { /* fine */ } }
+  for (const dir of [HOME_A, HOME_B, HOME_C]) { try { rmSync(dir, { recursive: true, force: true }); } catch { /* fine */ } }
 }
 console.log(`\ngenie server: ${passed}/${tests.length} passed in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
 if (passed !== tests.length) process.exit(1);

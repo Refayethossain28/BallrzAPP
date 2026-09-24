@@ -166,9 +166,10 @@ function lostSession(text) {
 
 /**
  * The owner's deny rules as a PreToolUse hook. `canUseTool` is skipped by the
- * SDK in bypassPermissions (auto) and for auto-allowed tools, but a hook runs
- * before every tool call in every mode, so a deny rule is a hard stop
- * wherever it is written. `getRules` is a getter: a rule added mid-run counts.
+ * SDK in bypassPermissions (auto) for everything but a question, and for
+ * auto-allowed tools, but a hook runs before every tool call in every mode,
+ * so a deny rule is a hard stop wherever it is written. `getRules` is a
+ * getter: a rule added mid-run counts.
  */
 function denyRuleHook(engine, getRules) {
   return async (input) => {
@@ -243,6 +244,9 @@ function liveDriver(sdk, engine, env, log) {
         forwardSubagentText: true,
         permissionMode: engine.sdkPermissionMode(mode),
         allowDangerouslySkipPermissions: mode === 'auto',
+        // Stays in Auto: the CLI routes AskUserQuestion through canUseTool
+        // ahead of the bypass, so the owner's answers still arrive. The SDK's
+        // warning that the callback is shadowed there is muted in server.mjs.
         canUseTool,
         hooks: { PreToolUse: [{ hooks: [denyRuleHook(engine, getRules)] }] },
         abortController,

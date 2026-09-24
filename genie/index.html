@@ -103,6 +103,7 @@
   .bubble.assistant.streaming .md { white-space: pre-wrap; }
   .bubble.assistant.streaming .md:after { content: '▍'; color: var(--amber); animation: blink 1s steps(2) infinite; }
   @keyframes blink { to { opacity: 0; } }
+  .bubble.assistant .cut { color: var(--dim); font-size: 12px; font-style: italic; margin-top: 4px; }
   .md p { margin: 0 0 8px; } .md p:last-child { margin-bottom: 0; }
   .md h1, .md h2, .md h3 { margin: 10px 0 6px; line-height: 1.25; } .md h1 { font-size: 19px; } .md h2 { font-size: 17px; } .md h3 { font-size: 15.5px; }
   .md ul, .md ol { margin: 4px 0 8px; padding-left: 22px; } .md li { margin: 2px 0; }
@@ -231,8 +232,8 @@
   .item .body { flex: 1; min-width: 0; }
   .item .t { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .item .m { font-size: 12px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .item .x { background: transparent; border: 0; color: var(--dim); font-size: 15px; padding: 4px 6px; border-radius: 8px; flex: none; }
-  .item .x:hover { color: var(--bad); background: var(--panel3); }
+  .item .x, .rule .x { background: transparent; border: 0; color: var(--dim); font-size: 15px; padding: 4px 6px; border-radius: 8px; flex: none; }
+  .item .x:hover, .rule .x:hover { color: var(--bad); background: var(--panel3); }
   .item .x.run:hover { color: var(--ok); }
   .item.busy .t:before { content: '● '; color: var(--amber); }
   .item.sched .t { white-space: normal; }
@@ -245,8 +246,13 @@
   .form .row { display: flex; gap: 6px; }
   .form .row > * { flex: 1; min-width: 0; }
   .form .err { color: var(--bad); font-size: 12.5px; min-height: 1em; }
+  .form .note { color: var(--dim); font-size: 12.5px; }
+  .form .radios { display: flex; gap: 14px; align-items: center; font-size: 14px; }
+  .form .radios label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  .form .radios input { width: auto; margin: 0; accent-color: var(--amber); }
   .rule { display: flex; align-items: center; gap: 6px; font: 12.5px var(--mono); padding: 5px 8px; border-radius: 8px; background: var(--panel2); margin-top: 4px; }
   .rule .k { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rule .kind { color: var(--dim); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
   .rule .b { color: var(--ok); } .rule .b.deny { color: var(--bad); }
   .about dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; font-size: 13.5px; }
   .about dt { color: var(--dim); } .about dd { margin: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -350,8 +356,26 @@
           <div class="row"><button class="btn primary" id="ssave">Save</button></div>
           <div class="err" id="sserr"></div>
         </div>
-        <h3>Always-allow rules</h3>
-        <div id="rules"><div class="none">none — "Always allow" on an approval adds one</div></div>
+        <h3>Rules</h3>
+        <div id="rules"><div class="none">none — "Always allow" on an approval adds one, or write one below</div></div>
+        <div class="form">
+          <div class="row">
+            <select id="rtool" aria-label="Tool" style="flex:0 0 38%">
+              <option>Bash</option><option>Write</option><option>Edit</option><option>Read</option><option>WebFetch</option>
+              <option>WebSearch</option><option>Glob</option><option>Grep</option><option>Task</option><option value="*">* any tool</option>
+            </select>
+            <input id="rmatch" aria-label="Match" placeholder="command" autocapitalize="off" spellcheck="false">
+          </div>
+          <div class="note">A trailing * makes a prefix (<span class="mono">git status*</span>); * alone matches every call. Deny beats allow.</div>
+          <div class="row">
+            <div class="radios" role="radiogroup" aria-label="Behavior">
+              <label><input type="radio" name="rbehavior" value="allow" checked> allow</label>
+              <label><input type="radio" name="rbehavior" value="deny"> deny</label>
+            </div>
+            <button class="btn" id="radd" style="flex:0 0 auto">Add rule</button>
+          </div>
+          <div class="err" id="rerr"></div>
+        </div>
         <h3>Notifications</h3>
         <div class="form"><div class="row"><button class="btn" id="notifbtn">Enable notifications</button></div><div class="dim" id="notifstate" style="font-size:12.5px"></div></div>
         <h3>Connection</h3>
@@ -705,13 +729,24 @@ function saveSettingsForm() {
     if (ok) toast('Settings', 'saved'); else $('sserr').textContent = r ? errOf(r, 'not saved') : 'server unreachable';
   });
 }
+/* how a rule reads, the way the engine matches it: '*' is any call of the
+ * tool, a bare trailing '*' a prefix, anything else the exact command or path
+ * (a trailing '\*' is a literal star — the spelling "Always allow" mints) */
+function ruleKind(rule) {
+  var m = str(rule.match);
+  if (m === '*') return 'any';
+  if (m.length > 1 && m.charAt(m.length - 1) === '*' && m.charAt(m.length - 2) !== '\\') return 'prefix';
+  return 'exact';
+}
 function renderRules() {
   var box = $('rules'); box.textContent = '';
   var rules = arr(obj(S.settings).rules);
-  if (!rules.length) { box.appendChild(h('div', 'none', 'none — "Always allow" on an approval adds one')); return; }
+  if (!rules.length) { box.appendChild(h('div', 'none', 'none — "Always allow" on an approval adds one, or write one below')); return; }
   rules.forEach(function (rule, idx) {
+    rule = obj(rule);
     var row = h('div', 'rule');
     row.appendChild(h('span', 'k', str(rule.tool) + ':' + str(rule.match)));
+    row.appendChild(h('span', 'kind', ruleKind(rule)));
     row.appendChild(h('span', 'b' + (rule.behavior === 'deny' ? ' deny' : ''), str(rule.behavior || 'allow')));
     var x = h('button', 'x', '✕'); x.title = 'remove rule';
     x.addEventListener('click', function () {
@@ -720,6 +755,32 @@ function renderRules() {
     });
     row.appendChild(x);
     box.appendChild(row);
+  });
+}
+/* the part of a call a rule is matched against: Bash its command, Write and
+ * Edit the path, WebFetch the URL — the other tools have nothing to match, so
+ * only '*' ever fits them */
+var RULE_SUBJECT = { Bash: 'command', Write: 'path', Edit: 'path', WebFetch: 'URL', '*': 'command, path or URL' };
+function ruleFormHint() {
+  var tool = str($('rtool').value), subject = RULE_SUBJECT[tool], input = $('rmatch');
+  input.placeholder = subject || '* — ' + tool + ' has no command or path to match';
+  if (!subject && !str(input.value).trim()) input.value = '*';
+}
+function addRuleForm() {
+  var tool = str($('rtool').value), match = str($('rmatch').value).trim();
+  var picked = $('pane-settings').querySelector('input[name="rbehavior"]:checked');
+  var behavior = picked && picked.value === 'deny' ? 'deny' : 'allow';
+  $('rerr').textContent = '';
+  if (!match) { $('rerr').textContent = 'what to match — a command, a path, a URL, or *'; return; }
+  var rules = arr(obj(S.settings).rules), rule = { tool: tool, match: match, behavior: behavior };
+  for (var i = 0; i < rules.length; i++) {
+    var r = obj(rules[i]);
+    if (r.tool === tool && r.match === match && r.behavior === behavior) { $('rerr').textContent = 'that rule is already in the list'; return; }
+  }
+  patchSettings({ rules: rules.concat([rule]) }, function (ok, reply) {
+    if (!ok) { $('rerr').textContent = reply ? errOf(reply, 'not added') : 'server unreachable'; return; }
+    $('rmatch').value = '';
+    toast('Rules', behavior + ' ' + tool + ':' + match + ' (' + ruleKind(rule) + ')');
   });
 }
 function refreshStatus() {
@@ -888,8 +949,11 @@ function showEmpty() {
   $('ctitle').textContent = 'New conversation';
   renderWelcome();
 }
-/* the lamp, a nudge and four try-me prompts — what an empty feed shows */
+/* the lamp, a nudge and four try-me prompts — what an empty feed shows, and
+ * only an empty one: a message typed while the transcript is still loading
+ * is already in the feed by the time the (empty) transcript lands */
 function renderWelcome() {
+  if ($('inner').children.length) return;
   var e = h('div', 'empty');
   e.appendChild(h('div', 'big', '🪔'));
   e.appendChild(h('h2', null, 'What do you need?'));
@@ -905,8 +969,8 @@ function renderWelcome() {
 }
 /* the welcome goes as soon as anything lands in the feed */
 function dropWelcome() {
-  var inner = $('inner'), first = inner.firstChild;
-  if (first && first.className === 'empty') inner.removeChild(first);
+  var e = $('inner').querySelector('.empty');
+  if (e) e.parentNode.removeChild(e);
 }
 
 /* ── 7. applyEvent — one renderer for live and stored events ── */
@@ -998,11 +1062,26 @@ function onTextFinal(evt) {
   var text = str(evt.text); if (!text) return;
   var k = bubbleKey(evt.parent), b = S.bubbles[k];
   if (!b) b = newBubble(evt.parent || null);
+  finishBubble(b, text);
+  delete S.bubbles[k];
+  scrollBottom(false);
+}
+function finishBubble(b, text) {
   b.className = 'bubble assistant';
   b.firstChild.innerHTML = md(text);
   b.raw = text;
-  delete S.bubbles[k];
-  scrollBottom(false);
+}
+/* whatever was still streaming when the run ended never gets its text_final
+ * (a stop mid-answer, a crash): render what arrived, caret off, and say so
+ * when the run did not finish on its own */
+function settleBubbles(cutOff) {
+  for (var k in S.bubbles) {
+    var b = S.bubbles[k]; if (!b) continue;
+    if (!b.raw) { if (b.parentNode) b.parentNode.removeChild(b); continue; }
+    finishBubble(b, b.raw);
+    if (cutOff) b.appendChild(h('div', 'cut', '(cut off)'));
+  }
+  S.bubbles = {};
 }
 function addLine(text, kind) {
   if (!text) return null;
@@ -1260,6 +1339,7 @@ function onAskResolved(evt) {
 /* result footer + run end */
 function onResult(evt) {
   removeThinking();
+  settleBubbles(!evt.ok);
   var el = h('div', 'result');
   if (evt.ok) el.appendChild(h('span', 'ok', '✓ done'));
   else el.appendChild(h('span', 'fail', '✗ ' + str(evt.subtype || 'failed')));
@@ -1275,6 +1355,7 @@ function onRunEnd(evt, live) {
   S.running = false; S.runId = null;
   $('stop').hidden = true;
   removeThinking();
+  settleBubbles(evt.status !== 'done');
   for (var id in S.runningTools) {
     var c = S.runningTools[id];
     if (c && !c.done) { c.done = true; c.className = 'tool stopped'; c.out.textContent = '(no result — run ' + str(evt.status || 'ended') + ')'; }
@@ -1438,8 +1519,10 @@ function sendText(text) {
       if (!isCmd && S.meta && !Number(S.meta.runs) && (!S.meta.title || S.meta.title === 'New conversation') && typeof E.titleFrom === 'function') {
         S.meta.title = str(E.titleFrom(text)); $('ctitle').textContent = S.meta.title;
       }
-      // "queued behind n runs" arrives as the conversation's own system event
-      if (!S.streamOpen) { S.backoff = 1000; openStream(); }
+      // "queued behind n runs" arrives as the conversation's own system event.
+      // While the transcript is still loading its GET opens the stream itself:
+      // opening one here too would replay the run's head on top of it
+      if (!S.streamOpen && !S.loadingConv) { S.backoff = 1000; openStream(); }
     }
   }).catch(function () {
     $('send').disabled = false;
@@ -1741,6 +1824,9 @@ function bind() {
   $('memadd').addEventListener('click', addMemoryForm);
   $('memfact').addEventListener('keydown', function (e) { if (e.key === 'Enter') addMemoryForm(); });
   $('ssave').addEventListener('click', saveSettingsForm);
+  $('radd').addEventListener('click', addRuleForm);
+  $('rmatch').addEventListener('keydown', function (e) { if (e.key === 'Enter') addRuleForm(); });
+  $('rtool').addEventListener('change', ruleFormHint);
   $('notifbtn').addEventListener('click', askNotifPermission);
   $('reconnect').addEventListener('click', function () { closeStream(); S.connected = false; connectWith(normBase($('srv2').value), str($('key2').value).trim(), false); });
   $('disconnect').addEventListener('click', disconnect);

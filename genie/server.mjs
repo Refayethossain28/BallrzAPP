@@ -222,7 +222,13 @@ function closeInterruptedRun(conv) {
     if (t === 'run_end') return null;
     if (t === 'run_start') { start = i; break; }
   }
-  if (start < 0) return null;
+  if (start < 0) {
+    // No boundary in the window at all: either nothing ever ran here, or the
+    // file holds only the tail of a run that outgrew the cap. The newest
+    // event carries the run's id in the second case, and null in the first.
+    if (!events[events.length - 1]?.runId) return null;
+    start = 0;
+  }
   const runId = events[start].runId ?? null;
   const tail = events.slice(start);
   const answered = new Set(tail.filter((e) => e.t === 'ask_resolved').map((e) => e.requestId));
@@ -231,17 +237,36 @@ function closeInterruptedRun(conv) {
   for (const ask of tail) if (ask.t === 'ask' && !answered.has(ask.requestId)) push({ t: 'ask_resolved', requestId: ask.requestId, decision: 'deny', by: 'stop' });
   push({ t: 'error', message: 'server restarted mid-run' });
   push({ t: 'run_end', runId, status: 'stopped', cost: 0 });
-  if (tail.some((e) => e.t === 'init')) conv.meta.runs = (conv.meta.runs || 0) + 1; // it had started, so it counts
+  // A run stopped while still queued wrote nothing but run_start, user and a
+  // "queued behind" line; anything else means the driver had it, so it counts.
+  if (tail.some((e) => e.t !== 'run_start' && e.t !== 'user' && e.t !== 'system')) conv.meta.runs = (conv.meta.runs || 0) + 1;
   conv.meta.seq = conv.seq;
   return runId;
+}
+
+/**
+ * The transcript, capped at its newest TRANSCRIPT_MAX events. A run long
+ * enough to overflow the cap keeps its run_start at the front of the window
+ * (in place of the oldest event), so the boundary a restart reconciles
+ * against is not trimmed away by the run's own output.
+ */
+function boundedTranscript(events) {
+  const transcript = events.filter((e) => E.transcriptEvent(e));
+  if (transcript.length <= TRANSCRIPT_MAX) return transcript;
+  const cut = transcript.length - TRANSCRIPT_MAX;
+  const kept = transcript.slice(cut);
+  if (kept.some((e) => e.t === 'run_start')) return kept;
+  for (let i = cut - 1; i >= 0; i--) {
+    if (transcript[i].t === 'run_end') break;
+    if (transcript[i].t === 'run_start') return [transcript[i], ...kept.slice(1)];
+  }
+  return kept;
 }
 function persistConv(conv) {
   if (conv.timer) { clearTimeout(conv.timer); conv.timer = null; }
   conv.dirty = false;
-  let transcript = conv.events.filter((e) => E.transcriptEvent(e));
-  if (transcript.length > TRANSCRIPT_MAX) transcript = transcript.slice(-TRANSCRIPT_MAX);
   conv.meta.seq = conv.seq;
-  writeJSON(join(PATHS.conversations, `${conv.meta.id}.json`), { meta: conv.meta, events: transcript });
+  writeJSON(join(PATHS.conversations, `${conv.meta.id}.json`), { meta: conv.meta, events: boundedTranscript(conv.events) });
 }
 function schedulePersist(conv) {
   conv.dirty = true;
@@ -292,8 +317,7 @@ function system(conv, text, runId) { return emit(conv, { t: 'system', text: E.sa
 
 /** After a run: keep only what belongs on disk, so memory and replay stay small. */
 function pruneEphemeral(conv) {
-  conv.events = conv.events.filter((e) => E.transcriptEvent(e));
-  if (conv.events.length > TRANSCRIPT_MAX) conv.events = conv.events.slice(-TRANSCRIPT_MAX);
+  conv.events = boundedTranscript(conv.events);
 }
 
 /* ────────────────────────────── runs: one at a time, FIFO ────────────────────────────── */
@@ -1191,6 +1215,15 @@ async function main() {
   process.stderr.on('error', () => {});
   process.on('uncaughtException', (err) => { if (err?.code !== 'EPIPE') warn(`uncaught: ${err?.stack || err}`); });
   process.on('unhandledRejection', (err) => warn(`unhandled: ${err?.stack || err}`));
+  // Every Auto query makes the SDK warn (CLAUDE_SDK_CAN_USE_TOOL_SHADOWED)
+  // that canUseTool is never consulted under bypassPermissions. Not here: the
+  // CLI routes AskUserQuestion through canUseTool ahead of that bypass, which
+  // is how the agent's questions reach the phone in Auto, and the owner's
+  // deny rules already run in the PreToolUse hook the warning asks for. Mute
+  // that one code; Node's own printer still gets every other warning.
+  const printers = process.listeners('warning');
+  process.removeAllListeners('warning');
+  process.on('warning', (w) => { if (w?.code !== 'CLAUDE_SDK_CAN_USE_TOOL_SHADOWED') for (const p of printers) p(w); });
 }
 
 main().catch((err) => {

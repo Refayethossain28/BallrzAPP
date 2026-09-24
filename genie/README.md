@@ -76,7 +76,8 @@ destructive-command check — only an exact rule for the full command does.
 Deny rules beat allow rules, and they hold in every mode, Auto included, and
 for Genie's own tools: the live driver enforces them through a `PreToolUse`
 hook, the one gate the SDK consults even when it is bypassing permissions.
-Rules live in Settings and can be removed one by one.
+Rules live in Settings, each listed as exact, prefix or any and as allow or
+deny; the form beneath the list adds one and ✕ removes one.
 
 What counts as **destructive** (and therefore asks even in Trust): `rm -rf` on
 `/`, `~`, `*`, `.`, `.git` or a shallow path; `sudo`/`su`; `mkfs`, `dd if=`,

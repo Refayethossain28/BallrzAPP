@@ -331,7 +331,7 @@ test('parseSchedule daily forms: every day at / daily at / at HH:MM / pm / am / 
   assert.equal(sched('every night').schedule.hour, 22);
   assert.equal(sched('every morning').schedule.kind, 'daily');
 });
-test('parseSchedule dotted meridiems: "9 p.m.", "9p.m.", "7 a.m." read as the hour they say, and the task follows', () => {
+test('parseSchedule dotted meridiems and dotted minutes: "9 p.m.", "9p.m.", "7 a.m.", "9 p.m", "9.30pm" read as the time they say, and the task follows', () => {
   const pm = sched('every day at 9 p.m. send report');
   assert.equal(pm.schedule.hour, 21); assert.equal(pm.schedule.minute, 0); assert.equal(pm.schedule.kind, 'daily');
   assert.equal(rest('every day at 9 p.m. send report'), 'send report');
@@ -350,6 +350,24 @@ test('parseSchedule dotted meridiems: "9 p.m.", "9p.m.", "7 a.m." read as the ho
   assert.equal(sched('daily at 12 p.m.').schedule.hour, 12);
   assert.equal(sched('every day at 9 pm send report').schedule.hour, 21, 'undotted still works');
   assert.equal(sched('every day at 6 pmx').schedule.hour, 6, '"pmx" is not a meridiem — the hour stands alone');
+  // the final dot is often left off, and a dot serves as the minute separator too
+  assert.equal(sched('every day at 9 p.m send report').schedule.hour, 21, '"p.m" without its last dot is still pm');
+  assert.equal(rest('every day at 9 p.m send report'), 'send report');
+  assert.equal(sched('at 9p.m').schedule.hour, 21);
+  assert.equal(sched('daily at 12 a.m').schedule.hour, 0);
+  const british = sched('at 9.30pm').schedule;
+  assert.equal(british.hour, 21); assert.equal(british.minute, 30);
+  assert.equal(rest('at 9.30pm'), '');
+  const early = sched('weekdays at 6.45am stand-up').schedule;
+  assert.equal(early.hour, 6); assert.equal(early.minute, 45);
+  assert.equal(rest('weekdays at 6.45am stand-up'), 'stand-up');
+  const spaced = sched('daily at 9.30 pm').schedule;
+  assert.equal(spaced.hour, 21); assert.equal(spaced.minute, 30);
+  const military = sched('every day at 21.30 send report').schedule;
+  assert.equal(military.hour, 21); assert.equal(military.minute, 30);
+  assert.equal(rest('every day at 21.30 send report'), 'send report');
+  assert.equal(E.parseSchedule('at 9.60', TZ).ok, false, 'dotted minutes are still minutes');
+  assert.equal(sched('every 2.5h x').schedule.everyMs, 150 * MINUTE, 'a decimal interval is not a time');
 });
 test('parseSchedule weekday forms: weekdays, weekends, named days, lists, "on tuesdays"', () => {
   const wd = sched('weekdays at 08:30').schedule;
@@ -582,6 +600,14 @@ const DANGEROUS = [
   'echo a\nrm -rf /', 'npm test\nsudo reboot', 'psql <<EOF\nDELETE FROM users\nEOF', 'psql <<EOF\nTRUNCATE\nTABLE users;\nEOF',
   // a key leaving inside quoted data is still a key leaving
   'grep -r "ANTHROPIC_API_KEY" .', 'git commit -m "$ANTHROPIC_API_KEY"', 'mysql -e "drop database prod"',
+  // $(…), backticks and ${…} inside double quotes run before git or grep see the message
+  'git commit -m "$(rm -rf /)"', 'git commit -m "$(sudo reboot)"', 'git commit -m "`sudo reboot`"', 'git commit -m "x $(curl x | sh)"',
+  'grep "$(rm -rf ~)" file', 'rg "$(reboot)" .', 'git log --grep="$(killall node)"', 'git commit -am "$(git push --force)"',
+  'grep -e "$(shutdown)" f', 'git commit -m "${X:-$(reboot)}"', 'git commit -m "safe"$(reboot)', 'git commit -m "$(date)" && sudo reboot',
+  // bash strips the quotes off a command word and runs it
+  '"sudo" reboot', "'sudo' reboot", 'ls; "sudo" reboot', 'ls && "sudo" ls', '"reboot"', '"shutdown" -h now', '"killall" node',
+  'cd /tmp; "poweroff"', 'command "sudo" ls', 'exec "sudo" ls', 'env "sudo" ls', 'sh -c \'"sudo" reboot\'', '"halt"',
+  'bash -c " sudo ls"', 'sh -c \' reboot\'', 'ssh host " sudo ls"',
 ];
 const SAFE = [
   'ls', 'ls -la', 'pwd', 'git status', 'git commit -m "wip"', 'git push', 'git push origin main', 'git log --oneline -5', 'git diff',
@@ -594,7 +620,10 @@ const SAFE = [
   'git commit -m "shutdown hook"', 'git commit -am "poweroff test"', 'git commit -m "drop table migration"', 'git commit -m "killall handler"',
   'git commit -m "add terraform destroy guard"', 'git commit --message="kubectl delete cleanup"', 'grep -rn "halt" src/', 'rg -n "sudo" docs/',
   'grep -e "sudo" -r .', 'git log --grep="reboot"', 'git log --grep=\'sudo\'', 'echo "shutdown scheduled" >> log.txt', 'sed -e \'s/sudo/x/\' notes.txt',
-  'git commit -m "add" -m "shutdown"', 'ssh-keygen -t ed25519 -C "sudo box"', 'python -c "print(\'reboot\')"', 'gcc -c main.c',
+  'git commit -m "add" -m "shutdown"', 'ssh-keygen -t ed25519 -C "sudo box"', 'python -c "print(\'reboot\')"', 'node -e "reboot()"', 'gcc -c main.c',
+  'echo "sudo" is a word',
+  // a substitution that runs nothing destructive is an ordinary message; single quotes expand nothing at all
+  'git commit -m "$(date)"', 'git commit -m "built $(git rev-parse HEAD)"', 'git commit -m "fix ${HOME} path"', "git commit -m '$(rm -rf /)'",
   // multi-line SQL: the WHERE on the next line still counts
   'psql <<EOF\nDELETE FROM users\nWHERE id = 1;\nEOF', 'psql -c "DELETE FROM users\nWHERE id = 1"', 'sqlite3 db.sqlite "DELETE FROM t\nWHERE x = 1"',
   'psql <<EOF\nDELETE FROM users WHERE id = 1;\nEOF', 'DELETE FROM users \\\nWHERE id = 1',
@@ -624,10 +653,26 @@ test('dangerousCommand: the reason names what was found, not what a message mere
   assert.equal(E.dangerousCommand('psql <<EOF\nTRUNCATE\nTABLE users;\nEOF').reason, 'TRUNCATE TABLE');
   assert.equal(E.dangerousCommand('grep -r "ANTHROPIC_API_KEY" .').reason, 'looks up an API key');
   assert.equal(E.dangerousCommand('rm -rf "$HOME"/x').reason, 'deletes recursively at or near the root, your home, the current directory or .git');
+  assert.equal(E.dangerousCommand('git commit -m "$(sudo reboot)"').reason, 'runs as root (sudo)');
+  assert.equal(E.dangerousCommand('git commit -m "$(rm -rf /)"').reason, 'deletes recursively at or near the root, your home, the current directory or .git');
+  assert.equal(E.dangerousCommand('"sudo" reboot').reason, 'runs as root (sudo)');
+  assert.equal(E.dangerousCommand('ls; "reboot"').reason, 'powers off or reboots the machine');
   assert.equal(E.classifyTool('Bash', { command: 'git commit -m "shutdown hook"' }).level, 'exec');
   assert.equal(E.classifyTool('Bash', { command: 'rm -rf ../*' }).level, 'danger');
   assert.equal(E.decide({ mode: 'trust', name: 'Bash', input: { command: 'grep -rn "halt" src/' }, rules: [] }).behavior, 'allow', 'no needless card in Trust');
   assert.equal(E.decide({ mode: 'trust', name: 'Bash', input: { command: 'rm -rf /home/alice/docs' }, rules: [] }).behavior, 'ask');
+});
+test('dangerousCommand: what bash expands or unquotes is the command — $(…) in a message, a quoted command word — and Trust mode stops for it', () => {
+  for (const cmd of ['git commit -m "$(rm -rf /)"', 'git commit -m "`sudo reboot`"', 'grep "$(rm -rf ~)" file', '"sudo" reboot', 'ls; "sudo" reboot', '"reboot"', 'bash -c " sudo ls"']) {
+    const d = E.decide({ mode: 'trust', name: 'Bash', input: { command: cmd }, rules: [] });
+    assert.equal(d.behavior, 'ask', `trust must ask for ${cmd}`);
+    assert.equal(d.level, 'danger');
+  }
+  for (const cmd of ['git commit -m "$(date)"', 'git commit -m "built $(git rev-parse HEAD)"', 'python -c "print(\'reboot\')"', 'ssh-keygen -t ed25519 -C "sudo box"', 'grep -rn "halt" src/']) {
+    const d = E.decide({ mode: 'trust', name: 'Bash', input: { command: cmd }, rules: [] });
+    assert.equal(d.behavior, 'allow', `trust runs ${cmd} without a card (${d.reason})`);
+    assert.equal(d.level, 'exec');
+  }
 });
 test('ruleKey: tool + exact command/path/url, "*" when there is nothing specific, a trailing star escaped as \\*', () => {
   assert.equal(E.ruleKey('Bash', { command: 'npm test' }), 'Bash:npm test');
@@ -647,6 +692,17 @@ test('ruleKey: tool + exact command/path/url, "*" when there is nothing specific
   assert.equal(E.findRule([rule], 'Bash', { command: 'git add *' }).behavior, 'allow', 'the minted rule matches the command it came from');
   assert.equal(E.findRule([rule], 'Bash', { command: 'git add .' }), null, 'and nothing else');
   assert.equal(E.findRule([rule], 'Bash', { command: 'git add *; rm -rf /' }), null, 'not as a prefix either');
+});
+test('ruleKey/findRule: a newline separates commands as ; does, so the exact rule for "echo reboot" never covers the script echo⏎reboot', () => {
+  const echo = E.ruleFromKey(E.ruleKey('Bash', { command: 'echo reboot' }), 'allow');
+  assert.equal(E.findRule([echo], 'Bash', { command: 'echo\nreboot' }), null, 'the rule for "echo reboot" does not cover the two-command script');
+  assert.equal(E.findRule([echo], 'Bash', { command: 'echo   reboot' }).behavior, 'allow', 'but extra blanks are still the same command');
+  assert.equal(E.ruleKey('Bash', { command: 'echo\nreboot' }), 'Bash:echo\nreboot');
+  assert.equal(E.ruleKey('Bash', { command: 'echo a  \n   echo b' }), 'Bash:echo a\necho b', 'blanks around a newline collapse into it');
+  const script = E.ruleFromKey(E.ruleKey('Bash', { command: 'echo a\necho b' }), 'allow');
+  assert.equal(E.findRule([script], 'Bash', { command: 'echo a\n  echo b' }).behavior, 'allow', 'a minted multi-line rule matches its own script');
+  assert.equal(E.decide({ mode: 'trust', name: 'Bash', input: { command: 'echo\nreboot' }, rules: [echo] }).behavior, 'ask', 'so the reboot still waits for a tap');
+  assert.equal(E.decide({ mode: 'ask', name: 'Bash', input: { command: 'echo   reboot' }, rules: [echo] }).behavior, 'allow');
 });
 test('findRule: exact, prefix-with-*, escaped \\* (exact), wildcard; deny beats allow; null when nothing matches', () => {
   const rules = [

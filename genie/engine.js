@@ -438,10 +438,11 @@
   var DAYITEM_SRC = DAY_SRC + 's?\\b(?:' + DAY_RANGE_SEP + DAY_SRC + 's?\\b)?';
   var DAYLIST_SRC = '(' + DAYITEM_SRC + '(?:\\s*(?:,|/|&|\\band\\b)\\s*' + DAYITEM_SRC + ')*)';
   var MONTH_NAMES = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
-  // "at 9", "at 09:30", "at 7pm", "at 7:15 a.m.", "at 9p.m.", "at noon", "at midnight".
-  // The time ends where a word does not follow — a lookahead rather than \b,
-  // because \b never holds after the dot of "p.m.".
-  var TIME_SRC = '(?:(noon|midnight)|(\\d{1,2})(?::(\\d{2}))?\\s*(am|pm|a\\.m\\.|p\\.m\\.)?)(?!\\w)';
+  // "at 9", "at 09:30", "at 9.30", "at 7pm", "at 7:15 a.m.", "at 9p.m.", "at 9 p.m",
+  // "at noon", "at midnight". The time ends where a word does not follow — a
+  // lookahead rather than \b, because \b never holds after the dot of "p.m." —
+  // and never just before ".30": that dot is a minute separator, not an end.
+  var TIME_SRC = '(?:(noon|midnight)|(\\d{1,2})(?:[:.](\\d{2}))?\\s*(a\\.?m\\.?|p\\.?m\\.?)?)(?!\\w|\\.\\d)';
   var AT_SRC = '(?:\\s+at\\s+' + TIME_SRC + ')';
   var SCHEDULE_HINT = 'every 30m · every 2h · daily at 09:00 · weekdays at 08:30 · every mon,wed,fri at 7am · cron 0 9 * * 1-5';
 
@@ -807,15 +808,17 @@
    * readable:
    *   SEG   — "stay inside this shell segment" (never cross ; & | or a newline)
    *   CMD   — "in command position": start of line/segment, after sudo/exec…,
-   *           the string handed to `sh -c`, or anything `ssh host …` runs.
-   *           A quote on its own is NOT command position: `grep "halt" src/`
-   *           searches for a word, it does not halt anything.
+   *           the string handed to `sh -c`, or anything `ssh host …` runs —
+   *           with or without the quotes bash strips off a word first, so
+   *           `"sudo" reboot` and `ls; "sudo" reboot` are sudo. A quote on
+   *           its own is NOT command position: `grep "halt" src/` searches
+   *           for a word, and `python -c "print('reboot')"` only prints one.
    *   HOME  — the owner's home in any spelling (~, $HOME, /home/x, /Users/x, /root)
    * All rules are case-insensitive except the one that must tell -D from -d.
    */
   var SEG = '[^;&|\\n]*';
-  var CMD = '(?:^|[;&|({`\\n]\\s*|\\b(?:sudo|exec|nohup|then|do|else|time|command|builtin|env|doas)\\s+|' +
-    '\\b(?:sh|bash|zsh|dash|ksh|fish)\\s+(?:-\\S+\\s+)*-[a-z]*c\\s+["\']?|\\bssh\\s[^;&|\\n"\']*[\\s"\'])';
+  var CMD = '(?:(?:^|[;&|`\\n]\\s*|\\b(?:sudo|exec|nohup|then|do|else|time|command|builtin|env|doas)\\s+|' +
+    '\\b(?:sh|bash|zsh|dash|ksh|fish)\\s+(?:-\\S+\\s+)*-[a-z]*c\\s+|\\bssh\\s[^;&|\\n"\']*[\\s"\'])["\']{0,2}\\s*|[({]\\s*)';
   var HOME = '(?:~|\\$home|\\$\\{home\\}|/home/[^/\\s"\']+|/root|/users/[^/\\s"\']+)';
   var HOMEROOT = '(?:~|\\$home|\\$\\{home\\})';
   // rm targets: /, /x, /x/y (≤ 2 segments); the home directory or up to two
@@ -889,11 +892,20 @@
   // commit-message or search-pattern flag, and the pattern a grep-family tool
   // takes. It is blanked before the table runs so `git commit -m "drop table
   // migration"` and `rg "sudo" docs/` read as the everyday commands they are.
+  // A double-quoted string holding `$(…)`, a backtick or `${…}` is not data:
+  // bash runs it before git or grep ever see the message, so it stays in view.
+  // Single quotes expand nothing, so their contents are always data.
   var QUOTED = '("(?:[^"\\\\]|\\\\.)*"|\'[^\']*\')';
   var DATA_ARGS = [
     new RegExp('(\\s-[a-z]*m\\s*|\\s--message(?:=|\\s+)|\\s--grep(?:=|\\s+)|\\s--regexp(?:=|\\s+))' + QUOTED, 'gi'),
     new RegExp('(\\b(?:grep|egrep|fgrep|rg|ag|ack)\\b(?:\\s+-[^\\s"\']*)*\\s+(?:-e\\s+)?)' + QUOTED, 'gi')
   ];
+  var SHELL_EXPANDS = /\$\(|`|\$\{/;
+
+  function blankData(match, flag, quoted) {
+    if (quoted.charAt(0) === '"' && SHELL_EXPANDS.test(quoted)) return match;
+    return flag + '""';
+  }
 
   function dangerousCommand(cmd) {
     var s = String(cmd == null ? '' : cmd)
@@ -903,7 +915,7 @@
       .trim();
     if (!s) return { danger: false, reason: '' };
     var raw = s;
-    for (var d = 0; d < DATA_ARGS.length; d++) s = s.replace(DATA_ARGS[d], '$1""');
+    for (var d = 0; d < DATA_ARGS.length; d++) s = s.replace(DATA_ARGS[d], blankData);
     for (var i = 0; i < DANGER_RULES.length; i++) {
       var rule = DANGER_RULES[i];
       if (rule.re.test(rule.inData ? raw : s)) return { danger: true, reason: rule.reason };
@@ -935,11 +947,14 @@
    * and matchRule() reads that back as the literal command.
    */
 
-  // The part of a tool call a rule is matched against ('' when the tool has nothing specific).
+  // The part of a tool call a rule is matched against ('' when the tool has
+  // nothing specific). A command's blanks collapse but its newlines stay, as
+  // they do in dangerousCommand(): the exact rule for `echo reboot` must never
+  // cover the two-command script "echo⏎reboot".
   function ruleValue(name, input) {
     input = (input && typeof input === 'object') ? input : {};
     switch (String(name || '')) {
-      case 'Bash': return sanitize(input.command).replace(/\s+/g, ' ').trim();
+      case 'Bash': return sanitize(input.command).replace(/[^\S\n]+/g, ' ').replace(/\s*\n\s*/g, '\n').trim();
       case 'Write': case 'Edit': case 'MultiEdit': case 'NotebookEdit': return String(input.file_path || input.notebook_path || '');
       case 'WebFetch': return String(input.url || '');
       default: return '';
