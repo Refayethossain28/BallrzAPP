@@ -1,0 +1,1980 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Genie — the agent that does what you tell it</title>
+<meta name="description" content="A personal, always-on AI agent on the Claude Agent SDK: shell, files, web and subagents from your phone, with approvals, memory and standing orders.">
+<meta name="theme-color" content="#0d0b1a">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Genie">
+<style>
+  :root {
+    --ink: #0d0b1a; --panel: #161330; --panel2: #1e1a3d; --panel3: #262150; --line: #2b2650;
+    --text: #ece8f8; --dim: #9d96bf; --amber: #f2b544; --amber-dim: #8a6a2a; --gold: #e6c77a;
+    --ok: #6fd394; --bad: #e07a7a; --blue: #7aa8e0; --teal: #5fc9c0; --user: #2a2350;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sat: env(safe-area-inset-top, 0px); --sab: env(safe-area-inset-bottom, 0px);
+    --sal: env(safe-area-inset-left, 0px); --sar: env(safe-area-inset-right, 0px);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--ink); color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-text-size-adjust: 100%; overscroll-behavior-y: none;
+  }
+  button { font: inherit; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  a { color: var(--gold); }
+  [hidden] { display: none !important; }
+  /* controls sit at 16px: iOS Safari zooms the page into any focused field
+     smaller than that, and pasting the key is the first tap on a phone */
+  input, textarea, select {
+    width: 100%; background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 10px; padding: 9px 11px; font: inherit; font-size: 16px;
+  }
+  input:focus, textarea:focus, select:focus { outline: none; border-color: var(--amber-dim); }
+  label.lbl { display: block; color: var(--dim); font-size: 11.5px; margin: 10px 0 4px; letter-spacing: .05em; text-transform: uppercase; }
+  .ib { background: transparent; border: 1px solid transparent; color: var(--text); border-radius: 10px; padding: 6px 9px; font-size: 18px; line-height: 1; }
+  .ib:hover { background: var(--panel2); }
+  .btn { background: var(--panel2); border: 1px solid var(--line); color: var(--text); border-radius: 10px; padding: 8px 14px; font-size: 14px; }
+  .btn:hover { border-color: var(--amber-dim); }
+  .btn.primary { background: linear-gradient(92deg, #f7c96a, var(--amber)); color: #241d0c; border: 0; font-weight: 700; }
+  .btn.danger { color: var(--bad); }
+  .btn.small { padding: 5px 10px; font-size: 13px; }
+  .sp { flex: 1; }
+  .dim { color: var(--dim); }
+  .mono { font-family: var(--mono); }
+
+  /* ── connect screen ── */
+  #connect { min-height: 100%; display: flex; align-items: center; justify-content: center; padding: calc(24px + var(--sat)) 16px calc(24px + var(--sab)); }
+  #connect .card { width: 100%; max-width: 440px; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 22px 20px; }
+  #connect h1 { margin: 0 0 2px; font-size: 26px; letter-spacing: .06em; }
+  #connect h1 .lamp { color: var(--amber); }
+  #connect .tag { color: var(--dim); font-size: 13.5px; margin-bottom: 14px; }
+  #connect .run { background: #0a0916; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font: 12.5px/1.5 var(--mono); color: var(--gold); margin-top: 14px; white-space: pre-wrap; word-break: break-word; }
+  #connect .note { color: var(--dim); font-size: 12.5px; margin-top: 8px; }
+  #cerr { color: var(--bad); font-size: 13.5px; min-height: 1.2em; margin-top: 8px; }
+  #cbtn { width: 100%; margin-top: 16px; padding: 12px; border-radius: 12px; }
+
+  /* ── app shell ── */
+  #shell { height: 100vh; height: 100dvh; display: grid; grid-template-columns: 1fr; grid-template-rows: 1fr; overflow: hidden; }
+  main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  header#top { background: rgba(13,11,26,.94); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); padding: var(--sat) var(--sar) 0 var(--sal); flex: none; }
+  .bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px 4px; }
+  .bar2 { display: flex; align-items: center; gap: 8px; padding: 0 12px 8px; }
+  .brand { font-weight: 800; letter-spacing: .08em; font-size: 16px; white-space: nowrap; }
+  .brand .lamp { color: var(--amber); }
+  .chip { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; border: 1px solid var(--line); color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 46vw; }
+  .chip.live { color: var(--ok); border-color: var(--ok); }
+  .chip.rehearsal { color: var(--gold); border-color: var(--amber-dim); }
+  .chip.off { color: var(--bad); border-color: var(--bad); }
+  .ctitle { color: var(--dim); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .modes { display: flex; gap: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 3px; flex: none; }
+  .modes button { background: transparent; border: 0; color: var(--dim); border-radius: 999px; padding: 4px 11px; font-size: 12.5px; font-weight: 600; }
+  .modes button.on { background: var(--amber); color: #241d0c; }
+  .modes button.on[data-mode="auto"] { background: var(--bad); color: #2a0e0e; }
+  .modes button.on[data-mode="ask"] { background: var(--blue); color: #0e1a2a; }
+  .modes button.blocked { opacity: .4; cursor: not-allowed; }
+  #stop { background: #3a1d1d; border: 1px solid var(--bad); color: var(--bad); border-radius: 999px; padding: 5px 12px; font-size: 13px; font-weight: 700; white-space: nowrap; }
+  #menu { font-size: 20px; }
+
+  /* ── feed ── */
+  #feed { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 12px 12px 20px; padding-left: calc(12px + var(--sal)); padding-right: calc(12px + var(--sar)); scroll-behavior: auto; }
+  #feed .inner { max-width: 820px; margin: 0 auto; display: flex; flex-direction: column; gap: 10px; }
+  .empty { text-align: center; color: var(--dim); padding: 12vh 12px 20px; }
+  .empty .big { font-size: 56px; line-height: 1; filter: drop-shadow(0 0 24px rgba(242,181,68,.35)); }
+  .empty h2 { margin: 10px 0 4px; color: var(--text); font-size: 20px; }
+  .empty .tries { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 16px; }
+  .empty .tries button { background: var(--panel); border: 1px solid var(--line); color: var(--text); border-radius: 999px; padding: 8px 14px; font-size: 13.5px; }
+  .empty .tries button:hover { border-color: var(--amber-dim); }
+  .bubble { max-width: 92%; border-radius: 16px; padding: 10px 14px; word-break: break-word; overflow-wrap: anywhere; }
+  .bubble.user { align-self: flex-end; background: var(--user); border: 1px solid #3a3170; border-bottom-right-radius: 6px; white-space: pre-wrap; }
+  .bubble.user.cmd { font-family: var(--mono); font-size: 13.5px; color: var(--gold); }
+  .bubble.user.pending { opacity: .6; }
+  .bubble.user.failed { border-color: var(--bad); }
+  .bubble.assistant { align-self: flex-start; background: var(--panel); border: 1px solid var(--line); border-bottom-left-radius: 6px; max-width: 100%; }
+  .bubble.assistant.streaming .md { white-space: pre-wrap; }
+  .bubble.assistant.streaming .md:after { content: '▍'; color: var(--amber); animation: blink 1s steps(2) infinite; }
+  @keyframes blink { to { opacity: 0; } }
+  .bubble.assistant .cut { color: var(--dim); font-size: 12px; font-style: italic; margin-top: 4px; }
+  .md p { margin: 0 0 8px; } .md p:last-child { margin-bottom: 0; }
+  .md h1, .md h2, .md h3 { margin: 10px 0 6px; line-height: 1.25; } .md h1 { font-size: 19px; } .md h2 { font-size: 17px; } .md h3 { font-size: 15.5px; }
+  .md ul, .md ol { margin: 4px 0 8px; padding-left: 22px; } .md li { margin: 2px 0; }
+  .md pre { background: #0a0916; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; overflow-x: auto; font: 12.5px/1.5 var(--mono); margin: 6px 0 8px; }
+  .md code { font-family: var(--mono); font-size: .92em; background: #0a0916; border-radius: 5px; padding: 1px 5px; }
+  .md pre code { background: none; padding: 0; }
+  .md blockquote { margin: 6px 0; padding: 2px 12px; border-left: 3px solid var(--amber-dim); color: var(--dim); }
+  .md a { color: var(--gold); }
+  .md img { max-width: 100%; }
+  .line { color: var(--dim); font-size: 13px; font-style: italic; padding: 0 6px; }
+  .line.sys .md { display: inline; }
+  .line.sys .md p { display: inline; margin: 0; }
+  .line.sys.long { font-style: normal; background: var(--panel); border: 1px dashed var(--line); border-radius: 12px; padding: 10px 14px; color: var(--text); }
+  .line.notice { color: var(--gold); }
+  .errbar { background: #3a1d1d; border: 1px solid var(--bad); color: #f4c2c2; border-radius: 12px; padding: 9px 13px; font-size: 13.5px; }
+  .thinking { color: var(--dim); font-size: 13px; padding: 2px 6px; }
+  .thinking .dots:after { content: '…'; animation: dots 1.4s steps(4) infinite; }
+  @keyframes dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
+  .result { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 12.5px; color: var(--dim); padding: 2px 6px; border-top: 1px solid var(--line); margin-top: 2px; }
+  .result .ok { color: var(--ok); font-weight: 700; } .result .fail { color: var(--bad); font-weight: 700; }
+  .result .den { color: var(--gold); }
+  .divider { text-align: center; color: var(--dim); font-size: 11.5px; letter-spacing: .04em; }
+  .divider span { background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; }
+  #newpill { position: absolute; left: 50%; transform: translateX(-50%); bottom: 8px; background: var(--amber); color: #241d0c; border: 0; border-radius: 999px; padding: 6px 14px; font-size: 13px; font-weight: 700; box-shadow: 0 6px 20px rgba(0,0,0,.4); }
+  .feedwrap { position: relative; flex: 1; display: flex; min-height: 0; }
+  .feedwrap #feed { flex: 1; }
+
+  /* ── tool cards ── */
+  .tool { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; align-self: stretch; }
+  .tool > .thead { display: flex; align-items: center; gap: 8px; padding: 8px 10px; cursor: pointer; user-select: none; -webkit-user-select: none; }
+  .tool > .thead .ticon { font-size: 16px; }
+  .tool > .thead .tname { font-weight: 700; font-size: 13px; white-space: nowrap; }
+  .tool > .thead .tsum { flex: 1; min-width: 0; color: var(--dim); font: 12.5px/1.4 var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tool > .thead .tel { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .tool > .thead .tst { width: 9px; height: 9px; border-radius: 50%; background: var(--dim); flex: none; }
+  .tool.running > .thead .tst { background: var(--amber); animation: pulse 1.2s ease-in-out infinite; }
+  .tool.done > .thead .tst { background: var(--ok); }
+  .tool.error > .thead .tst { background: var(--bad); }
+  .tool.error > .thead .tname { color: var(--bad); }
+  .tool.stopped > .thead .tst { background: var(--dim); }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .tool > .tbody { border-top: 1px solid var(--line); background: #0a0916; }
+  .tool > .tbody pre { margin: 0; padding: 10px 12px; font: 12px/1.5 var(--mono); white-space: pre-wrap; word-break: break-word; max-height: 50vh; overflow: auto; color: #cfc9e6; }
+  .tool.error > .tbody pre { color: #f4c2c2; }
+  .tool > .tbody .tin { color: var(--dim); border-bottom: 1px dashed var(--line); }
+  .tool > .tkids { padding: 6px 8px 8px 14px; display: flex; flex-direction: column; gap: 8px; border-left: 3px solid var(--amber-dim); margin: 0 0 0 10px; }
+  .tool > .tkids:empty { display: none; }
+  .tool .tkids .bubble.assistant { background: var(--panel2); }
+
+  /* ── approval card ── */
+  .ask { border: 1px solid var(--line); border-left: 4px solid var(--amber); background: var(--panel); border-radius: 12px; padding: 12px 14px; align-self: stretch; }
+  .ask.level-danger { border-left-color: var(--bad); background: #221420; }
+  .ask.level-exec { border-left-color: var(--amber); }
+  .ask.level-write { border-left-color: var(--blue); }
+  .ask.level-network { border-left-color: var(--teal); }
+  .ask.level-read { border-left-color: var(--ok); }
+  .ask.level-question { border-left-color: var(--gold); background: #1c1834; }
+  .ask .atitle { font-weight: 600; font-size: 15px; } .ask .atitle p { margin: 0; }
+  .ask .ameta { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-top: 6px; font-size: 12.5px; color: var(--dim); }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; border: 1px solid currentColor; }
+  .badge.danger { color: var(--bad); } .badge.exec { color: var(--amber); } .badge.write { color: var(--blue); } .badge.network { color: var(--teal); } .badge.read { color: var(--ok); } .badge.question { color: var(--gold); }
+  .ask pre.acmd { margin: 8px 0 0; background: #0a0916; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: 12.5px/1.5 var(--mono); white-space: pre-wrap; word-break: break-word; max-height: 30vh; overflow: auto; }
+  .ask .abtns { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .ask .abtns button { flex: 1; min-width: 90px; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel2); color: var(--text); font-weight: 600; }
+  .ask .abtns button.allow { background: var(--ok); color: #0e2a18; border: 0; }
+  .ask .abtns button.always { border-color: var(--amber-dim); color: var(--gold); }
+  .ask .abtns button.deny { color: var(--bad); }
+  .ask .adec { margin-top: 8px; font-size: 13px; color: var(--dim); }
+  .ask.resolved { opacity: .75; }
+  .ask.resolved.allowed .adec, .ask.resolved.always .adec { color: var(--ok); }
+  .ask.resolved.denied .adec { color: var(--bad); }
+  .ask .abtns button.answer { background: var(--ok); color: #0e2a18; border: 0; }
+
+  /* ── question card (the agent asked the owner something) ── */
+  .ask .q { margin-top: 10px; }
+  .ask .qhead { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; background: var(--panel3); color: var(--gold); margin-bottom: 4px; }
+  .ask .qtext { font-size: 14.5px; }
+  .ask .qopts { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+  .ask .qopt { display: flex; gap: 8px; align-items: baseline; text-align: left; background: var(--panel2); border: 1px solid var(--line); color: var(--text); border-radius: 10px; padding: 8px 12px; cursor: pointer; font: inherit; }
+  .ask .qopt.on { border-color: var(--amber); background: var(--user); }
+  .ask .qopt:disabled, .ask .qopt.off { cursor: default; }
+  .ask .qopt .qbox { color: var(--dim); flex: none; }
+  .ask .qopt.on .qbox { color: var(--amber); }
+  .ask .qopt input.qbox { width: 16px; height: 16px; padding: 0; margin: 0; border-radius: 4px; accent-color: var(--amber); align-self: center; }
+  .ask .qopt .ql { font-weight: 600; }
+  .ask .qopt .qd { color: var(--dim); font-size: 12.5px; flex: 1; min-width: 0; }
+  .ask input.qother { margin-top: 8px; }
+  .ask .qans { margin-top: 4px; color: var(--text); font-size: 13.5px; }
+  .ask .qans div { margin-top: 2px; }
+  .ask .qans b { color: var(--gold); font-weight: 600; }
+
+  /* ── composer ── */
+  #composer { flex: none; border-top: 1px solid var(--line); background: var(--ink); padding: 8px 10px calc(8px + var(--sab)); padding-left: calc(10px + var(--sal)); padding-right: calc(10px + var(--sar)); position: relative; }
+  #composer .inner { max-width: 820px; margin: 0 auto; position: relative; }
+  .crow { display: flex; align-items: flex-end; gap: 6px; }
+  #input { flex: 1; resize: none; min-height: 44px; max-height: 40vh; line-height: 1.4; padding: 11px 12px; border-radius: 14px; font-size: 16px; }
+  #send { flex: none; width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--amber); color: #241d0c; font-size: 18px; font-weight: 700; }
+  #send:disabled { background: var(--panel3); color: var(--dim); }
+  #mic { flex: none; width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--line); background: var(--panel2); font-size: 18px; padding: 0; }
+  #mic.listening { border-color: var(--bad); background: #3a1d1d; animation: pulse 1s ease-in-out infinite; }
+  #hint { color: var(--dim); font-size: 12px; margin: 6px 4px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #hint b { color: var(--gold); font-weight: 600; }
+  #ac { position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; box-shadow: 0 -8px 30px rgba(0,0,0,.4); max-height: 40vh; overflow-y: auto; z-index: 5; }
+  #ac .aci { display: flex; gap: 10px; align-items: baseline; padding: 8px 12px; cursor: pointer; font-size: 14px; }
+  #ac .aci.on, #ac .aci:hover { background: var(--panel2); }
+  #ac .aci .n { font-family: var(--mono); color: var(--gold); white-space: nowrap; }
+  #ac .aci .a { font-family: var(--mono); color: var(--dim); font-size: 12.5px; white-space: nowrap; }
+  #ac .aci .b { color: var(--dim); font-size: 12.5px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ── drawer / sidebar ── */
+  #backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 40; }
+  #drawer { position: fixed; top: 0; bottom: 0; left: 0; width: min(88vw, 340px); background: var(--panel); border-right: 1px solid var(--line); z-index: 41; transform: translateX(-102%); transition: transform .22s ease-out; display: flex; flex-direction: column; padding-top: var(--sat); padding-bottom: var(--sab); padding-left: var(--sal); }
+  #drawer.open { transform: translateX(0); }
+  @media (prefers-reduced-motion: reduce) { #drawer { transition: none; } }
+  .dhead { display: flex; align-items: center; gap: 8px; padding: 12px 12px 6px; }
+  .dhead .brand { font-size: 15px; }
+  .tabs { display: flex; gap: 2px; padding: 0 8px 6px; overflow-x: auto; scrollbar-width: none; flex: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tabs button { background: transparent; border: 0; color: var(--dim); padding: 6px 10px; border-radius: 999px; font-size: 13px; white-space: nowrap; }
+  .tabs button.on { background: var(--panel2); color: var(--text); font-weight: 600; }
+  .panes { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 4px 12px 16px; }
+  .pane h3 { margin: 10px 0 8px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); }
+  .item { display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: 10px; cursor: pointer; border: 1px solid transparent; }
+  .item:hover { background: var(--panel2); }
+  .item.on { background: var(--panel2); border-color: var(--amber-dim); }
+  .item .body { flex: 1; min-width: 0; }
+  .item .t { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item .m { font-size: 12px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item .x, .rule .x { background: transparent; border: 0; color: var(--dim); font-size: 15px; padding: 4px 6px; border-radius: 8px; flex: none; }
+  .item .x:hover, .rule .x:hover { color: var(--bad); background: var(--panel3); }
+  .item .x.run:hover { color: var(--ok); }
+  .item.busy .t:before { content: '● '; color: var(--amber); }
+  .item.sched .t { white-space: normal; }
+  .item.sched.off { opacity: .55; }
+  .item.mem { cursor: default; align-items: flex-start; }
+  .item.mem .t { white-space: normal; font-size: 13.5px; }
+  .item.mem .n { color: var(--dim); font: 12px var(--mono); padding-top: 3px; }
+  .none { color: var(--dim); font-size: 13px; padding: 6px 10px; }
+  .form { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+  .form .row { display: flex; gap: 6px; }
+  .form .row > * { flex: 1; min-width: 0; }
+  .form .err { color: var(--bad); font-size: 12.5px; min-height: 1em; }
+  .form .note { color: var(--dim); font-size: 12.5px; }
+  .form .radios { display: flex; gap: 14px; align-items: center; font-size: 14px; }
+  .form .radios label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  .form .radios input { width: auto; margin: 0; accent-color: var(--amber); }
+  .rule { display: flex; align-items: center; gap: 6px; font: 12.5px var(--mono); padding: 5px 8px; border-radius: 8px; background: var(--panel2); margin-top: 4px; }
+  .rule .k { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rule .kind { color: var(--dim); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
+  .rule .b { color: var(--ok); } .rule .b.deny { color: var(--bad); }
+  .about dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; font-size: 13.5px; }
+  .about dt { color: var(--dim); } .about dd { margin: 0; overflow: hidden; text-overflow: ellipsis; }
+  .about p { font-size: 13.5px; color: var(--dim); }
+  .about .modes-tbl div { padding: 4px 0; font-size: 13px; } .about .modes-tbl b { color: var(--gold); }
+  #drawer .dfoot { padding: 8px 12px; border-top: 1px solid var(--line); font-size: 12px; color: var(--dim); display: flex; gap: 8px; align-items: center; }
+
+  /* ── toasts ── */
+  #toasts { position: fixed; top: calc(10px + var(--sat)); left: 50%; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: column; gap: 8px; width: min(94vw, 420px); pointer-events: none; }
+  .toast { background: var(--panel3); border: 1px solid var(--amber-dim); color: var(--text); border-radius: 12px; padding: 10px 14px; box-shadow: 0 10px 30px rgba(0,0,0,.45); font-size: 14px; pointer-events: auto; animation: tin .2s ease-out; }
+  .toast b { display: block; color: var(--gold); font-size: 13px; }
+  .toast.bad { border-color: var(--bad); }
+  @keyframes tin { from { opacity: 0; transform: translateY(-8px); } }
+
+  /* ── desktop: fixed sidebar ── */
+  @media (min-width: 900px) {
+    #shell { grid-template-columns: 320px 1fr; }
+    #drawer { position: static; transform: none; width: auto; transition: none; z-index: auto; }
+    #backdrop { display: none !important; }
+    #menu, .dhead .close { display: none; }
+    .chip { max-width: 30vw; }
+  }
+  @media (max-width: 420px) {
+    .modes button { padding: 4px 9px; font-size: 12px; }
+    .bar { padding-left: 6px; }
+  }
+</style>
+<script src="engine.js"></script>
+</head>
+<body>
+
+<!-- 1. Connect screen — shown until /api/status answers -->
+<section id="connect">
+  <div class="card">
+    <h1><span class="lamp">🪔</span> GENIE</h1>
+    <div class="tag">the agent that does what you tell it</div>
+    <label class="lbl" for="srv">Server</label>
+    <input id="srv" type="url" placeholder="same origin (leave empty)" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <label class="lbl" for="keyin">Key</label>
+    <input id="keyin" type="password" placeholder="printed in the terminal as ?key=…" autocomplete="off">
+    <div id="cerr"></div>
+    <button id="cbtn" class="btn primary">Connect</button>
+    <div class="run" id="runcmd">ANTHROPIC_API_KEY=sk-ant-… npm run genie
+# then open the printed http://localhost:8800/?key=… on your phone</div>
+    <div class="note" id="cnote">Genie runs on your own machine. This console only talks to the server you point it at; the key stays in this browser.</div>
+  </div>
+</section>
+
+<!-- the app -->
+<div id="shell" hidden>
+  <!-- 5. Drawer (phone) / sidebar (desktop) -->
+  <aside id="drawer" aria-label="Genie drawer">
+    <div class="dhead">
+      <span class="brand"><span class="lamp">🪔</span> GENIE</span>
+      <span class="sp"></span>
+      <button class="ib close" id="dclose" aria-label="Close">✕</button>
+    </div>
+    <div class="tabs" id="tabs">
+      <button data-tab="conversations" class="on">Chats</button>
+      <button data-tab="schedules">Schedules</button>
+      <button data-tab="memory">Memory</button>
+      <button data-tab="settings">Settings</button>
+      <button data-tab="about">About</button>
+    </div>
+    <div class="panes">
+      <div class="pane" id="pane-conversations">
+        <button class="btn primary" id="newconv" style="width:100%">+ New conversation</button>
+        <h3>Conversations</h3>
+        <div id="convlist"><div class="none">none yet</div></div>
+      </div>
+      <div class="pane" id="pane-schedules" hidden>
+        <h3>Standing orders</h3>
+        <div id="schedlist"><div class="none">none yet</div></div>
+        <h3>Add</h3>
+        <div class="form">
+          <input id="swhen" placeholder="when — every 30m · weekdays at 08:30 · cron 0 9 * * 1-5" autocapitalize="off">
+          <textarea id="stask" rows="2" placeholder="task — e.g. run the tests and report what broke"></textarea>
+          <div class="row"><button class="btn" id="sadd">Add standing order</button></div>
+          <div class="err" id="serr"></div>
+        </div>
+      </div>
+      <div class="pane" id="pane-memory" hidden>
+        <h3>What Genie remembers</h3>
+        <div id="memlist"><div class="none">nothing yet</div></div>
+        <div class="form">
+          <div class="row"><input id="memfact" placeholder="a durable fact — e.g. the cat is called Nimbus"><button class="btn" id="memadd" style="flex:0 0 auto">Add</button></div>
+          <div class="err" id="memerr"></div>
+        </div>
+      </div>
+      <div class="pane" id="pane-settings" hidden>
+        <h3>Agent</h3>
+        <div class="form">
+          <label class="lbl" for="smodel">Model</label><select id="smodel"></select>
+          <label class="lbl" for="seffort">Effort</label><select id="seffort"></select>
+          <label class="lbl" for="scwd">Working directory</label><input id="scwd" placeholder="/absolute/path" autocapitalize="off" spellcheck="false">
+          <label class="lbl" for="sowner">Owner</label><input id="sowner" placeholder="you">
+          <div class="row">
+            <div><label class="lbl" for="sturns">Max turns</label><input id="sturns" type="number" min="1" max="1000" step="1"></div>
+            <div><label class="lbl" for="susd">Max $ / run</label><input id="susd" type="number" min="0.1" max="1000" step="0.5"></div>
+          </div>
+          <div class="row"><button class="btn primary" id="ssave">Save</button></div>
+          <div class="err" id="sserr"></div>
+        </div>
+        <h3>Rules</h3>
+        <div id="rules"><div class="none">none — "Always allow" on an approval adds one, or write one below</div></div>
+        <div class="form">
+          <div class="row">
+            <select id="rtool" aria-label="Tool" style="flex:0 0 38%">
+              <option>Bash</option><option>Write</option><option>Edit</option><option>Read</option><option>WebFetch</option>
+              <option>WebSearch</option><option>Glob</option><option>Grep</option><option>Task</option><option value="*">* any tool</option>
+            </select>
+            <input id="rmatch" aria-label="Match" placeholder="command" autocapitalize="off" spellcheck="false">
+          </div>
+          <div class="note">A trailing * makes a prefix (<span class="mono">git status*</span>); * alone matches every call. Deny beats allow.</div>
+          <div class="row">
+            <div class="radios" role="radiogroup" aria-label="Behavior">
+              <label><input type="radio" name="rbehavior" value="allow" checked> allow</label>
+              <label><input type="radio" name="rbehavior" value="deny"> deny</label>
+            </div>
+            <button class="btn" id="radd" style="flex:0 0 auto">Add rule</button>
+          </div>
+          <div class="err" id="rerr"></div>
+        </div>
+        <h3>Notifications</h3>
+        <div class="form"><div class="row"><button class="btn" id="notifbtn">Enable notifications</button></div><div class="dim" id="notifstate" style="font-size:12.5px"></div></div>
+        <h3>Connection</h3>
+        <div class="form">
+          <label class="lbl" for="srv2">Server</label><input id="srv2" placeholder="same origin" autocapitalize="off" spellcheck="false">
+          <label class="lbl" for="key2">Key</label><input id="key2" type="password" autocomplete="off">
+          <div class="row"><button class="btn" id="reconnect">Reconnect</button><button class="btn danger" id="disconnect">Disconnect</button></div>
+        </div>
+      </div>
+      <div class="pane about" id="pane-about" hidden>
+        <h3>About</h3>
+        <dl id="aboutdl"></dl>
+        <h3>Modes</h3>
+        <div class="modes-tbl" id="modestbl"></div>
+        <p>Genie is a personal, always-on agent on the Claude Agent SDK. Whatever you type here is carried out on the machine running the server — shell, files, web, subagents — under the trust level you pick. Standing orders fire on a cron-grade clock; memory is a plain markdown file under <span class="mono">GENIE_HOME</span>.</p>
+        <p><a href="https://github.com/refayethossain28/BallrzAPP/tree/main/genie" target="_blank" rel="noopener noreferrer">README & source</a></p>
+      </div>
+    </div>
+    <div class="dfoot"><span id="dfoot">🪔 Genie</span><span class="sp"></span><span class="mono" id="dver"></span></div>
+  </aside>
+  <div id="backdrop" hidden></div>
+
+  <main>
+    <!-- 2. Header -->
+    <header id="top">
+      <div class="bar">
+        <button id="menu" class="ib" aria-label="Menu">☰</button>
+        <span class="brand"><span class="lamp">🪔</span> GENIE</span>
+        <span id="chip" class="chip">connecting…</span>
+        <span class="sp"></span>
+        <button id="stop" hidden>⏹ Stop</button>
+      </div>
+      <div class="bar2">
+        <span id="ctitle" class="ctitle">New conversation</span>
+        <span class="sp"></span>
+        <div class="modes" id="modes" role="group" aria-label="Trust level">
+          <button data-mode="ask">Ask</button>
+          <button data-mode="trust" class="on">Trust</button>
+          <button data-mode="auto">Auto</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- 3. Feed -->
+    <div class="feedwrap">
+      <div id="feed"><div class="inner" id="inner"></div></div>
+      <button id="newpill" hidden>↓ new</button>
+    </div>
+
+    <!-- 4. Composer -->
+    <div id="composer">
+      <div class="inner">
+        <div id="ac" hidden></div>
+        <div class="crow">
+          <textarea id="input" rows="1" placeholder="Tell Genie what to do… ( / for commands )" autocapitalize="sentences" enterkeyhint="send"></textarea>
+          <button id="mic" hidden aria-label="Dictate">🎤</button>
+          <button id="send" aria-label="Send">➤</button>
+        </div>
+        <div id="hint"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div id="toasts" aria-live="polite"></div>
+<script>
+/* ── Genie console ──────────────────────────────────────────────────────
+ * One classic script, named functions, ES5-friendly. Every rule lives in
+ * engine.js (GenieEngine); this file owns the DOM, the network and the
+ * clock. Browser-only classes (URL, TextDecoder, AbortController,
+ * Notification, SpeechRecognition) are touched only inside functions and
+ * behind typeof guards, so the headless smoke sandbox can run the init
+ * path on stub data without throwing. */
+
+var E = (typeof GenieEngine !== 'undefined' && GenieEngine) ? GenieEngine : {};
+var HAS_ENGINE = typeof E.renderMarkdown === 'function';
+
+/* engine wrappers — degrade to plain text when the engine failed to load */
+function esc(s) {
+  if (typeof E.escapeHTML === 'function') return E.escapeHTML(s);
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+function md(s) { return HAS_ENGINE ? E.renderMarkdown(s) : '<p>' + esc(s).replace(/\n/g, '<br>') + '</p>'; }
+function icon(name) { return typeof E.toolIcon === 'function' ? E.toolIcon(name) : '🔧'; }
+function summ(name, input) { return typeof E.summarizeInput === 'function' ? E.summarizeInput(name, input) : ''; }
+function usd(n) { return typeof E.formatUsd === 'function' ? E.formatUsd(n) : '$' + (Number(n) || 0).toFixed(4); }
+function dur(ms) { return typeof E.formatDuration === 'function' ? E.formatDuration(ms) : Math.round((Number(ms) || 0) / 1000) + 's'; }
+function rel(then) { return typeof E.relTime === 'function' ? E.relTime(Date.now(), then) : ''; }
+function modeInfo(m) { var mi = E.MODE_INFO && E.MODE_INFO[m]; return mi || { label: m, blurb: '' }; }
+
+/* ── state ── */
+var S = {
+  base: '', key: '', connected: false, status: null, settings: null,
+  convId: null, meta: null, seq: 0,
+  conversations: [], schedules: [], memory: [], commands: [],
+  running: false, runId: null, runStart: 0,
+  streamGen: 0, streamCtrl: null, streamOpen: false, streamPending: false, backoff: 1000, retryTimer: 0, pollTimer: 0,
+  bubbles: {}, tools: {}, asks: {}, thinkingEl: null, runningTools: {},
+  pendingUser: null, recentLocal: null, recentSys: null,
+  drawerTab: 'conversations', acItems: [], acIndex: -1,
+  stick: true, statusTimer: 0, ticker: 0, loadingConv: false,
+  formShown: {}
+};
+
+/* ── tiny DOM / storage helpers ── */
+function $(id) { return document.getElementById(id); }
+function h(tag, cls, text) {
+  var el = document.createElement(tag);
+  if (cls) el.className = cls;
+  if (text != null) el.textContent = text;
+  return el;
+}
+function arr(x) { return Array.isArray(x) ? x : []; }
+function obj(x) { return (x && typeof x === 'object') ? x : {}; }
+function str(x) { return typeof x === 'string' ? x : (x == null ? '' : String(x)); }
+function lsGet(k) { try { var v = localStorage.getItem(k); return typeof v === 'string' ? v : null; } catch (e) { return null; } }
+function lsSet(k, v) { try { if (v == null || v === '') localStorage.removeItem(k); else localStorage.setItem(k, String(v)); } catch (e) {} }
+function tzMin() { return -new Date().getTimezoneOffset(); }
+function isHidden() { try { return document.visibilityState === 'hidden' || document.hidden === true; } catch (e) { return false; } }
+/* the console's own scheme ('https:' when hosted) — '' when there is no real location */
+function pageProtocol() {
+  var p = (typeof location !== 'undefined' && location) ? location.protocol : '';
+  return typeof p === 'string' ? p : '';
+}
+function normBase(u) {
+  u = str(u).trim().replace(/\/+$/, '');
+  // a bare host takes the page's own scheme: an https console cannot fetch http
+  if (u && !/^https?:\/\//i.test(u)) u = (pageProtocol() === 'https:' ? 'https://' : 'http://') + u;
+  return u;
+}
+/* an https page may only reach an http Genie on this machine (loopback is exempt from mixed content) */
+function mixedContent(base) {
+  if (pageProtocol() !== 'https:' || !/^http:\/\//i.test(base)) return false;
+  return !/^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(base);
+}
+function unreachableText(base, auto) {
+  if (mixedContent(base)) return 'A hosted console can only reach a Genie served over https (or one on localhost): the browser blocks http from an https page.';
+  return 'No Genie server at ' + (base || 'this origin') + '.' + (auto ? ' Start it and tap Connect.' : '');
+}
+
+/* ── toasts ── */
+function toast(title, body, bad) {
+  var box = $('toasts');
+  var t = h('div', 'toast' + (bad ? ' bad' : ''));
+  if (title) t.appendChild(h('b', null, title));
+  t.appendChild(document.createTextNode(str(body)));
+  box.appendChild(t);
+  t.addEventListener('click', function () { if (t.parentNode) t.parentNode.removeChild(t); });
+  setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, bad ? 7000 : 4500);
+}
+function desktopNotify(title, body) {
+  if (typeof Notification === 'undefined') return;
+  try {
+    if (Notification.permission !== 'granted' || !isHidden()) return;
+    var n = new Notification(title, { body: body, icon: 'icon-192.png', tag: 'genie' });
+    n.onclick = function () { try { window.focus(); } catch (e) {} };
+  } catch (e) {}
+}
+function notifState() {
+  var el = $('notifstate'), btn = $('notifbtn');
+  if (typeof Notification === 'undefined') { el.textContent = 'not supported in this browser'; btn.disabled = true; return; }
+  var p = Notification.permission;
+  el.textContent = p === 'granted' ? 'on — approvals and notifies reach you when this tab is hidden' : (p === 'denied' ? 'blocked in the browser settings' : 'off');
+  btn.disabled = p !== 'default';
+}
+function askNotifPermission() {
+  if (typeof Notification === 'undefined') return;
+  try {
+    if (Notification.permission !== 'default') return;
+    var p = Notification.requestPermission();
+    if (p && typeof p.then === 'function') p.then(notifState, function () {}); else setTimeout(notifState, 500);
+  } catch (e) {}
+}
+
+/* ── HTTP ── */
+function apiHeaders(json) {
+  var hd = {};
+  if (S.key) hd['Authorization'] = 'Bearer ' + S.key;
+  if (json) hd['Content-Type'] = 'application/json';
+  return hd;
+}
+/* → Promise<{ ok, status, data }> — never rejects on a non-JSON body */
+function api(method, path, body) {
+  var opts = { method: method, headers: apiHeaders(body != null), cache: 'no-store' };
+  if (body != null) opts.body = JSON.stringify(body);
+  return fetch(S.base + path, opts).then(function (r) {
+    var status = Number(r.status) || 0, ok = !!r.ok;
+    var p;
+    try { p = Promise.resolve(typeof r.json === 'function' ? r.json() : null); } catch (e) { p = Promise.resolve(null); }
+    return p.then(function (data) { return { ok: ok, status: status, data: data }; },
+                  function () { return { ok: ok, status: status, data: null }; });
+  });
+}
+function errOf(r, fallback) {
+  var d = r && r.data;
+  if (d && typeof d.error === 'string') return d.error;
+  if (r && r.status === 401) return 'unauthorized — check the key';
+  if (r && r.status) return fallback + ' (' + r.status + ')';
+  return fallback;
+}
+
+/* ── 1. connect ── */
+function showConnect(on) {
+  $('connect').hidden = !on;
+  $('shell').hidden = on;
+}
+function setConnectError(msg) { $('cerr').textContent = msg || ''; }
+function connectFromForm() {
+  var base = normBase($('srv').value), key = str($('keyin').value).trim();
+  if (!key) { setConnectError('Paste the key the server printed (…/?key=…).'); return; }
+  connectWith(base, key, false);
+}
+function connectWith(base, key, auto) {
+  S.base = base; S.key = key;
+  var btn = $('cbtn');
+  btn.disabled = true; btn.textContent = 'Connecting…';
+  setConnectError('');
+  api('GET', '/api/status').then(function (r) {
+    btn.disabled = false; btn.textContent = 'Connect';
+    if (r.status === 401) { setConnectError('The server rejected that key.'); showConnect(true); lsSet('genie.key', null); return; }
+    if (!r.ok || !r.data || typeof r.data !== 'object') {
+      setConnectError(r.status ? 'That server answered ' + r.status + ' — is it Genie?' : unreachableText(base, auto));
+      showConnect(true); return;
+    }
+    lsSet('genie.key', key); lsSet('genie.base', base);
+    S.connected = true;
+    showConnect(false);
+    renderStatus(r.data);
+    afterConnect();
+  }).catch(function () {
+    btn.disabled = false; btn.textContent = 'Connect';
+    setConnectError(unreachableText(base, auto));
+    showConnect(true);
+  });
+}
+/* no key yet: is a Genie server sitting at this origin? Say so. */
+function probeOrigin() {
+  api('GET', '/api/health').then(function (r) {
+    if (r.ok && r.data && r.data.name === 'genie') $('cnote').textContent = 'A Genie server is running here — paste the key from its terminal (the ?key= in the printed URL).';
+  }).catch(function () {});
+}
+function disconnect() {
+  closeStream();
+  S.connected = false; S.key = ''; S.convId = null;
+  lsSet('genie.key', null); lsSet('genie.conv', null);
+  $('keyin').value = '';
+  showConnect(true);
+}
+
+/* ── status, settings, mode chips ── */
+function renderStatus(st) {
+  st = obj(st); S.status = st;
+  var chip = $('chip');
+  var label = typeof E.statusChip === 'function' ? E.statusChip({ driver: st.driver, live: st.live, model: st.model }) : str(st.driver || 'offline');
+  chip.textContent = label + (st.busy ? ' · busy' : '') + (Number(st.queue) > 0 ? ' · ' + st.queue + ' queued' : '');
+  chip.className = 'chip ' + (st.live ? 'live' : (st.driver === 'rehearsal' ? 'rehearsal' : ''));
+  chip.title = str(st.reason || '');
+  if (typeof st.mode === 'string') applyModeUI(st.mode);
+  fillSelects(st);
+  renderAbout();
+  $('dver').textContent = 'v' + str(st.version || E.VERSION || '');
+}
+function setOffline(on) {
+  var chip = $('chip');
+  if (on) { chip.textContent = 'offline — reconnecting'; chip.className = 'chip off'; }
+  else if (S.status) renderStatus(S.status);
+}
+function fillSelects(st) {
+  var ms = $('smodel'), es = $('seffort');
+  if (ms.options && ms.options.length > 0) return;
+  var models = arr(st.models).length ? arr(st.models) : arr(E.MODELS);
+  for (var i = 0; i < models.length; i++) {
+    var o = document.createElement('option');
+    o.value = str(models[i].id); o.textContent = str(models[i].id) + (models[i].note ? ' — ' + models[i].note : '');
+    ms.appendChild(o);
+  }
+  var efforts = arr(st.efforts).length ? arr(st.efforts) : arr(E.EFFORTS);
+  for (var j = 0; j < efforts.length; j++) {
+    var e = document.createElement('option'); e.value = str(efforts[j]); e.textContent = str(efforts[j]); es.appendChild(e);
+  }
+}
+function loadSettings() {
+  return api('GET', '/api/settings').then(function (r) {
+    if (!r.ok || !r.data) return;
+    var s = (r.data.settings && typeof r.data.settings === 'object') ? r.data.settings : r.data;
+    S.settings = obj(s);
+    renderSettings();
+  }).catch(function () {});
+}
+/* what the Agent form would show for these settings, by field id — null
+ * where a select has nothing to follow */
+function formValues(s) {
+  return {
+    smodel: s.model == null ? null : str(s.model), seffort: s.effort == null ? null : str(s.effort),
+    scwd: str(s.cwd || ''), sowner: str(s.owner || ''),
+    sturns: s.maxTurns == null ? '' : String(s.maxTurns), susd: s.maxUsd == null ? '' : String(s.maxUsd)
+  };
+}
+/* The mode chips and the rule list always follow the server; an Agent form
+ * field follows it only while nobody has typed there. The console remembers
+ * what it last put into each field (S.formShown) and writes a field only
+ * while it still reads that value, whoever asked for the render — the 30 s
+ * refresh, an Add rule or ✕ in the same pane, an "Always allow" answered on
+ * another device, a mode chip or /mode from the composer. A half-edited
+ * draft is theirs until Save; an untouched select still follows a /model. */
+function renderSettings() {
+  var s = obj(S.settings);
+  if (typeof s.mode === 'string') applyModeUI(s.mode);
+  var want = formValues(s);
+  for (var id in want) {
+    if (want[id] == null) continue;
+    var el = $(id), shown = S.formShown[id];
+    if (typeof shown === 'string' && el.value !== shown) continue;
+    el.value = want[id];
+    S.formShown[id] = el.value; // what landed: a select without that option reads ''
+  }
+  renderRules();
+}
+/* why Auto is off the table right now (live driver, root outside a sandbox), or '' */
+function autoBlockedReason() {
+  var st = obj(S.status);
+  return (st.live && st.rootUnsandboxed) ? str(st.autoBlockedReason || 'auto mode is unavailable on this server') : '';
+}
+function applyModeUI(mode) {
+  var blocked = autoBlockedReason();
+  var btns = $('modes').querySelectorAll('button');
+  for (var i = 0; i < btns.length; i++) {
+    var b = btns[i]; if (!b) break;
+    var m = b.getAttribute('data-mode'), cls = [];
+    if (m === mode) cls.push('on');
+    if (m === 'auto' && blocked) cls.push('blocked');
+    b.className = cls.join(' ');
+    if (m === 'auto') b.title = blocked; // stays tappable: the server's refusal says why
+  }
+  var mi = modeInfo(mode);
+  $('hint').innerHTML = '<b>' + esc(mi.label) + '</b> · ' + esc(mi.blurb);
+  if (S.settings) S.settings.mode = mode;
+}
+/* onDone(ok, reply|null) owns the failure message when given; otherwise a toast does */
+function patchSettings(patch, onDone) {
+  return api('PATCH', '/api/settings', patch).then(function (r) {
+    if (!r.ok) { if (onDone) onDone(false, r); else toast('Settings', errOf(r, 'not saved'), true); return; }
+    var s = (r.data && r.data.settings && typeof r.data.settings === 'object') ? r.data.settings : r.data;
+    S.settings = obj(s);
+    renderSettings();
+    if (onDone) onDone(true, r);
+  }).catch(function () { if (onDone) onDone(false, null); else toast('Settings', 'server unreachable', true); });
+}
+function setMode(mode) {
+  if (!S.connected) return;
+  // a blocked Auto skips the confirm: the server's own 400 says why it refused
+  if (mode === 'auto' && !autoBlockedReason() && !confirm('Genie will never ask before acting. Continue?')) return;
+  patchSettings({ mode: mode }, function (ok, r) {
+    if (ok) toast('Mode', modeInfo(mode).label + ' — ' + modeInfo(mode).blurb);
+    else toast('Mode', r ? errOf(r, 'not changed') : 'server unreachable', true);
+  });
+}
+function saveSettingsForm() {
+  var patch = {
+    model: str($('smodel').value), effort: str($('seffort').value),
+    owner: str($('sowner').value).trim() || 'you',
+    maxTurns: Number($('sturns').value) || undefined, maxUsd: Number($('susd').value) || undefined
+  };
+  var cwd = str($('scwd').value).trim();
+  if (cwd) patch.cwd = cwd;
+  $('sserr').textContent = '';
+  patchSettings(patch, function (ok, r) {
+    if (!ok) { $('sserr').textContent = r ? errOf(r, 'not saved') : 'server unreachable'; return; }
+    // the reply is the form's new base: every field follows the server again
+    S.formShown = {}; renderSettings();
+    toast('Settings', 'saved');
+  });
+}
+/* how a rule reads, the way the engine matches it: '*' is any call of the
+ * tool, a bare trailing '*' a prefix, anything else the exact command or path
+ * (a trailing '\*' is a literal star — the spelling "Always allow" mints) */
+function ruleKind(rule) {
+  var m = str(rule.match);
+  if (m === '*') return 'any';
+  if (m.length > 1 && m.charAt(m.length - 1) === '*' && m.charAt(m.length - 2) !== '\\') return 'prefix';
+  return 'exact';
+}
+function renderRules() {
+  var box = $('rules'); box.textContent = '';
+  var rules = arr(obj(S.settings).rules);
+  if (!rules.length) { box.appendChild(h('div', 'none', 'none — "Always allow" on an approval adds one, or write one below')); return; }
+  rules.forEach(function (rule) {
+    rule = obj(rule);
+    var row = h('div', 'rule');
+    row.appendChild(h('span', 'k', str(rule.tool) + ':' + str(rule.match)));
+    row.appendChild(h('span', 'kind', ruleKind(rule)));
+    row.appendChild(h('span', 'b' + (rule.behavior === 'deny' ? ' deny' : ''), str(rule.behavior || 'allow')));
+    var x = h('button', 'x', '✕'); x.title = 'remove rule';
+    x.addEventListener('click', function () {
+      // by content, not by position: the server's list may have moved on since this one was drawn
+      patchSettings({ removeRule: { tool: str(rule.tool), match: str(rule.match), behavior: str(rule.behavior || 'allow') } });
+    });
+    row.appendChild(x);
+    box.appendChild(row);
+  });
+}
+/* the part of a call a rule is matched against: Bash its command, Write and
+ * Edit the path, WebFetch the URL — the other tools have nothing to match, so
+ * only '*' ever fits them */
+var RULE_SUBJECT = { Bash: 'command', Write: 'path', Edit: 'path', WebFetch: 'URL', '*': 'command, path or URL' };
+function ruleFormHint() {
+  var tool = str($('rtool').value), subject = RULE_SUBJECT[tool], input = $('rmatch');
+  input.placeholder = subject || '* — ' + tool + ' has no command or path to match';
+  if (!subject && !str(input.value).trim()) input.value = '*';
+}
+function addRuleForm() {
+  var tool = str($('rtool').value), match = str($('rmatch').value).trim();
+  var picked = $('pane-settings').querySelector('input[name="rbehavior"]:checked');
+  var behavior = picked && picked.value === 'deny' ? 'deny' : 'allow';
+  $('rerr').textContent = '';
+  if (!match) { $('rerr').textContent = 'what to match — a command, a path, a URL, or *'; return; }
+  var rules = arr(obj(S.settings).rules), rule = { tool: tool, match: match, behavior: behavior };
+  for (var i = 0; i < rules.length; i++) {
+    var r = obj(rules[i]);
+    if (r.tool === tool && r.match === match && r.behavior === behavior) { $('rerr').textContent = 'that rule is already in the list'; return; }
+  }
+  // the server adds onto its own list, so a rule written elsewhere since this
+  // console last loaded settings is kept; the reply is the whole list as it stands
+  patchSettings({ addRule: rule }, function (ok, reply) {
+    if (!ok) { $('rerr').textContent = reply ? errOf(reply, 'not added') : 'server unreachable'; return; }
+    $('rmatch').value = '';
+    var changed = obj(reply.data).changed;
+    if (Array.isArray(changed) && changed.indexOf('rules') < 0) { $('rerr').textContent = 'that rule is already in the list'; return; }
+    toast('Rules', behavior + ' ' + tool + ':' + match + ' (' + ruleKind(rule) + ')');
+  });
+}
+/* the 30 s tick and every return to the tab: the status, and the settings
+ * behind it — a rule written by another console, the API or an "Always
+ * allow" tap on another device shows up without a reload */
+function refreshStatus() {
+  if (!S.connected) return;
+  api('GET', '/api/status').then(function (r) {
+    if (r.status === 401) { disconnect(); toast('Genie', 'the key was rejected', true); return; }
+    if (r.ok && r.data && typeof r.data === 'object') { renderStatus(r.data); loadSettings(); }
+  }).catch(function () {});
+}
+function renderAbout() {
+  var st = obj(S.status), dl = $('aboutdl'); dl.textContent = '';
+  var rows = [
+    ['Console', 'v' + str(E.VERSION || '?')], ['Server', 'v' + str(st.version || '?')],
+    ['Driver', str(st.driver || '?') + (st.reason ? ' — ' + st.reason : '')],
+    ['SDK', obj(st.sdk).installed ? 'installed ' + str(obj(st.sdk).version || '') : 'not installed'],
+    ['Credentials', st.credentials ? 'found' : 'none'],
+    ['Model', str(st.model || '')], ['Effort', str(st.effort || '')], ['cwd', str(st.cwd || '')],
+    ['Host', str(st.host || '') + (st.port ? ':' + st.port : '')],
+    ['Memory', String(Number(st.memoryCount) || 0) + ' facts'], ['Schedules', String(Number(st.schedules) || 0)]
+  ];
+  if (autoBlockedReason()) rows.push(['Auto mode', 'unavailable — ' + autoBlockedReason()]);
+  rows.forEach(function (r) { dl.appendChild(h('dt', null, r[0])); dl.appendChild(h('dd', null, r[1])); });
+  var tbl = $('modestbl'); tbl.textContent = '';
+  var modes = arr(E.MODES).length ? arr(E.MODES) : ['ask', 'trust', 'auto'];
+  modes.forEach(function (m) {
+    var mi = modeInfo(m), d = h('div');
+    d.appendChild(h('b', null, mi.label)); d.appendChild(document.createTextNode(' — ' + mi.blurb));
+    tbl.appendChild(d);
+  });
+}
+
+/* ── after connect: load everything, reopen the last conversation ── */
+function afterConnect() {
+  loadSettings();
+  loadCommands();
+  loadSchedules();
+  loadMemory();
+  notifState();
+  if (S.statusTimer) clearInterval(S.statusTimer);
+  S.statusTimer = setInterval(refreshStatus, 30000);
+  if (!S.ticker) S.ticker = setInterval(tick, 1000);
+  $('srv2').value = S.base; $('key2').value = S.key;
+  loadConversations(function () {
+    var last = lsGet('genie.conv');
+    var have = false;
+    for (var i = 0; i < S.conversations.length; i++) if (S.conversations[i].id === last) have = true;
+    if (have) openConversation(last);
+    else if (S.conversations.length) openConversation(S.conversations[0].id);
+    else showEmpty();
+  });
+}
+
+/* ── 6. streaming client: NDJSON over fetch, reconnect by seq ── */
+function closeStream() {
+  S.streamGen++;
+  S.streamOpen = false; S.streamPending = false;
+  if (S.retryTimer) { clearTimeout(S.retryTimer); S.retryTimer = 0; }
+  if (S.pollTimer) { clearTimeout(S.pollTimer); S.pollTimer = 0; }
+  if (S.streamCtrl) { try { S.streamCtrl.abort(); } catch (e) {} S.streamCtrl = null; }
+}
+/* One live stream at a time. A fetch still waiting for its headers counts as
+ * open (S.streamPending) for the guards that decide whether to open one, and
+ * the controller of any earlier fetch is aborted before a new one starts: a
+ * stream nobody reads keeps its connection (browsers allow six per host) and
+ * its server listener until the page dies. */
+function openStream() {
+  if (!S.connected || !S.convId) return;
+  if (S.retryTimer) { clearTimeout(S.retryTimer); S.retryTimer = 0; }
+  if (S.streamCtrl) { try { S.streamCtrl.abort(); } catch (e) {} S.streamCtrl = null; }
+  var gen = ++S.streamGen, id = S.convId;
+  S.streamOpen = false; S.streamPending = false;
+  var canStream = typeof TextDecoder !== 'undefined';
+  if (!canStream) { pollEvents(gen); return; }
+  var ctrl = null;
+  if (typeof AbortController !== 'undefined') { try { ctrl = new AbortController(); } catch (e) { ctrl = null; } }
+  S.streamCtrl = ctrl;
+  var opts = { headers: apiHeaders(false), cache: 'no-store' };
+  if (ctrl) opts.signal = ctrl.signal;
+  var url = S.base + '/api/conversations/' + id + '/events?since=' + S.seq;
+  S.streamPending = true;
+  fetch(url, opts).then(function (res) {
+    if (gen !== S.streamGen) { dropBody(res); return; }
+    S.streamPending = false;
+    if (Number(res.status) === 401) { disconnect(); toast('Genie', 'the key was rejected', true); return; }
+    if (Number(res.status) === 404) { conversationGone(id); return; }
+    if (!res.ok) throw new Error('stream ' + res.status);
+    if (!res.body || typeof res.body.getReader !== 'function') { pollEvents(gen); return; }
+    var reader = res.body.getReader(), dec = new TextDecoder(), carry = '';
+    S.streamOpen = true; S.backoff = 1000; setOffline(false);
+    function pump() {
+      return reader.read().then(function (ch) {
+        if (gen !== S.streamGen) return;
+        if (ch.done) { streamEnded(gen); return; }
+        carry += dec.decode(ch.value, { stream: true });
+        var lines = carry.split('\n'); carry = lines.pop();
+        for (var i = 0; i < lines.length; i++) {
+          var ln = lines[i].trim(); if (!ln) continue;
+          var evt; try { evt = JSON.parse(ln); } catch (e) { continue; }
+          onStreamEvent(evt);
+        }
+        return pump();
+      });
+    }
+    return pump();
+  }).catch(function () { if (gen === S.streamGen) streamEnded(gen); });
+}
+/* a response whose stream was superseded before its headers arrived: release
+ * the body (without AbortController nothing else will) */
+function dropBody(res) {
+  try {
+    var p = (res && res.body && typeof res.body.cancel === 'function') ? res.body.cancel() : null;
+    if (p && typeof p.then === 'function') p.then(null, function () {});
+  } catch (e) {}
+}
+function streamEnded(gen) {
+  if (gen !== S.streamGen) return;
+  S.streamOpen = false; S.streamPending = false; S.streamCtrl = null;
+  setOffline(true);
+  scheduleReconnect();
+}
+/* the server answered 404 for the conversation on screen: another client
+ * deleted it. Not a transport failure — the server is up — so no reconnect
+ * ever asks for it again; the console falls back to the empty state */
+function conversationGone(id) {
+  if (S.convId !== id) return;
+  closeStream();
+  S.convId = null; lsSet('genie.conv', null);
+  showEmpty();
+  setOffline(false);
+  toast('Genie', 'that conversation was deleted');
+  loadConversations();
+}
+function scheduleReconnect() {
+  if (S.retryTimer) return;
+  var wait = S.backoff;
+  S.backoff = Math.min(S.backoff * 2, 10000);
+  S.retryTimer = setTimeout(function () { S.retryTimer = 0; openStream(); }, wait);
+}
+/* no streaming body (very old browsers): poll the transcript instead */
+function pollEvents(gen) {
+  if (gen !== S.streamGen || !S.convId) return;
+  var id = S.convId;
+  api('GET', '/api/conversations/' + id).then(function (r) {
+    if (gen !== S.streamGen) return;
+    if (r.status === 404) { conversationGone(id); return; }
+    if (r.ok && r.data) {
+      setOffline(false);
+      arr(r.data.events).forEach(function (evt) { if (Number(evt.seq) > S.seq) onStreamEvent(evt); });
+    } else setOffline(true);
+    S.pollTimer = setTimeout(function () { pollEvents(gen); }, S.running ? 1500 : 5000);
+  }).catch(function () { if (gen === S.streamGen) S.pollTimer = setTimeout(function () { pollEvents(gen); }, 4000); });
+}
+function onStreamEvent(evt) {
+  evt = obj(evt);
+  if (evt.t === 'ping') return;
+  if (Number(evt.seq) > S.seq) S.seq = Number(evt.seq);
+  applyEvent(evt, true);
+}
+function onVisibility() {
+  if (isHidden()) return;
+  if (S.connected && S.convId && !S.streamOpen && !S.streamPending && !S.loadingConv) { S.backoff = 1000; openStream(); }
+  if (S.connected) refreshStatus();
+}
+
+/* ── feed plumbing ── */
+function feedEl() { return $('feed'); }
+function nearBottom() {
+  var f = feedEl();
+  return (f.scrollHeight - f.scrollTop - f.clientHeight) < 120;
+}
+function scrollBottom(force) {
+  var f = feedEl();
+  if (force || S.stick) { f.scrollTop = f.scrollHeight; $('newpill').hidden = true; }
+  else $('newpill').hidden = false;
+}
+function onFeedScroll() { S.stick = nearBottom(); if (S.stick) $('newpill').hidden = true; }
+function clearFeed() {
+  $('inner').textContent = '';
+  S.bubbles = {}; S.tools = {}; S.asks = {}; S.runningTools = {}; S.thinkingEl = null; S.pendingUser = null;
+  S.running = false; S.runId = null; $('stop').hidden = true;
+  S.stick = true; $('newpill').hidden = true;
+}
+function containerFor(parent) {
+  var card = parent ? S.tools[parent] : null;
+  return card ? card.kids : $('inner');
+}
+function append(el, parent) {
+  var box = containerFor(parent);
+  // keep the thinking pulse last in the root feed
+  if (!parent && S.thinkingEl && S.thinkingEl.parentNode === box) box.insertBefore(el, S.thinkingEl);
+  else box.appendChild(el);
+  scrollBottom(false);
+  return el;
+}
+function showEmpty() {
+  clearFeed();
+  $('ctitle').textContent = 'New conversation';
+  renderWelcome();
+}
+/* the lamp, a nudge and four try-me prompts — what an empty feed shows, and
+ * only an empty one: a message typed while the transcript is still loading
+ * is already in the feed by the time the (empty) transcript lands */
+function renderWelcome() {
+  if ($('inner').children.length) return;
+  var e = h('div', 'empty');
+  e.appendChild(h('div', 'big', '🪔'));
+  e.appendChild(h('h2', null, 'What do you need?'));
+  e.appendChild(h('div', null, 'Genie does the task — shell, files, web, subagents — under the trust level above.'));
+  var tries = h('div', 'tries');
+  ['Run the tests and tell me what broke', 'What changed in this repo today?', '/schedule weekdays at 08:30 run the tests and report', 'Remember that I prefer short answers'].forEach(function (t) {
+    var b = h('button', null, t);
+    b.addEventListener('click', function () { $('input').value = t; growInput(); $('input').focus(); });
+    tries.appendChild(b);
+  });
+  e.appendChild(tries);
+  $('inner').appendChild(e);
+}
+/* the welcome goes as soon as anything lands in the feed */
+function dropWelcome() {
+  var e = $('inner').querySelector('.empty');
+  if (e) e.parentNode.removeChild(e);
+}
+
+/* ── 7. applyEvent — one renderer for live and stored events ── */
+function applyEvent(evt, live) {
+  evt = obj(evt);
+  var t = evt.t;
+  dropWelcome();
+  try {
+    if (t === 'run_start') onRunStart(evt, live);
+    else if (t === 'user') onUser(evt, live);
+    else if (t === 'init') onInit(evt);
+    else if (t === 'thinking') { if (live) onThinking(evt); }
+    else if (t === 'text') { if (live) onTextDelta(evt); }
+    else if (t === 'text_final') onTextFinal(evt);
+    else if (t === 'tool') onTool(evt, live);
+    else if (t === 'tool_result') onToolResult(evt);
+    else if (t === 'progress') onProgress(evt);
+    else if (t === 'status') addLine(str(evt.text), 'status');
+    else if (t === 'ask') onAsk(evt, live);
+    else if (t === 'ask_resolved') onAskResolved(evt);
+    else if (t === 'notify') onNotify(evt, live);
+    else if (t === 'system') onSystem(evt, live);
+    else if (t === 'result') onResult(evt);
+    else if (t === 'error') onError(evt);
+    else if (t === 'run_end') onRunEnd(evt, live);
+  } catch (e) {
+    try { console.error('applyEvent', t, e); } catch (e2) {}
+  }
+}
+function onRunStart(evt, live) {
+  S.running = true; S.runId = str(evt.runId); S.runStart = Number(evt.at) || Date.now();
+  S.bubbles = {}; S.thinkingEl = null;
+  $('stop').hidden = false;
+  if (evt.source === 'schedule') {
+    var d = h('div', 'divider'); d.appendChild(h('span', null, '⏰ standing order' + (evt.at ? ' · ' + rel(evt.at) : '')));
+    append(d, null);
+  }
+  if (live) refreshStatus();
+}
+/* a /command (built-in or custom) reads in mono, whether it just left the composer or came from disk */
+function userBubbleClass(text, extra) {
+  var isCmd = typeof E.parseCommand === 'function' && E.parseCommand(text).kind === 'command';
+  return 'bubble user' + (isCmd ? ' cmd' : '') + (extra ? ' ' + extra : '');
+}
+/* the bubble the composer added is confirmed (or the reply came and none will) */
+function settleUser() {
+  if (!S.pendingUser) return;
+  S.pendingUser.el.className = userBubbleClass(S.pendingUser.text);
+  S.pendingUser = null;
+}
+function onUser(evt) {
+  var text = str(evt.text);
+  if (S.pendingUser && S.pendingUser.text === text) { settleUser(); return; }
+  append(h('div', userBubbleClass(text), text), null);
+}
+function onInit(evt) {
+  if (evt.permissionMode === 'bypassPermissions' && S.settings && S.settings.mode !== 'auto') addLine('running with permissions bypassed', 'status');
+}
+function onThinking(evt) {
+  if (evt.on === true) {
+    if (!S.thinkingEl) {
+      var el = h('div', 'thinking');
+      el.appendChild(h('span', null, '🧞 thinking')); el.appendChild(h('span', 'dots'));
+      S.thinkingEl = el; $('inner').appendChild(el); scrollBottom(false);
+    }
+  } else if (evt.on === false) removeThinking();
+}
+function removeThinking() {
+  if (S.thinkingEl && S.thinkingEl.parentNode) S.thinkingEl.parentNode.removeChild(S.thinkingEl);
+  S.thinkingEl = null;
+}
+function bubbleKey(parent) { return parent ? str(parent) : 'root'; }
+function newBubble(parent) {
+  var b = h('div', 'bubble assistant streaming');
+  var m = h('div', 'md'); b.appendChild(m);
+  b.textNode = document.createTextNode(''); m.appendChild(b.textNode);
+  b.raw = '';
+  append(b, parent);
+  return b;
+}
+function onTextDelta(evt) {
+  var k = bubbleKey(evt.parent), b = S.bubbles[k];
+  if (!b) b = S.bubbles[k] = newBubble(evt.parent || null);
+  b.raw += str(evt.text);
+  b.textNode.nodeValue = b.raw;
+  scrollBottom(false);
+}
+function onTextFinal(evt) {
+  var text = str(evt.text); if (!text) return;
+  var k = bubbleKey(evt.parent), b = S.bubbles[k];
+  if (!b) b = newBubble(evt.parent || null);
+  finishBubble(b, text);
+  delete S.bubbles[k];
+  scrollBottom(false);
+}
+function finishBubble(b, text) {
+  b.className = 'bubble assistant';
+  b.firstChild.innerHTML = md(text);
+  b.raw = text;
+}
+/* whatever was still streaming when the run ended never gets its text_final
+ * (a stop mid-answer, a crash): render what arrived, caret off, and say so
+ * when the run did not finish on its own */
+function settleBubbles(cutOff) {
+  for (var k in S.bubbles) {
+    var b = S.bubbles[k]; if (!b) continue;
+    if (!b.raw) { if (b.parentNode) b.parentNode.removeChild(b); continue; }
+    finishBubble(b, b.raw);
+    if (cutOff) b.appendChild(h('div', 'cut', '(cut off)'));
+  }
+  S.bubbles = {};
+}
+function addLine(text, kind) {
+  if (!text) return null;
+  var el = h('div', 'line ' + (kind === 'status' ? 'status' : 'sys'));
+  if (kind === 'status') el.textContent = '· ' + text;
+  else {
+    if (text.length > 160 || text.indexOf('\n') !== -1) el.className += ' long';
+    var m = h('div', 'md'); m.innerHTML = md(text); el.appendChild(m);
+  }
+  append(el, null);
+  return el;
+}
+function onSystem(evt, live) {
+  var text = str(evt.text);
+  // a /command reply reaches us twice (HTTP reply + the conversation's system
+  // event) in either order — show it once
+  if (live && S.recentLocal && S.recentLocal.text === text && Date.now() - S.recentLocal.at < 8000) { S.recentLocal = null; return; }
+  if (live) S.recentSys = { text: text, at: Date.now() };
+  addLine(text, 'system');
+}
+function onError(evt) {
+  var el = h('div', 'errbar', '✗ ' + str(evt.message || 'error'));
+  append(el, null);
+}
+function onNotify(evt, live) {
+  var title = str(evt.title || 'Genie'), body = str(evt.body);
+  var el = h('div', 'line notice', '🔔 ' + title + (body ? ' — ' + body : ''));
+  append(el, null);
+  if (live) { toast('🔔 ' + title, body); desktopNotify(title, body); }
+}
+
+/* tool cards — nested under their parent tool when `parent` is set */
+function onTool(evt, live) {
+  var id = str(evt.id); if (!id) return;
+  var card = h('div', 'tool running'); card.id = 'tool-' + id;
+  var head = h('div', 'thead');
+  head.appendChild(h('span', 'ticon', str(evt.icon || icon(evt.name))));
+  head.appendChild(h('span', 'tname', str(evt.name)));
+  head.appendChild(h('span', 'tsum', str(evt.summary || summ(evt.name, evt.input))));
+  var el = h('span', 'tel', ''); head.appendChild(el);
+  head.appendChild(h('span', 'tst'));
+  card.appendChild(head);
+  var body = h('div', 'tbody'); body.hidden = true;
+  var inPre = h('pre', 'tin'); inPre.textContent = inputText(evt.input);
+  if (!inPre.textContent) inPre.hidden = true;
+  body.appendChild(inPre);
+  var out = h('pre', 'tout', 'running…'); body.appendChild(out);
+  card.appendChild(body);
+  var kids = h('div', 'tkids'); card.appendChild(kids);
+  card.kids = kids; card.out = out; card.elapsedEl = el; card.body = body;
+  card.startedAt = Number(evt.at) || Date.now(); card.done = false;
+  head.addEventListener('click', function () { body.hidden = !body.hidden; });
+  S.tools[id] = card; S.runningTools[id] = card;
+  append(card, evt.parent || null);
+}
+function inputText(input) {
+  if (input == null) return '';
+  if (typeof input === 'string') return input;
+  try { var s = JSON.stringify(input, null, 1); return s.length > 1200 ? s.slice(0, 1200) + '…' : s; } catch (e) { return ''; }
+}
+function onToolResult(evt) {
+  var card = S.tools[str(evt.id)]; if (!card) return;
+  card.done = true; delete S.runningTools[str(evt.id)];
+  card.className = 'tool ' + (evt.isError ? 'error' : 'done');
+  var output = str(evt.output);
+  card.out.textContent = output || (evt.isError ? 'error' : '(no output)');
+  card.elapsedEl.textContent = dur(Date.now() - card.startedAt);
+  if (evt.at && card.startedAt) card.elapsedEl.textContent = dur(Number(evt.at) - card.startedAt);
+  if (evt.isError) card.body.hidden = false;
+}
+function onProgress(evt) {
+  var card = S.tools[str(evt.id)]; if (!card || card.done) return;
+  if (Number(evt.elapsed) > 0) card.elapsedEl.textContent = dur(evt.elapsed);
+}
+function tick() {
+  if (!S.running) return;
+  for (var id in S.runningTools) {
+    var c = S.runningTools[id];
+    if (c && !c.done) c.elapsedEl.textContent = dur(Date.now() - c.startedAt);
+  }
+}
+
+/* asks — a permission card (Allow / Always allow / Deny), or a question card
+ * when the agent asked the owner something (AskUserQuestion): the answers go
+ * back with the approval and the tool sees them as its input */
+function onAsk(evt, live) {
+  var rid = str(evt.requestId); if (!rid) return;
+  var question = evt.kind === 'question' || evt.level === 'question';
+  var level = question ? 'question' : str(evt.level || 'exec');
+  var card = h('div', 'ask level-' + level); card.id = 'ask-' + rid;
+  var fallback = question ? 'Genie has a question for you' : 'Genie wants to use ' + str(evt.name);
+  var title = h('div', 'atitle'); title.innerHTML = md(str(evt.title || fallback)); card.appendChild(title);
+  var meta = h('div', 'ameta');
+  meta.appendChild(h('span', 'badge ' + level, level));
+  meta.appendChild(h('span', null, str(evt.name)));
+  if (evt.reason) meta.appendChild(h('span', null, '— ' + str(evt.reason)));
+  card.appendChild(meta);
+  var btns = h('div', 'abtns');
+  if (question) {
+    card.questions = buildQuestions(card, arr(evt.questions));
+    var bAnswer = h('button', 'answer', 'Answer'), bDecline = h('button', 'deny', 'Decline');
+    bAnswer.disabled = true;
+    bAnswer.addEventListener('click', function () { approve(rid, 'allow', collectAnswers(card)); });
+    bDecline.addEventListener('click', function () { approve(rid, 'deny'); });
+    btns.appendChild(bAnswer); btns.appendChild(bDecline);
+    card.answerBtn = bAnswer;
+  } else {
+    var cmd = str(evt.summary || summ(evt.name, evt.input));
+    if (cmd) card.appendChild(h('pre', 'acmd', cmd));
+    var bAllow = h('button', 'allow', 'Allow'), bAlways = h('button', 'always', 'Always allow'), bDeny = h('button', 'deny', 'Deny');
+    bAllow.addEventListener('click', function () { approve(rid, 'allow'); });
+    bAlways.addEventListener('click', function () { approve(rid, 'always'); });
+    bDeny.addEventListener('click', function () { approve(rid, 'deny'); });
+    btns.appendChild(bAllow); btns.appendChild(bAlways); btns.appendChild(bDeny);
+  }
+  card.appendChild(btns);
+  var dec = h('div', 'adec'); dec.hidden = true; card.appendChild(dec);
+  card.btns = btns; card.dec = dec;
+  S.asks[rid] = card;
+  append(card, null);
+  if (live) {
+    var plain = str(evt.title || '').replace(/[`*_]/g, '') || fallback;
+    if (question) {
+      var first = str(obj(arr(evt.questions)[0]).question) || plain;
+      toast('Genie has a question', first);
+      desktopNotify('Genie has a question', first);
+    } else {
+      toast('Approval needed', plain);
+      desktopNotify('Genie needs your approval', plain);
+    }
+  }
+}
+/* one block per question: header chip, the question, its options, a free-text line */
+function buildQuestions(card, questions) {
+  var states = [];
+  questions.forEach(function (q) {
+    q = obj(q);
+    var text = str(q.question); if (!text) return;
+    var state = { question: text, multi: q.multiSelect === true, picked: [], other: null, options: [] };
+    var block = h('div', 'q');
+    if (q.header) block.appendChild(h('span', 'qhead', str(q.header)));
+    block.appendChild(h('div', 'qtext', text));
+    var opts = h('div', 'qopts');
+    arr(q.options).forEach(function (o) {
+      o = obj(o);
+      var label = str(o.label); if (!label) return;
+      var row, box;
+      if (state.multi) {
+        row = h('label', 'qopt');
+        box = h('input', 'qbox'); box.type = 'checkbox';
+        box.addEventListener('change', function () { pickOption(card, state, label, box.checked); });
+      } else {
+        row = h('button', 'qopt'); row.type = 'button';
+        box = h('span', 'qbox', '○');
+        row.addEventListener('click', function () { pickOption(card, state, label, state.picked.indexOf(label) === -1); });
+      }
+      row.appendChild(box);
+      row.appendChild(h('span', 'ql', label));
+      if (o.description) row.appendChild(h('span', 'qd', str(o.description)));
+      state.options.push({ el: row, box: box, label: label });
+      opts.appendChild(row);
+    });
+    block.appendChild(opts);
+    var other = h('input', 'qother'); other.type = 'text'; other.placeholder = 'Something else…'; other.autocomplete = 'off';
+    other.addEventListener('input', function () {
+      if (str(other.value).trim() && state.picked.length) { state.picked = []; paintOptions(state); }
+      refreshAnswer(card);
+    });
+    other.addEventListener('keydown', function (e) { if (e.key === 'Enter' && card.answerBtn && !card.answerBtn.disabled) card.answerBtn.click(); });
+    state.other = other;
+    block.appendChild(other);
+    card.appendChild(block);
+    states.push(state);
+  });
+  return states;
+}
+function pickOption(card, state, label, on) {
+  var i = state.picked.indexOf(label);
+  if (state.multi) { if (i !== -1) state.picked.splice(i, 1); if (on) state.picked.push(label); }
+  else state.picked = on ? [label] : [];
+  if (on && state.other) state.other.value = '';
+  paintOptions(state);
+  refreshAnswer(card);
+}
+function paintOptions(state) {
+  state.options.forEach(function (o) {
+    var on = state.picked.indexOf(o.label) !== -1;
+    o.el.className = 'qopt' + (on ? ' on' : '');
+    if (state.multi) o.box.checked = on; else o.box.textContent = on ? '●' : '○';
+  });
+}
+/* the typed line wins; otherwise the picked labels, joined with ', ' for multi-select */
+function answerOf(state) {
+  var typed = str(state.other && state.other.value).trim();
+  return typed || state.picked.join(', ');
+}
+function collectAnswers(card) {
+  var out = {};
+  arr(card.questions).forEach(function (q) { out[q.question] = answerOf(q); });
+  return out;
+}
+function refreshAnswer(card) {
+  var ready = arr(card.questions).length > 0;
+  arr(card.questions).forEach(function (q) { if (!answerOf(q)) ready = false; });
+  if (card.answerBtn) card.answerBtn.disabled = !ready;
+}
+function approve(rid, decision, answers) {
+  var card = S.asks[rid]; if (!card) return;
+  var bs = card.btns.querySelectorAll('button');
+  for (var i = 0; i < bs.length; i++) bs[i].disabled = true;
+  var body = { requestId: rid, decision: decision };
+  if (answers) body.answers = answers;
+  api('POST', '/api/approve', body).then(function (r) {
+    if (r.ok) return;
+    for (var j = 0; j < bs.length; j++) bs[j].disabled = false;
+    if (card.answerBtn) refreshAnswer(card);
+    if (r.status === 404) resolveAskCard(card, 'expired', '');
+    else toast('Approval', errOf(r, 'failed'), true);
+  }).catch(function () {
+    for (var j = 0; j < bs.length; j++) bs[j].disabled = false;
+    if (card.answerBtn) refreshAnswer(card);
+    toast('Approval', 'server unreachable', true);
+  });
+}
+function resolveAskCard(card, decision, by, answers) {
+  var allowed = decision === 'allow' || decision === 'always';
+  var cls = allowed ? (decision === 'always' ? 'always' : 'allowed') : (decision === 'deny' ? 'denied' : 'expired');
+  card.className = card.className.replace(/ resolved.*$/, '') + ' resolved ' + cls;
+  card.btns.hidden = true;
+  card.dec.hidden = false;
+  var label;
+  if (card.questions) {
+    label = allowed ? '✓ answered' : (decision === 'deny' ? '✗ declined' : '— expired');
+    var fields = card.querySelectorAll('.qopt, .qopt input, .qother');
+    for (var i = 0; i < fields.length; i++) { fields[i].disabled = true; fields[i].className += ' off'; }
+  } else label = decision === 'allow' ? '✓ allowed' : (decision === 'always' ? '✓ allowed — always' : (decision === 'deny' ? '✗ denied' : '— expired'));
+  card.dec.textContent = label + (by && by !== 'user' ? ' (' + by + ')' : '');
+  if (card.questions && answers && typeof answers === 'object') {
+    var list = h('div', 'qans');
+    for (var q in answers) {
+      var row = h('div');
+      row.appendChild(document.createTextNode(q + ' — '));
+      row.appendChild(h('b', null, str(answers[q]) || '(no answer)'));
+      list.appendChild(row);
+    }
+    card.dec.appendChild(list);
+  }
+}
+function onAskResolved(evt) {
+  var card = S.asks[str(evt.requestId)]; if (!card) return;
+  resolveAskCard(card, str(evt.decision), str(evt.by), evt.answers);
+  if (evt.decision === 'always') loadSettings();
+}
+
+/* result footer + run end */
+function onResult(evt) {
+  removeThinking();
+  settleBubbles(!evt.ok);
+  var el = h('div', 'result');
+  if (evt.ok) el.appendChild(h('span', 'ok', '✓ done'));
+  else el.appendChild(h('span', 'fail', '✗ ' + str(evt.subtype || 'failed')));
+  el.appendChild(h('span', null, usd(evt.cost)));
+  var turns = Number(evt.turns) || 0;
+  el.appendChild(h('span', null, turns + (turns === 1 ? ' turn' : ' turns')));
+  if (Number(evt.durationMs) > 0) el.appendChild(h('span', null, dur(evt.durationMs)));
+  arr(evt.denials).forEach(function (d) { el.appendChild(h('span', 'den', 'denied: ' + str(obj(d).tool) + ' ' + str(obj(d).summary))); });
+  arr(evt.errors).forEach(function (e) { el.appendChild(h('span', 'fail', str(e))); });
+  append(el, null);
+}
+function onRunEnd(evt, live) {
+  S.running = false; S.runId = null;
+  $('stop').hidden = true;
+  removeThinking();
+  settleBubbles(evt.status !== 'done');
+  for (var id in S.runningTools) {
+    var c = S.runningTools[id];
+    if (c && !c.done) { c.done = true; c.className = 'tool stopped'; c.out.textContent = '(no result — run ' + str(evt.status || 'ended') + ')'; }
+  }
+  S.runningTools = {};
+  for (var rid in S.asks) {
+    var a = S.asks[rid];
+    if (a && !a.btns.hidden) resolveAskCard(a, 'expired', '');
+  }
+  if (evt.status === 'stopped') addLine('⏹ stopped', 'status');
+  if (evt.status === 'failed' && !evt.cost) addLine('run failed', 'status');
+  settleUser();
+  if (live) { loadConversations(); refreshStatus(); }
+}
+
+/* ── conversations ── */
+function loadConversations(done) {
+  api('GET', '/api/conversations').then(function (r) {
+    if (r.ok && r.data) S.conversations = arr(r.data.conversations);
+    renderConversations();
+    if (done) done();
+  }).catch(function () { if (done) done(); });
+}
+/* the server names a conversation on its first run; the header follows the list */
+function syncTitle() {
+  if (!S.convId || S.loadingConv || !S.meta) return;
+  for (var i = 0; i < S.conversations.length; i++) {
+    var c = obj(S.conversations[i]);
+    if (c.id !== S.convId) continue;
+    if (Number(c.runs) > Number(S.meta.runs || 0)) S.meta.runs = Number(c.runs);
+    if (c.title && c.title !== S.meta.title) { S.meta.title = str(c.title); $('ctitle').textContent = str(c.title); }
+    return;
+  }
+}
+function renderConversations() {
+  syncTitle();
+  var box = $('convlist'); box.textContent = '';
+  if (!S.conversations.length) { box.appendChild(h('div', 'none', 'none yet — say something')); return; }
+  S.conversations.forEach(function (c) {
+    c = obj(c);
+    var row = h('div', 'item' + (c.id === S.convId ? ' on' : '') + (c.status === 'running' || c.status === 'queued' ? ' busy' : ''));
+    var body = h('div', 'body');
+    body.appendChild(h('div', 't', (c.source === 'schedule' ? '⏰ ' : '') + str(c.title || 'New conversation')));
+    var bits = [];
+    if (c.updatedAt) bits.push(rel(c.updatedAt));
+    if (Number(c.cost) > 0) bits.push(usd(c.cost));
+    if (Number(c.runs) > 0) bits.push(c.runs + (c.runs === 1 ? ' run' : ' runs'));
+    if (c.last) bits.push(str(c.last));
+    body.appendChild(h('div', 'm', bits.join(' · ')));
+    row.appendChild(body);
+    var x = h('button', 'x', '✕'); x.title = 'delete conversation';
+    x.addEventListener('click', function (e) { e.stopPropagation(); deleteConversation(c.id, c.title); });
+    row.appendChild(x);
+    row.addEventListener('click', function () { openConversation(c.id); closeDrawer(); });
+    longPress(row, function () { deleteConversation(c.id, c.title); });
+    box.appendChild(row);
+  });
+}
+function longPress(el, fn) {
+  var timer = 0;
+  function start() { clear(); timer = setTimeout(function () { timer = 0; fn(); }, 650); }
+  function clear() { if (timer) { clearTimeout(timer); timer = 0; } }
+  el.addEventListener('touchstart', start, { passive: true });
+  el.addEventListener('touchend', clear); el.addEventListener('touchmove', clear); el.addEventListener('touchcancel', clear);
+}
+function deleteConversation(id, title) {
+  if (!confirm('Delete "' + str(title || id) + '"?')) return;
+  api('DELETE', '/api/conversations/' + id).then(function (r) {
+    if (!r.ok) { toast('Delete', errOf(r, r.status === 409 ? 'still running' : 'failed'), true); return; }
+    if (S.convId === id) { closeStream(); S.convId = null; lsSet('genie.conv', null); showEmpty(); }
+    loadConversations();
+  }).catch(function () { toast('Delete', 'server unreachable', true); });
+}
+function openConversation(id) {
+  if (!id) return;
+  closeStream();
+  clearFeed();
+  S.convId = id; S.seq = 0; S.meta = null; S.loadingConv = true;
+  lsSet('genie.conv', id);
+  $('ctitle').textContent = 'loading…';
+  renderConversations();
+  api('GET', '/api/conversations/' + id).then(function (r) {
+    if (S.convId !== id) return;
+    S.loadingConv = false;
+    if (r.status === 404) { S.convId = null; lsSet('genie.conv', null); showEmpty(); loadConversations(); return; }
+    if (!r.ok || !r.data) { $('ctitle').textContent = 'could not load'; scheduleReconnect(); return; }
+    S.meta = obj(r.data.meta);
+    $('ctitle').textContent = str(S.meta.title || 'New conversation');
+    var events = arr(r.data.events);
+    for (var i = 0; i < events.length; i++) {
+      var evt = obj(events[i]);
+      if (Number(evt.seq) > S.seq) S.seq = Number(evt.seq);
+      applyEvent(evt, false);
+    }
+    if (Number(r.data.seq) > S.seq) S.seq = Number(r.data.seq);
+    if (!events.length) renderWelcome();
+    // a run may still be going: the stream replays its live tail after S.seq
+    S.running = S.meta.status === 'running' || S.meta.status === 'queued';
+    $('stop').hidden = !S.running;
+    scrollBottom(true);
+    S.backoff = 1000;
+    openStream();
+  }).catch(function () { if (S.convId === id) { S.loadingConv = false; $('ctitle').textContent = 'offline'; setOffline(true); scheduleReconnect(); } });
+}
+function newConversation(then) {
+  api('POST', '/api/conversations', {}).then(function (r) {
+    if (!r.ok || !r.data || !r.data.id) { toast('New conversation', errOf(r, 'failed'), true); return; }
+    loadConversations();
+    openConversation(str(r.data.id));
+    closeDrawer();
+    if (then) then(str(r.data.id));
+  }).catch(function () { toast('New conversation', 'server unreachable', true); });
+}
+
+/* ── send / say / stop ── */
+function sendCurrent() {
+  var input = $('input'), text = str(input.value).trim();
+  if (!text || !S.connected) return;
+  input.value = ''; growInput(); hideAc();
+  sendText(text);
+}
+function sendText(text) {
+  if (!S.convId) { newConversation(function () { sendText(text); }); return; }
+  var parsed = typeof E.parseCommand === 'function' ? E.parseCommand(text) : { kind: 'prompt' };
+  var isCmd = parsed.kind === 'command';
+  dropWelcome();
+  var bubble = h('div', userBubbleClass(text, 'pending'), text);
+  append(bubble, null); scrollBottom(true);
+  // a run echoes the message back as a `user` event (a custom command included);
+  // that event settles this bubble, and a handled command or a refusal settles it here
+  S.pendingUser = { el: bubble, text: text };
+  var convId = S.convId;
+  $('send').disabled = true;
+  api('POST', '/api/conversations/' + convId + '/say', { text: text, tz: tzMin() }).then(function (r) {
+    $('send').disabled = false;
+    var d = obj(r.data);
+    if (!r.ok) {
+      settleUser();
+      bubble.className = userBubbleClass(text, 'failed');
+      var msg = errOf(r, 'not sent');
+      if (r.status === 409) msg = 'Genie is still busy in this conversation — wait or press Stop.';
+      addLine(msg, 'status'); toast('Not sent', msg, true);
+      return;
+    }
+    if (d.handled) {
+      settleUser();
+      var reply = str(d.reply);
+      if (reply) {
+        if (S.recentSys && S.recentSys.text === reply && Date.now() - S.recentSys.at < 8000) S.recentSys = null;
+        else { S.recentLocal = { text: reply, at: Date.now() }; addLine(reply, 'system'); }
+      }
+      if (d.conversationId && d.conversationId !== convId) { loadConversations(); openConversation(str(d.conversationId)); }
+      else if (parsed.name === 'mode' || parsed.name === 'model' || parsed.name === 'effort' || parsed.name === 'cwd') loadSettings();
+      else if (parsed.name === 'remember' || parsed.name === 'forget') loadMemory();
+      else if (parsed.name === 'schedule' || parsed.name === 'unschedule' || parsed.name === 'run') loadSchedules();
+      return;
+    }
+    if (d.runId) {
+      S.running = true; $('stop').hidden = false;
+      // the first run names the conversation after the prompt (the list confirms it at run end)
+      if (!isCmd && S.meta && !Number(S.meta.runs) && (!S.meta.title || S.meta.title === 'New conversation') && typeof E.titleFrom === 'function') {
+        S.meta.title = str(E.titleFrom(text)); $('ctitle').textContent = S.meta.title;
+      }
+      // "queued behind n runs" arrives as the conversation's own system event.
+      // A stream that is open, still waiting for its headers, or about to be
+      // opened by the transcript GET is the live one: do not start a second
+      if (!S.streamOpen && !S.streamPending && !S.loadingConv) { S.backoff = 1000; openStream(); }
+    }
+  }).catch(function () {
+    $('send').disabled = false;
+    settleUser();
+    bubble.className = userBubbleClass(text, 'failed');
+    toast('Not sent', 'server unreachable', true);
+  });
+}
+function stopRun() {
+  if (!S.convId) return;
+  $('stop').disabled = true;
+  api('POST', '/api/stop', { conversationId: S.convId }).then(function (r) {
+    $('stop').disabled = false;
+    if (!r.ok) toast('Stop', errOf(r, 'failed'), true);
+    else if (r.data && r.data.stopped === false) { S.running = false; $('stop').hidden = true; }
+  }).catch(function () { $('stop').disabled = false; toast('Stop', 'server unreachable', true); });
+}
+
+/* ── composer: auto-grow, keys, slash autocomplete, mic ── */
+function growInput() {
+  var el = $('input');
+  el.style.height = 'auto';
+  var hgt = Math.min(Number(el.scrollHeight) || 44, Math.round((Number(window.innerHeight) || 700) * 0.4));
+  el.style.height = Math.max(44, hgt) + 'px';
+}
+function onInputKey(e) {
+  var acOpen = !$('ac').hidden;
+  if (acOpen) {
+    if (e.key === 'ArrowDown') { moveAc(1); e.preventDefault(); return; }
+    if (e.key === 'ArrowUp') { moveAc(-1); e.preventDefault(); return; }
+    if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey && S.acIndex >= 0)) { pickAc(S.acIndex < 0 ? 0 : S.acIndex); e.preventDefault(); return; }
+    if (e.key === 'Escape') { hideAc(); e.preventDefault(); return; }
+  }
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendCurrent(); }
+}
+function onInputChange() {
+  growInput();
+  var v = str($('input').value);
+  var m = /^\/([a-z0-9_-]*)$/i.exec(v);
+  if (m) showAc(m[1].toLowerCase()); else hideAc();
+}
+function allCommands() {
+  var out = [];
+  arr(E.COMMANDS).forEach(function (c) { out.push({ name: str(c.name), args: str(c.args), blurb: str(c.blurb) }); });
+  arr(S.commands).forEach(function (c) {
+    c = obj(c);
+    for (var i = 0; i < out.length; i++) if (out[i].name === str(c.name)) return;
+    out.push({ name: str(c.name), args: '', blurb: str(c.description || 'custom command'), custom: true });
+  });
+  return out;
+}
+function showAc(prefix) {
+  var items = allCommands().filter(function (c) { return c.name.indexOf(prefix) === 0; });
+  var box = $('ac'); box.textContent = '';
+  S.acItems = items; S.acIndex = items.length ? 0 : -1;
+  if (!items.length) { box.hidden = true; return; }
+  items.forEach(function (c, i) {
+    var row = h('div', 'aci' + (i === S.acIndex ? ' on' : ''));
+    row.appendChild(h('span', 'n', '/' + c.name));
+    if (c.args) row.appendChild(h('span', 'a', c.args));
+    row.appendChild(h('span', 'b', (c.custom ? '★ ' : '') + c.blurb));
+    row.addEventListener('mousedown', function (e) { e.preventDefault(); pickAc(i); });
+    box.appendChild(row);
+  });
+  box.hidden = false;
+}
+function hideAc() { $('ac').hidden = true; S.acItems = []; S.acIndex = -1; }
+function moveAc(d) {
+  if (!S.acItems.length) return;
+  S.acIndex = (S.acIndex + d + S.acItems.length) % S.acItems.length;
+  var rows = $('ac').querySelectorAll('.aci');
+  for (var i = 0; i < rows.length; i++) rows[i].className = 'aci' + (i === S.acIndex ? ' on' : '');
+}
+function pickAc(i) {
+  var c = S.acItems[i]; if (!c) return;
+  var input = $('input');
+  input.value = '/' + c.name + (c.args || c.custom ? ' ' : '');
+  hideAc(); growInput(); input.focus();
+  if (!c.args && !c.custom) sendCurrent();
+}
+function setupMic() {
+  var SR = null;
+  if (typeof SpeechRecognition !== 'undefined') SR = SpeechRecognition;
+  else if (typeof webkitSpeechRecognition !== 'undefined') SR = webkitSpeechRecognition;
+  var mic = $('mic');
+  if (!SR) return; // no Web Speech API — the button stays hidden, everything else works
+  var rec;
+  try { rec = new SR(); } catch (e) { return; }
+  mic.hidden = false;
+  rec.lang = (typeof navigator !== 'undefined' && typeof navigator.language === 'string') ? navigator.language : 'en-US';
+  rec.interimResults = false; rec.maxAlternatives = 1;
+  var on = false;
+  mic.addEventListener('click', function () {
+    if (on) { try { rec.stop(); } catch (e) {} return; }
+    try { rec.start(); } catch (e) {}
+  });
+  rec.onstart = function () { on = true; mic.className = 'listening'; };
+  rec.onend = function () { on = false; mic.className = ''; };
+  rec.onerror = function (e) {
+    on = false; mic.className = '';
+    if (e && e.error === 'not-allowed') toast('Microphone', 'permission denied — allow it in the browser to dictate', true);
+  };
+  rec.onresult = function (e) {
+    var text = '';
+    try { text = str(e.results[0][0].transcript).trim(); } catch (err) { text = ''; }
+    if (!text) return;
+    var input = $('input');
+    input.value = (str(input.value).trim() ? str(input.value).replace(/\s+$/, '') + ' ' : '') + text;
+    growInput(); input.focus();
+  };
+}
+
+/* ── drawer ── */
+function openDrawer() { $('drawer').className = 'open'; $('backdrop').hidden = false; }
+function closeDrawer() { $('drawer').className = ''; $('backdrop').hidden = true; }
+function drawerOpen() { return $('drawer').className === 'open'; }
+function toggleDrawer() { if (drawerOpen()) closeDrawer(); else openDrawer(); }
+function showTab(name) {
+  S.drawerTab = name;
+  var tabs = $('tabs').querySelectorAll('button');
+  for (var i = 0; i < tabs.length; i++) tabs[i].className = tabs[i].getAttribute('data-tab') === name ? 'on' : '';
+  ['conversations', 'schedules', 'memory', 'settings', 'about'].forEach(function (p) { $('pane-' + p).hidden = p !== name; });
+  if (name === 'schedules') loadSchedules();
+  if (name === 'memory') loadMemory();
+  if (name === 'settings') { loadSettings(); notifState(); }
+  if (name === 'about') refreshStatus();
+}
+
+/* ── schedules ── */
+function loadSchedules() {
+  if (!S.connected) return;
+  api('GET', '/api/schedules').then(function (r) {
+    if (r.ok && r.data) S.schedules = arr(r.data.schedules);
+    renderSchedules();
+  }).catch(function () {});
+}
+function describeSched(s) {
+  s = obj(s);
+  if (typeof s.description === 'string' && s.description) return s.description;
+  if (obj(s.schedule).label) return str(s.schedule.label);
+  if (typeof E.describeSchedule === 'function' && s.schedule) { try { return E.describeSchedule(s.schedule); } catch (e) {} }
+  return 'schedule';
+}
+function renderSchedules() {
+  var box = $('schedlist'); box.textContent = '';
+  if (!S.schedules.length) { box.appendChild(h('div', 'none', 'none yet — "/schedule every weekday at 08:30 run the tests" or the form below')); return; }
+  S.schedules.forEach(function (s) {
+    s = obj(s);
+    var row = h('div', 'item sched' + (s.enabled === false ? ' off' : ''));
+    var body = h('div', 'body');
+    body.appendChild(h('div', 't', str(s.task)));
+    var when = describeSched(s);
+    var next = s.enabled === false ? 'paused' : (s.nextRunAt ? 'next ' + rel(s.nextRunAt) : '');
+    var runs = Number(s.runs) > 0 ? s.runs + ' run' + (s.runs === 1 ? '' : 's') : '';
+    body.appendChild(h('div', 'm', [when, next, runs].filter(function (x) { return x; }).join(' · ')));
+    row.appendChild(body);
+    var run = h('button', 'x run', '▶'); run.title = 'run now';
+    run.addEventListener('click', function (e) { e.stopPropagation(); runSchedule(s.id); });
+    var tog = h('button', 'x', s.enabled === false ? '▶︎' : '⏸'); tog.title = s.enabled === false ? 'resume' : 'pause';
+    tog.addEventListener('click', function (e) { e.stopPropagation(); toggleSchedule(s.id, s.enabled === false); });
+    var x = h('button', 'x', '✕'); x.title = 'remove';
+    x.addEventListener('click', function (e) { e.stopPropagation(); removeSchedule(s.id, s.task); });
+    row.appendChild(run); row.appendChild(tog); row.appendChild(x);
+    if (s.conversationId) row.addEventListener('click', function () { openConversation(str(s.conversationId)); closeDrawer(); });
+    box.appendChild(row);
+  });
+}
+function addScheduleForm() {
+  var when = str($('swhen').value).trim(), task = str($('stask').value).trim();
+  $('serr').textContent = '';
+  if (!when || !task) { $('serr').textContent = 'both "when" and "task" are needed'; return; }
+  api('POST', '/api/schedules', { when: when, task: task, tz: tzMin() }).then(function (r) {
+    if (!r.ok) { $('serr').textContent = errOf(r, 'not added'); return; }
+    $('swhen').value = ''; $('stask').value = '';
+    toast('Standing order', describeSched(obj(r.data).schedule) + ' — ' + task);
+    loadSchedules(); refreshStatus();
+  }).catch(function () { $('serr').textContent = 'server unreachable'; });
+}
+function runSchedule(id) {
+  api('POST', '/api/schedules/' + id + '/run', {}).then(function (r) {
+    if (!r.ok) { toast('Run now', errOf(r, 'failed'), true); return; }
+    var d = obj(r.data);
+    if (d.skipped) toast('Run now', 'skipped — already running');
+    else toast('Run now', 'started');
+    loadSchedules(); loadConversations();
+    if (d.conversationId) { openConversation(str(d.conversationId)); closeDrawer(); }
+  }).catch(function () { toast('Run now', 'server unreachable', true); });
+}
+function toggleSchedule(id, enable) {
+  api('PATCH', '/api/schedules/' + id, { enabled: !!enable }).then(function (r) {
+    if (!r.ok) toast('Schedule', errOf(r, 'failed'), true);
+    loadSchedules();
+  }).catch(function () {});
+}
+function removeSchedule(id, task) {
+  if (!confirm('Remove the standing order "' + str(task) + '"?')) return;
+  api('DELETE', '/api/schedules/' + id).then(function (r) {
+    if (!r.ok) toast('Schedule', errOf(r, 'failed'), true);
+    loadSchedules(); refreshStatus();
+  }).catch(function () {});
+}
+
+/* ── memory ── */
+function loadMemory() {
+  if (!S.connected) return;
+  api('GET', '/api/memory').then(function (r) {
+    if (r.ok && r.data) S.memory = arr(r.data.items);
+    renderMemory();
+  }).catch(function () {});
+}
+function renderMemory() {
+  var box = $('memlist'); box.textContent = '';
+  if (!S.memory.length) { box.appendChild(h('div', 'none', 'nothing yet — "/remember the cat is called Nimbus"')); return; }
+  S.memory.forEach(function (it) {
+    it = obj(it);
+    var row = h('div', 'item mem');
+    row.appendChild(h('span', 'n', str(it.n) + '.'));
+    var body = h('div', 'body');
+    body.appendChild(h('div', 't', str(it.fact)));
+    if (it.date) body.appendChild(h('div', 'm', str(it.date)));
+    row.appendChild(body);
+    var x = h('button', 'x', '✕'); x.title = 'forget';
+    x.addEventListener('click', function () { forgetMemory(it.n); });
+    row.appendChild(x);
+    box.appendChild(row);
+  });
+}
+function addMemoryForm() {
+  var fact = str($('memfact').value).trim();
+  $('memerr').textContent = '';
+  if (!fact) return;
+  api('POST', '/api/memory', { fact: fact }).then(function (r) {
+    if (!r.ok) { $('memerr').textContent = errOf(r, 'not added'); return; }
+    $('memfact').value = '';
+    if (r.data && Array.isArray(r.data.items)) { S.memory = r.data.items; renderMemory(); } else loadMemory();
+    refreshStatus();
+  }).catch(function () { $('memerr').textContent = 'server unreachable'; });
+}
+function forgetMemory(n) {
+  api('DELETE', '/api/memory/' + n).then(function (r) {
+    if (!r.ok) toast('Memory', errOf(r, 'failed'), true);
+    if (r.data && Array.isArray(r.data.items)) { S.memory = r.data.items; renderMemory(); } else loadMemory();
+    refreshStatus();
+  }).catch(function () {});
+}
+
+/* ── custom commands (for the autocomplete) ── */
+function loadCommands() {
+  api('GET', '/api/commands').then(function (r) {
+    if (r.ok && r.data) S.commands = arr(r.data.commands);
+  }).catch(function () {});
+}
+
+/* ── keyboard ── */
+function onKeyDown(e) {
+  if (e.key === 'Escape') {
+    if (!$('ac').hidden) { hideAc(); return; }
+    if (drawerOpen()) { closeDrawer(); e.preventDefault(); }
+    return;
+  }
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+    e.preventDefault();
+    if (S.connected) newConversation();
+  }
+}
+
+/* ── boot ── */
+function readKeyFromUrl() {
+  var qs = (typeof location !== 'undefined' && typeof location.search === 'string') ? location.search : '';
+  if (!qs || qs.indexOf('key=') === -1) return null;
+  var key = null;
+  try { key = new URLSearchParams(qs).get('key'); } catch (e) { key = null; }
+  if (!key) return null;
+  lsSet('genie.key', key);
+  try {
+    if (typeof history !== 'undefined' && history.replaceState) {
+      var clean = str(location.pathname) + str(location.hash);
+      history.replaceState(null, '', clean || './');
+    }
+  } catch (e) {}
+  return key;
+}
+function bind() {
+  $('cbtn').addEventListener('click', connectFromForm);
+  $('keyin').addEventListener('keydown', function (e) { if (e.key === 'Enter') connectFromForm(); });
+  $('srv').addEventListener('keydown', function (e) { if (e.key === 'Enter') connectFromForm(); });
+  $('menu').addEventListener('click', toggleDrawer);
+  $('dclose').addEventListener('click', closeDrawer);
+  $('backdrop').addEventListener('click', closeDrawer);
+  $('stop').addEventListener('click', stopRun);
+  $('send').addEventListener('click', sendCurrent);
+  $('input').addEventListener('keydown', onInputKey);
+  $('input').addEventListener('input', onInputChange);
+  $('input').addEventListener('focus', function () { if (S.connected) askNotifPermission(); });
+  $('feed').addEventListener('scroll', onFeedScroll, { passive: true });
+  $('newpill').addEventListener('click', function () { scrollBottom(true); S.stick = true; });
+  $('newconv').addEventListener('click', function () { newConversation(); });
+  $('sadd').addEventListener('click', addScheduleForm);
+  $('memadd').addEventListener('click', addMemoryForm);
+  $('memfact').addEventListener('keydown', function (e) { if (e.key === 'Enter') addMemoryForm(); });
+  $('ssave').addEventListener('click', saveSettingsForm);
+  $('radd').addEventListener('click', addRuleForm);
+  $('rmatch').addEventListener('keydown', function (e) { if (e.key === 'Enter') addRuleForm(); });
+  $('rtool').addEventListener('change', ruleFormHint);
+  $('notifbtn').addEventListener('click', askNotifPermission);
+  $('reconnect').addEventListener('click', function () { closeStream(); S.connected = false; connectWith(normBase($('srv2').value), str($('key2').value).trim(), false); });
+  $('disconnect').addEventListener('click', disconnect);
+  var modeBtns = $('modes').querySelectorAll('button');
+  for (var i = 0; i < modeBtns.length; i++) {
+    (function (b) { b.addEventListener('click', function () { setMode(str(b.getAttribute('data-mode'))); }); })(modeBtns[i]);
+  }
+  var tabBtns = $('tabs').querySelectorAll('button');
+  for (var j = 0; j < tabBtns.length; j++) {
+    (function (b) { b.addEventListener('click', function () { showTab(str(b.getAttribute('data-tab'))); }); })(tabBtns[j]);
+  }
+  document.addEventListener('keydown', onKeyDown);
+  document.addEventListener('visibilitychange', onVisibility);
+  window.addEventListener('online', onVisibility);
+  window.addEventListener('resize', growInput);
+}
+function boot() {
+  bind();
+  setupMic();
+  var urlKey = readKeyFromUrl();
+  var key = urlKey || lsGet('genie.key') || '';
+  var base = normBase(lsGet('genie.base') || '');
+  $('srv').value = base; $('keyin').value = key;
+  applyModeUI(str(E.DEFAULT_MODE || 'trust'));
+  $('dver').textContent = 'v' + str(E.VERSION || '');
+  if (key) connectWith(base, key, true);
+  else { showConnect(true); probeOrigin(); }
+}
+try { boot(); } catch (e) { try { console.error('genie boot', e); } catch (e2) {} }
+
+/* PWA: offline shell (guarded — no SW on file: or in the smoke sandbox) */
+if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator &&
+    typeof location !== 'undefined' && location.protocol !== 'file:') {
+  try { navigator.serviceWorker.register('sw.js').catch(function () {}); } catch (e) {}
+}
+</script>
+
+<script>
+/* Tap-to-update — shows a prompt when a newer version of the app is ready, then
+ * swaps it in on tap. Shared across BallrzAPP PWAs; observes the existing service
+ * worker registration, so it doesn't re-register or change caching. */
+(function () {
+  try {
+  if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
+  var ready = navigator.serviceWorker.ready;
+  if (!ready || typeof ready.then !== 'function') return;
+  var tapped = false;
+  navigator.serviceWorker.addEventListener('controllerchange', function () {
+    if (tapped) { tapped = false; location.reload(); }
+  });
+  function banner(reg) {
+    if (document.getElementById('pwa-update-bar')) return;
+    var b = document.createElement('button');
+    b.id = 'pwa-update-bar'; b.type = 'button';
+    b.textContent = '🔄 New version — tap to update';
+    b.setAttribute('aria-label', 'A new version is available. Tap to update.');
+    b.style.cssText = 'position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));'
+      + 'transform:translateX(-50%);z-index:2147483000;font:600 14px/1.2 -apple-system,'
+      + 'BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#241d0c;'
+      + 'background:linear-gradient(92deg,#f7c96a,#f2b544);border:0;border-radius:999px;'
+      + 'padding:11px 18px;box-shadow:0 8px 30px rgba(0,0,0,.35);cursor:pointer;'
+      + 'max-width:calc(100vw - 32px);animation:pwaUp .25s ease-out;';
+    b.addEventListener('click', function () {
+      tapped = true; b.textContent = 'Updating…';
+      if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+      else location.reload();
+    });
+    var s = document.createElement('style');
+    s.textContent = '@keyframes pwaUp{from{opacity:0;transform:translate(-50%,10px)}to{opacity:1;transform:translateX(-50%)}}'
+      + '@media (prefers-reduced-motion:reduce){#pwa-update-bar{animation:none}}';
+    document.head.appendChild(s);
+    (document.body || document.documentElement).appendChild(b);
+  }
+  ready.then(function (reg) {
+    try {
+      if (reg.waiting && navigator.serviceWorker.controller) banner(reg);
+      reg.addEventListener('updatefound', function () {
+        var w = reg.installing;
+        if (!w) return;
+        w.addEventListener('statechange', function () {
+          if (w.state === 'installed' && navigator.serviceWorker.controller) banner(reg);
+        });
+      });
+      setInterval(function () { reg.update().catch(function () {}); }, 3600000);
+    } catch (e) {}
+  }).catch(function () {});
+  } catch (e) {}
+})();
+</script>
+</body>
+</html>
