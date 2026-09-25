@@ -465,18 +465,25 @@
   // Calendar periods the grammar does not speak: point at cron instead of guessing.
   var SCHED_PERIOD    = rx('^\\s*(?:every\\s+|each\\s+)?(month(?:ly)?|year(?:ly)?|annually|quarter(?:ly)?)\\b');
   // What a task never starts with: a time or day qualifier the head did not
-  // read ("at 930", "on mondays", "wed fri at 9", "midnight", "17h"). Left in,
+  // read ("at 930", "on mondays", "wed fri at 9", "midnight", "9:30"). Left in,
   // it would silently become the task of a schedule that says something else.
-  // Hyphenated words ("at-risk", "on-call", "2h-window", "noon-ish") are prose.
+  // Hyphenated words ("at-risk", "on-call", "2h-window", "noon-ish") are prose,
+  // and so is a leading count: "3 things to do", "30 min walk", "1.5 hours deep work".
   var SCHED_LEFTOVER  = rx('^\\s*[.,]?\\s*(?:' +
     '(?:at|@)\\s*(?::?\\d|noon\\b|midnight\\b)|' +
     'on\\s+(?:' + DAY_SRC + 's?\\b|weekdays?\\b|weekends?\\b|workdays?\\b)|' +
-    DAY_SRC + 's?\\b(?=\\s+at\\b|\\s*$|\\s*[,&/]|\\s+' + DAY_SRC + ')|' +
+    DAY_SRC + 's?\\b(?=\\s+at\\b|\\s*[,&/]|\\s+' + DAY_SRC + ')|' +
     '(?:morning|afternoon|evening|night)\\s+at\\b|' +
     '(?:noon|midnight)(?![\\w-])|' +
-    '\\d{1,2}(?::\\d{2}|\\.\\d{2}\\b|\\s*[ap]\\.?m\\b|h(?![\\w-])))');
-  // A sixth cron field ("cron 0 0 9 * * 1-5", the Quartz form) is not a task either.
-  var CRON_LEFTOVER   = rx('^\\s*(?:[*?]|\\d+(?:[-,/]\\d+)*|\\S*/\\d+|' + DAY_SRC + '(?:[-,]' + DAY_SRC + ')+)(?=\\s|$)');
+    '\\d{1,2}(?::\\d{2}|\\s*[ap]\\.?m\\b))');
+  // When the head named days but no time ("every day", "weekdays", "every mon"),
+  // a "17h" or a lone "wed" after it is still schedule: the time it never said,
+  // or another day. After a clock ("weekdays at 9") or an interval ("every 30m")
+  // the same shapes are task text: "24h uptime report", "1h summary", "mon".
+  var SCHED_OPEN_LEFTOVER = rx('^\\s*[.,]?\\s*(?:' + DAY_SRC + 's?\\b\\s*$|\\d{1,2}h(?![\\w-]))');
+  // A sixth cron field ("cron 0 0 9 * * 1-5", the Quartz form) is not a task
+  // either — a range, list or step, never a bare count ("cron 0 9 * * 1-5 3 things to do").
+  var CRON_LEFTOVER   = rx('^\\s*(?:[*?]|\\d+(?:[-,/]\\d+)+|\\S*/\\d+|' + DAY_SRC + '(?:[-,]' + DAY_SRC + ')+)(?=\\s|$)');
 
   // Groups from TIME_SRC (offset `o` = index of the first group) → {hour, minute} | {error}
   function clockFrom(m, o, fallback) {
@@ -530,29 +537,31 @@
 
   // The head parsed; what follows is the task — unless it is more schedule the
   // grammar could not read, which is refused rather than stored as the task.
-  function finishSchedule(schedule, consumed, text, tz) {
+  // `open` says the head named days but no time, so a time may still follow.
+  function finishSchedule(schedule, consumed, text, tz, open) {
     schedule.label = describeSchedule(schedule);
     schedule.tzOffsetMin = tz;
     var sep = SCHED_SEP.exec(text.slice(consumed));
     if (sep) consumed += sep[0].length;
     var rest = text.slice(consumed);
-    if ((schedule.kind === 'cron' ? CRON_LEFTOVER : SCHED_LEFTOVER).test(rest)) {
-      return fail('could not read "' + oneLine(rest, 30) + '" as part of the schedule — try: ' + SCHEDULE_HINT);
-    }
+    // A ":" glued to two more digits is a minutes or seconds field the time did not read ("at 17:00h", "at 17:00:00")
+    var colonGlued = sep && /:$/.test(sep[0]) && /^\d{2}(?!\d)/.test(rest);
+    var leftover = colonGlued || (schedule.kind === 'cron' ? CRON_LEFTOVER : SCHED_LEFTOVER).test(rest) || (open && SCHED_OPEN_LEFTOVER.test(rest));
+    if (leftover) return fail('could not read "' + oneLine(rest, 30) + '" as part of the schedule — try: ' + SCHEDULE_HINT);
     return { ok: true, schedule: schedule, consumed: consumed };
   }
 
-  function everySchedule(n, unit, consumed, text, tz) {
+  function everySchedule(n, unit, consumed, text, tz, open) {
     var ms = Math.round(n * (UNIT_MS[String(unit).toLowerCase()] || 0));
     if (!(ms > 0)) return fail('that interval makes no sense');
     if (ms < MINUTE) return fail('minimum interval is 60 s (try "every 1m")');
-    return finishSchedule({ kind: 'every', everyMs: ms }, consumed, text, tz);
+    return finishSchedule({ kind: 'every', everyMs: ms }, consumed, text, tz, open);
   }
 
-  function dailySchedule(clock, days, consumed, text, tz) {
+  function dailySchedule(clock, days, consumed, text, tz, open) {
     if (!clock) return fail('say when — e.g. "at 09:00"');
     if (clock.error) return fail(clock.error);
-    return finishSchedule({ kind: 'daily', hour: clock.hour, minute: clock.minute, days: days }, consumed, text, tz);
+    return finishSchedule({ kind: 'daily', hour: clock.hour, minute: clock.minute, days: days }, consumed, text, tz, open);
   }
 
   // Human schedule text → schedule object + how many chars it used up.
@@ -574,32 +583,34 @@
       var dflt = part === 'morning' ? NINE : part === 'afternoon' ? { hour: 14, minute: 0 } : part === 'evening' ? { hour: 18, minute: 0 } : { hour: 22, minute: 0 };
       var pclock = clockFrom(m, 2, dflt);
       // The part of day settles a bare hour: "every evening at 6" is 18:00,
-      // "every night at 12" is midnight. am/pm, noon and midnight are already settled.
+      // "every night at 12" is midnight and "every night at 2" the small hours
+      // after it, 02:00. am/pm, noon and midnight are already settled.
       if (pclock && !pclock.error && m[3] && !m[5] && part !== 'morning') {
-        if (pclock.hour >= 1 && pclock.hour <= 11) pclock.hour += 12;
+        var smallHours = part === 'night' && pclock.hour <= 5;
+        if (pclock.hour >= 1 && pclock.hour <= 11 && !smallHours) pclock.hour += 12;
         else if (pclock.hour === 12 && part === 'night') pclock.hour = 0;
       }
-      return dailySchedule(pclock, all, m[0].length, text, tz);
+      return dailySchedule(pclock, all, m[0].length, text, tz, !(m[2] || m[3]));
     }
     if ((m = SCHED_DAILY.exec(text))) {
       var clock = clockFrom(m, 2, null);
       if (!clock) {
-        if (/^daily$/i.test(m[1])) clock = NINE;             // "daily" alone → 09:00
-        else return everySchedule(1, 'day', m[0].length, text, tz); // "every day" alone → every 24 h
+        if (/^daily$/i.test(m[1])) return dailySchedule(NINE, all, m[0].length, text, tz, true); // "daily" alone → 09:00
+        return everySchedule(1, 'day', m[0].length, text, tz, true);                             // "every day" alone → every 24 h
       }
       return dailySchedule(clock, all, m[0].length, text, tz);
     }
     if ((m = SCHED_WEEKPART.exec(text))) {
       var wp = m[1].toLowerCase();
       var days = /^weekend/.test(wp) ? [0, 6] : [1, 2, 3, 4, 5];
-      return dailySchedule(clockFrom(m, 2, NINE), days, m[0].length, text, tz);
+      return dailySchedule(clockFrom(m, 2, NINE), days, m[0].length, text, tz, !(m[2] || m[3]));
     }
     if ((m = SCHED_EVERY_N.exec(text))) return everySchedule(Number(m[1]), m[2], m[0].length, text, tz);
     if ((m = SCHED_EVERY_1.exec(text))) return everySchedule(1, m[1], m[0].length, text, tz);
     if ((m = SCHED_DAYS.exec(text))) {
       var list = daysFrom(m[1]);
       if (!list.length) return fail('which days? e.g. "every mon,wed,fri at 7am"');
-      return dailySchedule(clockFrom(m, 2, NINE), list, m[0].length, text, tz);
+      return dailySchedule(clockFrom(m, 2, NINE), list, m[0].length, text, tz, !(m[2] || m[3]));
     }
     if ((m = SCHED_AT.exec(text))) return dailySchedule(clockFrom(m, 1, null), all, m[0].length, text, tz);
     return fail('could not read a schedule from "' + oneLine(text, 40) + '" — try: ' + SCHEDULE_HINT);
@@ -853,10 +864,13 @@
   var SEG = '[^;&|\\n]*';
   // ssh options run before the host and, since ssh reads them there too, after
   // it; the listed flags take a value, so in `-p 22 host` the host is not 22.
+  // A redirection may sit among them (`ssh host 2>/dev/null reboot`); a value
+  // never looks like one, so each token reads one way and the scan stays linear.
   // A flag whose case decides that (-c cipher, -C) is read both ways, which is
-  // why the run is capped: eight is more than any real command line carries.
-  var SSH_OPTS = '(?:-[bcDEeFIiJLlmOopQRSWw]\\s+[^\\s-]\\S*\\s+|-\\S+\\s+){0,8}';
-  var ASSIGNS = '(?:\\w+=\\S*\\s+)*';
+  // why the run is capped: a CI line carries a dozen options, never two dozen.
+  var SSH_OPTS = '(?:-[bcDEeFIiJLlmOopQRSWw]\\s+(?!\\d?[<>])[^\\s-]\\S*\\s+|-\\S+\\s+|\\d?[<>]{1,2}(?![<>])(?:&\\S*|\\s*[^\\s&<>]\\S*)\\s+){0,24}';
+  // VAR=value prefixes; the value may be quoted, blanks and all (`CFLAGS="-O2 -g" sudo make install`)
+  var ASSIGNS = '(?:\\w+=(?:"[^"\\n]*"|\'[^\'\\n]*\'|[^\\s"\'])*\\s+)*';
   var CMD = '(?:(?:^|[;&|`\\n]\\s*|(?:^|[^\\w)\\]])[({]\\s*|' +
     '\\b(?:sudo|exec|nohup|then|do|else|time|command|builtin|env|doas|eval)\\s+|' +
     '\\b(?:sh|bash|zsh|dash|ksh|fish)\\s+(?:-\\S+\\s+)*-[a-z]*c\\s+|' +
@@ -879,11 +893,13 @@
   var END = '(?=\\s|$|[;&|)])';
   // find rooted at /, home or the working directory (no path means "here")
   // that deletes what it finds — every file, unless a test narrows the walk
-  // to some of them. `!`, `-not` and `-o` turn a test into "everything else".
+  // to some of them. A lone `!` or `-not` turns a test into "everything else",
+  // and so does `-o` when it ORs the delete action itself (`-name a -o -delete`);
+  // between two tests it only widens the narrowing: `\( -name a -o -name b \) -delete`.
   var FIND_ROOT = '(?:\\s+["\']?(?:/|' + HOME + '/?|' + CWD + ')["\']?(?=\\s)|(?=\\s+-))';
   var FIND_TEST = '-i?(?:name|path|wholename|regex|lname)\\b|-[acm](?:time|min)\\b|-newer|' +
     '-(?:size|empty|user|group|uid|gid|perm|inum|samefile|links|used|fstype|nouser|nogroup|readable|writable|executable)\\b';
-  var FIND_WHOLE = '(?:(?=' + SEG + '(?:!|-not\\b|-or?\\b))|(?!' + SEG + '\\s(?:' + FIND_TEST + ')))';
+  var FIND_WHOLE = '(?:(?=' + SEG + '\\s(?:\\\\?!|-not\\b|-or?\\s+-(?:delete\\b|exec)))|(?!' + SEG + '\\s(?:' + FIND_TEST + ')))';
   var FIND_DELETES = '(?:\\s(?:-delete\\b|-exec(?:dir)?\\s+(?:sudo\\s+)?rm\\b)|\\s*\\|\\s*xargs\\s+(?:-\\S+\\s+|\\{\\}\\s+)*(?:sudo\\s+)?rm\\b)';
   // recursive chmod/chown targets: /, /*, home, or a top-level system directory
   var ROOTISH = '(?:/\\*?|' + HOMEROOT + '/?\\*?|/(?:usr|etc|var|bin|sbin|lib|lib64|boot|home|root|opt|sys|proc|dev|srv|mnt|system|library|applications)/?\\*?)';
@@ -955,19 +971,35 @@
   // quoted delimiter — `git commit -m "$(cat <<'EOF' … EOF)"` is how the agent
   // writes every commit, and its message is data whatever it mentions. An
   // unquoted `<<EOF` body does expand, and so does anything after the heredoc.
-  var QUOTED = '("(?:[^"\\\\]|\\\\.)*"|\'[^\']*\')';
+  // The heredoc is one piece of the string, so a quote inside its body cannot
+  // end the message early, and it is read once — the lookahead pins it and the
+  // backreference takes it — so a string that never closes still scans in
+  // linear time. Its body ends at the first line that is the delimiter, as it
+  // does for bash: whatever follows that line runs. Each DATA_ARGS pattern has
+  // one group before QUOTED, so the heredoc is group 3 and its delimiter group 4.
+  function heredocSrc(g) {
+    return '\\$\\(\\s*cat\\s*<<-?\\s*[\'"\\\\](\\w+)[\'"]?[^\\S\\n]*' +
+      '(?:(?!\\$\\(\\s*cat\\s*<<|\\n\\s*\\' + g + '\\s*\\n)[\\s\\S])*?\\n\\s*\\' + g + '\\s*\\n\\s*\\)';
+  }
+  var HEREDOC_ATOM = '(?=(' + heredocSrc(4) + '))\\3';
+  var QUOTED = '("(?:' + HEREDOC_ATOM + '|(?!\\$\\(\\s*cat\\s*<<)[^"\\\\]|\\\\.)*"|\'[^\']*\')';
   var DATA_ARGS = [
     new RegExp('(\\s-[a-z]*m\\s*|\\s--message(?:=|\\s+)|\\s--grep(?:=|\\s+)|\\s--regexp(?:=|\\s+))' + QUOTED, 'gi'),
     new RegExp('(\\b(?:grep|egrep|fgrep|rg|ag|ack)\\b(?:\\s+-[^\\s"\']*)*\\s+(?:-e\\s+)?)' + QUOTED, 'gi')
   ];
   var SHELL_EXPANDS = /\$\(|`|\$\{/;
   // (a body never runs on into the next heredoc: that keeps the scan linear)
-  var INERT = /\\.|\$\(\s*cat\s*<<-?\s*['"\\](\w+)['"]?\s*\n(?:(?!\$\(\s*cat\s*<<)[\s\S])*?\n\s*\1\s*\n\s*\)/g;
+  var INERT = new RegExp('\\\\.|' + heredocSrc(1), 'g');
 
   function blankData(match, flag, quoted) {
     if (quoted.charAt(0) === '"' && SHELL_EXPANDS.test(quoted.replace(INERT, ''))) return match;
     return flag + '""';
   }
+
+  // Nobody reviews a shell command this long on a phone, and it is the one
+  // shape where the pattern table's time grows with the input: past this
+  // length the command is treated as destructive and waits for a tap.
+  var COMMAND_CHECK_MAX = 12000;
 
   function dangerousCommand(cmd) {
     var s = String(cmd == null ? '' : cmd)
@@ -976,6 +1008,7 @@
       .replace(/\s*\n\s*/g, ' \n ')
       .trim();
     if (!s) return { danger: false, reason: '' };
+    if (s.length > COMMAND_CHECK_MAX) return { danger: true, reason: 'command is too long to check (' + s.length + ' chars) — read it before allowing it' };
     var raw = s;
     for (var d = 0; d < DATA_ARGS.length; d++) s = s.replace(DATA_ARGS[d], blankData);
     for (var i = 0; i < DANGER_RULES.length; i++) {

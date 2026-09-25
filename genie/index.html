@@ -478,7 +478,8 @@ var S = {
   bubbles: {}, tools: {}, asks: {}, thinkingEl: null, runningTools: {},
   pendingUser: null, recentLocal: null, recentSys: null,
   drawerTab: 'conversations', acItems: [], acIndex: -1,
-  stick: true, statusTimer: 0, ticker: 0, loadingConv: false
+  stick: true, statusTimer: 0, ticker: 0, loadingConv: false,
+  formShown: {}
 };
 
 /* ── tiny DOM / storage helpers ── */
@@ -658,27 +659,40 @@ function fillSelects(st) {
     var e = document.createElement('option'); e.value = str(efforts[j]); e.textContent = str(efforts[j]); es.appendChild(e);
   }
 }
-/* keepForm: leave the settings form alone — the periodic refresh must not
- * overwrite a half-edited draft — while the mode chips and the rule list
- * still follow the server */
-function loadSettings(keepForm) {
+function loadSettings() {
   return api('GET', '/api/settings').then(function (r) {
     if (!r.ok || !r.data) return;
     var s = (r.data.settings && typeof r.data.settings === 'object') ? r.data.settings : r.data;
     S.settings = obj(s);
-    renderSettings(keepForm);
+    renderSettings();
   }).catch(function () {});
 }
-function renderSettings(keepForm) {
+/* what the Agent form would show for these settings, by field id — null
+ * where a select has nothing to follow */
+function formValues(s) {
+  return {
+    smodel: s.model == null ? null : str(s.model), seffort: s.effort == null ? null : str(s.effort),
+    scwd: str(s.cwd || ''), sowner: str(s.owner || ''),
+    sturns: s.maxTurns == null ? '' : String(s.maxTurns), susd: s.maxUsd == null ? '' : String(s.maxUsd)
+  };
+}
+/* The mode chips and the rule list always follow the server; an Agent form
+ * field follows it only while nobody has typed there. The console remembers
+ * what it last put into each field (S.formShown) and writes a field only
+ * while it still reads that value, whoever asked for the render — the 30 s
+ * refresh, an Add rule or ✕ in the same pane, an "Always allow" answered on
+ * another device, a mode chip or /mode from the composer. A half-edited
+ * draft is theirs until Save; an untouched select still follows a /model. */
+function renderSettings() {
   var s = obj(S.settings);
   if (typeof s.mode === 'string') applyModeUI(s.mode);
-  if (!keepForm) {
-    if (s.model != null) $('smodel').value = str(s.model);
-    if (s.effort != null) $('seffort').value = str(s.effort);
-    $('scwd').value = str(s.cwd || '');
-    $('sowner').value = str(s.owner || '');
-    $('sturns').value = s.maxTurns != null ? String(s.maxTurns) : '';
-    $('susd').value = s.maxUsd != null ? String(s.maxUsd) : '';
+  var want = formValues(s);
+  for (var id in want) {
+    if (want[id] == null) continue;
+    var el = $(id), shown = S.formShown[id];
+    if (typeof shown === 'string' && el.value !== shown) continue;
+    el.value = want[id];
+    S.formShown[id] = el.value; // what landed: a select without that option reads ''
   }
   renderRules();
 }
@@ -731,7 +745,10 @@ function saveSettingsForm() {
   if (cwd) patch.cwd = cwd;
   $('sserr').textContent = '';
   patchSettings(patch, function (ok, r) {
-    if (ok) toast('Settings', 'saved'); else $('sserr').textContent = r ? errOf(r, 'not saved') : 'server unreachable';
+    if (!ok) { $('sserr').textContent = r ? errOf(r, 'not saved') : 'server unreachable'; return; }
+    // the reply is the form's new base: every field follows the server again
+    S.formShown = {}; renderSettings();
+    toast('Settings', 'saved');
   });
 }
 /* how a rule reads, the way the engine matches it: '*' is any call of the
@@ -799,7 +816,7 @@ function refreshStatus() {
   if (!S.connected) return;
   api('GET', '/api/status').then(function (r) {
     if (r.status === 401) { disconnect(); toast('Genie', 'the key was rejected', true); return; }
-    if (r.ok && r.data && typeof r.data === 'object') { renderStatus(r.data); loadSettings(true); }
+    if (r.ok && r.data && typeof r.data === 'object') { renderStatus(r.data); loadSettings(); }
   }).catch(function () {});
 }
 function renderAbout() {
@@ -877,6 +894,7 @@ function openStream() {
     if (gen !== S.streamGen) { dropBody(res); return; }
     S.streamPending = false;
     if (Number(res.status) === 401) { disconnect(); toast('Genie', 'the key was rejected', true); return; }
+    if (Number(res.status) === 404) { conversationGone(id); return; }
     if (!res.ok) throw new Error('stream ' + res.status);
     if (!res.body || typeof res.body.getReader !== 'function') { pollEvents(gen); return; }
     var reader = res.body.getReader(), dec = new TextDecoder(), carry = '';
@@ -912,6 +930,18 @@ function streamEnded(gen) {
   setOffline(true);
   scheduleReconnect();
 }
+/* the server answered 404 for the conversation on screen: another client
+ * deleted it. Not a transport failure — the server is up — so no reconnect
+ * ever asks for it again; the console falls back to the empty state */
+function conversationGone(id) {
+  if (S.convId !== id) return;
+  closeStream();
+  S.convId = null; lsSet('genie.conv', null);
+  showEmpty();
+  setOffline(false);
+  toast('Genie', 'that conversation was deleted');
+  loadConversations();
+}
 function scheduleReconnect() {
   if (S.retryTimer) return;
   var wait = S.backoff;
@@ -924,6 +954,7 @@ function pollEvents(gen) {
   var id = S.convId;
   api('GET', '/api/conversations/' + id).then(function (r) {
     if (gen !== S.streamGen) return;
+    if (r.status === 404) { conversationGone(id); return; }
     if (r.ok && r.data) {
       setOffline(false);
       arr(r.data.events).forEach(function (evt) { if (Number(evt.seq) > S.seq) onStreamEvent(evt); });
