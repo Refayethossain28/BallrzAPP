@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#04070f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Argus — your own eye on the world</title>
+<meta name="description" content="A live, explorable globe of public signals — aircraft, ships, satellites, earthquakes and fires — drawn from scratch in your browser. Your own God's Eye View: keyless feeds, on-device orbit maths, voice control with no cloud, sensor modes, a shareable scene.">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>
+  :root{
+    --bg:#04070f; --panel:rgba(6,11,24,0.82); --panel2:rgba(10,18,36,0.92); --line:rgba(140,180,255,0.18);
+    --ink:#e3ebff; --ink2:#9fb3d9; --ink3:#5f719a; --accent:#8fd3ff; --warn:#ffb347; --bad:#ff5c5c; --good:#5cff8a;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html,body{margin:0; padding:0; background:var(--bg); color:var(--ink); height:100%; overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:14px; line-height:1.4}
+  button{font:inherit; color:inherit; background:none; border:none; cursor:pointer; padding:0}
+  input,select{font:inherit; color:var(--ink); background:rgba(0,0,0,0.35); border:1px solid var(--line); border-radius:8px; padding:8px 10px; outline:none; width:100%}
+  input:focus{border-color:var(--accent)}
+  a{color:var(--accent)}
+  #globe{position:fixed; inset:0; width:100%; height:100%; display:block; touch-action:none; cursor:grab}
+  #globe.dragging{cursor:grabbing}
+  #fx{position:fixed; inset:0; pointer-events:none; display:none}
+  body.scanlines #fx{display:block; background:repeating-linear-gradient(0deg, rgba(0,0,0,0.18) 0px, rgba(0,0,0,0.18) 1px, transparent 1px, transparent 3px);
+    box-shadow:inset 0 0 160px rgba(0,0,0,0.75)}
+  body.vignette #fx{display:block; box-shadow:inset 0 0 200px rgba(0,0,0,0.85)}
+
+  /* ---------- chrome ---------- */
+  .top{position:fixed; top:0; left:0; right:0; z-index:20; display:flex; align-items:center; gap:8px;
+    padding:calc(8px + env(safe-area-inset-top)) 10px 8px; pointer-events:none}
+  .top > *{pointer-events:auto}
+  .brand{display:flex; align-items:center; gap:8px; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:6px 10px 6px 8px; backdrop-filter:blur(10px)}
+  .brand img{width:22px; height:22px; border-radius:6px}
+  .brand b{font-weight:800; letter-spacing:0.18em; font-size:13px}
+  .brand .live{font-family:var(--mono); font-size:11px; color:var(--ink2); white-space:nowrap}
+  .brand .live .dot{display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--ink3); margin-right:5px; vertical-align:middle}
+  .brand .live .dot.on{background:var(--good); box-shadow:0 0 8px var(--good)}
+  .brand .live .dot.sim{background:var(--warn); box-shadow:0 0 8px var(--warn)}
+  .spacer{flex:1}
+  .ibtn{width:38px; height:38px; border-radius:11px; background:var(--panel); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; font-size:17px; backdrop-filter:blur(10px)}
+  .ibtn.on{border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent)}
+  .ibtn:active{transform:scale(0.95)}
+  .clock{font-family:var(--mono); font-size:11px; color:var(--ink2); background:var(--panel); border:1px solid var(--line); border-radius:11px; padding:9px 10px; white-space:nowrap}
+
+  .rail{position:fixed; left:10px; top:calc(58px + env(safe-area-inset-top)); z-index:19; width:236px; max-width:calc(100vw - 20px);
+    background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:10px; backdrop-filter:blur(12px); display:none}
+  .rail.open{display:block}
+  .rail h4,.sheet h4,.hud h4{margin:0 0 8px; font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:var(--ink3); font-weight:700}
+  .layer{display:flex; align-items:center; gap:8px; padding:7px 6px; border-radius:9px}
+  .layer:active{background:rgba(255,255,255,0.05)}
+  .layer .sw{width:30px; height:18px; border-radius:999px; background:rgba(255,255,255,0.12); position:relative; flex:none; transition:background .15s}
+  .layer .sw::after{content:''; position:absolute; top:2px; left:2px; width:14px; height:14px; border-radius:50%; background:#fff; transition:left .15s}
+  .layer.on .sw{background:var(--accent)}
+  .layer.on .sw::after{left:14px}
+  .layer .nm{flex:1; min-width:0}
+  .layer .nm b{display:block; font-size:13px}
+  .layer .nm small{display:block; color:var(--ink3); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .layer .n{font-family:var(--mono); font-size:11px; color:var(--ink2); min-width:34px; text-align:right}
+  .layer .n.err{color:var(--bad)}
+  .layer .n.key{color:var(--warn)}
+  .styles{display:flex; gap:6px; flex-wrap:wrap; margin-top:8px}
+  .chip{font-size:12px; color:var(--ink2); border:1px solid var(--line); border-radius:999px; padding:5px 10px; background:rgba(0,0,0,0.25)}
+  .chip.on{color:var(--bg); background:var(--accent); border-color:var(--accent); font-weight:700}
+  .chip:active{transform:scale(0.97)}
+  .chip .k{font-family:var(--mono); opacity:0.6; margin-right:4px}
+
+  /* ---------- HUD ---------- */
+  .hud{position:fixed; left:10px; right:10px; bottom:calc(10px + env(safe-area-inset-bottom)); z-index:18; display:flex; gap:10px; align-items:flex-end; pointer-events:none}
+  .hud > *{pointer-events:auto}
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:10px 12px; backdrop-filter:blur(12px)}
+  .sel{flex:1; min-width:0; max-width:420px; display:none}
+  .sel.open{display:block}
+  .sel .t{display:flex; align-items:center; gap:8px; margin-bottom:6px}
+  .sel .t b{font-size:15px; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .sel .t .x{color:var(--ink3); font-size:18px; padding:0 4px}
+  .rows{display:grid; grid-template-columns:auto 1fr; gap:3px 12px; font-family:var(--mono); font-size:11.5px}
+  .rows span:nth-child(odd){color:var(--ink3)}
+  .rows span:nth-child(even){color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .btnrow{display:flex; gap:6px; margin-top:8px; flex-wrap:wrap}
+  .btn{font-size:12px; font-weight:700; border-radius:9px; padding:7px 11px; background:var(--accent); color:var(--bg)}
+  .btn.ghost{background:rgba(255,255,255,0.06); color:var(--ink); border:1px solid var(--line); font-weight:600}
+  .btn:active{transform:scale(0.97)}
+  .roster{width:250px; max-width:44vw; display:none; max-height:42vh; overflow:auto}
+  .roster.open{display:block}
+  .roster .r{display:flex; gap:8px; align-items:center; padding:5px 4px; border-radius:8px; font-size:12px}
+  .roster .r:active{background:rgba(255,255,255,0.06)}
+  .roster .r .ic{width:16px; text-align:center}
+  .roster .r .lb{flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .roster .r .d{font-family:var(--mono); font-size:10.5px; color:var(--ink2); white-space:nowrap}
+  .roster .empty{color:var(--ink3); font-size:12px; padding:4px}
+  .summary{position:fixed; left:50%; transform:translateX(-50%); bottom:calc(10px + env(safe-area-inset-bottom)); z-index:17; font-family:var(--mono); font-size:11px;
+    color:var(--ink2); background:var(--panel); border:1px solid var(--line); border-radius:999px; padding:6px 12px; white-space:nowrap; max-width:calc(100vw - 20px); overflow:hidden; text-overflow:ellipsis; pointer-events:none}
+  .crosshair{position:fixed; left:50%; top:50%; width:26px; height:26px; margin:-13px 0 0 -13px; pointer-events:none; z-index:16; opacity:0.55; display:none}
+  body.mesh .crosshair{display:block}
+  .crosshair::before,.crosshair::after{content:''; position:absolute; background:var(--accent)}
+  .crosshair::before{left:12px; top:0; width:1px; height:26px}
+  .crosshair::after{top:12px; left:0; height:1px; width:26px}
+  .toast{position:fixed; top:calc(60px + env(safe-area-inset-top)); left:50%; transform:translateX(-50%); z-index:30; background:var(--panel2); border:1px solid var(--line);
+    border-radius:10px; padding:8px 14px; font-size:13px; max-width:calc(100vw - 30px); opacity:0; transition:opacity .2s; pointer-events:none}
+  .toast.show{opacity:1}
+
+  /* ---------- console & sheets ---------- */
+  .console{position:fixed; left:10px; right:10px; bottom:calc(10px + env(safe-area-inset-bottom)); z-index:25; display:none; max-width:520px; margin:0 auto}
+  .console.open{display:block}
+  .console .log{font-family:var(--mono); font-size:11.5px; color:var(--ink2); max-height:32vh; overflow:auto; margin-bottom:8px; white-space:pre-wrap}
+  .console .log .you{color:var(--accent)}
+  .console .log .arg{color:var(--ink)}
+  .console form{display:flex; gap:6px}
+  .console input{font-family:var(--mono)}
+  .console .mic{width:40px; flex:none; border-radius:9px; border:1px solid var(--line); background:rgba(0,0,0,0.35); font-size:16px}
+  .console .mic.listening{border-color:var(--bad); box-shadow:0 0 12px rgba(255,92,92,0.6)}
+  .sheet{position:fixed; inset:0; z-index:40; background:rgba(2,4,10,0.72); display:none; align-items:flex-end; justify-content:center}
+  .sheet.open{display:flex}
+  .sheet .in{width:100%; max-width:520px; max-height:88vh; overflow:auto; background:var(--panel2); border:1px solid var(--line); border-radius:16px 16px 0 0;
+    padding:16px 16px calc(20px + env(safe-area-inset-bottom))}
+  .sheet label{display:block; font-size:12px; color:var(--ink2); margin:12px 0 4px}
+  .sheet p{font-size:13px; color:var(--ink2); margin:6px 0}
+  .sheet .row{display:flex; gap:8px; align-items:center}
+  .kbd{font-family:var(--mono); font-size:11px; border:1px solid var(--line); border-radius:5px; padding:1px 5px; color:var(--ink2)}
+  @media (max-width:640px){ .clock{display:none} .roster{max-width:40vw} .rows{font-size:11px} body.console-open .hud, body.console-open .summary{display:none} }
+</style>
+</head>
+<body>
+<canvas id="globe" aria-label="The globe. Drag to rotate, pinch or scroll to zoom, tap a contact to inspect it."></canvas>
+<div id="fx"></div>
+<div class="crosshair"></div>
+
+<div class="top">
+  <div class="brand"><img src="icon.svg" alt=""><b>ARGUS</b><span class="live"><span class="dot" id="live-dot"></span><span id="live-txt">starting</span></span></div>
+  <div class="spacer"></div>
+  <span class="clock" id="clock">—</span>
+  <button class="ibtn" id="b-layers" title="Layers & sensor modes (L)" aria-label="Layers">☰</button>
+  <button class="ibtn" id="b-roster" title="Contact roster (R)" aria-label="Roster">◎</button>
+  <button class="ibtn" id="b-console" title="Console — type or speak a command (C)" aria-label="Console">⌘</button>
+  <button class="ibtn" id="b-locate" title="Where I am" aria-label="My location">⌖</button>
+  <button class="ibtn" id="b-share" title="Share this scene" aria-label="Share">⇪</button>
+  <button class="ibtn" id="b-settings" title="Settings & keys" aria-label="Settings">⚙</button>
+</div>
+
+<div class="rail" id="rail">
+  <h4>Layers</h4>
+  <div id="layers"></div>
+  <h4 style="margin-top:12px">Sensor</h4>
+  <div class="styles" id="styles"></div>
+  <div class="styles" style="margin-top:10px">
+    <button class="chip" id="c-mesh"><span class="k">M</span>detection mesh</button>
+    <button class="chip" id="c-tour"><span class="k">T</span>tour</button>
+    <button class="chip" id="c-tracks"><span class="k">G</span>ground tracks</button>
+  </div>
+</div>
+
+<div class="summary" id="summary">—</div>
+<div class="hud">
+  <div class="card sel" id="sel">
+    <div class="t"><span id="sel-ic">✈️</span><b id="sel-name">—</b><button class="x" id="sel-close" aria-label="Close">×</button></div>
+    <div class="rows" id="sel-rows"></div>
+    <div class="btnrow">
+      <button class="btn" id="sel-track">Track</button>
+      <button class="btn ghost" id="sel-center">Centre</button>
+      <button class="btn ghost" id="sel-pass" style="display:none">Next pass over me</button>
+    </div>
+  </div>
+  <div class="spacer"></div>
+  <div class="card roster" id="roster">
+    <h4>Contacts near the crosshair</h4>
+    <div id="roster-list"></div>
+  </div>
+</div>
+
+<div class="card console" id="console">
+  <div class="log" id="log"></div>
+  <form id="cmd-form">
+    <input id="cmd" placeholder='say or type: "take me to Tokyo", "track the ISS"…' autocomplete="off" autocapitalize="off" spellcheck="false">
+    <button type="button" class="mic" id="mic" title="Speak a command" aria-label="Speak">🎙</button>
+    <button type="submit" class="btn">Go</button>
+  </form>
+</div>
+
+<div class="sheet" id="settings">
+  <div class="in">
+    <div class="row"><h4 style="margin:0; flex:1">Settings</h4><button class="ibtn" id="settings-close" aria-label="Close">×</button></div>
+    <p>Argus runs on public feeds straight from your browser. Two layers need a free key of their own; keys stay in this device's storage and are only ever sent to that provider.</p>
+    <label for="k-ais">AISStream key (ships) — <a href="https://aisstream.io" target="_blank" rel="noopener">aisstream.io</a></label>
+    <input id="k-ais" placeholder="paste your AISStream API key">
+    <label for="k-firms">NASA FIRMS map key (fires) — <a href="https://firms.modaps.eosdis.nasa.gov/api/" target="_blank" rel="noopener">firms.modaps.eosdis.nasa.gov</a></label>
+    <input id="k-firms" placeholder="paste your FIRMS MAP_KEY">
+    <label for="sat-group">Satellite catalogue (CelesTrak group)</label>
+    <select id="sat-group">
+      <option value="stations">Space stations (ISS, Tiangong…)</option>
+      <option value="visual">100 brightest</option>
+      <option value="gps-ops">GPS constellation</option>
+      <option value="galileo">Galileo</option>
+      <option value="weather">Weather satellites</option>
+      <option value="starlink">Starlink (thousands — heavy)</option>
+    </select>
+    <label class="row" style="margin-top:14px"><input type="checkbox" id="opt-sim" style="width:auto"> <span>Simulation mode — deterministic demo traffic, no network (always labelled SIM)</span></label>
+    <p style="margin-top:14px">OpenSky credits used today: <span id="credits" class="kbd">0</span> of 400. Argus polls a bounded box when you are zoomed in (cheaper) and backs off when the budget is gone.</p>
+    <p>Keys: <span class="kbd">1</span>–<span class="kbd">5</span> sensor modes · <span class="kbd">M</span> mesh · <span class="kbd">T</span> tour · <span class="kbd">G</span> ground tracks · <span class="kbd">C</span> console · <span class="kbd">L</span> layers · <span class="kbd">R</span> roster · <span class="kbd">+</span>/<span class="kbd">−</span> zoom · <span class="kbd">Esc</span> release.</p>
+    <p>By design Argus has no people search, no face recognition and no way to follow an individual: contacts are vehicles and natural events, from sources anyone can read.</p>
+    <div class="btnrow"><button class="btn" id="settings-save">Save</button><button class="btn ghost" id="settings-reset">Reset view</button></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="land.js"></script>
+<script src="engine.js"></script>
+<script>
+'use strict';
+var E = ArgusEngine;
+var $ = function (id) { return document.getElementById(id); };
+var esc = E.escapeHTML;
+
+/* ---------------- state ---------------- */
+var S = {
+  view: E.makeView({ lat: 30, lon: 0, radius: 300, cx: 0, cy: 0 }),
+  style: E.styleByKey('optical'),
+  layers: {},                      // key → on
+  contacts: { air: [], mil: [], ship: [], sat: [], quake: [], fire: [] },
+  status: { air: '', mil: '', ship: '', sat: '', quake: '', fire: '' },
+  sats: E.BUNDLED_SATS.slice(),    // elements
+  issLive: null,
+  lastPoll: {},
+  selected: null, track: null, mesh: false, tour: false, tracks: false,
+  keys: { ais: '', firms: '' }, satGroup: 'stations', sim: false,
+  ledger: [], anyLive: false, anySim: false,
+  fly: null, rotVel: { x: 0, y: 0 }, lastFrame: 0, satTick: 0,
+  W: 0, H: 0, dpr: 1, land: E.landRings(typeof ArgusLand !== 'undefined' ? ArgusLand : null), stars: [],
+  ws: null, wsBox: null, bootTs: Date.now(), consoleOpen: false
+};
+var LS = 'argus.v1';
+
+function load() {
+  try {
+    var raw = localStorage.getItem(LS);
+    var saved = raw ? JSON.parse(raw) : {};
+    if (saved.keys) S.keys = { ais: E.sanitizeKey(saved.keys.ais), firms: E.sanitizeKey(saved.keys.firms) };
+    if (saved.satGroup) S.satGroup = String(saved.satGroup);
+    S.sim = !!saved.sim;
+    if (Array.isArray(saved.ledger)) S.ledger = saved.ledger;
+    if (saved.state) applyState(saved.state);
+  } catch (e) { /* first run */ }
+}
+function save() {
+  try {
+    localStorage.setItem(LS, JSON.stringify({ keys: S.keys, satGroup: S.satGroup, sim: S.sim, ledger: S.ledger, state: currentState() }));
+  } catch (e) { /* storage full or blocked */ }
+}
+function currentState() {
+  return { lat: S.view.lat, lon: S.view.lon, zoom: S.view.radius / E.fitRadius(S.W || 800, S.H || 600),
+           style: S.style.key, layers: onLayers(), track: S.track ? S.track.id : null, mesh: S.mesh };
+}
+function applyState(st) {
+  S.style = E.styleByKey(st.style);
+  S.layers = {};
+  (st.layers || []).forEach(function (k) { S.layers[k] = true; });
+  S.mesh = !!st.mesh;
+  var base = E.fitRadius(S.W || 800, S.H || 600);
+  S.view = E.makeView({ lat: st.lat, lon: st.lon, radius: base * (st.zoom || 1), cx: S.view.cx, cy: S.view.cy });
+  S.pendingTrack = st.track || null;
+}
+function onLayers() { return E.LAYERS.map(function (l) { return l.key; }).filter(function (k) { return S.layers[k]; }); }
+
+/* ---------------- canvas ---------------- */
+var cv = $('globe'), ctx = cv.getContext && cv.getContext('2d');
+function resize() {
+  S.dpr = Math.min(3, window.devicePixelRatio || 1);
+  var W = window.innerWidth || 800, H = window.innerHeight || 600;
+  var oldFit = E.fitRadius(S.W || W, S.H || H);
+  S.W = W; S.H = H;
+  cv.width = Math.round(W * S.dpr); cv.height = Math.round(H * S.dpr);
+  var ratio = S.view.radius / oldFit;
+  S.view = E.makeView({ lat: S.view.lat, lon: S.view.lon, radius: E.fitRadius(W, H) * ratio, cx: W / 2, cy: H / 2 });
+  S.stars = E.starfield('argus', 260, W, H);
+}
+function minR() { return E.fitRadius(S.W, S.H) * 0.6; }
+function maxR() { return E.fitRadius(S.W, S.H) * 400; }
+
+function allContacts() {
+  var out = [];
+  E.LAYERS.forEach(function (l) { if (S.layers[l.key]) out = out.concat(S.contacts[l.key] || []); });
+  return out;
+}
+function kindColor(k) { return S.style[k] || S.style.accent; }
+function kindIcon(k) { var l = E.layerByKey(k); return l ? l.emoji : '•'; }
+
+function drawPolyline(pts, view) {
+  var pen = false;
+  for (var i = 0; i < pts.length; i++) {
+    var p = E.project(pts[i][0], pts[i][1], view);
+    if (!p.visible) { pen = false; continue; }
+    if (!pen) { ctx.moveTo(p.x, p.y); pen = true; } else ctx.lineTo(p.x, p.y);
+  }
+}
+
+function drawContactGlyph(c, x, y, size, col) {
+  ctx.fillStyle = col; ctx.strokeStyle = col; ctx.lineWidth = 1.2;
+  if (c.kind === 'air' || c.kind === 'mil') {
+    var h = (c.heading == null ? 0 : c.heading) * Math.PI / 180;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(h);
+    ctx.beginPath(); ctx.moveTo(0, -size); ctx.lineTo(size * 0.7, size * 0.8); ctx.lineTo(0, size * 0.35); ctx.lineTo(-size * 0.7, size * 0.8); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  } else if (c.kind === 'ship') {
+    ctx.beginPath(); ctx.moveTo(x, y - size); ctx.lineTo(x + size, y); ctx.lineTo(x, y + size); ctx.lineTo(x - size, y); ctx.closePath(); ctx.fill();
+  } else if (c.kind === 'sat') {
+    ctx.beginPath(); ctx.rect(x - size * 0.45, y - size * 0.45, size * 0.9, size * 0.9); ctx.fill();
+    ctx.beginPath(); ctx.arc(x, y, size, 0, Math.PI * 2); ctx.stroke();
+  } else if (c.kind === 'quake') {
+    var r = E.quakeRadiusPx(c.mag);
+    ctx.globalAlpha = 0.35; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(x, y, 1.6, 0, Math.PI * 2); ctx.fill();
+  } else {
+    ctx.beginPath(); ctx.arc(x, y, 2.2, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+function draw(now) {
+  if (!ctx) return;
+  var st = S.style, v = S.view, W = S.W, H = S.H;
+  ctx.setTransform(S.dpr, 0, 0, S.dpr, 0, 0);
+  ctx.fillStyle = st.seaDeep; ctx.fillRect(0, 0, W, H);
+  // stars
+  ctx.fillStyle = st.text;
+  for (var i = 0; i < S.stars.length; i++) {
+    var s = S.stars[i]; ctx.globalAlpha = s.a * 0.7; ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  // atmosphere
+  var R = v.radius;
+  if (R < Math.max(W, H) * 2) {
+    var glow = ctx.createRadialGradient(v.cx, v.cy, R * 0.96, v.cx, v.cy, R * 1.08);
+    glow.addColorStop(0, st.glow); glow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(v.cx, v.cy, R * 1.08, 0, Math.PI * 2); ctx.fill();
+  }
+  // sea
+  var sea = ctx.createRadialGradient(v.cx - R * 0.3, v.cy - R * 0.3, R * 0.1, v.cx, v.cy, R);
+  sea.addColorStop(0, st.sea); sea.addColorStop(1, st.seaDeep);
+  ctx.fillStyle = sea; ctx.beginPath(); ctx.arc(v.cx, v.cy, R, 0, Math.PI * 2); ctx.fill();
+  ctx.save(); ctx.beginPath(); ctx.arc(v.cx, v.cy, R, 0, Math.PI * 2); ctx.clip();
+  // graticule
+  ctx.strokeStyle = st.grid; ctx.lineWidth = 1; ctx.beginPath();
+  var grat = E.graticule(R > 1400 ? 5 : 15);
+  for (var g = 0; g < grat.length; g++) drawPolyline(grat[g], v);
+  ctx.stroke();
+  // land
+  ctx.fillStyle = st.land; ctx.strokeStyle = st.coast; ctx.lineWidth = R > 900 ? 1.2 : 0.8;
+  for (var L = 0; L < S.land.length; L++) {
+    var polys = E.clipRing(S.land[L], v);
+    for (var pi = 0; pi < polys.length; pi++) {
+      var ring = polys[pi];
+      if (ring.length < 3) continue;
+      ctx.beginPath(); ctx.moveTo(ring[0][0], ring[0][1]);
+      for (var k = 1; k < ring.length; k++) ctx.lineTo(ring[k][0], ring[k][1]);
+      ctx.closePath(); ctx.fill();
+    }
+    if (polys.length) { ctx.beginPath(); drawPolyline(S.land[L], v); ctx.stroke(); } // the real coast only, never the horizon closure
+  }
+  // night
+  var day = E.dayRegion(v, now, 96);
+  ctx.beginPath(); ctx.arc(v.cx, v.cy, R + 2, 0, Math.PI * 2);
+  ctx.moveTo(day.points[0][0], day.points[0][1]);
+  for (var d = 1; d < day.points.length; d++) ctx.lineTo(day.points[d][0], day.points[d][1]);
+  ctx.closePath(); ctx.fillStyle = st.night; ctx.fill('evenodd');
+  if (day.sunVisible && R < Math.max(W, H) * 3) {
+    ctx.fillStyle = st.accent; ctx.globalAlpha = 0.5; ctx.beginPath(); ctx.arc(day.sunScreen.x, day.sunScreen.y, 3, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+  }
+  // ground tracks for the tracked / selected satellite
+  var focus = S.track || S.selected;
+  if (focus && focus.kind === 'sat' && (S.tracks || S.track === focus)) {
+    var el = satElements(focus.id);
+    if (el) {
+      var tr = E.groundTrack(el, now - 45 * E.MINUTE, now + 90 * E.MINUTE, 220);
+      ctx.strokeStyle = kindColor('sat'); ctx.globalAlpha = 0.6; ctx.lineWidth = 1; ctx.beginPath(); drawPolyline(tr, v); ctx.stroke(); ctx.globalAlpha = 1;
+    }
+  }
+  ctx.restore();
+  // rim
+  ctx.strokeStyle = st.accent; ctx.globalAlpha = 0.35; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(v.cx, v.cy, R, 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1;
+  // place labels when zoomed in
+  if (R > E.fitRadius(W, H) * 3) {
+    ctx.font = '11px ' + getComputedStyle(document.body).fontFamily; ctx.fillStyle = st.text; ctx.globalAlpha = 0.75;
+    for (var p = 0; p < E.PLACES.length; p++) {
+      var pl = E.PLACES[p], pp = E.project(pl[1], pl[2], v);
+      if (!pp.visible || pp.x < 0 || pp.y < 0 || pp.x > W || pp.y > H) continue;
+      ctx.beginPath(); ctx.arc(pp.x, pp.y, 1.5, 0, Math.PI * 2); ctx.fill(); ctx.fillText(pl[0], pp.x + 5, pp.y + 4);
+    }
+    ctx.globalAlpha = 1;
+  }
+  // contacts
+  var placed = E.visibleContacts(allContacts(), v, W, H, 30);
+  S.placed = placed;
+  var labelAll = placed.length < 40 || R > E.fitRadius(W, H) * 6;
+  ctx.font = '10.5px ' + 'ui-monospace, Menlo, Consolas, monospace';
+  for (var c = 0; c < placed.length; c++) {
+    var pc = placed[c], ct = pc.contact, col = kindColor(ct.kind);
+    var isSel = S.selected && S.selected.id === ct.id, isTrk = S.track && S.track.id === ct.id;
+    ctx.globalAlpha = ct.sim ? 0.8 : 1;
+    drawContactGlyph(ct, pc.x, pc.y, pc.size * (isSel ? 1.4 : 1) * (ct.kind === 'quake' ? 1 : 0.55), col);
+    if (S.mesh || isSel || isTrk) {
+      ctx.strokeStyle = isTrk ? st.accent : col; ctx.lineWidth = isSel || isTrk ? 1.5 : 0.8; ctx.globalAlpha = isSel || isTrk ? 1 : 0.55;
+      var b = pc.box; ctx.strokeRect(b[0], b[1], b[2], b[3]);
+    }
+    if (S.mesh || labelAll || isSel || isTrk) {
+      ctx.globalAlpha = isSel || isTrk ? 1 : 0.8; ctx.fillStyle = st.text;
+      ctx.fillText((ct.sim ? 'SIM ' : '') + ct.label, pc.x + pc.size + 3, pc.y - pc.size + 3);
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+
+/* ---------------- frame loop ---------------- */
+function frame(ts) {
+  var now = Date.now();
+  var dt = S.lastFrame ? Math.min(100, ts - S.lastFrame) : 16; S.lastFrame = ts;
+  if (S.fly) {
+    var t = (now - S.fly.t0) / S.fly.ms;
+    S.view = E.easeView(S.fly.from, S.fly.to, t);
+    if (t >= 1) S.fly = null;
+  } else if (S.tour) {
+    S.view = E.autoRotate(S.view, dt, 3);
+  } else if (Math.abs(S.rotVel.x) > 0.02 || Math.abs(S.rotVel.y) > 0.02) {
+    S.view = E.rotateView(S.view, S.rotVel.x * dt, S.rotVel.y * dt);
+    S.rotVel.x *= 0.92; S.rotVel.y *= 0.92;
+  }
+  if (now - S.satTick > 1000) { S.satTick = now; refreshSats(now); }
+  if (S.track) {
+    var fresh = findContact(S.track.id);
+    if (fresh) { S.track = fresh; S.selected = fresh; if (!S.fly) S.view = E.makeView({ lat: fresh.lat, lon: fresh.lon, radius: S.view.radius, cx: S.view.cx, cy: S.view.cy }); }
+  }
+  draw(now);
+  if (now - (S.uiTick || 0) > 1000) { S.uiTick = now; renderChrome(now); pollFeeds(now); }
+  requestAnimationFrame(frame);
+}
+
+function findContact(id) {
+  var all = allContacts();
+  for (var i = 0; i < all.length; i++) if (all[i].id === id) return all[i];
+  return null;
+}
+function satElements(id) {
+  for (var i = 0; i < S.sats.length; i++) if (S.sats[i].id === id) return S.sats[i];
+  return null;
+}
+function refreshSats(now) {
+  if (!S.layers.sat) return;
+  var out = [], cap = 3000;
+  for (var i = 0; i < S.sats.length && out.length < cap; i++) {
+    var c = E.satContact(S.sats[i], now);
+    if (!c) continue;
+    if (S.issLive && c.norad === 25544 && now - S.issLive.ts < 5 * E.MINUTE) {
+      c.lat = S.issLive.lat; c.lon = S.issLive.lon; c.alt = S.issLive.alt; c.speed = S.issLive.speed; c.src = 'live';
+    }
+    out.push(c);
+  }
+  S.contacts.sat = out;
+}
+
+/* ---------------- feeds ---------------- */
+function setStatus(k, txt, cls) { S.status[k] = txt; S.statusCls = S.statusCls || {}; S.statusCls[k] = cls || ''; }
+function setLive(kind, live) { if (live) S.anyLive = true; else S.anySim = true; }
+
+function getJSON(url) {
+  return fetch(url, { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+}
+
+function pollFeeds(now) {
+  if (S.sim) { simulate(now); return; }
+  if (S.layers.air && E.pollDue(S.lastPoll.air, now, E.layerByKey('air').pollMs)) pollAir(now);
+  if (S.layers.mil && E.pollDue(S.lastPoll.mil, now, E.layerByKey('mil').pollMs)) pollMil(now);
+  if (S.layers.quake && E.pollDue(S.lastPoll.quake, now, E.layerByKey('quake').pollMs)) pollQuakes(now);
+  if (S.layers.sat && E.pollDue(S.lastPoll.sat, now, E.layerByKey('sat').pollMs)) pollSats(now);
+  if (S.layers.sat && E.pollDue(S.lastPoll.iss, now, 20 * E.SECOND)) pollISS(now);
+  if (S.layers.fire && E.pollDue(S.lastPoll.fire, now, E.layerByKey('fire').pollMs)) pollFires(now);
+  if (S.layers.ship) ensureShips(now); else closeShips();
+}
+
+function simulate(now) {
+  var sim = E.simContacts('argus-demo', now, 140);
+  S.contacts.air = sim.filter(function (c) { return c.kind === 'air'; });
+  S.contacts.mil = sim.filter(function (c) { return c.kind === 'mil'; });
+  S.contacts.ship = sim.filter(function (c) { return c.kind === 'ship'; });
+  setStatus('air', 'SIM'); setStatus('mil', 'SIM'); setStatus('ship', 'SIM'); setStatus('quake', 'off'); setStatus('fire', 'off');
+  S.contacts.quake = []; S.contacts.fire = [];
+  S.anySim = true; S.anyLive = false;
+}
+
+function pollAir(now) {
+  var bbox = E.bboxOfView(S.view, S.W, S.H);
+  var cost = E.openSkyCredits(bbox);
+  var budget = E.creditBudget(S.ledger, now, cost);
+  S.ledger = budget.ledger;
+  if (!budget.allowed) { setStatus('air', 'budget', 'err'); S.lastPoll.air = now + 10 * E.MINUTE; return; }
+  S.lastPoll.air = now;
+  getJSON(E.openSkyUrl(bbox)).then(function (json) {
+    S.ledger.push({ ts: now, cost: cost }); save();
+    var list = E.parseOpenSky(json, now);
+    S.contacts.air = list;
+    setStatus('air', String(list.length)); setLive('air', true);
+  }).catch(function (err) {
+    setStatus('air', 'offline', 'err');
+    if (!S.contacts.air.length || S.contacts.air[0].sim) fallbackSim(now, 'air');
+  });
+}
+function pollMil(now) {
+  S.lastPoll.mil = now;
+  getJSON(E.adsbMilUrl()).then(function (json) {
+    S.contacts.mil = E.parseAdsbLol(json, now); setStatus('mil', String(S.contacts.mil.length)); setLive('mil', true);
+  }).catch(function () { setStatus('mil', 'offline', 'err'); if (!S.contacts.mil.length || S.contacts.mil[0].sim) fallbackSim(now, 'mil'); });
+}
+function pollQuakes(now) {
+  S.lastPoll.quake = now;
+  getJSON(E.usgsUrl('day')).then(function (json) {
+    S.contacts.quake = E.parseQuakes(json, now); setStatus('quake', String(S.contacts.quake.length)); setLive('quake', true);
+  }).catch(function () { setStatus('quake', 'offline', 'err'); });
+}
+function pollSats(now) {
+  S.lastPoll.sat = now;
+  getJSON(E.celestrakUrl(S.satGroup)).then(function (arr) {
+    var els = E.parseGP(arr);
+    if (els.length) { S.sats = els; setStatus('sat', String(els.length)); setLive('sat', true); refreshSats(now); }
+    else setStatus('sat', 'bundled', 'key');
+  }).catch(function () { setStatus('sat', 'bundled', 'key'); });
+}
+function pollISS(now) {
+  S.lastPoll.iss = now;
+  getJSON(E.issUrl()).then(function (j) {
+    if (j && isFinite(Number(j.latitude))) S.issLive = { lat: Number(j.latitude), lon: Number(j.longitude), alt: Number(j.altitude) * 1000, speed: Number(j.velocity) / 3.6, ts: now };
+  }).catch(function () { /* the propagated position stands in */ });
+}
+function pollFires(now) {
+  S.lastPoll.fire = now;
+  if (!S.keys.firms) { setStatus('fire', 'needs key', 'key'); return; }
+  fetch(E.firmsUrl(S.keys.firms, 1), { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); }).then(function (txt) {
+    S.contacts.fire = E.parseFires(txt, now); setStatus('fire', String(S.contacts.fire.length)); setLive('fire', true);
+  }).catch(function () { setStatus('fire', 'offline', 'err'); });
+}
+function fallbackSim(now, kind) {
+  var sim = E.simContacts('argus-demo', now, 140).filter(function (c) { return c.kind === kind; });
+  S.contacts[kind] = sim; S.anySim = true; setStatus(kind, 'SIM', 'key');
+}
+// simulated traffic keeps moving between polls
+function tickSim(now) {
+  ['air', 'mil', 'ship'].forEach(function (k) {
+    if (S.contacts[k].length && S.contacts[k][0].sim) S.contacts[k] = E.simContacts('argus-demo', now, 140).filter(function (c) { return c.kind === k; });
+  });
+}
+
+/* ships over a WebSocket (AISStream) */
+function ensureShips(now) {
+  if (!S.keys.ais) { setStatus('ship', 'needs key', 'key'); if (!S.contacts.ship.length) fallbackSim(now, 'ship'); return; }
+  var box = E.bboxOfView(S.view, S.W, S.H);
+  var boxKey = box ? [box.lamin, box.lomin, box.lamax, box.lomax].map(function (n) { return n.toFixed(1); }).join(',') : 'world';
+  if (S.ws && S.ws.readyState <= 1 && S.wsBox === boxKey) return;
+  closeShips();
+  try {
+    var ws = new WebSocket('wss://stream.aisstream.io/v0/stream');
+    S.ws = ws; S.wsBox = boxKey;
+    ws.onopen = function () { ws.send(JSON.stringify(E.aisSubscribeMessage(S.keys.ais, box))); setStatus('ship', 'live'); setLive('ship', true); };
+    ws.onmessage = function (ev) {
+      var msg; try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      var c = E.parseAIS(msg, Date.now());
+      if (c) S.contacts.ship = E.mergeContacts(S.contacts.ship, [c], Date.now(), 20 * E.MINUTE, 4000);
+      setStatus('ship', String(S.contacts.ship.length));
+    };
+    ws.onerror = function () { setStatus('ship', 'offline', 'err'); };
+    ws.onclose = function () { if (S.ws === ws) S.ws = null; };
+  } catch (e) { setStatus('ship', 'offline', 'err'); }
+}
+function closeShips() { if (S.ws) { try { S.ws.close(); } catch (e) {} S.ws = null; S.wsBox = null; } }
+
+/* ---------------- chrome ---------------- */
+function renderChrome(now) {
+  tickSim(now);
+  var d = new Date(now);
+  $('clock').textContent = d.toISOString().slice(11, 19) + 'Z · ' + E.formatCoord(S.view.lat, S.view.lon);
+  var sum = E.summarize(allContacts(), null);
+  $('summary').textContent = sum.text + (sum.strongestQuake ? ' · strongest M' + sum.strongestQuake.mag.toFixed(1) : '');
+  var dot = $('live-dot');
+  dot.className = 'dot ' + (S.anyLive ? 'on' : S.anySim ? 'sim' : '');
+  $('live-txt').textContent = S.anyLive ? (S.anySim ? 'LIVE + SIM' : 'LIVE') : S.anySim ? 'SIMULATION' : (now - S.bootTs > 20 * E.SECOND ? 'OFFLINE · bundled' : 'connecting');
+  renderLayers();
+  renderSelected(now);
+  renderRoster();
+  $('credits').textContent = String(E.creditBudget(S.ledger, now, 0).spent);
+}
+function renderLayers() {
+  var h = '';
+  E.LAYERS.forEach(function (l) {
+    var st = S.status[l.key] || (S.layers[l.key] ? '…' : 'off');
+    var cls = (S.statusCls && S.statusCls[l.key]) || '';
+    h += '<div class="layer' + (S.layers[l.key] ? ' on' : '') + '" data-layer="' + l.key + '" role="switch" aria-checked="' + (S.layers[l.key] ? 'true' : 'false') + '">' +
+      '<span class="sw"></span><span class="nm"><b>' + l.emoji + ' ' + esc(l.label) + '</b><small>' + esc(l.source) + (l.keyless ? '' : ' · key') + '</small></span>' +
+      '<span class="n ' + cls + '">' + esc(S.layers[l.key] ? st : 'off') + '</span></div>';
+  });
+  $('layers').innerHTML = h;
+  var sh = '';
+  E.STYLES.forEach(function (s) { sh += '<button class="chip' + (S.style.key === s.key ? ' on' : '') + '" data-style="' + s.key + '"><span class="k">' + s.hotkey + '</span>' + esc(s.label) + '</button>'; });
+  $('styles').innerHTML = sh;
+  $('c-mesh').className = 'chip' + (S.mesh ? ' on' : '');
+  $('c-tour').className = 'chip' + (S.tour ? ' on' : '');
+  $('c-tracks').className = 'chip' + (S.tracks ? ' on' : '');
+}
+function renderSelected(now) {
+  var c = S.selected ? (findContact(S.selected.id) || S.selected) : null;
+  var box = $('sel');
+  if (!c) { box.className = 'card sel'; return; }
+  box.className = 'card sel open';
+  $('sel-ic').textContent = kindIcon(c.kind);
+  $('sel-name').textContent = (c.sim ? 'SIM · ' : '') + c.label;
+  var rows = E.describeContact(c, now), rh = '';
+  if (c.kind === 'sat' && c.src === 'live') rows.splice(1, 0, ['Fix', 'live telemetry (wheretheiss.at)']);
+  rows.forEach(function (r) { rh += '<span>' + esc(r[0]) + '</span><span>' + esc(r[1]) + '</span>'; });
+  $('sel-rows').innerHTML = rh;
+  $('sel-track').textContent = S.track && S.track.id === c.id ? 'Release' : 'Track';
+  $('sel-pass').style.display = c.kind === 'sat' ? '' : 'none';
+}
+function renderRoster() {
+  var here = E.unproject(S.W / 2, S.H / 2, S.view);
+  var list = $('roster-list');
+  if (!here) { list.innerHTML = '<div class="empty">Point the crosshair at the planet.</div>'; return; }
+  var radius = Math.max(150, Math.min(4000, 6371 * 300 / S.view.radius));
+  var near = E.contactsNear(allContacts(), here.lat, here.lon, radius, 10);
+  if (!near.length) { list.innerHTML = '<div class="empty">Nothing within ' + E.formatDist(radius) + '.</div>'; return; }
+  var h = '';
+  near.forEach(function (n) {
+    var c = n.contact;
+    h += '<div class="r" data-contact="' + esc(c.id) + '"><span class="ic">' + kindIcon(c.kind) + '</span><span class="lb">' + (c.sim ? 'SIM ' : '') + esc(c.label) + '</span>' +
+         '<span class="d">' + E.formatDist(n.distanceKm) + ' ' + E.compassPoint(n.bearing) + '</span></div>';
+  });
+  list.innerHTML = h;
+}
+
+var toastTimer = 0;
+function toast(msg) {
+  var t = $('toast'); t.textContent = msg; t.className = 'toast show';
+  clearTimeout(toastTimer); toastTimer = setTimeout(function () { t.className = 'toast'; }, 2600);
+}
+function logLine(who, text) {
+  var log = $('log');
+  log.innerHTML += '<div class="' + who + '">' + (who === 'you' ? '› ' : '') + esc(text) + '</div>';
+  log.scrollTop = 1e9;
+}
+
+/* ---------------- actions ---------------- */
+function flyTo(lat, lon, radius, ms) {
+  S.fly = { from: S.view, to: E.makeView({ lat: lat, lon: lon, radius: radius || S.view.radius, cx: S.view.cx, cy: S.view.cy }), t0: Date.now(), ms: ms || 900 };
+  S.rotVel = { x: 0, y: 0 };
+}
+function select(c) { S.selected = c; renderSelected(Date.now()); }
+function trackContact(c) {
+  if (!c) return;
+  S.track = c; S.selected = c; S.tour = false;
+  flyTo(c.lat, c.lon, Math.max(S.view.radius, E.fitRadius(S.W, S.H) * 4), 800);
+  toast('Tracking ' + c.label);
+}
+function release() { S.track = null; renderSelected(Date.now()); }
+function setStyle(key) {
+  S.style = E.styleByKey(key);
+  document.body.className = (S.style.scanlines ? 'scanlines ' : '') + (S.style.key === 'noir' ? 'vignette ' : '') + (S.mesh ? 'mesh ' : '') + (S.consoleOpen ? 'console-open' : '');
+  cv.style.filter = S.style.filter || '';
+  save(); renderLayers();
+}
+function setLayer(key, on, only) {
+  if (only) E.LAYERS.forEach(function (l) { S.layers[l.key] = false; });
+  S.layers[key] = !!on;
+  if (!on) { S.contacts[key] = key === 'sat' ? [] : []; if (S.track && S.track.kind === key) release(); }
+  S.lastPoll[key] = 0;
+  save(); renderLayers(); pollFeeds(Date.now());
+}
+function setMesh(on) { S.mesh = !!on; setStyle(S.style.key); }
+function pickContact(kind, pick, here) {
+  var pool = allContacts().filter(function (c) { return !kind || c.kind === kind; });
+  if (!pool.length) return null;
+  if (pick === 'iss') { for (var i = 0; i < pool.length; i++) if (pool[i].norad === 25544) return pool[i]; return null; }
+  if (pick === 'strongest') return pool.slice().sort(function (a, b) { return (b.mag || 0) - (a.mag || 0); })[0];
+  if (pick === 'highest') return pool.slice().sort(function (a, b) { return (b.alt || 0) - (a.alt || 0); })[0];
+  if (pick === 'fastest') return pool.slice().sort(function (a, b) { return (b.speed || 0) - (a.speed || 0); })[0];
+  var n = E.nearest(pool, here.lat, here.lon, null);
+  return n ? n.contact : null;
+}
+function nextPassText(c, here) {
+  var el = c && satElements(c.id);
+  if (!el) return 'No orbital elements for that contact.';
+  var p = E.nextPass(el, here.lat, here.lon, Date.now(), { minEl: 10, stepSec: 30, maxHours: 36 });
+  if (!p) return c.label + ' does not rise above 10° from here in the next 36 h.';
+  var mins = Math.round((p.rise - Date.now()) / E.MINUTE);
+  return c.label + ' next pass: ' + (mins <= 0 ? 'now' : 'in ' + (mins >= 60 ? Math.floor(mins / 60) + ' h ' + (mins % 60) + ' min' : mins + ' min')) +
+    ' (' + new Date(p.rise).toISOString().slice(11, 16) + 'Z), peak ' + Math.round(p.maxElevation) + '° above the horizon' +
+    (p.durationMs ? ', ' + Math.round(p.durationMs / E.MINUTE) + ' min long' : '') + '. Positions are approximate (simplified orbit model).';
+}
+function myLocation(cb) {
+  if (!navigator.geolocation) { cb(null); return; }
+  navigator.geolocation.getCurrentPosition(function (pos) { cb({ lat: pos.coords.latitude, lon: pos.coords.longitude }); }, function () { cb(null); }, { timeout: 8000, maximumAge: 60000 });
+}
+
+function runCommand(text) {
+  var cmd = E.parseCommand(text);
+  var here = E.unproject(S.W / 2, S.H / 2, S.view) || { lat: S.view.lat, lon: S.view.lon };
+  var fit = E.fitRadius(S.W, S.H);
+  logLine('you', text);
+  function say(m) { logLine('arg', m); toast(m); }
+  switch (cmd.type) {
+    case 'noop': return;
+    case 'help': E.HELP_LINES.forEach(function (l) { logLine('arg', l); }); return;
+    case 'goto': S.track = null; S.tour = false; flyTo(cmd.place.lat, cmd.place.lon, cmd.zoom === 'close' ? fit * 24 : Math.max(S.view.radius, fit * 5)); say('Heading to ' + cmd.place.name); return;
+    case 'zoom':
+      if (cmd.factor === 0) { S.track = null; flyTo(S.view.lat, S.view.lon, fit); say('Globe view'); }
+      else { S.view = E.zoomView(S.view, cmd.factor, minR(), maxR()); say(cmd.factor > 1 ? 'Zooming in' : 'Zooming out'); }
+      return;
+    case 'style': setStyle(cmd.key); say(E.styleByKey(cmd.key).label + ' mode'); return;
+    case 'mesh': setMesh(cmd.on); say('Detection mesh ' + (cmd.on ? 'on' : 'off')); return;
+    case 'layer': setLayer(cmd.kind, cmd.on, cmd.only); say((cmd.on ? 'Showing ' : 'Hiding ') + E.layerByKey(cmd.kind).label.toLowerCase() + (cmd.only ? ' only' : '')); return;
+    case 'track':
+      if (!S.layers[cmd.kind]) setLayer(cmd.kind, true);
+      var c = pickContact(cmd.kind, cmd.pick, here);
+      if (c) trackContact(c); else say('No ' + E.layerByKey(cmd.kind).label.toLowerCase() + ' in view yet.');
+      return;
+    case 'untrack': release(); S.tour = false; say('Released'); return;
+    case 'tour': S.tour = cmd.on; S.track = null; say(cmd.on ? 'Tour: orbiting the globe' : 'Tour off'); return;
+    case 'locate': myLocation(function (p) { if (p) { flyTo(p.lat, p.lon, fit * 8); say('You are near ' + E.formatCoord(p.lat, p.lon)); } else say('Location unavailable.'); }); return;
+    case 'count':
+      var bbox = null;
+      if (cmd.place) bbox = { lamin: cmd.place.lat - 5, lamax: cmd.place.lat + 5, lomin: cmd.place.lon - 7, lomax: cmd.place.lon + 7 };
+      else if (cmd.placeText) { say('I do not know "' + cmd.placeText + '" yet.'); return; }
+      var n = E.countByKind(allContacts(), bbox)[cmd.kind] || 0;
+      say(n + ' ' + E.layerByKey(cmd.kind).label.toLowerCase() + (cmd.place ? ' within about 500 km of ' + cmd.place.name : ' loaded') + (S.layers[cmd.kind] ? '' : ' (layer is off)'));
+      return;
+    case 'pass':
+      var sat = pickContact('sat', cmd.pick, here);
+      myLocation(function (p) { say(nextPassText(sat, p || here)); });
+      return;
+    default: say('Not understood: "' + cmd.text + '". Try "help".');
+  }
+}
+
+/* ---------------- speech ---------------- */
+var Recog = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+var rec = null;
+function toggleMic() {
+  if (!Recog) { toast('Speech recognition is not available in this browser — type the command instead.'); return; }
+  if (rec) { try { rec.stop(); } catch (e) {} rec = null; $('mic').className = 'mic'; return; }
+  rec = new Recog(); rec.lang = 'en-GB'; rec.interimResults = false; rec.maxAlternatives = 1;
+  rec.onresult = function (ev) { var t = ev.results[0][0].transcript; $('cmd').value = t; runCommand(t); };
+  rec.onend = function () { rec = null; $('mic').className = 'mic'; };
+  rec.onerror = function () { rec = null; $('mic').className = 'mic'; toast('Did not catch that.'); };
+  $('mic').className = 'mic listening';
+  try { rec.start(); } catch (e) { rec = null; $('mic').className = 'mic'; }
+}
+
+/* ---------------- input ---------------- */
+var drag = null, pinch = null, lastTap = 0;
+cv.addEventListener('pointerdown', function (ev) {
+  cv.setPointerCapture && cv.setPointerCapture(ev.pointerId);
+  if (pinch === null && drag && ev.pointerId !== drag.id) { pinch = { a: drag, b: { id: ev.pointerId, x: ev.clientX, y: ev.clientY }, r0: S.view.radius }; return; }
+  drag = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, sx: ev.clientX, sy: ev.clientY, moved: false, t: Date.now() };
+  S.rotVel = { x: 0, y: 0 }; S.fly = null;
+  cv.className = 'dragging';
+});
+cv.addEventListener('pointermove', function (ev) {
+  if (pinch) {
+    if (ev.pointerId === pinch.a.id) { pinch.a.x = ev.clientX; pinch.a.y = ev.clientY; }
+    if (ev.pointerId === pinch.b.id) { pinch.b.x = ev.clientX; pinch.b.y = ev.clientY; }
+    if (!pinch.d0) pinch.d0 = Math.hypot(pinch.a.x - pinch.b.x, pinch.a.y - pinch.b.y) || 1;
+    var d = Math.hypot(pinch.a.x - pinch.b.x, pinch.a.y - pinch.b.y);
+    S.view = E.zoomView(S.view, (pinch.r0 * d / pinch.d0) / S.view.radius, minR(), maxR());
+    return;
+  }
+  if (!drag || ev.pointerId !== drag.id) return;
+  var dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
+  if (Math.hypot(ev.clientX - drag.sx, ev.clientY - drag.sy) > 4) { drag.moved = true; if (S.track) release(); S.tour = false; }
+  if (drag.moved) { S.view = E.rotateView(S.view, dx, dy); S.rotVel = { x: dx * 0.6, y: dy * 0.6 }; }
+  drag.x = ev.clientX; drag.y = ev.clientY;
+});
+function endPointer(ev) {
+  cv.className = '';
+  if (pinch) { if (ev.pointerId === pinch.a.id || ev.pointerId === pinch.b.id) { pinch = null; drag = null; } return; }
+  if (!drag || ev.pointerId !== drag.id) return;
+  if (!drag.moved) {
+    var now = Date.now();
+    var hit = E.hitTest(S.placed || [], ev.clientX, ev.clientY, 18);
+    if (hit) { select(hit.contact); if (now - lastTap < 350) trackContact(hit.contact); }
+    else if (now - lastTap < 350) { S.view = E.zoomAt(S.view, 2, ev.clientX, ev.clientY, minR(), maxR()); }
+    else { S.selected = null; renderSelected(now); }
+    lastTap = now;
+  }
+  drag = null;
+}
+cv.addEventListener('pointerup', endPointer);
+cv.addEventListener('pointercancel', endPointer);
+cv.addEventListener('wheel', function (ev) {
+  ev.preventDefault();
+  var f = Math.pow(1.0015, -ev.deltaY);
+  S.view = E.zoomAt(S.view, f, ev.clientX, ev.clientY, minR(), maxR());
+}, { passive: false });
+
+document.addEventListener('keydown', function (ev) {
+  var tag = (ev.target && ev.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') { if (ev.key === 'Escape') { ev.target.blur(); toggleConsole(false); } return; }
+  var st = E.styleByHotkey(ev.key);
+  if (st) { setStyle(st.key); toast(st.label); return; }
+  switch (ev.key) {
+    case 'm': case 'M': setMesh(!S.mesh); break;
+    case 't': case 'T': S.tour = !S.tour; S.track = null; renderLayers(); break;
+    case 'g': case 'G': S.tracks = !S.tracks; renderLayers(); break;
+    case 'c': case 'C': toggleConsole(true); ev.preventDefault(); break;
+    case 'l': case 'L': $('rail').className = $('rail').className === 'rail open' ? 'rail' : 'rail open'; break;
+    case 'r': case 'R': $('roster').className = $('roster').className === 'card roster open' ? 'card roster' : 'card roster open'; break;
+    case '+': case '=': S.view = E.zoomView(S.view, 1.5, minR(), maxR()); break;
+    case '-': case '_': S.view = E.zoomView(S.view, 1 / 1.5, minR(), maxR()); break;
+    case 'Escape': release(); S.selected = null; S.tour = false; renderSelected(Date.now()); toggleConsole(false); break;
+    case 'ArrowLeft': S.view = E.rotateView(S.view, 30, 0); break;
+    case 'ArrowRight': S.view = E.rotateView(S.view, -30, 0); break;
+    case 'ArrowUp': S.view = E.rotateView(S.view, 0, 30); break;
+    case 'ArrowDown': S.view = E.rotateView(S.view, 0, -30); break;
+  }
+});
+
+function toggleConsole(on) {
+  var c = $('console');
+  if (on === undefined) on = c.className !== 'card console open';
+  c.className = on ? 'card console open' : 'card console';
+  $('b-console').className = on ? 'ibtn on' : 'ibtn';
+  S.consoleOpen = on; setStyle(S.style.key);
+  if (on) { if (!$('log').innerHTML) E.HELP_LINES.slice(0, 3).forEach(function (l) { logLine('arg', l); }); setTimeout(function () { $('cmd').focus(); }, 50); }
+}
+
+document.addEventListener('click', function (ev) {
+  var t = ev.target;
+  var el = t.closest ? t.closest('[data-layer],[data-style],[data-contact]') : null;
+  if (el && el.getAttribute('data-layer')) { var k = el.getAttribute('data-layer'); setLayer(k, !S.layers[k]); return; }
+  if (el && el.getAttribute('data-style')) { setStyle(el.getAttribute('data-style')); return; }
+  if (el && el.getAttribute('data-contact')) { var c = findContact(el.getAttribute('data-contact')); if (c) { select(c); flyTo(c.lat, c.lon, S.view.radius, 500); } return; }
+});
+$('b-layers').addEventListener('click', function () { $('rail').className = $('rail').className === 'rail open' ? 'rail' : 'rail open'; });
+$('b-roster').addEventListener('click', function () { $('roster').className = $('roster').className === 'card roster open' ? 'card roster' : 'card roster open'; });
+$('b-console').addEventListener('click', function () { toggleConsole(); });
+$('b-locate').addEventListener('click', function () { runCommand('where am I'); });
+$('b-share').addEventListener('click', function () {
+  var hash = E.serializeState(currentState());
+  var url = String(location.href).split('#')[0] + hash;
+  try { history.replaceState(null, '', hash); } catch (e) {}
+  if (navigator.share) { navigator.share({ title: 'Argus scene', url: url }).catch(function () {}); }
+  else if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(url).then(function () { toast('Scene link copied'); }, function () { toast(url); }); }
+  else toast(url);
+});
+$('b-settings').addEventListener('click', function () {
+  $('k-ais').value = S.keys.ais; $('k-firms').value = S.keys.firms; $('sat-group').value = S.satGroup; $('opt-sim').checked = S.sim;
+  $('settings').className = 'sheet open';
+});
+$('settings-close').addEventListener('click', function () { $('settings').className = 'sheet'; });
+$('settings').addEventListener('click', function (ev) { if (ev.target === $('settings')) $('settings').className = 'sheet'; });
+$('settings-save').addEventListener('click', function () {
+  S.keys = { ais: E.sanitizeKey($('k-ais').value), firms: E.sanitizeKey($('k-firms').value) };
+  var g = String($('sat-group').value || 'stations');
+  if (g !== S.satGroup) { S.satGroup = g; S.lastPoll.sat = 0; }
+  var sim = !!$('opt-sim').checked;
+  if (sim !== S.sim) { S.sim = sim; S.anyLive = false; S.anySim = false; S.lastPoll = {}; closeShips(); if (!sim) { S.contacts = { air: [], mil: [], ship: [], sat: [], quake: [], fire: [] }; S.status = {}; } }
+  S.lastPoll.fire = 0; closeShips();
+  save(); $('settings').className = 'sheet'; toast('Saved'); pollFeeds(Date.now());
+});
+$('settings-reset').addEventListener('click', function () {
+  S.track = null; S.selected = null; S.tour = false; flyTo(30, 0, E.fitRadius(S.W, S.H)); $('settings').className = 'sheet';
+});
+$('sel-close').addEventListener('click', function () { S.selected = null; renderSelected(Date.now()); });
+$('sel-track').addEventListener('click', function () { if (S.track && S.selected && S.track.id === S.selected.id) release(); else trackContact(S.selected); renderSelected(Date.now()); });
+$('sel-center').addEventListener('click', function () { if (S.selected) flyTo(S.selected.lat, S.selected.lon, S.view.radius, 600); });
+$('sel-pass').addEventListener('click', function () {
+  var c = S.selected; toggleConsole(true);
+  var here = E.unproject(S.W / 2, S.H / 2, S.view) || { lat: S.view.lat, lon: S.view.lon };
+  myLocation(function (p) { logLine('arg', nextPassText(c, p || here)); });
+});
+$('c-mesh').addEventListener('click', function () { setMesh(!S.mesh); });
+$('c-tour').addEventListener('click', function () { S.tour = !S.tour; S.track = null; renderLayers(); });
+$('c-tracks').addEventListener('click', function () { S.tracks = !S.tracks; renderLayers(); });
+$('cmd-form').addEventListener('submit', function (ev) { ev.preventDefault(); var v = $('cmd').value; $('cmd').value = ''; runCommand(v); });
+$('mic').addEventListener('click', toggleMic);
+$('log').addEventListener('click', function () { $('cmd').focus(); });
+window.addEventListener('resize', resize);
+window.addEventListener('hashchange', function () { applyState(E.parseState(String(location.hash))); setStyle(S.style.key); });
+
+/* ---------------- boot ---------------- */
+E.DEFAULT_LAYERS.forEach(function (k) { S.layers[k] = true; });
+load();
+resize();
+var hash = String(location.hash || '');
+if (hash.length > 1) applyState(E.parseState(hash));
+setStyle(S.style.key);
+refreshSats(Date.now());
+if (S.pendingTrack) { var pc = findContact(S.pendingTrack); if (pc) S.track = pc; S.selected = pc; }
+renderChrome(Date.now());
+pollFeeds(Date.now());
+requestAnimationFrame(frame);
+if (navigator && 'serviceWorker' in navigator && location.protocol !== 'file:') {
+  try { navigator.serviceWorker.register('sw.js'); } catch (e) {}
+}
+</script>
+</body>
+</html>

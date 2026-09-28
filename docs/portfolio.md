@@ -52,6 +52,7 @@ payments, deploy workflows, iOS wrappers.
 | Voyager | A real web browser: tabs, omnibox, proxy full-browser mode, Web Memory, reader, from-scratch QR | `voyager/` | Optional companion server | `test:voyager` (76) + proxy (16) + QR |
 | Seeker | A from-scratch search engine: Porter stemmer, BM25, crawler with robots.txt | `seeker/` | Optional crawler server | `test:seeker` (29) |
 | Magpie | A from-scratch web scraper: HTML parser, CSS selector engine, auto-detected recipes, CSV/JSON export, robots-respecting pagination crawl, watch diffs | `magpie/` | Optional fetch server | `test:magpie` (38) |
+| Argus | Your own God's Eye View: a from-scratch canvas globe with live aircraft, military, satellites (on-device orbit propagation), earthquakes, ships and fires; sensor modes, detection mesh, tracking, on-device voice control, shareable scenes | `argus/` | Keyless public feeds (OpenSky, adsb.lol, CelesTrak, USGS); optional AISStream / FIRMS keys | `test:argus` (38) |
 | Atlas | A satnav: canvas map engine, turn-by-turn voice guidance, offline maps, dashcam, traffic | `atlas/` | OSM/OSRM/Nominatim (keyless) | `test:atlas` (34) |
 | Orbit | Super-app: rides, eats, parcels, pay — plus REAL mode with human captains | `orbit/`, `orbit/real/` | Optional Firebase | `test:orbit` (60) |
 | Omni | Do-everything utility app (tasks, notes, converters, QR, timers) | `omni/` | None | `test:logic` |
