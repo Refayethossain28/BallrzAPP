@@ -203,7 +203,7 @@
         <li><b>The receiver points its camera</b> at that screen. Every code it reads is a piece; pieces it misses are repaired by later codes, so nobody has to hold perfectly still.</li>
         <li><b>Done.</b> The file is checked against its fingerprint, then saved or shared. Nothing ever leaves the two phones.</li>
       </ol>
-      <p class="fine">Honest speed: <b>a few hundred KB a minute</b> at the default settings (up to about 1 MB a minute at Max density and 12 codes a second, if the camera keeps up). Perfect for notes, contacts, documents and shrunk photos — not for videos. Beam shows you the estimate before you start.</p>
+      <p class="fine">Honest speed: <b>a few hundred KB a minute</b> at the default settings (up to about 2 MB a minute at Max density and 20 codes a second, if the camera keeps up — the receiver tells you when the sender can go faster). Perfect for notes, contacts, documents and shrunk photos — not for videos. Beam shows you the estimate before you start.</p>
     </details>
 
     <div class="card">
@@ -232,8 +232,9 @@
     <div id="prep" hidden>
       <div class="card" id="file-card"></div>
       <div id="img-opts" class="card" hidden>
-        <label class="toggle"><input type="checkbox" id="shrink" checked><span class="sw"></span>
-          <span><b>Send a smaller copy (recommended)</b><small id="shrink-note"></small></span></label>
+        <h4>Photo size</h4>
+        <div class="seg" id="shrink-seg"></div>
+        <div class="fine" id="shrink-note" style="margin-top:8px"></div>
         <div class="fine" id="shrink-result" style="margin-top:6px"></div>
       </div>
       <div class="fine" id="compress-line"></div>
@@ -298,6 +299,7 @@
       <div class="pctrow"><b id="rx-pct">0%</b><span id="rx-have">0 / 0 pieces</span><span id="rx-eta"></span></div>
       <div class="grid" id="rx-grid"></div>
       <div class="stats" id="rx-stats"></div>
+      <div class="fine" id="rx-advice" style="text-align:center; min-height:18px"></div>
       <p class="fine honest">Keep the camera pointed until this says <b>Done</b>. The sender loops repair codes for ever, so a missed code just costs a moment.</p>
     </div>
 
@@ -436,7 +438,11 @@ var INFLATE_HINT = 'Chrome 103+, Safari 16.4+ and Firefox 113+ can';
 
 /* ============================ settings ============================ */
 var LS_KEY = 'beam:settings';
-var S = { preset: E.DEFAULT_PRESET, fps: E.FPS_DEFAULT, ec: 'L', decoder: 'auto' };
+var S = { preset: E.DEFAULT_PRESET, fps: E.FPS_DEFAULT, ec: 'L', decoder: 'auto', shrink: E.DEFAULT_SHRINK };
+function shrinkById(id) {
+  for (var i = 0; i < E.SHRINK_LEVELS.length; i++) if (E.SHRINK_LEVELS[i].id === id) return E.SHRINK_LEVELS[i];
+  return null;
+}
 function loadSettings() {
   try {
     var raw = localStorage.getItem(LS_KEY);
@@ -446,6 +452,7 @@ function loadSettings() {
     if (o.fps) S.fps = clamp(Math.round(Number(o.fps)) || E.FPS_DEFAULT, E.FPS_MIN, E.FPS_MAX);
     if (o.ec === 'L' || o.ec === 'M') S.ec = o.ec;
     if (o.decoder === 'auto' || o.decoder === 'native' || o.decoder === 'js') S.decoder = o.decoder;
+    if (shrinkById(o.shrink)) S.shrink = o.shrink;
   } catch (e) { /* first run or blocked storage */ }
 }
 function saveSettings() {
@@ -572,10 +579,7 @@ function showPicked() {
   $('file-card').innerHTML = fileCardHtml(picked.name, picked.size, picked.type, picked.kind, picked.thumbUrl, '');
   var isImg = picked.kind === 'image';
   $('img-opts').hidden = !isImg;
-  if (isImg) {
-    $('shrink').checked = true;
-    $('shrink-note').textContent = E.imageShrinkTarget(picked.size).note || '';
-  }
+  if (isImg) renderShrinkSeg();
   $('shrink-result').textContent = '';
   $('compress-line').textContent = '';
   $('plan-line').textContent = '';
@@ -641,9 +645,9 @@ function prepare() {
   $('btn-start').disabled = true;
   setBusy('Preparing…');
   var shrinkStep = function (cb) {
-    if (src.kind === 'image' && $('shrink').checked && src.size > 0) {
+    if (src.kind === 'image' && S.shrink !== 'o' && src.size > 0) {
       setBusy('Making a smaller copy…');
-      shrinkImage(src.blob, E.imageShrinkTarget(src.size), function (b) {
+      shrinkImage(src.blob, E.imageShrinkTarget(src.size, S.shrink), function (b) {
         if (b && b.size < src.size) cb({ blob: b, name: jpegName(src.name), type: 'image/jpeg', shrunkFrom: src.size });
         else cb({ blob: src.blob, name: src.name, type: src.type, shrunkFrom: 0, noGain: !!b, failed: !b });
       });
@@ -683,7 +687,7 @@ function renderPrepInfo() {
   var sr = $('shrink-result');
   if (picked.kind === 'image') {
     if (P.shrunkFrom) sr.textContent = E.formatBytes(P.shrunkFrom) + ' → ' + E.formatBytes(P.size) + ' — sending the smaller JPEG copy.';
-    else if ($('shrink').checked) sr.textContent = P.shrinkInfo && P.shrinkInfo.failed
+    else if (S.shrink !== 'o') sr.textContent = P.shrinkInfo && P.shrinkInfo.failed
       ? 'Couldn’t re-encode this image here — sending the original.'
       : 'The smaller copy wasn’t smaller — sending the original.';
     else sr.textContent = 'Sending the original at full size (' + E.formatBytes(P.size) + ').';
@@ -753,7 +757,24 @@ $('file-input').addEventListener('change', function () {
 });
 $('btn-use-note').addEventListener('click', onNote);
 $('btn-change').addEventListener('click', resetPick);
-$('shrink').addEventListener('change', function () { if (picked) prepare(); });
+function renderShrinkSeg() {
+  var html = '';
+  for (var i = 0; i < E.SHRINK_LEVELS.length; i++) {
+    var l = E.SHRINK_LEVELS[i];
+    html += '<button type="button" data-shrink="' + escapeHtml(l.id) + '" class="' + (l.id === S.shrink ? 'on' : '') + '"><b>' + escapeHtml(l.label) + '</b><small>' + escapeHtml(l.hint) + '</small></button>';
+  }
+  $('shrink-seg').innerHTML = html;
+  $('shrink-note').textContent = picked ? (E.imageShrinkTarget(picked.size, S.shrink).note || '') : '';
+}
+$('shrink-seg').addEventListener('click', function (ev) {
+  var t = ev.target;
+  while (t && t !== this && !(t.getAttribute && t.getAttribute('data-shrink'))) t = t.parentNode;
+  if (!t || t === this) return;
+  var id = t.getAttribute('data-shrink');
+  if (!shrinkById(id) || id === S.shrink) return;
+  S.shrink = id; saveSettings(); renderShrinkSeg();
+  if (picked) prepare();
+});
 /* Drag-and-drop is handled at the document level: once a file is picked the drop zone is hidden,
  * and an uncancelled file drop anywhere else would make the browser navigate the tab to the
  * dropped file — throwing away the prepared transfer or a beam in progress. */
@@ -777,7 +798,7 @@ $('shrink').addEventListener('change', function () { if (picked) prepare(); });
 })();
 
 /* ============================ SEND: beaming ============================ */
-var B = { running: false, paused: false, ctx: null, K: 0, seq: 0, fps: E.FPS_DEFAULT, timer: 0, next: null, cur: null,
+var B = { running: false, paused: false, ctx: null, K: 0, seq: 0, fps: E.FPS_DEFAULT, timer: 0, raf: 0, due: 0, next: null, cur: null,
           version: 0, ec: 'L', encodeMs: 0, scale: 1, quiet: 4 };
 var hintShown = false;   // per page load — "first run" of the beaming screen
 
@@ -826,10 +847,30 @@ function frameTick() {
   paintCurrent();
   updateBeamHud();
   var budget = 1000 / B.fps;
-  B.timer = setTimeout(frameTick, Math.round(budget));
+  B.due = now() + budget;
+  armFrame();
   var nextSeq = f.seq + 1 >= SEQ_LIMIT ? 0 : f.seq + 1;
   B.next = encodeSeq(nextSeq);          // one-frame lookahead keeps paint timing even
   $('slow-hint').hidden = !(B.encodeMs > budget);
+}
+/* Codes switch on display refreshes: a requestAnimationFrame loop runs every vsync and swaps the
+ * code at the first refresh on or after the due time (allowing half a 60 Hz refresh early so the
+ * period never drifts a whole refresh late). Every code is then on screen for a whole number of
+ * refreshes, which a 30 fps camera samples cleanly — a setTimeout swap can land mid-refresh and
+ * hand the camera a frame that is half one code, half the next. Falls back to setTimeout. */
+function armFrame() {
+  if (typeof requestAnimationFrame === 'function') B.raf = requestAnimationFrame(rafTick);
+  else B.timer = setTimeout(frameTick, Math.max(0, Math.round(B.due - now())));
+}
+function rafTick() {
+  B.raf = 0;
+  if (!B.running || B.paused) return;
+  if (now() >= B.due - 8) frameTick(); else B.raf = requestAnimationFrame(rafTick);
+}
+function cancelFrame() {
+  clearTimeout(B.timer); B.timer = 0;
+  if (B.raf && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(B.raf);
+  B.raf = 0;
 }
 /* One screen wake lock shared by both roles (the screens are mutually exclusive). The sender needs
  * it so the codes keep showing; the receiver needs it because a camera preview does not stop iOS
@@ -876,7 +917,7 @@ function startBeaming() {
 }
 function stopBeaming() {
   B.running = false; B.paused = false;
-  clearTimeout(B.timer); B.timer = 0;
+  cancelFrame();
   releaseWakeLock();
 }
 function togglePause() {
@@ -884,7 +925,7 @@ function togglePause() {
   B.paused = !B.paused;
   $('pause-tag').hidden = !B.paused;
   $('beam-pause').textContent = B.paused ? '▶ Resume' : '⏸ Pause';
-  if (B.paused) { clearTimeout(B.timer); B.timer = 0; }
+  if (B.paused) cancelFrame();
   else frameTick();
 }
 $('btn-start').addEventListener('click', startBeaming);
@@ -905,6 +946,9 @@ document.addEventListener('visibilitychange', function () {
 var R = { stream: null, running: false, idle: false, mode: 'none', det: null, dec: null, timer: 0, statTimer: 0,
           startTs: 0, decodeTimes: [], garbageAt: 0, canvas: null, hidden: false, K: 0, gridCells: 0, gridPer: 1,
           cardShown: false, objectUrl: '', lastSeenAt: 0,
+          rvfc: false,       // a requestVideoFrameCallback is pending — the next camera frame goes to the worker
+          contTimer: 0,      // zero-delay timer driving a budgeted elimination between frames (decoderContinue)
+          window: [],        // recent unique frames [{ seq, t }] for the link advice (a sliding window, so a pause is not read as loss)
           gen: 0,            // bumped by every start and stop: a getUserMedia that resolves for an older generation is discarded
           starting: false,   // a getUserMedia is pending — ignore further Start taps until it settles
           gapStart: 0,       // when the camera stopped mid-transfer, so the ETA can skip the interruption
@@ -1036,7 +1080,8 @@ function stopCamera() {
   R.running = false; R.idle = false;
   clearTimeout(R.timer); R.timer = 0;
   clearInterval(R.statTimer); R.statTimer = 0;
-  JW.busy = false;
+  JW.busy = false; R.rvfc = false;
+  clearTimeout(R.contTimer); R.contTimer = 0;
   if (R.stream) {
     try { R.stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
     R.stream = null;
@@ -1071,12 +1116,18 @@ function tick() {
       if (now() - JW.sentAt > JW_TIMEOUT_MS) jsWorkerFail();      // wedged — decode here from now on
       schedule(10); return;
     }
-    var img = grabFrame();
-    if (img) {
-      JW.busy = true; JW.sentAt = now(); JW.id++;
-      try { w.postMessage({ id: JW.id, data: img.data, w: img.width, h: img.height }, [img.data.buffer]); }
-      catch (e) { JW.busy = false; jsWorkerFail(); }
+    if (RVFC) {
+      // Decode each camera frame at most once: wait for the NEXT frame instead of re-reading the one
+      // we just decoded (a 30 fps camera against a 60 ms decode would otherwise waste every other run).
+      if (!R.rvfc) {
+        R.rvfc = true;
+        try { vid.requestVideoFrameCallback(function () { R.rvfc = false; sendFrameToWorker(); }); }
+        catch (e) { R.rvfc = false; sendFrameToWorker(); }
+      }
+      schedule(10);                 // keeps the watchdog above alive
+      return;
     }
+    sendFrameToWorker();
     schedule(10);
     return;
   }
@@ -1088,6 +1139,16 @@ function tick() {
   R.lastDecodeMs = now() - t0;
   if (text) handleText(text);
   schedule(clamp(Math.round(R.lastDecodeMs / 4), 10, 40));
+}
+var RVFC = typeof HTMLVideoElement === 'function' && HTMLVideoElement.prototype && typeof HTMLVideoElement.prototype.requestVideoFrameCallback === 'function';
+function sendFrameToWorker() {
+  var w = JW.w;
+  if (!w || JW.failed || JW.busy || !R.running || R.idle) return;
+  var img = grabFrame();
+  if (!img) return;
+  JW.busy = true; JW.sentAt = now(); JW.id++;
+  try { w.postMessage({ id: JW.id, data: img.data, w: img.width, h: img.height }, [img.data.buffer]); }
+  catch (e) { JW.busy = false; jsWorkerFail(); }
 }
 function grabFrame() {
   var vw = vid.videoWidth, vh = vid.videoHeight;
@@ -1177,6 +1238,10 @@ function handleText(text) {
     }
   }
   R.replan = null;
+  if (ev.type !== 'dup' && ev.type !== 'done' && ev.type !== 'bad') {
+    R.window.push({ seq: frame.seq, t: t });
+    while (R.window.length > 600 || (R.window.length && t - R.window[0].t > 12000)) R.window.shift();
+  }
   var restarted = ev.tid !== undefined && ev.tid === R.tid;   // same file again (re-plan), not a new one
   switch (ev.type) {
     case 'start':
@@ -1207,17 +1272,31 @@ function handleText(text) {
     default: /* dup, redundant, done */
       break;
   }
+  if (R.dec && R.dec.solveMore && !R.contTimer && !R.idle) R.contTimer = setTimeout(continueSolving, 0);
+}
+/* A budgeted elimination pass resolves at most GE_COLUMNS_PER_PUSH chunks at a time so the page
+ * stays responsive; keep it going from a zero-delay timer (one pass, repaint, next pass) instead of
+ * waiting for the camera to hand over another code. */
+function continueSolving() {
+  R.contTimer = 0;
+  if (!R.dec || !R.running || R.idle || !R.dec.solveMore) return;
+  var ev = E.decoderContinue(R.dec);
+  if (!ev) return;
+  updateProgress();
+  if (ev.type === 'complete') { finishReceive(); return; }
+  if (R.dec.solveMore) R.contTimer = setTimeout(continueSolving, 0);
 }
 function isReplan(ev) { return !!ev.replan || /^(K|frame size) changed/.test(String(ev.reason || '')); }
 function resetRxUi() {
-  R.startTs = 0; R.gapStart = 0; R.K = 0; R.tid = null; R.replan = null; R.cardShown = false; R.decodeTimes = [];
+  R.startTs = 0; R.gapStart = 0; R.K = 0; R.tid = null; R.replan = null; R.cardShown = false; R.decodeTimes = []; R.window = [];
+  clearTimeout(R.contTimer); R.contTimer = 0;
   $('rx-progress').hidden = true;
   $('rx-done').hidden = true; $('rx-error').hidden = true;
   $('btn-rx-another').hidden = true;
   $('rx-card').innerHTML = '<div class="fine">Waiting for the first piece… the file’s name and size appear as soon as it arrives.</div>';
   $('rx-grid').innerHTML = '';
   $('rx-bar').style.width = '0%';
-  $('rx-pct').textContent = '0%'; $('rx-have').textContent = '0 / 0 pieces'; $('rx-eta').textContent = ''; $('rx-stats').textContent = '';
+  $('rx-pct').textContent = '0%'; $('rx-have').textContent = '0 / 0 pieces'; $('rx-eta').textContent = ''; $('rx-stats').textContent = ''; $('rx-advice').textContent = '';
   $('cam-box').className = 'cam';
   if (R.objectUrl) { try { URL.revokeObjectURL(R.objectUrl); } catch (e) {} R.objectUrl = ''; }
 }
@@ -1247,9 +1326,22 @@ function updateProgress() {
   var p = E.decoderProgress(R.dec);
   $('rx-bar').style.width = Math.round(p.pct) + '%';
   $('rx-pct').textContent = E.formatPct(p.pct);
-  $('rx-have').textContent = p.have + ' / ' + p.K + ' pieces';
+  $('rx-have').textContent = p.have + ' / ' + p.K + ' pieces' + (p.pendingUseful ? ' · ' + p.pendingUseful + ' repair code' + (p.pendingUseful === 1 ? '' : 's') + ' in hand' : '');
   updateGrid();
   updateStats();
+}
+function renderAdvice(t) {
+  var el = $('rx-advice');
+  if (!R.window.length) { el.textContent = ''; return; }
+  var first = R.window[0], last = R.window[R.window.length - 1], minSeq = Infinity, maxSeq = -1;
+  for (var i = 0; i < R.window.length; i++) { var q = R.window[i].seq; if (q < minSeq) minSeq = q; if (q > maxSeq) maxSeq = q; }
+  var a = E.linkAdvice({ minSeq: minSeq, maxSeq: maxSeq, unique: R.window.length, elapsedMs: last.t - first.t });
+  if (!a) { el.textContent = ''; return; }
+  var pct = Math.round(a.missRate * 100);
+  var line = 'sender ' + a.senderFps.toFixed(1) + ' codes/s · missing ' + pct + '%';
+  if (a.advice === 'faster') line = '📈 Catching nearly every code — the sender can turn the speed up (' + line + ')';
+  else if (a.advice === 'slower') line = '📉 Missing ' + pct + '% of codes — ask the sender to lower the speed or density, or hold steadier';
+  el.textContent = line;
 }
 function updateStats() {
   if (!R.dec || !R.running) return;
@@ -1257,8 +1349,9 @@ function updateStats() {
   while (R.decodeTimes.length && t - R.decodeTimes[0] > 1000) R.decodeTimes.shift();
   var p = E.decoderProgress(R.dec);
   var parts = [R.decodeTimes.length + ' codes/s', 'decoder: ' + decoderLabel()];
-  if (p.framesSeen) parts.push(p.unique + ' useful · ' + p.redundant + ' repeats');
+  if (p.framesSeen) parts.push(p.unique + ' useful · ' + (p.redundant + (p.discarded || 0)) + ' repeats');
   $('rx-stats').textContent = parts.join(' · ');
+  renderAdvice(t);
   if (R.startTs && !p.complete) {
     var secs = E.eta({ have: p.have, K: p.K, framesSeen: p.framesSeen, elapsedMs: t - R.startTs });
     $('rx-eta').textContent = secs == null ? 'estimating…' : 'about ' + E.formatDuration(secs) + ' left';
