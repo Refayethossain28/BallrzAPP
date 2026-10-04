@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const sandbox = { module: { exports: {} } };
@@ -224,7 +225,7 @@ test('PRESETS and fps constants match the contract', () => {
   deepEq(E.PRESETS.map((p) => [p.id, p.version, p.ec]), [['s', 10, 'L'], ['m', 15, 'L'], ['l', 20, 'L'], ['xl', 25, 'L'], ['max', 30, 'L']]);
   assert.ok(E.PRESETS.every((p) => p.label && p.hint));
   assert.equal(E.DEFAULT_PRESET, 'l');
-  assert.equal(E.FPS_MIN, 2); assert.equal(E.FPS_MAX, 12); assert.equal(E.FPS_DEFAULT, 5);
+  assert.equal(E.FPS_MIN, 2); assert.equal(E.FPS_MAX, 20); assert.equal(E.FPS_DEFAULT, 8);
 });
 
 /* ---------- fountain code ---------- */
@@ -263,7 +264,8 @@ test('frameNeighbors samples degrees from the soliton table (degree-1 share and 
   const N = 2000;
   for (const K of [10, 100, 1000]) {
     const t = E.solitonTable(K), hist = new Map();
-    for (let seq = K; seq < K + N; seq++) { const d = E.frameNeighbors(seq, K).length; hist.set(d, (hist.get(d) || 0) + 1); }
+    // protocol 2 alternates soliton (even j) and dense (odd j) repair frames: sample the soliton ones
+    for (let seq = K; seq < K + 2 * N; seq += 2) { const d = E.frameNeighbors(seq, K).length; hist.set(d, (hist.get(d) || 0) + 1); }
     const share1 = (hist.get(1) || 0) / N;
     assert.ok(share1 > 0, `K=${K}: some coded frames must have degree 1`);
     assert.ok(share1 > 0.5 * t[1] && share1 < 1.5 * t[1], `K=${K}: degree-1 share ${share1.toFixed(4)} vs table ${t[1].toFixed(4)}`);
@@ -311,6 +313,200 @@ test('framePayload XORs exactly the neighbour chunks', () => {
   }
 });
 
+/* ---------- protocol 2: alternating soliton / dense repair frames ---------- */
+test('protocol 2 repair frames: soliton (bit-identical to protocol 1) except dense ones — every other up to 1024 chunks, every 8th above', () => {
+  assert.equal(E.DENSE_EVERY_LARGE, 8);
+  assert.equal(E.repairIsDense(1, 1024), true); assert.equal(E.repairIsDense(0, 1024), false); assert.equal(E.repairIsDense(3, 10), true);
+  assert.equal(E.repairIsDense(1, 1025), false); assert.equal(E.repairIsDense(7, 1025), true); assert.equal(E.repairIsDense(15, 5000), true); assert.equal(E.repairIsDense(8, 5000), false);
+  for (const K of [10, 100, 1000, 3000]) {
+    let dense = 0, denseSizes = 0, sol = 0, solSizes = 0;
+    for (let seq = K; seq < K + 400; seq++) {
+      const n2 = E.frameNeighbors(seq, K), n1 = E.frameNeighbors(seq, K, 1);
+      assert.ok(n2.every((x, i) => x >= 0 && x < K && (i === 0 || x > n2[i - 1])), 'in range, sorted, distinct');
+      if (!E.repairIsDense(seq - K, K)) { deepEq(n2, n1, `non-dense j: protocol 2 equals protocol 1 at seq ${seq}`); sol++; solSizes += n2.length; }
+      else { dense++; denseSizes += n2.length; assert.ok(n2.length >= 1); assert.ok(n1.length <= K); }
+      deepEq(E.frameNeighbors(seq, K, 2), n2, 'v:2 is the default');
+    }
+    assert.equal(dense, K <= 1024 ? 200 : 50, `K=${K}: dense share`);
+    const meanDense = denseSizes / dense, meanSol = solSizes / sol;
+    assert.ok(Math.abs(meanDense - K / 2) < 2 + 3 * Math.sqrt(K) / 2 / Math.sqrt(dense) * 4, `K=${K}: dense frames average ${meanDense.toFixed(1)} chunks (expect ≈ ${K / 2})`);
+    if (K >= 100) assert.ok(meanSol < K / 4 && K / 4 < meanDense, `K=${K}: soliton mean ${meanSol.toFixed(1)} ≪ dense mean ${meanDense.toFixed(1)}`);
+  }
+  deepEq(E.frameNeighbors(1, 1), [0]); deepEq(E.frameNeighbors(2, 1), [0]); deepEq(E.frameNeighbors(2, 1, 1), [0]);
+});
+test('protocol-1 frames (makeContext {v:1}) carry the B1 magic and still decode here, lossless and lossy; versions never mix', () => {
+  const bytes = randomBytes(3000, 41);
+  const built = E.buildStream(bytes, { name: 'old.bin', type: '' });
+  const ctx1 = E.makeContext(built.stream, 20, { v: 1 });
+  assert.equal(ctx1.v, 1);
+  assert.equal(E.encodeFrame(ctx1, 0).slice(0, 2), 'B1');
+  assert.equal(E.parseFrame(E.encodeFrame(ctx1, 5)).v, 1);
+  assert.equal(E.parseFrame(E.encodeFrame(E.makeContext(built.stream, 20), 5)).v, 2);
+  assert.equal(E.parseFrame('B3' + E.encodeFrame(ctx1, 5).slice(2)), null, 'unknown protocol rejected');
+  assert.equal(E.parseFrame('B0' + E.encodeFrame(ctx1, 5).slice(2)), null);
+  let dec = E.createDecoder(), ev;
+  for (let seq = 0; seq < ctx1.K; seq++) ev = E.decoderPush(dec, frameAt(ctx1, seq));
+  assert.equal(ev.type, 'complete'); assert.equal(dec.v, 1);
+  bytesEq(E.decoderResult(dec).fileBytes, bytes);
+  dec = E.createDecoder(); const r = E.rng(42); let seq = 0;
+  while (!dec.complete && seq < 20 * ctx1.K) { const f = frameAt(ctx1, seq++); if (r() < 0.2) continue; E.decoderPush(dec, f); }
+  assert.ok(dec.complete, 'lossy protocol-1 transfer completes with the soliton-only rule');
+  bytesEq(E.decoderResult(dec).fileBytes, bytes);
+  const ctx2 = E.makeContext(built.stream, 20);
+  const d3 = E.createDecoder(); E.decoderPush(d3, frameAt(ctx1, 0));
+  const mixed = E.decoderPush(d3, frameAt(ctx2, 1));
+  assert.equal(mixed.type, 'bad'); assert.ok(/protocol/.test(mixed.reason));
+  assert.equal(E.decoderProgress(d3).have, 1, 'the transfer in progress is untouched');
+});
+test('dense repair frames: a receiver missing a few chunks finishes in about that many frames (the old tail is gone)', () => {
+  // K ≈ 300 at 5 % seeded loss: with soliton-only repair the sender showed ~40 % extra frames; now a few %.
+  const t = transfer(randomBytes(6000, 51), 20);
+  const run = (seed, v) => {
+    const ctx = E.makeContext(t.built.stream, 20, { v });
+    const r = E.rng(seed), dec = E.createDecoder(); let seq = 0, shown = 0;
+    while (!dec.complete && seq < 30 * ctx.K) { const text = E.encodeFrame(ctx, seq++); shown++; if (r() < 0.05) continue; E.decoderPush(dec, E.parseFrame(text)); }
+    assert.ok(dec.complete); bytesEq(E.decoderResult(dec).fileBytes, t.bytes);
+    return (shown - ctx.K) / ctx.K;
+  };
+  let v2 = 0, v1 = 0;
+  for (const seed of [1, 2, 3, 4, 5]) { v2 += run(seed, 2); v1 += run(seed, 1); }
+  v2 /= 5; v1 /= 5;
+  assert.ok(v2 < 0.15, `protocol 2 extra frames ${v2.toFixed(3)} should be under 15 %`);
+  assert.ok(v2 < v1 / 2, `protocol 2 (${v2.toFixed(3)}) should at least halve protocol 1's overhead (${v1.toFixed(3)})`);
+});
+test('frames too dense to park while many chunks are unknown are discarded, counted, and the transfer still completes', () => {
+  const t = transfer(randomBytes(30000, 61), 20);
+  assert.ok(t.K > 2 * E.PARK_MAX_DEGREE + 200, `K=${t.K}: dense frames (~K/2 unknowns) exceed PARK_MAX_DEGREE for a late joiner`);
+  const dec = E.createDecoder();
+  assert.ok(E.repairIsDense(7, t.K) && E.repairIsDense(15, t.K), 'above 1024 chunks every 8th repair frame is dense');
+  let ev = E.decoderPush(dec, frameAt(t.ctx, t.K + 7));      // j = 7 → dense
+  assert.equal(ev.type, 'start');
+  ev = E.decoderPush(dec, frameAt(t.ctx, t.K + 15));         // j = 15 → dense
+  assert.equal(ev.type, 'redundant'); assert.equal(ev.discarded, true);
+  assert.ok(E.decoderProgress(dec).discarded >= 1);
+  assert.equal(dec.pending.length, 0, 'nothing parked');
+  assert.equal(E.decoderProgress(dec).redundant, 0, 'discarded is counted separately from redundant');
+  let seq = 3 * t.K, used = 0;
+  while (!dec.complete && used < 3 * t.K) { used++; E.decoderPush(dec, frameAt(t.ctx, seq++)); }
+  assert.ok(dec.complete, 'late joiner completes once enough is known for dense frames to park and eliminate');
+  bytesEq(E.decoderResult(dec).fileBytes, t.bytes);
+  assert.ok(E.decoderProgress(dec).discarded > 0);
+});
+test('linkAdvice: null until enough frames; faster when nearly lossless; slower when a third is missed; ok between', () => {
+  assert.equal(E.linkAdvice(null), null);
+  assert.equal(E.linkAdvice({ minSeq: 0, maxSeq: 10, unique: 11, elapsedMs: 5000 }), null, 'fewer than 20 frames shown');
+  assert.equal(E.linkAdvice({ minSeq: 0, maxSeq: 40, unique: 41, elapsedMs: 2000 }), null, 'under 3 s');
+  assert.equal(E.linkAdvice({ minSeq: -1, maxSeq: -1, unique: 0, elapsedMs: 9000 }), null, 'nothing seen');
+  const fast = E.linkAdvice({ minSeq: 100, maxSeq: 199, unique: 98, elapsedMs: 10000 });
+  assert.equal(fast.advice, 'faster'); assert.ok(Math.abs(fast.senderFps - 9.9) < 0.01); assert.ok(fast.missRate < 0.03); assert.equal(fast.shown, 100);
+  const slow = E.linkAdvice({ minSeq: 0, maxSeq: 99, unique: 50, elapsedMs: 10000 });
+  assert.equal(slow.advice, 'slower'); assert.equal(slow.missRate, 0.5);
+  assert.equal(E.linkAdvice({ minSeq: 0, maxSeq: 99, unique: 85, elapsedMs: 10000 }).advice, 'ok');
+  assert.equal(E.linkAdvice({ minSeq: 0, maxSeq: 199, unique: 200, elapsedMs: 10000 }).advice, 'ok', 'already at FPS_MAX');
+});
+test('eliminationStep: every frame while the system is small, backing off cubically', () => {
+  assert.equal(E.eliminationStep(1), 1); assert.equal(E.eliminationStep(500), 1); assert.equal(E.eliminationStep(860), 1);
+  assert.equal(E.eliminationStep(1404), 4); assert.equal(E.eliminationStep(2048), 13);
+});
+test('decoderProgress reports pendingUseful (repair frames in hand, capped at the unknown count), discarded and the seq range', () => {
+  const t = transfer(randomBytes(2000, 71), 20);
+  const dec = E.createDecoder();
+  for (let seq = 0; seq < t.K - 3; seq++) E.decoderPush(dec, frameAt(t.ctx, seq));
+  let p = E.decoderProgress(dec);
+  assert.equal(p.pendingUseful, 0); assert.equal(p.minSeq, 0); assert.equal(p.maxSeq, t.K - 4); assert.equal(p.v, 2); assert.equal(p.discarded, 0);
+  for (const j of [1, 3, 5, 7]) if (!dec.complete) E.decoderPush(dec, frameAt(t.ctx, t.K + j));   // dense repair frames
+  p = E.decoderProgress(dec);
+  assert.ok(p.complete || p.have > t.K - 3 || p.pendingUseful >= 1, 'repair frames count toward progress');
+  assert.ok(p.pendingUseful <= t.K - p.have);
+  assert.ok(p.maxSeq >= t.K + 1 && p.maxSeq <= t.K + 7, `maxSeq ${p.maxSeq} (pushes stop once complete)`);
+});
+
+test('protocol-1 output is bit-identical to the first release (fingerprint taken from commit 09079fa)', () => {
+  const r = E.rng(4242), bytes = new Uint8Array(5000);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(r() * 256);
+  const built = E.buildStream(bytes, { name: 'pin.bin', type: 'application/octet-stream' });
+  const ctx = E.makeContext(built.stream, 20, { v: 1 });
+  assert.equal(ctx.K, 255); assert.equal(ctx.tid, 'KVMMBM');
+  const h = createHash('sha256');
+  for (let seq = 0; seq < ctx.K + 400; seq++) h.update(E.encodeFrame(ctx, seq) + '\n');
+  assert.equal(h.digest('hex'), '183d4ba8d5ea64f9a7b5927bb8c15370ca518dd89c8d019b276f9bce681950b1', 'an old receiver must keep decoding this sender');
+});
+test('PARK_MAX_DEGREE is 512 and is the exact parking boundary for a dense frame', () => {
+  assert.equal(E.PARK_MAX_DEGREE, 512);
+  const t = transfer(randomBytes(23000, 61), 20);            // K ≈ 1150 → dense frames every 8th, ~575 chunks each
+  assert.ok(t.K > 1024 && t.K < 1300, `K=${t.K}`);
+  const seq = t.K + 7;
+  const nb = E.frameNeighbors(seq, t.K);
+  assert.ok(nb.length > 512 + 20, `dense frame touches ${nb.length} chunks`);
+  const run = (unknownCount) => {
+    const dec = E.createDecoder({ elimination: false });
+    const unknown = new Set(nb.slice(0, unknownCount));
+    for (let s = 0; s < t.K; s++) if (!unknown.has(s)) E.decoderPush(dec, frameAt(t.ctx, s));
+    assert.equal(E.decoderProgress(dec).have, t.K - unknownCount);
+    return { ev: E.decoderPush(dec, frameAt(t.ctx, seq)), dec };
+  };
+  const parked = run(512);
+  assert.equal(parked.ev.type, 'progress', '512 unknowns: parked'); assert.equal(parked.dec.pending.length, 1); assert.equal(parked.dec.discarded, 0);
+  const dropped = run(513);
+  assert.equal(dropped.ev.type, 'redundant', '513 unknowns: discarded'); assert.equal(dropped.ev.discarded, true); assert.equal(dropped.dec.pending.length, 0); assert.equal(dropped.dec.discarded, 1);
+  // a discarded dense frame costs no chunk work: it is decided before the first XOR
+  const fresh = E.createDecoder(); E.decoderPush(fresh, frameAt(t.ctx, 0));
+  const t0 = process.hrtime.bigint(); for (let i = 0; i < 20; i++) E.decoderPush(fresh, frameAt(t.ctx, t.K + 7 + 8 * i)); const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+  assert.ok(ms < 200, `20 discarded dense frames took ${ms.toFixed(1)} ms`);
+});
+test('a hostile header claiming K near K_MAX with protocol 2 costs bounded work per frame', () => {
+  const payload = u8('xx');
+  const tag = (b) => E.base45Encode(new Uint8Array([(E.crc32(b) >>> 24) & 255, (E.crc32(b) >>> 16) & 255, (E.crc32(b) >>> 8) & 255, E.crc32(b) & 255]));
+  const K = E.K_MAX - 1;
+  const frame = (seq) => E.parseFrame('B2' + tag(u8('tid-h')) + E.toBase36(K, 4) + E.toBase36(seq, 5) + tag(payload) + E.base45Encode(payload));
+  const dec = E.createDecoder();
+  assert.equal(E.decoderPush(dec, frame(K + 7)).type, 'start');
+  const t0 = process.hrtime.bigint();
+  for (let i = 1; i <= 5; i++) assert.equal(E.decoderPush(dec, frame(K + 7 + 8 * i)).discarded, true, 'dense frames are discarded, not parked');
+  const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+  assert.ok(ms < 150, `5 hostile dense frames took ${ms.toFixed(1)} ms (must bail after PARK_MAX_DEGREE unknowns, not scan K)`);
+});
+test('decoderContinue: null whenever solveMore is clear (mid-transfer too), and solveMore is dropped when no pass can run', () => {
+  const t = transfer(randomBytes(2000, 71), 20);
+  const dec = E.createDecoder();
+  for (let seq = 0; seq < t.K - 3; seq++) E.decoderPush(dec, frameAt(t.ctx, seq));
+  assert.equal(dec.solveMore, false); assert.equal(E.decoderContinue(dec), null, 'mid-transfer, nothing budgeted → null');
+  // a sticky flag with nothing solvable (pending < unknown) must clear on the first continue, not spin for ever
+  dec.solveMore = true;
+  const ev = E.decoderContinue(dec);
+  assert.ok(ev && ev.type === 'progress' && ev.resolved.length === 0, 'one empty pass');
+  assert.equal(dec.solveMore, false, 'flag dropped because pending < unknown');
+  assert.equal(E.decoderContinue(dec), null, 'and the next call is null — no busy loop for the page');
+  // same with far too many unknowns for elimination
+  const big = transfer(randomBytes(60000, 73), 20);
+  const d2 = E.createDecoder(); E.decoderPush(d2, frameAt(big.ctx, 0));
+  assert.ok(big.K - 1 > E.GE_MAX_UNKNOWN);
+  d2.solveMore = true; E.decoderContinue(d2);
+  assert.equal(d2.solveMore, false); assert.equal(E.decoderContinue(d2), null);
+});
+test('pendingUseful is capped at the unknown count; seq range and discarded reset on a tid switch', () => {
+  const t = transfer(randomBytes(2000, 71), 20);
+  const a = 7, b = 40;
+  const d = E.createDecoder({ elimination: false });
+  for (let s = 0; s < t.K; s++) if (s !== a && s !== b) E.decoderPush(d, frameAt(t.ctx, s));
+  assert.equal(E.decoderProgress(d).have, t.K - 2);
+  // repair frames touching BOTH unknown chunks park (two unknowns each); five of them → 5 in hand, 2 useful
+  let seq = t.K, parked = 0;
+  while (parked < 5) { const n = E.frameNeighbors(seq, t.K); if (n.indexOf(a) >= 0 && n.indexOf(b) >= 0) { const ev = E.decoderPush(d, frameAt(t.ctx, seq)); if (ev.type === 'progress') parked++; } seq++; }
+  const p = E.decoderProgress(d);
+  assert.equal(p.pending, 5); assert.equal(p.pendingUseful, 2, 'capped at the 2 unknown chunks'); assert.equal(p.have, t.K - 2);
+  // switch to another transfer: the range and counters belong to the new one
+  const other = transfer(randomBytes(900, 72), 20);
+  E.decoderPush(d, frameAt(other.ctx, 5));
+  const q = E.decoderProgress(d);
+  assert.equal(q.tid, other.ctx.tid); assert.equal(q.minSeq, 5); assert.equal(q.maxSeq, 5); assert.equal(q.discarded, 0); assert.equal(q.pending, 0); assert.equal(q.pendingUseful, 0);
+});
+test('linkAdvice ignores an implausible span (a sequence wrap or two transfers in one window)', () => {
+  assert.equal(E.linkAdvice({ minSeq: 3, maxSeq: 60466175, unique: 70, elapsedMs: 5000 }), null);
+  assert.equal(E.linkAdvice({ minSeq: 0, maxSeq: 5000, unique: 60, elapsedMs: 5000 }), null, '5000 frames in 5 s is impossible');
+  assert.ok(E.linkAdvice({ minSeq: 0, maxSeq: 99, unique: 60, elapsedMs: 5000 }), 'a plausible span is judged');
+});
+
 /* ---------- frame codec ---------- */
 test('encodeFrame → parseFrame round trip; every char ∈ ALNUM; constant length', () => {
   const { ctx, K } = transfer(randomBytes(500, 3), 20);
@@ -319,9 +515,10 @@ test('encodeFrame → parseFrame round trip; every char ∈ ALNUM; constant leng
     const text = E.encodeFrame(ctx, seq);
     assert.equal(text.length, len, 'constant length');
     assert.ok(ALNUM_RE.test(text), `alnum only: ${text}`);
-    assert.equal(text.slice(0, 2), 'B1');
+    assert.equal(text.slice(0, 2), 'B2');
     const f = E.parseFrame(text);
     assert.ok(f, 'parses');
+    assert.equal(f.v, 2);
     assert.equal(f.tid, ctx.tid);
     assert.equal(f.K, K);
     assert.equal(f.seq, seq);
@@ -353,7 +550,7 @@ test('parseFrame returns null (never throws) on every kind of malformed input', 
     truncatedHeader: good.slice(0, 20),
     flippedPayloadChar: good.slice(0, 30) + (good[30] === 'A' ? 'B' : 'A') + good.slice(31),
     flippedCrcChar: good.slice(0, 18) + (good[18] === 'A' ? 'B' : 'A') + good.slice(19),
-    wrongMagic: 'B2' + good.slice(2),
+    wrongMagic: 'B9' + good.slice(2),
     wrongMagic2: 'Q1' + good.slice(2),
     kZero: good.slice(0, 8) + '0000' + good.slice(12),
     kNotBase36: good.slice(0, 8) + '00 1' + good.slice(12),
@@ -682,11 +879,14 @@ test('pending cap: the oldest equation is evicted (dead, counted) and the transf
 test('peeling alone (no elimination) finishes a late joiner from coded frames only — degree-1 frames do arrive', () => {
   // Pins the fountain code's self-sufficiency: above GE_MAX_UNKNOWN unknowns the decoder is peeling only,
   // so a late joiner on a multi-MB file depends on degree-1 coded frames showing up at the soliton rate.
+  // Protocol-1 frames are soliton-only — exactly the half of protocol-2 repair frames a peeling-only
+  // receiver can use — so the bound below is per useful frame.
   for (const [bytes, seed] of [[4000, 93], [10000, 94], [16000, 95]]) {
     const t = transfer(randomBytes(bytes, seed), 20);
+    const ctx1 = E.makeContext(t.built.stream, 20, { v: 1 });
     const dec = E.createDecoder({ elimination: false });
     let seq = 3 * t.K, used = 0, ev = null;
-    while (used < 3 * t.K) { used++; ev = E.decoderPush(dec, frameAt(t.ctx, seq++)); if (ev.type === 'complete') break; }
+    while (used < 3 * t.K) { used++; ev = E.decoderPush(dec, frameAt(ctx1, seq++)); if (ev.type === 'complete') break; }
     assert.equal(ev.type, 'complete', `K=${t.K}: peeling-only late joiner never completed`);
     assert.ok(used < 1.6 * t.K, `K=${t.K}: used ${used} frames`);
     bytesEq(E.decoderResult(dec).fileBytes, t.bytes);
@@ -737,26 +937,34 @@ test('elimination is budgeted per push: a late joiner resolves at most solveColu
   assert.equal(E.createDecoder().solveColumns, E.GE_COLUMNS_PER_PUSH);
   assert.ok(E.GE_COLUMNS_PER_PUSH >= 16 && E.GE_COLUMNS_PER_PUSH <= 256, `budget ${E.GE_COLUMNS_PER_PUSH}`);
   const t = transfer(randomBytes(4000, 25), 20);
-  const run = (solveColumns) => {
+  const run = (solveColumns, drive) => {
     const dec = E.createDecoder({ solveColumns });
-    let seq = 3 * t.K, used = 0, truncatedPushes = 0, ev = null;
+    let seq = 3 * t.K, used = 0, truncatedPushes = 0, continues = 0, ev = null;
+    assert.equal(E.decoderContinue(dec), null, 'nothing to continue before any frame');
     while (used < 3 * t.K) {
       used++;
       ev = E.decoderPush(dec, frameAt(t.ctx, seq++));
       if (dec.solveMore) {
         truncatedPushes++;
         assert.equal(dec.nextSolveAt, dec.unique, 'a truncated pass may continue on the very next push');
+        if (drive) {
+          // what the page does: keep continuing from a timer, no new frame needed
+          while (dec.solveMore && ev.type !== 'complete') { const c = E.decoderContinue(dec); assert.ok(c, 'continue returns an event while solveMore'); continues++; ev = c; }
+        }
       }
       if (ev.type === 'complete') break;
     }
     assert.equal(ev.type, 'complete');
+    assert.equal(E.decoderContinue(dec), null, 'nothing to continue after completion');
     bytesEq(E.decoderResult(dec).fileBytes, t.bytes);
-    return { used, truncatedPushes };
+    return { used, truncatedPushes, continues };
   };
-  const unlimited = run(Infinity), budgeted = run(4);
+  const unlimited = run(Infinity, false), budgeted = run(4, false), driven = run(4, true);
   assert.equal(unlimited.truncatedPushes, 0);
   assert.ok(budgeted.truncatedPushes >= 1, 'the small budget was hit at least once');
-  assert.ok(budgeted.used <= unlimited.used + 20, `budgeting costs a handful of frames at most: ${budgeted.used} vs ${unlimited.used}`);
+  assert.ok(budgeted.used > unlimited.used, `left to the frames alone, a budgeted pass waits for more codes (${budgeted.used} vs ${unlimited.used})`);
+  assert.ok(driven.continues >= 1, 'the driven run continued between frames');
+  assert.ok(driven.used <= unlimited.used + 1, `driven by decoderContinue, budgeting costs no frames: ${driven.used} vs ${unlimited.used}`);
   assert.ok(E.createDecoder({ solveColumns: 0 }).solveColumns === E.GE_COLUMNS_PER_PUSH, 'invalid budget → default');
 });
 test('elimination finishes seeded lossy runs in no more frames than peeling alone (fewer overall), same bytes', () => {
@@ -784,7 +992,7 @@ test('elimination finishes seeded lossy runs in no more frames than peeling alon
   assert.ok(elim < peel, `elimination should save frames somewhere: ${elim} vs ${peel}`);
   assert.ok(K > 400 && K < 600, `K=${K} — this test is about a mid-size transfer`);
 });
-test('elimination is throttled: nextSolveAt advances by max(1, unknown/16) unique frames per attempt', () => {
+test('elimination is throttled: nextSolveAt advances by eliminationStep(unknown) unique frames per attempt', () => {
   // A lossy mid-size run gives several attempts. nextSolveAt starts at 0 and only an attempt changes it,
   // so `last` starts at 0 too (the untouched initial value must not count as an attempt). The unknown
   // count at attempt time is bracketed: peeling inside the same push happens before the attempt (so
@@ -802,7 +1010,7 @@ test('elimination is throttled: nextSolveAt advances by max(1, unknown/16) uniqu
       attempts++;
       assert.ok(dec.unique >= last, `attempt at unique=${dec.unique} before the previous nextSolveAt=${last}`);
       const step = dec.nextSolveAt - dec.unique, unknownAfter = dec.K - dec.have;
-      const lo = Math.max(1, unknownAfter >>> 4), hi = Math.max(1, unknownBefore >>> 4);
+      const lo = E.eliminationStep(unknownAfter), hi = E.eliminationStep(unknownBefore);
       assert.ok(step >= lo && step <= hi, `step ${step} outside [${lo}, ${hi}] (unknown before ${unknownBefore}, after ${unknownAfter})`);
       last = dec.nextSolveAt;
     }
@@ -825,11 +1033,12 @@ test('elimination is throttled: nextSolveAt advances by max(1, unknown/16) uniqu
   // The exact formula, with many unknowns left: a cycle of degree-2 equations {i, i+1} spans only the
   // even-parity vectors, so with even-degree coded frames the system stays rank-deficient (rank K−1),
   // every attempt resolves nothing and the unknown count is exactly K at each attempt.
-  const t2 = transfer(randomBytes(2000, 26), 20);
+  const t2 = transfer(randomBytes(28000, 26), 20);
   const K = t2.K;
-  assert.ok(K >= 64, `K=${K} so that K>>>4 ≥ 4`);
+  assert.ok(E.eliminationStep(K) >= 4, `K=${K} so that the step is ≥ 4`);
   const d2 = E.createDecoder({ solveColumns: Infinity });
-  const evenCoded = (() => { let s = K; return () => { while (E.frameNeighbors(s, K).length % 2 !== 0) s++; return frameAt(t2.ctx, s++); }; })();
+  // even-degree SOLITON frames only (dense frames at this K exceed PARK_MAX_DEGREE and are discarded, which would skip attempts)
+  const evenCoded = (() => { let s = K; return () => { while ((s - K) % 2 === 1 || E.frameNeighbors(s, K).length % 2 !== 0) s++; return frameAt(t2.ctx, s++); }; })();
   assert.equal(E.decoderPush(d2, evenCoded()).type, 'start');
   assert.equal(d2.have, 0);
   for (let i = 0; i < K; i++) {
@@ -841,7 +1050,7 @@ test('elimination is throttled: nextSolveAt advances by max(1, unknown/16) uniqu
     for (const c of eq.idx) (d2.byChunk[c] || (d2.byChunk[c] = [])).push(eq);
   }
   assert.ok(d2.pending.length >= K, 'P ≥ U from here on');
-  const step = Math.max(1, K >>> 4);
+  const step = E.eliminationStep(K);
   assert.ok(step >= 4);
   const expected = [];
   for (let n = 0; n < 3 * step; n++) {
@@ -945,12 +1154,20 @@ test('shouldCompress is false for already-compressed kinds, true otherwise', () 
     ['text/csv', 'rows.csv'], ['image/bmp', 'raw.bmp'], ['', 'book.epub']];
   for (const [t, n] of yes) assert.equal(E.shouldCompress(t, n), true, `${t} ${n}`);
 });
-test('imageShrinkTarget: 1280 px long edge at q 0.72 with a note', () => {
+test('imageShrinkTarget levels: Small 800 px q0.62, Medium (default) 1280 px q0.72, Original untouched', () => {
   const t = E.imageShrinkTarget(4 * 1024 * 1024);
   assert.equal(t.maxEdge, 1280);
   assert.equal(t.quality, 0.72);
+  assert.equal(t.id, 'm');
   assert.ok(typeof t.note === 'string' && t.note.length > 10);
   assert.notEqual(E.imageShrinkTarget(20 * 1024).note, t.note, 'small files get a different note');
+  const sm = E.imageShrinkTarget(4 * 1024 * 1024, 's');
+  assert.equal(sm.maxEdge, 800); assert.equal(sm.quality, 0.62); assert.equal(sm.id, 's');
+  const o = E.imageShrinkTarget(4 * 1024 * 1024, 'o');
+  assert.equal(o.maxEdge, 0); assert.equal(o.id, 'o');
+  deepEq(E.imageShrinkTarget(1, 'nope'), E.imageShrinkTarget(1, 'm'), 'unknown level → default');
+  deepEq(E.SHRINK_LEVELS.map((l) => l.id), ['s', 'm', 'o']);
+  assert.equal(E.DEFAULT_SHRINK, 'm');
 });
 test('engine is pure: no Date.now / Math.random / DOM in the source', () => {
   const src = readFileSync(join(ROOT, 'beam', 'engine.js'), 'utf8');
