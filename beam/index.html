@@ -1,0 +1,1255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0a0e1a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Beam">
+<title>Beam — send a file with light</title>
+<meta name="description" content="Send a file to the phone next to you using only the screen and the camera: a fast loop of QR codes, read by the other phone. No Bluetooth, no Wi‑Fi, no cable, no account, no server. Works offline as an installable app.">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>
+  :root{
+    --bg:#0a0e1a; --surface:#121a2e; --line:rgba(255,255,255,.1);
+    --ink:#eef2ff; --ink2:#9aa6c4; --accent:#ffb020; --accent2:#5eead4; --danger:#ff5c5c; --good:#5cff8a;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html,body{margin:0; padding:0; background:var(--bg); color:var(--ink); min-height:100%;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:15px; line-height:1.45}
+  body{padding-bottom:env(safe-area-inset-bottom)}
+  button{font:inherit; color:inherit; background:none; border:none; cursor:pointer; padding:0}
+  button:disabled{opacity:.45; cursor:default}
+  textarea{font:inherit; color:var(--ink); background:rgba(0,0,0,.35); border:1px solid var(--line); border-radius:12px; padding:12px; outline:none; width:100%; resize:vertical; min-height:80px}
+  textarea:focus{border-color:var(--accent2)}
+  a{color:var(--accent2)}
+  [hidden]{display:none !important}
+  h1{margin:6px 0 0; font-size:34px; letter-spacing:.02em}
+  h4{margin:14px 0 6px; font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink2); font-weight:700}
+  h4:first-child{margin-top:0}
+  p{margin:8px 0}
+  .fine{font-size:13px; color:var(--ink2)}
+  .fine.warn{color:var(--accent)}
+  .fine.honest{border-left:3px solid var(--accent); padding-left:10px}
+  .mono{font-family:var(--mono)}
+
+  .boot-error{position:fixed; left:0; right:0; top:0; z-index:100; background:var(--danger); color:#1a0505; font-weight:700; padding:calc(12px + env(safe-area-inset-top)) 16px 12px; text-align:center}
+
+  /* ---------- chrome ---------- */
+  .top{position:sticky; top:0; z-index:20; display:flex; align-items:center; gap:8px;
+    padding:calc(8px + env(safe-area-inset-top)) 12px 8px; background:rgba(10,14,26,.86); backdrop-filter:blur(10px); border-bottom:1px solid var(--line)}
+  .brand{display:flex; align-items:center; gap:8px; min-width:0}
+  .brand img{width:26px; height:26px; border-radius:7px}
+  .brand b{font-weight:800; letter-spacing:.14em; font-size:14px}
+  .brand .sub{font-size:13px; color:var(--ink2); white-space:nowrap}
+  .brand .sub:not(:empty)::before{content:'·'; margin-right:8px; color:var(--ink2)}
+  .spacer{flex:1}
+  .ibtn{width:44px; height:44px; border-radius:12px; background:var(--surface); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; font-size:20px}
+  .ibtn:active{transform:scale(.95)}
+
+  main{max-width:560px; margin:0 auto; padding:16px 16px calc(24px + env(safe-area-inset-bottom))}
+  .screen{display:block}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:14px; margin:12px 0}
+  .card.err{border-color:rgba(255,92,92,.5)}
+  .card.done{border-color:rgba(92,255,138,.45)}
+
+  .big{display:flex; align-items:center; justify-content:center; gap:8px; width:100%; min-height:56px; border-radius:16px; font-size:18px; font-weight:700;
+    background:var(--surface); border:1px solid var(--line); color:var(--ink); margin:10px 0}
+  .big.primary{background:var(--accent); color:#1a1200; border-color:var(--accent)}
+  .big.ghost{background:transparent}
+  .big:active{transform:scale(.985)}
+  .sm{min-height:44px; padding:0 16px; border-radius:12px; font-weight:700; background:var(--surface); border:1px solid var(--line); color:var(--ink)}
+  .sm.primary{background:var(--accent2); color:#02201c; border-color:var(--accent2)}
+  .sm.danger{color:var(--danger); border-color:rgba(255,92,92,.5)}
+  .linkbtn{color:var(--accent2); font-weight:600; min-height:44px; text-align:left; padding:0}
+
+  /* ---------- home ---------- */
+  .hero{text-align:center; padding:18px 0 6px}
+  .hero .logo{width:92px; height:92px; border-radius:26px; box-shadow:0 10px 40px rgba(255,176,32,.18)}
+  .lead{font-size:17px; color:var(--ink2); margin:8px auto 18px; max-width:420px}
+  details.how{background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:0 14px; margin:14px 0}
+  details.how summary{min-height:48px; display:flex; align-items:center; font-weight:700; cursor:pointer; list-style:none}
+  details.how summary::-webkit-details-marker{display:none}
+  details.how summary::after{content:'›'; margin-left:auto; color:var(--ink2); font-size:22px; transition:transform .15s}
+  details.how[open] summary::after{transform:rotate(90deg)}
+  details.how ol{margin:0 0 12px; padding-left:20px}
+  details.how li{margin:8px 0; color:var(--ink2)}
+  details.how li b{color:var(--ink)}
+  .qrbox{background:#fff; border-radius:14px; padding:10px; display:inline-block; margin:8px 0}
+  .qrbox canvas{display:block; image-rendering:pixelated; image-rendering:crisp-edges}
+  .badge{display:inline-block; font-family:var(--mono); font-size:12px; color:var(--ink2); border:1px solid var(--line); border-radius:999px; padding:5px 11px}
+  .badge .dot{display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--ink2); margin-right:7px; vertical-align:middle}
+  .badge.ok .dot{background:var(--good); box-shadow:0 0 8px var(--good)}
+  .badge.js .dot{background:var(--accent); box-shadow:0 0 8px var(--accent)}
+  .badge.bad .dot{background:var(--danger)}
+
+  /* ---------- pick ---------- */
+  .drop{border:2px dashed rgba(255,255,255,.18); border-radius:20px; padding:18px 14px; text-align:center; transition:border-color .15s, background .15s}
+  .drop.over{border-color:var(--accent2); background:rgba(94,234,212,.06)}
+  .or{color:var(--ink2); font-size:13px; margin:14px 0 10px; display:flex; align-items:center; gap:10px}
+  .or::before,.or::after{content:''; flex:1; height:1px; background:var(--line)}
+  .filecard{display:flex; gap:12px; align-items:center}
+  .filecard .ic{width:52px; height:52px; border-radius:12px; background:rgba(0,0,0,.35); display:flex; align-items:center; justify-content:center; font-size:26px; flex:none; overflow:hidden}
+  .filecard .ic img{width:100%; height:100%; object-fit:cover}
+  .filecard .nm{flex:1; min-width:0}
+  .filecard .nm b{display:block; font-size:16px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .filecard .nm small{display:block; color:var(--ink2); font-family:var(--mono); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .toggle{display:flex; align-items:center; gap:12px; min-height:44px; cursor:pointer}
+  .toggle input{position:absolute; opacity:0; width:0; height:0}
+  .toggle .sw{width:46px; height:28px; border-radius:999px; background:rgba(255,255,255,.14); position:relative; flex:none; transition:background .15s}
+  .toggle .sw::after{content:''; position:absolute; top:3px; left:3px; width:22px; height:22px; border-radius:50%; background:#fff; transition:left .15s}
+  .toggle input:checked + .sw{background:var(--accent2)}
+  .toggle input:checked + .sw::after{left:21px}
+  .toggle span:last-child{flex:1}
+  .toggle small{display:block; color:var(--ink2); font-size:12px}
+  .seg{display:flex; gap:6px; flex-wrap:wrap}
+  .seg button{flex:1; min-width:84px; min-height:52px; border-radius:12px; border:1px solid var(--line); background:rgba(0,0,0,.25); padding:6px 8px; text-align:center}
+  .seg button b{display:block; font-size:14px}
+  .seg button small{display:block; color:var(--ink2); font-size:11px; line-height:1.2; margin-top:2px}
+  .seg button.on{border-color:var(--accent); background:rgba(255,176,32,.12); box-shadow:inset 0 0 0 1px var(--accent)}
+  .seg button.on small{color:var(--ink)}
+  .stepper{display:inline-flex; align-items:center; border:1px solid var(--line); border-radius:12px; overflow:hidden; background:rgba(0,0,0,.25)}
+  .stepper button{width:48px; height:44px; font-size:22px; font-weight:700}
+  .stepper button:active{background:rgba(255,255,255,.08)}
+  .stepper span{min-width:120px; text-align:center; font-family:var(--mono); font-size:13px}
+  .plan{font-family:var(--mono); font-size:13px; color:var(--accent2); background:rgba(94,234,212,.07); border:1px solid rgba(94,234,212,.25); border-radius:12px; padding:10px 12px; margin:12px 0; line-height:1.5}
+
+  /* ---------- beaming ---------- */
+  body.on-beam .top{position:fixed; left:0; right:0}
+  .beam{display:flex; flex-direction:column; align-items:center; min-height:calc(100vh - 30px); padding-top:calc(52px + env(safe-area-inset-top))}
+  .hint{display:flex; align-items:center; gap:10px; width:100%; background:rgba(255,176,32,.14); border:1px solid rgba(255,176,32,.4); color:var(--accent); border-radius:12px; padding:6px 6px 6px 12px; margin-bottom:10px; font-weight:600}
+  .hint span{flex:1}
+  .hint button{width:40px; height:40px; font-size:22px; color:var(--accent)}
+  .qrwrap{width:100%; display:flex; justify-content:center}
+  .qrpanel{background:#fff; border-radius:12px; padding:0; position:relative; line-height:0; cursor:pointer; box-shadow:0 0 0 1px rgba(255,255,255,.2), 0 14px 50px rgba(0,0,0,.6)}
+  .qrpanel canvas{display:block; image-rendering:pixelated; image-rendering:crisp-edges; border-radius:12px}
+  .pausetag{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,.88); color:#111; font-weight:800; font-size:18px; border-radius:12px; line-height:1.3}
+  .beamhud{width:100%; margin-top:12px; text-align:center}
+  .counter{font-family:var(--mono); font-size:15px; margin:4px 0}
+  .bar{height:6px; background:rgba(255,255,255,.1); border-radius:999px; overflow:hidden; margin:8px 0}
+  .bar i{display:block; height:100%; width:0; background:linear-gradient(90deg,var(--accent2),var(--accent)); border-radius:999px; transition:width .12s linear}
+  .bar.loop i{width:40%; animation:slide 1.6s linear infinite}
+  @keyframes slide{from{transform:translateX(-100%)} to{transform:translateX(250%)}}
+  .controls{display:flex; gap:8px; align-items:center; justify-content:center; flex-wrap:wrap; margin:10px 0}
+  .controls .sm{flex:1; min-width:96px}
+
+  /* ---------- receive ---------- */
+  .cam{position:relative; width:100%; aspect-ratio:3/4; max-height:62vh; background:#000; border-radius:18px; overflow:hidden; border:1px solid var(--line)}
+  .cam video{width:100%; height:100%; object-fit:cover; display:block}
+  .guide{position:absolute; left:50%; top:50%; width:72%; aspect-ratio:1/1; transform:translate(-50%,-50%); border-radius:18px; pointer-events:none;
+    box-shadow:0 0 0 2000px rgba(0,0,0,.28); outline:2px solid rgba(94,234,212,.75)}
+  .cam.locked .guide{outline-color:var(--good)}
+  .camoff{position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:20px; background:rgba(10,14,26,.78); text-align:center}
+  .camoff .big{max-width:280px}
+  .status{min-height:44px; display:flex; align-items:center; justify-content:center; text-align:center; padding:8px 4px; color:var(--ink2); font-size:14px}
+  .status.bad{color:var(--danger)}
+  .status.good{color:var(--good)}
+  .pctrow{display:flex; align-items:baseline; gap:12px; font-family:var(--mono); font-size:13px; color:var(--ink2)}
+  .pctrow b{font-size:22px; color:var(--ink)}
+  .pctrow span:last-child{margin-left:auto}
+  .grid{display:grid; gap:2px; margin:12px 0}
+  .grid i{display:block; aspect-ratio:1/1; min-height:4px; background:rgba(255,255,255,.08); border-radius:2px}
+  .grid i.part{background:rgba(255,176,32,.55)}
+  .grid i.on{background:var(--accent2)}
+  .stats{font-family:var(--mono); font-size:12px; color:var(--ink2); text-align:center; min-height:18px}
+  .preview{max-width:100%; max-height:46vh; border-radius:12px; display:block; margin:10px auto}
+  pre.preview{text-align:left; white-space:pre-wrap; word-break:break-word; font-family:var(--mono); font-size:12px; background:rgba(0,0,0,.35); padding:12px; overflow:auto; max-height:40vh; color:var(--ink)}
+  .donebtns{display:flex; gap:8px; flex-wrap:wrap; margin-top:10px}
+  .donebtns a, .donebtns button{flex:1; min-width:120px; min-height:48px; display:flex; align-items:center; justify-content:center; text-decoration:none; border-radius:12px; font-weight:700;
+    background:var(--good); color:#032a10; border:1px solid var(--good)}
+  .donebtns .ghost{background:transparent; color:var(--ink); border-color:var(--line)}
+  .pop{position:fixed; right:12px; top:calc(60px + env(safe-area-inset-top)); z-index:30; width:290px; max-width:calc(100vw - 24px); background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:14px; box-shadow:0 14px 50px rgba(0,0,0,.6)}
+  .pop label{display:flex; align-items:center; gap:10px; min-height:44px; cursor:pointer}
+  .pop input{width:20px; height:20px; accent-color:var(--accent2)}
+  .toast{position:fixed; left:50%; bottom:calc(24px + env(safe-area-inset-bottom)); transform:translateX(-50%); z-index:40; background:#1b2540; border:1px solid var(--line); color:var(--ink);
+    border-radius:12px; padding:10px 16px; font-size:14px; max-width:calc(100vw - 32px); opacity:0; transition:opacity .2s; pointer-events:none}
+  .toast.show{opacity:1}
+  @media (min-width:700px){ .cam{max-height:56vh} }
+  /* older Safari (< 15) has no aspect-ratio: give the camera box and guide a height anyway */
+  @supports not (aspect-ratio: 1 / 1){ .cam{height:72vw; max-height:62vh} .guide{width:60vw; height:60vw; max-width:300px; max-height:300px} .grid i{height:10px} }
+</style>
+</head>
+<body>
+<div id="boot-error" class="boot-error" hidden>⚠️ Beam failed to load its engine — reload the page.</div>
+
+<header class="top">
+  <button class="ibtn" id="btn-back" aria-label="Back" hidden>‹</button>
+  <div class="brand"><img src="icon.svg" alt=""><b>BEAM</b><span class="sub" id="screen-title"></span></div>
+  <span class="spacer"></span>
+  <button class="ibtn" id="btn-rx-settings" aria-label="Receiver settings" title="Decoder settings" hidden>⚙️</button>
+</header>
+
+<main>
+  <!-- ============================ HOME ============================ -->
+  <section id="s-home" class="screen">
+    <div class="hero">
+      <img class="logo" src="icon.svg" alt="">
+      <h1>Beam</h1>
+      <p class="lead">Send a file to the phone next to you — with light. No Bluetooth, no Wi‑Fi, no cable, no account.</p>
+    </div>
+    <button class="big primary" id="go-send">📤 Send a file</button>
+    <button class="big" id="go-receive">📷 Receive</button>
+
+    <details class="how">
+      <summary>How it works</summary>
+      <ol>
+        <li><b>The sender picks a file.</b> Beam splits it into pieces and shows them as a fast loop of QR codes on its screen.</li>
+        <li><b>The receiver points its camera</b> at that screen. Every code it reads is a piece; pieces it misses are repaired by later codes, so nobody has to hold perfectly still.</li>
+        <li><b>Done.</b> The file is checked against its fingerprint, then saved or shared. Nothing ever leaves the two phones.</li>
+      </ol>
+      <p class="fine">Honest speed: <b>a few hundred KB a minute</b> at best. Perfect for notes, contacts, documents and shrunk photos — not for videos. Beam shows you the estimate before you start.</p>
+    </details>
+
+    <div class="card">
+      <button class="linkbtn" id="btn-share-app">Other phone doesn't have Beam? Show a QR of this page ›</button>
+      <div id="share-app" hidden>
+        <div class="qrbox"><canvas id="url-qr" width="1" height="1"></canvas></div>
+        <p class="fine" id="share-app-note">Scan it with the other phone's normal camera app to open Beam there. It needs the internet once to load; after that it works offline.</p>
+      </div>
+    </div>
+
+    <p><span class="badge" id="decoder-badge"><span class="dot"></span>Camera decoding: checking…</span></p>
+    <p class="fine">Everything stays on the two devices. Nothing is uploaded anywhere — there is no server, no account and no log.</p>
+  </section>
+
+  <!-- ============================ SEND → PICK ============================ -->
+  <section id="s-pick" class="screen" hidden>
+    <div id="pick-zone" class="drop">
+      <input type="file" id="file-input" hidden>
+      <button class="big primary" id="btn-choose">📁 Choose a file</button>
+      <p class="fine">Any kind of file. On a computer you can drop one here.</p>
+      <div class="or">or</div>
+      <textarea id="note" rows="3" placeholder="✍️ Type a note to send instead — it arrives as note.txt" aria-label="Type a note to send"></textarea>
+      <button class="big" id="btn-use-note">Send this note</button>
+    </div>
+
+    <div id="prep" hidden>
+      <div class="card" id="file-card"></div>
+      <div id="img-opts" class="card" hidden>
+        <label class="toggle"><input type="checkbox" id="shrink" checked><span class="sw"></span>
+          <span><b>Send a smaller copy (recommended)</b><small id="shrink-note"></small></span></label>
+        <div class="fine" id="shrink-result" style="margin-top:6px"></div>
+      </div>
+      <div class="fine" id="compress-line"></div>
+      <div class="card">
+        <h4>Density</h4>
+        <div class="seg" id="preset-seg"></div>
+        <h4>Speed</h4>
+        <div class="stepper"><button id="fps-dn" aria-label="Slower">−</button><span id="fps-val"></span><button id="fps-up" aria-label="Faster">+</button></div>
+        <h4>Error correction</h4>
+        <div class="seg" id="ec-seg">
+          <button data-ec="L"><b>L</b><small>more bytes per code</small></button>
+          <button data-ec="M"><b>M</b><small>tolerates glare &amp; blur</small></button>
+        </div>
+      </div>
+      <div class="plan" id="plan-line"></div>
+      <p class="fine honest">QR transfer is slow — the estimate above is real. Keep both phones close, the screen bright, and leave them until the receiver says <b>Done</b>. For photos, keep <b>Send a smaller copy</b> on.</p>
+      <div class="fine" id="prep-busy" hidden>Preparing…</div>
+      <button class="big primary" id="btn-start" disabled>▶ Start beaming</button>
+      <button class="big ghost" id="btn-change">Pick something else</button>
+    </div>
+  </section>
+
+  <!-- ============================ SEND → BEAMING ============================ -->
+  <section id="s-beam" class="screen beam" hidden>
+    <div class="hint" id="bright-hint" hidden><span>☀️ Turn your brightness all the way up.</span><button id="hint-x" aria-label="Dismiss">×</button></div>
+    <div class="qrwrap" id="qr-wrap">
+      <div class="qrpanel" id="qr-panel" title="Tap to pause / resume">
+        <canvas id="qr-canvas" width="1" height="1" aria-label="Animated QR code — the file, piece by piece"></canvas>
+        <div class="pausetag" id="pause-tag" hidden>⏸ Paused — tap to resume</div>
+      </div>
+    </div>
+    <div class="beamhud">
+      <div class="counter" id="frame-counter">frame 1 / 1 · pass 1</div>
+      <div class="bar" id="beam-bar-wrap"><i id="beam-bar"></i></div>
+      <div class="fine" id="beam-phase"></div>
+      <div class="fine warn" id="slow-hint" hidden>⚠️ Encoder can't keep up at this speed — lower the density or the speed.</div>
+      <div class="controls">
+        <button class="sm" id="beam-pause">⏸ Pause</button>
+        <div class="stepper"><button id="beam-fps-dn" aria-label="Slower">−</button><span id="beam-fps"></span><button id="beam-fps-up" aria-label="Faster">+</button></div>
+        <button class="sm danger" id="beam-stop">■ Stop</button>
+      </div>
+      <div class="fine" id="beam-file"></div>
+      <p class="fine">The receiver has to keep its camera pointed at this screen until it says <b>Done</b>. Beam loops repair codes for ever, so missed codes don't matter.</p>
+    </div>
+  </section>
+
+  <!-- ============================ RECEIVE ============================ -->
+  <section id="s-receive" class="screen" hidden>
+    <div class="cam" id="cam-box">
+      <video id="cam" playsinline muted autoplay></video>
+      <div class="guide"></div>
+      <div class="camoff" id="cam-off">
+        <button class="big primary" id="btn-cam-start">📷 Start camera</button>
+        <p class="fine">Then point it at the sender's screen. Nothing is recorded or uploaded — the picture is only read for QR codes, on this phone.</p>
+      </div>
+    </div>
+    <div class="status" id="rx-status">Tap <b>&nbsp;Start camera&nbsp;</b>, then point it at the other phone's screen.</div>
+
+    <div id="rx-progress" hidden>
+      <div class="card" id="rx-card"><div class="fine">Waiting for the first piece… the file's name and size appear as soon as it arrives.</div></div>
+      <div class="bar"><i id="rx-bar"></i></div>
+      <div class="pctrow"><b id="rx-pct">0%</b><span id="rx-have">0 / 0 pieces</span><span id="rx-eta"></span></div>
+      <div class="grid" id="rx-grid"></div>
+      <div class="stats" id="rx-stats"></div>
+      <p class="fine honest">Keep the camera pointed until this says <b>Done</b>. The sender loops repair codes for ever, so a missed code just costs a moment.</p>
+    </div>
+
+    <div id="rx-done" class="card done" hidden></div>
+    <div id="rx-error" class="card err" hidden></div>
+    <button class="big ghost" id="btn-rx-another" hidden>Receive another</button>
+  </section>
+</main>
+
+<div id="rx-pop" class="pop" hidden>
+  <h4>Camera decoder</h4>
+  <label><input type="radio" name="dec" value="auto"> Auto — native when available</label>
+  <label><input type="radio" name="dec" value="native"> Native (BarcodeDetector)</label>
+  <label><input type="radio" name="dec" value="js"> JavaScript (jsQR)</label>
+  <p class="fine" id="dec-note">If the native decoder misreads or stalls, force JavaScript. Changes apply to the next camera start.</p>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="qr.js"></script>
+<script src="engine.js"></script>
+<script src="jsqr.js"></script>
+<script>
+(function () {
+'use strict';
+var $ = function (id) { return document.getElementById(id); };
+
+/* ---- defensive boot: the engine and encoder are separate files ---- */
+if (typeof BeamEngine === 'undefined' || typeof BeamQR === 'undefined') {
+  var bar = $('boot-error');
+  if (bar) {
+    bar.hidden = false;
+    bar.textContent = '⚠️ Beam failed to load its engine — reload the page. (Missing: '
+      + (typeof BeamQR === 'undefined' ? 'qr.js ' : '') + (typeof BeamEngine === 'undefined' ? 'engine.js' : '') + ')';
+  }
+  return;
+}
+var E = BeamEngine, Q = BeamQR;
+var hasJsQR = typeof window.jsQR === 'function';
+var SEQ_LIMIT = Math.pow(36, 5);
+var noop = function () {};
+
+/* ============================ helpers ============================ */
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, n)); }
+function now() { return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now(); }
+var toastTimer = 0;
+function toast(msg) {
+  var t = $('toast');
+  t.textContent = msg; t.className = 'toast show';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () { t.className = 'toast'; }, 2600);
+}
+var KIND_ICON = { image: '🖼️', video: '🎬', audio: '🎵', text: '📝', pdf: '📄', archive: '🗜️', other: '📦' };
+function kindIcon(kind) { return KIND_ICON[kind] || KIND_ICON.other; }
+function fileCardHtml(name, size, type, kind, thumbUrl, extra) {
+  return '<div class="filecard">'
+    + '<div class="ic">' + (thumbUrl ? '<img src="' + escapeHtml(thumbUrl) + '" alt="">' : kindIcon(kind)) + '</div>'
+    + '<div class="nm"><b>' + escapeHtml(name) + '</b>'
+    + '<small>' + escapeHtml(E.formatBytes(size)) + ' · ' + escapeHtml(type || 'unknown type') + (extra ? ' · ' + escapeHtml(extra) : '') + '</small></div>'
+    + '</div>';
+}
+function presetById(id) {
+  for (var i = 0; i < E.PRESETS.length; i++) if (E.PRESETS[i].id === id) return E.PRESETS[i];
+  return null;
+}
+function readBytes(blob, cb) {
+  try {
+    if (blob.arrayBuffer) {
+      blob.arrayBuffer().then(function (ab) { cb(new Uint8Array(ab)); }, function () { cb(null); });
+      return;
+    }
+    if (typeof FileReader === 'function') {
+      var fr = new FileReader();
+      fr.onload = function () { cb(new Uint8Array(fr.result)); };
+      fr.onerror = function () { cb(null); };
+      fr.readAsArrayBuffer(blob);
+      return;
+    }
+  } catch (e) {}
+  cb(null);
+}
+/* deflate-raw via the streams API when the browser has it; cb(null) means "not available" */
+function codecStream(Ctor, format, bytes, cb) {
+  if (typeof Ctor !== 'function' || typeof Response !== 'function' || typeof Blob !== 'function') { cb(null); return; }
+  try {
+    var s = new Blob([bytes]).stream().pipeThrough(new Ctor(format));
+    new Response(s).arrayBuffer().then(function (ab) { cb(new Uint8Array(ab)); }, function () { cb(null); });
+  } catch (e) { cb(null); }
+}
+function deflateRaw(bytes, cb) { codecStream(window.CompressionStream, 'deflate-raw', bytes, cb); }
+function inflateRaw(bytes, cb) { codecStream(window.DecompressionStream, 'deflate-raw', bytes, cb); }
+
+/* ============================ settings ============================ */
+var LS_KEY = 'beam:settings';
+var S = { preset: E.DEFAULT_PRESET, fps: E.FPS_DEFAULT, ec: 'L', decoder: 'auto' };
+function loadSettings() {
+  try {
+    var raw = localStorage.getItem(LS_KEY);
+    if (!raw) return;
+    var o = JSON.parse(raw) || {};
+    if (presetById(o.preset)) S.preset = o.preset;
+    if (o.fps) S.fps = clamp(Math.round(Number(o.fps)) || E.FPS_DEFAULT, E.FPS_MIN, E.FPS_MAX);
+    if (o.ec === 'L' || o.ec === 'M') S.ec = o.ec;
+    if (o.decoder === 'auto' || o.decoder === 'native' || o.decoder === 'js') S.decoder = o.decoder;
+  } catch (e) { /* first run or blocked storage */ }
+}
+function saveSettings() {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(S)); } catch (e) {}
+}
+
+/* ============================ screens ============================ */
+var SCREENS = ['home', 'pick', 'beam', 'receive'];
+var TITLES = { home: '', pick: 'Send', beam: 'Beaming', receive: 'Receive' };
+var cur = 'home';
+function show(name) {
+  if (cur === 'receive' && name !== 'receive') stopCamera();
+  if (cur === 'beam' && name !== 'beam') stopBeaming();
+  for (var i = 0; i < SCREENS.length; i++) $('s-' + SCREENS[i]).hidden = SCREENS[i] !== name;
+  cur = name;
+  $('btn-back').hidden = name === 'home';
+  $('btn-rx-settings').hidden = name !== 'receive';
+  $('rx-pop').hidden = true;
+  $('screen-title').textContent = TITLES[name] || '';
+  document.body.className = 'on-' + name;
+  try { window.scrollTo(0, 0); } catch (e) {}
+}
+$('btn-back').addEventListener('click', function () {
+  if (cur === 'beam') show('pick'); else show('home');
+});
+$('go-send').addEventListener('click', function () { show('pick'); });
+$('go-receive').addEventListener('click', function () { show('receive'); });
+
+/* ---- "other phone doesn't have Beam" — QR of this page's URL ---- */
+function pageUrl() {
+  var href = typeof location.href === 'string' ? location.href : '';
+  return href.replace(/[?#].*$/, '');
+}
+var urlQrDrawn = false;
+$('btn-share-app').addEventListener('click', function () {
+  var box = $('share-app');
+  box.hidden = !box.hidden;
+  if (box.hidden || urlQrDrawn) return;
+  var url = pageUrl();
+  if (!url) { $('share-app-note').textContent = 'No shareable address — this page is not being served from a URL.'; return; }
+  try {
+    var code = Q.encode(url, { ec: 'M', mode: 'byte' });
+    drawCode($('url-qr'), code, 4, 4);
+    $('url-qr').style.width = $('url-qr').style.height = '200px';
+    urlQrDrawn = true;
+  } catch (e) {
+    $('share-app-note').textContent = 'Could not draw the address as a QR code: ' + (e && e.message ? e.message : e);
+  }
+});
+
+/* ---- decoder feature detection ---- */
+var nativeQR = false;
+function detectNative(cb) {
+  var BD = window.BarcodeDetector;
+  if (typeof BD !== 'function') { cb(false); return; }
+  try {
+    var p = typeof BD.getSupportedFormats === 'function' ? BD.getSupportedFormats() : null;
+    if (!p || typeof p.then !== 'function') { cb(true); return; }
+    p.then(function (f) { cb(!!(f && f.indexOf && f.indexOf('qr_code') >= 0)); }, function () { cb(false); });
+  } catch (e) { cb(false); }
+}
+function renderBadge() {
+  var b = $('decoder-badge');
+  if (nativeQR) { b.className = 'badge ok'; b.innerHTML = '<span class="dot"></span>Camera decoding: native' + (hasJsQR ? ' (jsQR fallback ready)' : ''); }
+  else if (hasJsQR) { b.className = 'badge js'; b.innerHTML = '<span class="dot"></span>Camera decoding: JavaScript (jsQR)'; }
+  else { b.className = 'badge bad'; b.innerHTML = '<span class="dot"></span>Camera decoding: unavailable — this phone can still send'; }
+}
+
+/* ============================ QR painting ============================ */
+/* Draw the code at 1 device pixel per module on a small offscreen canvas, then
+ * blit it scaled with smoothing off — far cheaper than thousands of fillRects. */
+var offCanvas = null;
+function drawCode(canvas, code, scale, quiet) {
+  var N = code.size + quiet * 2;
+  if (!offCanvas) offCanvas = document.createElement('canvas');
+  offCanvas.width = N; offCanvas.height = N;
+  var octx = offCanvas.getContext('2d');
+  var img = octx.createImageData(N, N), d = img.data, m = code.modules;
+  for (var i = 0; i < d.length; i += 4) { d[i] = d[i + 1] = d[i + 2] = 255; d[i + 3] = 255; }
+  for (var y = 0; y < code.size; y++) {
+    var row = m[y], base = (y + quiet) * N + quiet;
+    for (var x = 0; x < code.size; x++) {
+      if (row[x]) { var p = (base + x) * 4; d[p] = d[p + 1] = d[p + 2] = 0; }
+    }
+  }
+  octx.putImageData(img, 0, 0);
+  var px = N * scale;
+  if (canvas.width !== px || canvas.height !== px) { canvas.width = px; canvas.height = px; }
+  var ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, px, px);
+  ctx.drawImage(offCanvas, 0, 0, px, px);
+}
+
+/* ============================ SEND: pick & prepare ============================ */
+var picked = null;   // { blob, name, type, size, kind, thumbUrl, isNote }
+var P = null;        // prepared transfer: { name, type, size, payload, compressed, stream, tid, shrunkFrom, kind }
+var prepId = 0;
+
+function onFile(file) {
+  if (!file) return;
+  if (picked && picked.thumbUrl) { try { URL.revokeObjectURL(picked.thumbUrl); } catch (e) {} }
+  var name = E.safeFileName(file.name || 'file');
+  var type = file.type || '';
+  picked = { blob: file, name: name, type: type, size: file.size || 0, kind: E.fileKind(type, name), thumbUrl: '' };
+  if (picked.kind === 'image' && typeof URL !== 'undefined' && URL.createObjectURL) {
+    try { picked.thumbUrl = URL.createObjectURL(file); } catch (e) {}
+  }
+  showPicked();
+  prepare();
+}
+function onNote() {
+  var text = $('note').value || '';
+  if (!text.replace(/\s+/g, '')) { toast('Type something first'); return; }
+  var bytes = E.utf8Encode(text);
+  picked = { blob: new Blob([bytes], { type: 'text/plain' }), name: 'note.txt', type: 'text/plain', size: bytes.length, kind: 'text', thumbUrl: '', isNote: true };
+  showPicked();
+  prepare();
+}
+function showPicked() {
+  $('pick-zone').hidden = true;
+  $('prep').hidden = false;
+  $('file-card').innerHTML = fileCardHtml(picked.name, picked.size, picked.type, picked.kind, picked.thumbUrl, '');
+  var isImg = picked.kind === 'image';
+  $('img-opts').hidden = !isImg;
+  if (isImg) {
+    $('shrink').checked = true;
+    $('shrink-note').textContent = E.imageShrinkTarget(picked.size).note || '';
+  }
+  $('shrink-result').textContent = '';
+  $('compress-line').textContent = '';
+  $('plan-line').textContent = '';
+  renderSettingsUI();
+}
+function resetPick() {
+  prepId++;
+  P = null;
+  if (picked && picked.thumbUrl) { try { URL.revokeObjectURL(picked.thumbUrl); } catch (e) {} }
+  picked = null;
+  $('file-input').value = '';
+  $('pick-zone').hidden = false;
+  $('prep').hidden = true;
+  $('btn-start').disabled = true;
+}
+function jpegName(name) {
+  var base = String(name).replace(/\.[A-Za-z0-9]{1,5}$/, '');
+  return (base || 'photo') + '.jpg';
+}
+/* Re-encode an image through a canvas at the engine's shrink target. cb(blob|null). */
+function shrinkImage(blob, target, cb) {
+  var called = false;
+  var done = function (b) { if (!called) { called = true; cb(b || null); } };
+  function draw(src, w, h) {
+    try {
+      var s = Math.min(1, target.maxEdge / Math.max(w, h));
+      var cw = Math.max(1, Math.round(w * s)), ch = Math.max(1, Math.round(h * s));
+      var c = document.createElement('canvas');
+      c.width = cw; c.height = ch;
+      var ctx = c.getContext('2d');
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cw, ch);   // flatten transparency to white for JPEG
+      ctx.drawImage(src, 0, 0, cw, ch);
+      if (c.toBlob) c.toBlob(function (b) { done(b); }, 'image/jpeg', target.quality);
+      else done(null);
+    } catch (e) { done(null); }
+  }
+  function viaImage() {
+    try {
+      var url = URL.createObjectURL(blob);
+      var img = new Image();
+      img.onload = function () { draw(img, img.naturalWidth, img.naturalHeight); URL.revokeObjectURL(url); };
+      img.onerror = function () { URL.revokeObjectURL(url); done(null); };
+      img.src = url;
+    } catch (e) { done(null); }
+  }
+  if (typeof createImageBitmap === 'function') {
+    try {
+      createImageBitmap(blob, { imageOrientation: 'from-image' }).then(function (bm) {
+        draw(bm, bm.width, bm.height);
+        if (bm.close) bm.close();
+      }, viaImage);
+    } catch (e) { viaImage(); }
+  } else viaImage();
+}
+function setBusy(msg) {
+  $('prep-busy').hidden = !msg;
+  $('prep-busy').textContent = msg || '';
+}
+function prepare() {
+  var id = ++prepId;
+  var src = picked;
+  P = null;
+  $('btn-start').disabled = true;
+  setBusy('Preparing…');
+  var shrinkStep = function (cb) {
+    if (src.kind === 'image' && $('shrink').checked && src.size > 0) {
+      setBusy('Making a smaller copy…');
+      shrinkImage(src.blob, E.imageShrinkTarget(src.size), function (b) {
+        if (b && b.size < src.size) cb({ blob: b, name: jpegName(src.name), type: 'image/jpeg', shrunkFrom: src.size });
+        else cb({ blob: src.blob, name: src.name, type: src.type, shrunkFrom: 0, noGain: !!b, failed: !b });
+      });
+    } else cb({ blob: src.blob, name: src.name, type: src.type, shrunkFrom: 0 });
+  };
+  shrinkStep(function (sh) {
+    if (id !== prepId) return;
+    readBytes(sh.blob, function (bytes) {
+      if (id !== prepId) return;
+      if (!bytes) { setBusy('Couldn’t read that file. Try another one.'); return; }
+      var crcHex = E.crc32Hex(bytes);
+      var finish = function (payload, compressed) {
+        if (id !== prepId) return;
+        var built;
+        try {
+          built = E.buildStream(payload, { name: sh.name, type: sh.type, originalSize: bytes.length, compressed: compressed, originalCrcHex: crcHex });
+        } catch (e) { setBusy('Can’t package this file: ' + (e && e.message ? e.message : e)); return; }
+        P = { name: sh.name, type: sh.type, size: bytes.length, payload: payload, compressed: compressed,
+              stream: built.stream, manifest: built.manifest, tid: built.tid, shrunkFrom: sh.shrunkFrom || 0,
+              shrinkInfo: sh, kind: E.fileKind(sh.type, sh.name) };
+        renderPrepInfo();
+        updatePlan();
+        setBusy('');
+        $('btn-start').disabled = false;
+      };
+      if (bytes.length > 0 && !src.noCompress && E.shouldCompress(sh.type, sh.name)) {
+        setBusy('Compressing…');
+        deflateRaw(bytes, function (z) {
+          if (z && z.length < bytes.length) finish(z, true); else finish(bytes, false);
+        });
+      } else finish(bytes, false);
+    });
+  });
+}
+function renderPrepInfo() {
+  if (!P) return;
+  var sr = $('shrink-result');
+  if (picked.kind === 'image') {
+    if (P.shrunkFrom) sr.textContent = E.formatBytes(P.shrunkFrom) + ' → ' + E.formatBytes(P.size) + ' — sending the smaller JPEG copy.';
+    else if ($('shrink').checked) sr.textContent = P.shrinkInfo && P.shrinkInfo.failed
+      ? 'Couldn’t re-encode this image here — sending the original.'
+      : 'The smaller copy wasn’t smaller — sending the original.';
+    else sr.textContent = 'Sending the original at full size (' + E.formatBytes(P.size) + ').';
+  }
+  var cl = $('compress-line');
+  if (P.compressed) {
+    var pct = Math.round((1 - P.payload.length / P.size) * 100);
+    // The receiver needs DecompressionStream to inflate (older Safari lacks it) — offer the plain bytes as a one-tap resend option.
+    cl.innerHTML = '🗜️ compressed ' + pct + '% (' + escapeHtml(E.formatBytes(P.size)) + ' → ' + escapeHtml(E.formatBytes(P.payload.length)) + '); the receiver inflates it automatically. '
+      + '<button type="button" class="linkbtn" id="btn-nocompress" style="min-height:32px">send uncompressed instead</button>';
+    var nb = $('btn-nocompress');
+    if (nb) nb.addEventListener('click', function () { if (picked) { picked.noCompress = true; prepare(); } });
+  } else if (picked && picked.noCompress && E.shouldCompress(P.type, P.name)) {
+    cl.textContent = 'Sending uncompressed (' + E.formatBytes(P.size) + ') — works on every receiver.';
+  } else cl.textContent = '';
+}
+function currentChunkBytes() {
+  var preset = presetById(S.preset) || presetById(E.DEFAULT_PRESET) || E.PRESETS[0];
+  return E.chunkBytesFor(Q.capacity(preset.version, S.ec, 'alnum'));
+}
+function updatePlan() {
+  var line = $('plan-line');
+  if (!P) { line.textContent = ''; return; }
+  try {
+    var cb = currentChunkBytes();
+    var pl = E.plan({ streamLen: P.stream.length, chunkBytes: cb, fps: S.fps });
+    line.innerHTML = '<b>' + pl.K + ' codes</b> · ~' + escapeHtml(E.formatDuration(pl.cycleSeconds)) + ' per pass · about <b>' + escapeHtml(E.formatDuration(pl.estimateSeconds)) + '</b> total'
+      + '<br><span style="color:var(--ink2)">' + escapeHtml(E.formatBytes(pl.bytesPerFrame)) + ' per code · ≈ ' + escapeHtml(E.formatBytes(pl.bytesPerSecond * 60)) + ' per minute</span>';
+  } catch (e) {
+    line.textContent = 'Plan unavailable: ' + (e && e.message ? e.message : e);
+  }
+}
+function renderSettingsUI() {
+  var seg = $('preset-seg'), html = '';
+  for (var i = 0; i < E.PRESETS.length; i++) {
+    var p = E.PRESETS[i], per = '';
+    try { per = E.formatBytes(E.chunkBytesFor(Q.capacity(p.version, S.ec, 'alnum'))) + '/code'; } catch (e) {}
+    html += '<button type="button" data-preset="' + escapeHtml(p.id) + '" class="' + (p.id === S.preset ? 'on' : '') + '"><b>' + escapeHtml(p.label) + '</b><small>' + escapeHtml(p.hint) + (per ? ' · ' + escapeHtml(per) : '') + '</small></button>';
+  }
+  seg.innerHTML = html;
+  $('fps-val').textContent = S.fps + ' codes / s';
+  var ecBtns = $('ec-seg').querySelectorAll('button');
+  for (var j = 0; j < ecBtns.length; j++) ecBtns[j].className = ecBtns[j].getAttribute('data-ec') === S.ec ? 'on' : '';
+}
+$('preset-seg').addEventListener('click', function (ev) {
+  var t = ev.target;
+  while (t && t !== this && !(t.getAttribute && t.getAttribute('data-preset'))) t = t.parentNode;
+  if (!t || t === this) return;
+  S.preset = t.getAttribute('data-preset'); saveSettings(); renderSettingsUI(); updatePlan();
+});
+$('ec-seg').addEventListener('click', function (ev) {
+  var t = ev.target;
+  while (t && t !== this && !(t.getAttribute && t.getAttribute('data-ec'))) t = t.parentNode;
+  if (!t || t === this) return;
+  S.ec = t.getAttribute('data-ec') === 'M' ? 'M' : 'L'; saveSettings(); renderSettingsUI(); updatePlan();
+});
+function bumpFps(d) {
+  S.fps = clamp(S.fps + d, E.FPS_MIN, E.FPS_MAX); saveSettings(); renderSettingsUI(); updatePlan();
+  if (B.running) { B.fps = S.fps; renderBeamFps(); }
+}
+$('fps-dn').addEventListener('click', function () { bumpFps(-1); });
+$('fps-up').addEventListener('click', function () { bumpFps(1); });
+$('btn-choose').addEventListener('click', function () { $('file-input').click(); });
+$('file-input').addEventListener('change', function () {
+  var f = this.files && this.files[0];
+  if (f) onFile(f);
+});
+$('btn-use-note').addEventListener('click', onNote);
+$('btn-change').addEventListener('click', resetPick);
+$('shrink').addEventListener('change', function () { if (picked) prepare(); });
+(function dragDrop() {
+  var z = $('pick-zone');
+  z.addEventListener('dragover', function (ev) { ev.preventDefault(); z.className = 'drop over'; });
+  z.addEventListener('dragleave', function () { z.className = 'drop'; });
+  z.addEventListener('drop', function (ev) {
+    ev.preventDefault(); z.className = 'drop';
+    var f = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
+    if (f) { show('pick'); onFile(f); }
+  });
+})();
+
+/* ============================ SEND: beaming ============================ */
+var B = { running: false, paused: false, ctx: null, K: 0, seq: 0, fps: E.FPS_DEFAULT, timer: 0, next: null, cur: null,
+          version: 0, ec: 'L', lock: null, encodeMs: 0, scale: 1, quiet: 4 };
+var hintShown = false;   // per page load — "first run" of the beaming screen
+
+function encodeSeq(seq) {
+  var t0 = now();
+  var text = E.encodeFrame(B.ctx, seq);
+  var code = Q.encode(text, { version: B.version, ec: B.ec, mode: 'alnum' });
+  B.encodeMs = now() - t0;
+  return { seq: seq, code: code, text: text };
+}
+function sizeCanvas() {
+  var canvas = $('qr-canvas');
+  var N = (B.cur ? B.cur.code.size : 17 + 4 * (B.version || 1)) + B.quiet * 2;
+  var dpr = window.devicePixelRatio || 1;
+  var wrapW = $('qr-wrap').clientWidth || window.innerWidth || 360;
+  var availH = (window.innerHeight || 640) - 290;
+  var css = Math.max(160, Math.min(wrapW, availH));
+  var scale = Math.max(1, Math.floor(css * dpr / N));
+  B.scale = scale;
+  var cssPx = (N * scale) / dpr;
+  canvas.style.width = cssPx + 'px';
+  canvas.style.height = cssPx + 'px';
+}
+function paintCurrent() {
+  if (!B.cur) return;
+  drawCode($('qr-canvas'), B.cur.code, B.scale, B.quiet);
+}
+function renderBeamFps() { $('beam-fps').textContent = B.fps + ' / s'; }
+function updateBeamHud() {
+  var seq = B.seq, K = B.K, pass = Math.floor(seq / K) + 1;
+  $('frame-counter').textContent = 'frame ' + ((seq % K) + 1) + ' / ' + K + ' · pass ' + pass;
+  var wrap = $('beam-bar-wrap');
+  if (seq < K) {
+    wrap.className = 'bar';
+    $('beam-bar').style.width = Math.round((seq + 1) / K * 100) + '%';
+    $('beam-phase').textContent = 'First pass — every piece once.';
+  } else {
+    if (wrap.className !== 'bar loop') wrap.className = 'bar loop';
+    $('beam-phase').textContent = 'Pass ' + pass + ' · repair codes — keep showing until the other phone says Done.';
+  }
+}
+function frameTick() {
+  if (!B.running || B.paused) return;
+  var f = B.next;
+  B.cur = f; B.seq = f.seq;
+  paintCurrent();
+  updateBeamHud();
+  var budget = 1000 / B.fps;
+  B.timer = setTimeout(frameTick, Math.round(budget));
+  var nextSeq = f.seq + 1 >= SEQ_LIMIT ? 0 : f.seq + 1;
+  B.next = encodeSeq(nextSeq);          // one-frame lookahead keeps paint timing even
+  $('slow-hint').hidden = !(B.encodeMs > budget);
+}
+function requestWakeLock() {
+  try {
+    if (navigator.wakeLock && typeof navigator.wakeLock.request === 'function') {
+      navigator.wakeLock.request('screen').then(function (l) { B.lock = l; }, noop);
+    }
+  } catch (e) {}
+}
+function releaseWakeLock() {
+  if (B.lock) { try { B.lock.release(); } catch (e) {} B.lock = null; }
+}
+function startBeaming() {
+  if (!P) return;
+  var preset = presetById(S.preset) || E.PRESETS[0];
+  var chunkBytes;
+  try {
+    chunkBytes = currentChunkBytes();
+    B.ctx = E.makeContext(P.stream, chunkBytes);
+  } catch (e) { toast('Can’t start: ' + (e && e.message ? e.message : e)); return; }
+  B.K = B.ctx.K; B.version = preset.version; B.ec = S.ec; B.fps = S.fps;
+  B.seq = 0; B.paused = false; B.running = true; B.cur = null;
+  $('pause-tag').hidden = true;
+  $('slow-hint').hidden = true;
+  $('beam-pause').textContent = '⏸ Pause';
+  $('bright-hint').hidden = hintShown;
+  hintShown = true;
+  $('beam-file').innerHTML = kindIcon(P.kind) + ' ' + escapeHtml(P.name) + ' · ' + escapeHtml(E.formatBytes(P.size))
+    + (P.compressed ? ' (sent as ' + escapeHtml(E.formatBytes(P.payload.length)) + ' compressed)' : '')
+    + ' · ' + B.K + ' codes · id <span class="mono">' + escapeHtml(P.tid) + '</span>';
+  renderBeamFps();
+  show('beam');
+  try { B.next = encodeSeq(0); } catch (e) { toast('Encoder error: ' + (e && e.message ? e.message : e)); B.running = false; show('pick'); return; }
+  sizeCanvas();
+  requestWakeLock();
+  frameTick();
+}
+function stopBeaming() {
+  B.running = false; B.paused = false;
+  clearTimeout(B.timer); B.timer = 0;
+  releaseWakeLock();
+}
+function togglePause() {
+  if (!B.running) return;
+  B.paused = !B.paused;
+  $('pause-tag').hidden = !B.paused;
+  $('beam-pause').textContent = B.paused ? '▶ Resume' : '⏸ Pause';
+  if (B.paused) { clearTimeout(B.timer); B.timer = 0; }
+  else frameTick();
+}
+$('btn-start').addEventListener('click', startBeaming);
+$('beam-pause').addEventListener('click', togglePause);
+$('qr-panel').addEventListener('click', togglePause);
+$('beam-stop').addEventListener('click', function () { show('pick'); });
+$('beam-fps-dn').addEventListener('click', function () { bumpFps(-1); });
+$('beam-fps-up').addEventListener('click', function () { bumpFps(1); });
+$('hint-x').addEventListener('click', function () { $('bright-hint').hidden = true; });
+window.addEventListener('resize', function () { if (B.running) { sizeCanvas(); paintCurrent(); } });
+document.addEventListener('visibilitychange', function () {
+  if (document.hidden === true) { R.hidden = true; return; }
+  R.hidden = false;
+  if (B.running) requestWakeLock();
+});
+
+/* ============================ RECEIVE ============================ */
+var R = { stream: null, running: false, idle: false, mode: 'none', det: null, dec: null, timer: 0, statTimer: 0,
+          startTs: 0, decodeTimes: [], garbageAt: 0, canvas: null, hidden: false, K: 0, gridCells: 0, gridPer: 1,
+          cardShown: false, objectUrl: '', lastSeenAt: 0 };
+var vid = $('cam');
+
+function setRxStatus(html, cls) {
+  var s = $('rx-status');
+  s.innerHTML = html;
+  s.className = 'status' + (cls ? ' ' + cls : '');
+}
+function decoderLabel() { return R.mode === 'native' ? 'native' : R.mode === 'js' ? 'jsQR' : 'none'; }
+function chooseDecoder(cb) {
+  var want = S.decoder;
+  detectNative(function (ok) {
+    nativeQR = ok; renderBadge();
+    if (want === 'js') R.mode = hasJsQR ? 'js' : (ok ? 'native' : 'none');
+    else if (want === 'native') R.mode = ok ? 'native' : (hasJsQR ? 'js' : 'none');
+    else R.mode = ok ? 'native' : (hasJsQR ? 'js' : 'none');
+    R.det = null;
+    if (R.mode === 'native') {
+      try { R.det = new window.BarcodeDetector({ formats: ['qr_code'] }); }
+      catch (e) { R.mode = hasJsQR ? 'js' : 'none'; }
+    }
+    cb();
+  });
+}
+/* auto = opened via ?mode=receive without a tap: Safari may refuse getUserMedia outside a
+ * user gesture, which is not a "denied" permission — ask for the tap instead of alarming. */
+function startCamera(auto) {
+  auto = auto === true;
+  var md = navigator.mediaDevices;
+  if (!md || typeof md.getUserMedia !== 'function') {
+    setRxStatus('No camera is available in this browser — open Beam on a phone (Safari or Chrome) over https to receive.', 'bad');
+    return;
+  }
+  setRxStatus('Opening the camera…');
+  var gum;
+  try { gum = md.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false }); }
+  catch (e) { gum = null; }
+  if (!gum || typeof gum.then !== 'function') { setRxStatus('Couldn’t open the camera. Tap <b>&nbsp;Start camera&nbsp;</b> to try again.', 'bad'); return; }
+  gum.then(function (stream) {
+      R.stream = stream;
+      try {
+        // iOS ends the track when the app is backgrounded for a while or another app takes the camera.
+        var tracks = stream.getVideoTracks ? stream.getVideoTracks() : [];
+        for (var ti = 0; ti < tracks.length; ti++) tracks[ti].addEventListener('ended', onTrackEnded);
+      } catch (e) {}
+      vid.srcObject = stream;
+      var p = vid.play(); if (p && p.catch) p.catch(noop);
+      $('cam-off').hidden = true;
+      chooseDecoder(function () {
+        if (R.mode === 'none') {
+          setRxStatus('This browser has no QR decoder (no BarcodeDetector and jsQR did not load). This phone can still <b>send</b>.', 'bad');
+          return;
+        }
+        R.dec = E.createDecoder();
+        R.running = true; R.idle = false;
+        resetRxUi();
+        setRxStatus('Point the camera at the other phone’s screen. Fill the frame with the code.');
+        clearInterval(R.statTimer);
+        R.statTimer = setInterval(updateStats, 500);
+        tick();
+      });
+    }, function (err) {
+      var n = (err && err.name) || '';
+      if (auto && (n === 'NotAllowedError' || n === 'SecurityError' || n === 'PermissionDeniedError' || n === 'InvalidStateError'))
+        setRxStatus('Tap <b>&nbsp;Start camera&nbsp;</b> to allow camera access.');
+      else if (n === 'NotAllowedError' || n === 'SecurityError' || n === 'PermissionDeniedError')
+        setRxStatus('Camera permission denied. Allow camera access for this site in your browser settings, then tap Start camera again.', 'bad');
+      else if (n === 'NotFoundError' || n === 'OverconstrainedError' || n === 'DevicesNotFoundError')
+        setRxStatus('No camera found on this device — open Beam on a phone to receive.', 'bad');
+      else if (n === 'NotReadableError' || n === 'AbortError')
+        setRxStatus('The camera is busy in another app. Close it and try again.', 'bad');
+      else setRxStatus('Couldn’t open the camera (' + escapeHtml(n || 'unknown error') + '). Open Beam on a phone over https.', 'bad');
+    });
+}
+function onTrackEnded() {
+  if (!R.stream) return;
+  var wasIdle = R.idle;
+  stopCamera();
+  if (!wasIdle) setRxStatus('The camera stopped (another app took it, or the phone slept). Tap <b>&nbsp;Start camera&nbsp;</b> to continue — the pieces you already have are kept.', 'bad');
+}
+function stopCamera() {
+  R.running = false; R.idle = false;
+  clearTimeout(R.timer); R.timer = 0;
+  clearInterval(R.statTimer); R.statTimer = 0;
+  if (R.stream) {
+    try { R.stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
+    R.stream = null;
+  }
+  try { vid.srcObject = null; } catch (e) {}
+  $('cam-off').hidden = false;
+  $('cam-box').className = 'cam';
+}
+function schedule(ms) {
+  if (!R.running) return;
+  R.timer = setTimeout(tick, ms);
+}
+function tick() {
+  if (!R.running) return;
+  if (R.idle || R.hidden || document.hidden === true || vid.readyState < 2) { schedule(150); return; }
+  if (R.mode === 'native' && R.det) {
+    var pr;
+    try { pr = R.det.detect(vid); } catch (e) { pr = null; }
+    if (!pr || typeof pr.then !== 'function') { schedule(60); return; }
+    pr.then(function (codes) {
+      for (var i = 0; i < (codes ? codes.length : 0); i++) handleText(codes[i].rawValue);
+      schedule(30);
+    }, function () { schedule(60); });
+  } else {
+    var text = grabAndDecode();
+    if (text) handleText(text);
+    schedule(10);
+  }
+}
+function grabAndDecode() {
+  var vw = vid.videoWidth, vh = vid.videoHeight;
+  if (!vw || !vh) return null;
+  var s = Math.min(1, 1280 / Math.max(vw, vh));
+  var w = Math.max(1, Math.round(vw * s)), h = Math.max(1, Math.round(vh * s));
+  if (!R.canvas) R.canvas = document.createElement('canvas');
+  var c = R.canvas;
+  if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+  var ctx = c.getContext('2d', { willReadFrequently: true }) || c.getContext('2d');
+  try {
+    ctx.drawImage(vid, 0, 0, w, h);
+    var img = ctx.getImageData(0, 0, w, h);
+    var res = window.jsQR(img.data, w, h, { inversionAttempts: 'dontInvert' });
+    return res && res.data ? res.data : null;
+  } catch (e) { return null; }
+}
+function handleText(text) {
+  if (!R.running || R.idle || !text) return;
+  var t = Date.now();
+  R.decodeTimes.push(t);
+  R.lastSeenAt = t;
+  var frame = E.parseFrame(String(text));
+  if (!frame) {
+    if (t - R.garbageAt > 2000 && !R.startTs) {
+      R.garbageAt = t;
+      setRxStatus('That’s a QR code, but not a Beam code. Point at a phone that is <b>beaming</b>.');
+    }
+    return;
+  }
+  $('cam-box').className = 'cam locked';
+  var ev = E.decoderPush(R.dec, frame);
+  switch (ev.type) {
+    case 'start':
+      R.startTs = t; R.K = ev.K; R.cardShown = false;
+      $('rx-progress').hidden = false;
+      $('rx-done').hidden = true; $('rx-error').hidden = true;
+      buildGrid(ev.K);
+      setRxStatus('Receiving — keep the camera pointed until it says <b>Done</b>.', 'good');
+      updateProgress(); tryPeek();
+      break;
+    case 'switch':
+      R.startTs = t; R.K = ev.K; R.cardShown = false;
+      toast('A different transfer appeared — starting over with it.');
+      $('rx-card').innerHTML = '<div class="fine">New transfer — waiting for its first piece…</div>';
+      buildGrid(ev.K);
+      updateProgress(); tryPeek();
+      break;
+    case 'progress':
+      updateProgress();
+      if (!R.cardShown) tryPeek();
+      break;
+    case 'complete':
+      // a one-chunk file completes on the very first frame — no 'start' was ever seen
+      if (!R.startTs) { R.startTs = t; R.K = ev.K; }
+      updateProgress();
+      finishReceive();
+      break;
+    case 'bad':
+      setRxStatus('Ignored a code that doesn’t fit this transfer (' + escapeHtml(ev.reason || 'inconsistent') + ').', 'bad');
+      break;
+    default: /* dup, redundant, done */
+      break;
+  }
+}
+function resetRxUi() {
+  R.startTs = 0; R.K = 0; R.cardShown = false; R.decodeTimes = [];
+  $('rx-progress').hidden = true;
+  $('rx-done').hidden = true; $('rx-error').hidden = true;
+  $('btn-rx-another').hidden = true;
+  $('rx-card').innerHTML = '<div class="fine">Waiting for the first piece… the file’s name and size appear as soon as it arrives.</div>';
+  $('rx-grid').innerHTML = '';
+  $('rx-bar').style.width = '0%';
+  $('rx-pct').textContent = '0%'; $('rx-have').textContent = '0 / 0 pieces'; $('rx-eta').textContent = ''; $('rx-stats').textContent = '';
+  $('cam-box').className = 'cam';
+  if (R.objectUrl) { try { URL.revokeObjectURL(R.objectUrl); } catch (e) {} R.objectUrl = ''; }
+}
+function buildGrid(K) {
+  var cells = Math.min(K, 1000);          // bucket beyond 1,000 cells to keep the DOM small
+  R.gridCells = cells; R.gridPer = Math.ceil(K / cells);
+  var cols = Math.min(cells, Math.max(8, Math.ceil(Math.sqrt(cells * 2.4))));
+  var html = '';
+  for (var i = 0; i < cells; i++) html += '<i></i>';
+  var g = $('rx-grid');
+  g.innerHTML = html;
+  g.style.gridTemplateColumns = 'repeat(' + cols + ', 1fr)';
+}
+function updateGrid() {
+  if (!R.dec || !R.gridCells) return;
+  var has = E.decoderHas(R.dec), nodes = $('rx-grid').children, per = R.gridPer, K = R.K;
+  for (var c = 0; c < R.gridCells; c++) {
+    var lo = c * per, hi = Math.min(K, lo + per), n = 0;
+    for (var i = lo; i < hi; i++) if (has[i]) n++;
+    var cls = n === 0 ? '' : n === hi - lo ? 'on' : 'part';
+    var node = nodes[c];
+    if (node && node.className !== cls) node.className = cls;
+  }
+}
+function updateProgress() {
+  if (!R.dec) return;
+  var p = E.decoderProgress(R.dec);
+  $('rx-bar').style.width = Math.round(p.pct) + '%';
+  $('rx-pct').textContent = E.formatPct(p.pct);
+  $('rx-have').textContent = p.have + ' / ' + p.K + ' pieces';
+  updateGrid();
+  updateStats();
+}
+function updateStats() {
+  if (!R.dec || !R.running) return;
+  var t = Date.now();
+  while (R.decodeTimes.length && t - R.decodeTimes[0] > 1000) R.decodeTimes.shift();
+  var p = E.decoderProgress(R.dec);
+  var parts = [R.decodeTimes.length + ' codes/s', 'decoder: ' + decoderLabel()];
+  if (p.framesSeen) parts.push(p.unique + ' useful · ' + p.redundant + ' repeats');
+  $('rx-stats').textContent = parts.join(' · ');
+  if (R.startTs && !p.complete) {
+    var secs = E.eta({ have: p.have, K: p.K, framesSeen: p.framesSeen, elapsedMs: t - R.startTs });
+    $('rx-eta').textContent = secs == null ? 'estimating…' : 'about ' + E.formatDuration(secs) + ' left';
+  }
+}
+function tryPeek() {
+  var m = null;
+  try { m = E.peekManifest(R.dec); } catch (e) { m = null; }
+  if (!m) return;
+  R.cardShown = true;
+  var name = E.safeFileName(m.n), type = m.t || '';
+  $('rx-card').innerHTML = fileCardHtml(name, m.s, type, E.fileKind(type, name), '', m.z ? 'compressed' : '');
+}
+function showRxError(msg) {
+  var box = $('rx-error');
+  box.hidden = false;
+  box.innerHTML = '<b style="color:var(--danger)">Transfer failed</b><p class="fine">' + escapeHtml(msg) + '</p>';
+  $('btn-rx-another').hidden = false;
+  setRxStatus('Tap <b>&nbsp;Receive another&nbsp;</b> to try again.', 'bad');
+  R.idle = true;
+}
+function finishReceive() {
+  R.idle = true;                     // camera stays on; decoding pauses until "Receive another"
+  var res;
+  try { res = E.decoderResult(R.dec); }
+  catch (e) { showRxError('Integrity check failed — ' + (e && e.message ? e.message : e) + '. Ask the sender to start again.'); return; }
+  var m = res.manifest || {};
+  var verify = function (bytes) {
+    var got = E.crc32Hex(bytes);
+    if (m.h && got !== m.h) { showRxError('Checksum mismatch — the file arrived corrupted (expected ' + m.h + ', got ' + got + '). Try again, ideally at a lower density.'); return; }
+    showDone(m, bytes);
+  };
+  if (m.z) {
+    setRxStatus('All pieces received — decompressing…', 'good');
+    inflateRaw(res.fileBytes, function (out) {
+      if (!out) { showRxError('This browser can’t decompress the file (no DecompressionStream support — older Safari). Ask the sender to tap “send uncompressed instead” and beam again, or receive on a newer browser.'); return; }
+      verify(out);
+    });
+  } else verify(res.fileBytes);
+}
+function showDone(m, bytes) {
+  var name = E.safeFileName(m.n), type = m.t || 'application/octet-stream';
+  var kind = E.fileKind(type, name);
+  var elapsed = R.startTs ? (Date.now() - R.startTs) / 1000 : 0;
+  var blob = new Blob([bytes], { type: type });
+  if (R.objectUrl) { try { URL.revokeObjectURL(R.objectUrl); } catch (e) {} }
+  R.objectUrl = URL.createObjectURL(blob);
+  var preview = '';
+  if (kind === 'image') preview = '<img class="preview" src="' + escapeHtml(R.objectUrl) + '" alt="">';
+  else if (kind === 'text') {
+    var txt = '';
+    try { txt = E.utf8Decode(bytes.length > 20000 ? bytes.subarray(0, 20000) : bytes); } catch (e) { txt = ''; }
+    preview = '<pre class="preview">' + escapeHtml(txt) + (bytes.length > 20000 ? '\n…' : '') + '</pre>';
+  } else preview = '<div style="font-size:56px;text-align:center;margin:10px 0">' + kindIcon(kind) + '</div>';
+  var box = $('rx-done');
+  box.hidden = false;
+  box.innerHTML = '<b style="color:var(--good)">✓ Done — checksum verified' + (elapsed ? ' in ' + escapeHtml(E.formatDuration(elapsed)) : '') + '</b>'
+    + fileCardHtml(name, bytes.length, type, kind, '', '')
+    + preview
+    + '<div class="donebtns"><a id="rx-save" href="' + escapeHtml(R.objectUrl) + '" download="' + escapeHtml(name) + '">⬇ Save</a>'
+    + '<button type="button" id="rx-share" class="ghost" hidden>⇪ Share</button></div>'
+    + '<p class="fine">Saved on this phone only — nothing went anywhere else.</p>';
+  $('btn-rx-another').hidden = false;
+  setRxStatus('Done. Tap <b>&nbsp;Receive another&nbsp;</b> for the next file.', 'good');
+  $('rx-grid').innerHTML = '';
+  $('rx-progress').hidden = true;
+  $('cam-box').className = 'cam';
+  var shareBtn = $('rx-share');
+  if (shareBtn && typeof File === 'function' && navigator.canShare && navigator.share) {
+    try {
+      var f = new File([bytes], name, { type: type });
+      if (navigator.canShare({ files: [f] })) {
+        shareBtn.hidden = false;
+        shareBtn.addEventListener('click', function () {
+          navigator.share({ files: [f], title: name }).catch(noop);
+        });
+      }
+    } catch (e) {}
+  }
+  try { if (window.scrollTo) window.scrollTo(0, 0); } catch (e) {}
+}
+function receiveAnother() {
+  if (!R.stream || !R.running) { resetRxUi(); startCamera(); return; }
+  R.dec = E.createDecoder();
+  resetRxUi();
+  R.idle = false;
+  setRxStatus('Point the camera at the other phone’s screen.');
+}
+$('btn-cam-start').addEventListener('click', startCamera);
+$('btn-rx-another').addEventListener('click', receiveAnother);
+$('btn-rx-settings').addEventListener('click', function () {
+  var pop = $('rx-pop');
+  pop.hidden = !pop.hidden;
+  var radios = pop.querySelectorAll('input[name=dec]');
+  for (var i = 0; i < radios.length; i++) radios[i].checked = radios[i].value === S.decoder;
+  $('dec-note').textContent = (R.running ? 'Using ' + decoderLabel() + ' now. ' : '')
+    + (nativeQR ? 'Native decoding is available here. ' : 'No native decoder here — JavaScript (jsQR) does the work. ')
+    + 'If the native decoder misreads or stalls, force JavaScript. Changes apply on the next camera start.';
+});
+$('rx-pop').addEventListener('change', function (ev) {
+  var v = ev.target && ev.target.value;
+  if (v === 'auto' || v === 'native' || v === 'js') {
+    S.decoder = v; saveSettings();
+    if (R.running) { toast('Restarting the camera with the ' + (v === 'js' ? 'JavaScript' : v) + ' decoder'); stopCamera(); startCamera(); }
+  }
+});
+document.addEventListener('click', function (ev) {
+  var pop = $('rx-pop');
+  if (pop.hidden) return;
+  var t = ev.target, inside = false;
+  while (t) { if (t === pop || t === $('btn-rx-settings')) { inside = true; break; } t = t.parentNode; }
+  if (!inside) pop.hidden = true;
+});
+window.addEventListener('pagehide', function () { stopCamera(); releaseWakeLock(); });
+
+/* ============================ boot ============================ */
+loadSettings();
+renderSettingsUI();
+renderBadge();
+detectNative(function (ok) { nativeQR = ok; renderBadge(); });
+(function route() {
+  var q = typeof location.search === 'string' ? location.search : '';
+  var h = typeof location.hash === 'string' ? location.hash : '';
+  if (/[?&]mode=receive(&|$)/.test(q) || h === '#receive') { show('receive'); startCamera(true); }
+  else show('home');
+})();
+
+if (navigator && 'serviceWorker' in navigator) {
+  try { navigator.serviceWorker.register('sw.js'); } catch (e) {}
+}
+})();
+</script>
+
+<script>
+/* Tap-to-update — shows a prompt when a newer version of the app is ready, then
+ * swaps it in on tap. Shared across BallrzAPP PWAs; observes the existing service
+ * worker registration, so it doesn't re-register or change caching. */
+(function () {
+  try {
+  if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
+  var ready = navigator.serviceWorker.ready;
+  if (!ready || typeof ready.then !== 'function') return;
+  var tapped = false;
+  navigator.serviceWorker.addEventListener('controllerchange', function () {
+    if (tapped) { tapped = false; location.reload(); }
+  });
+  function banner(reg) {
+    if (document.getElementById('pwa-update-bar')) return;
+    var b = document.createElement('button');
+    b.id = 'pwa-update-bar'; b.type = 'button';
+    b.textContent = '🔄 New version — tap to update';
+    b.setAttribute('aria-label', 'A new version is available. Tap to update.');
+    b.style.cssText = 'position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom));'
+      + 'transform:translateX(-50%);z-index:2147483000;font:600 14px/1.2 -apple-system,'
+      + 'BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#04101e;'
+      + 'background:linear-gradient(92deg,#4dc3ff,#8fdcff);border:0;border-radius:999px;'
+      + 'padding:12px 18px;box-shadow:0 8px 24px rgba(0,0,0,.45);cursor:pointer;';
+    b.addEventListener('click', function () {
+      tapped = true;
+      var w = reg.waiting;
+      if (w) w.postMessage({ type: 'SKIP_WAITING' });
+      b.remove();
+      setTimeout(function () { if (tapped) { tapped = false; location.reload(); } }, 2500);
+    });
+    document.body.appendChild(b);
+  }
+  ready.then(function (reg) {
+    try {
+      if (reg.waiting && navigator.serviceWorker.controller) banner(reg);
+      reg.addEventListener('updatefound', function () {
+        var w = reg.installing;
+        if (!w) return;
+        w.addEventListener('statechange', function () {
+          if (w.state === 'installed' && navigator.serviceWorker.controller) banner(reg);
+        });
+      });
+      setInterval(function () { reg.update().catch(function () {}); }, 3600000);
+    } catch (e) {}
+  }).catch(function () {});
+  } catch (e) {}
+})();
+</script>
+</body>
+</html>
