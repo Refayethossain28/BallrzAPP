@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f5f6fb">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>Quotient — an adaptive IQ test</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>
+  :root{
+    --bg:#f5f6fb; --bg2:#eceef7; --card:#ffffff;
+    --line:#e1e4f0; --line2:#c9cde0;
+    --ink:#1d2040; --ink2:#5b607a; --ink3:#8d92ab;
+    --accent:#3d44b8; --accent2:#2f359a; --accent-soft:#e4e6fa;
+    --amber:#d98a1f; --good:#1f8a5b; --bad:#c0392b;
+    --r:14px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html,body{margin:0; padding:0; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    font-size:16px; line-height:1.45; overscroll-behavior-y:contain}
+  body{min-height:100vh}
+  button{font:inherit; color:inherit; background:none; border:none; cursor:pointer; padding:0}
+  input{font:inherit; color:var(--ink); background:var(--card); border:1px solid var(--line2);
+    border-radius:12px; padding:12px 14px; outline:none; width:100%}
+  input:focus{border-color:var(--accent)}
+  .num{font-variant-numeric:tabular-nums}
+
+  /* ---------- shell ---------- */
+  #app{max-width:600px; margin:0 auto; padding-bottom:calc(30px + env(safe-area-inset-bottom))}
+  header.top{position:sticky; top:0; z-index:30; background:var(--bg); border-bottom:1px solid var(--line);
+    padding:calc(10px + env(safe-area-inset-top)) 16px 10px; display:flex; align-items:center; gap:10px}
+  .logo{display:flex; align-items:center; gap:9px; font-weight:800; font-size:20px; letter-spacing:-0.02em}
+  .logo img{width:24px; height:24px; border-radius:6px}
+  .top .spacer{flex:1}
+  .chip{display:inline-flex; align-items:center; gap:6px; font-size:13px; color:var(--ink2);
+    border:1px solid var(--line2); border-radius:999px; padding:5px 11px; background:var(--card)}
+  .chip.quiet{border-color:transparent; background:none}
+  main{padding:16px 16px 30px}
+  .view{display:none}
+  .view.on{display:block; animation:fadein .15s ease}
+  @keyframes fadein{from{opacity:0} to{opacity:1}}
+  h1{font-size:30px; line-height:1.15; letter-spacing:-0.025em; margin:18px 0 10px; font-weight:800}
+  h2{font-size:19px; letter-spacing:-0.01em; margin:22px 0 10px; font-weight:800}
+  p{margin:0 0 12px}
+  .lead{font-size:17px; color:var(--ink2)}
+  .muted{color:var(--ink3); font-size:13.5px}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:var(--r); padding:16px; margin-bottom:12px}
+  .btn{display:inline-flex; align-items:center; justify-content:center; gap:8px; font-weight:700; font-size:16px;
+    background:var(--accent); color:#fff; border-radius:12px; padding:14px 20px; width:100%}
+  .btn:active{background:var(--accent2)}
+  .btn.ghost{background:var(--card); color:var(--ink); border:1px solid var(--line2)}
+  .btn.small{width:auto; padding:9px 14px; font-size:14px; border-radius:10px}
+  .btn[disabled]{opacity:0.4; pointer-events:none}
+  .row{display:flex; gap:10px; align-items:center}
+  .row > *{flex:1}
+  .seg{display:flex; background:var(--bg2); border-radius:12px; padding:4px; gap:4px}
+  .seg button{flex:1; padding:9px 8px; border-radius:9px; font-size:14px; font-weight:600; color:var(--ink2)}
+  .seg button.on{background:var(--card); color:var(--ink); box-shadow:0 1px 2px rgba(29,32,64,.12)}
+  .label{font-size:11.5px; font-weight:700; letter-spacing:0.12em; text-transform:uppercase; color:var(--ink3); margin:0 0 8px}
+  .domainlist{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:6px}
+  .domainlist .d{font-size:13.5px; color:var(--ink2); padding:8px 10px; border:1px solid var(--line); border-radius:10px; background:var(--bg)}
+  .domainlist .d b{display:block; color:var(--ink); font-size:14px}
+  .domainlist .d.off{opacity:.4}
+
+  /* ---------- test ---------- */
+  .progress{height:6px; background:var(--bg2); border-radius:999px; overflow:hidden; margin:2px 0 14px}
+  .progress i{display:block; height:100%; background:var(--accent); border-radius:999px; width:0; transition:width .3s ease}
+  .meta{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; font-size:13.5px; color:var(--ink2)}
+  .meta b{color:var(--ink)}
+  .timer{height:4px; background:var(--bg2); border-radius:999px; overflow:hidden; margin-bottom:16px}
+  .timer i{display:block; height:100%; background:var(--amber); width:100%; border-radius:999px}
+  .timer.low i{background:var(--bad)}
+  .prompt{font-size:19px; font-weight:700; letter-spacing:-0.01em; margin:0 0 14px}
+  .prompt.big{font-size:24px}
+  .grid3{display:grid; grid-template-columns:repeat(3,1fr); gap:6px; background:var(--line2); padding:6px; border-radius:12px; margin-bottom:16px}
+  .grid3 .c{background:var(--card); border-radius:8px; aspect-ratio:1; display:flex; align-items:center; justify-content:center; padding:4px}
+  .grid3 .c.missing{background:var(--bg2)}
+  .qcell,.qfig{width:100%; height:100%; display:block}
+  .opts{display:grid; gap:8px}
+  .opts.four{grid-template-columns:repeat(4,1fr)}
+  .opts.two{grid-template-columns:repeat(2,1fr)}
+  .opt{background:var(--card); border:2px solid var(--line); border-radius:12px; padding:12px 14px; text-align:left;
+    font-size:16px; display:flex; align-items:center; gap:10px; min-height:48px; position:relative}
+  .opt:active{border-color:var(--line2)}
+  .opt.on{border-color:var(--accent); background:var(--accent-soft)}
+  .opt .k{flex:none; width:24px; height:24px; border-radius:50%; background:var(--bg2); color:var(--ink2);
+    font-size:12.5px; font-weight:700; display:flex; align-items:center; justify-content:center}
+  .opt.on .k{background:var(--accent); color:#fff}
+  .opt.vis{flex-direction:column; padding:8px; gap:6px; aspect-ratio:1}
+  .opt.vis .k{position:absolute; left:6px; top:6px; width:20px; height:20px; font-size:11px}
+  .opt.vis svg{width:86%; height:86%}
+  .series{display:flex; flex-wrap:wrap; gap:8px 12px; align-items:baseline; font-size:28px; font-weight:800;
+    letter-spacing:-0.02em; margin:6px 0 20px}
+  .series .q{color:var(--accent)}
+  .premises{background:var(--bg2); border-radius:12px; padding:12px 14px; margin-bottom:14px; font-size:17px; line-height:1.55}
+  .premises div{padding:2px 0}
+  .target{width:46%; margin:0 auto 16px; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:10px}
+  .memstage{height:170px; display:flex; align-items:center; justify-content:center; background:var(--card);
+    border:1px solid var(--line); border-radius:12px; margin-bottom:14px}
+  .memstage .digit{font-size:84px; font-weight:800; letter-spacing:-0.03em; line-height:1}
+  .memstage .hint{color:var(--ink3); font-size:15px}
+  .confirm{position:sticky; bottom:0; margin-top:16px; padding:10px 0 calc(10px + env(safe-area-inset-bottom));
+    background:linear-gradient(180deg, rgba(245,246,251,0) 0%, var(--bg) 30%)}
+  #item-body{padding-bottom:6px}
+
+  /* ---------- result ---------- */
+  .hero{text-align:center; padding:26px 16px 18px}
+  .hero .iq{font-size:86px; font-weight:800; letter-spacing:-0.05em; line-height:1}
+  .hero .ci{font-size:16px; color:var(--ink2); margin-top:6px}
+  .hero .band{display:inline-block; margin-top:12px; font-weight:700; font-size:15px; color:var(--accent);
+    background:var(--accent-soft); border-radius:999px; padding:6px 14px}
+  .bell{width:100%; height:auto; display:block}
+  .stats{display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-top:4px}
+  .stat{background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:10px 8px; text-align:center}
+  .stat b{display:block; font-size:19px; letter-spacing:-0.02em}
+  .stat span{font-size:11.5px; color:var(--ink3)}
+  .bar{display:grid; grid-template-columns:72px 1fr 88px; align-items:center; gap:10px; padding:7px 0; font-size:14px}
+  .bar .name{color:var(--ink2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .bar .track{position:relative; height:10px; background:var(--bg2); border-radius:999px}
+  .bar .track i{position:absolute; left:0; top:0; height:100%; border-radius:4px; background:var(--accent)}
+  .bar .track em{position:absolute; top:-4px; bottom:-4px; width:1px; background:var(--line2)}
+  .bar .val{text-align:right; color:var(--ink2)}
+  .bar .val b{color:var(--ink)}
+  .rev{padding:12px 0; border-top:1px solid var(--line); font-size:14.5px}
+  .rev:first-child{border-top:none}
+  .rev .h{display:flex; gap:8px; align-items:baseline}
+  .rev .ok{font-weight:800; flex:none}
+  .rev .ok.y{color:var(--good)} .rev .ok.n{color:var(--bad)}
+  .rev .dom{color:var(--ink3); font-size:12px; flex:none}
+  .rev .ans{color:var(--ink2); font-size:13.5px; margin-top:3px}
+  .rev .why{color:var(--ink3); font-size:13px; margin-top:3px}
+  details summary{cursor:pointer; font-weight:700; padding:6px 0}
+  ul.caveats{padding-left:18px; color:var(--ink2); font-size:14px}
+  ul.caveats li{margin-bottom:6px}
+  .toast{position:fixed; left:50%; bottom:calc(24px + env(safe-area-inset-bottom)); transform:translateX(-50%);
+    background:var(--ink); color:#fff; padding:10px 16px; border-radius:999px; font-size:14px; opacity:0; pointer-events:none; transition:opacity .2s; z-index:50}
+  .toast.show{opacity:1}
+  .about p{color:var(--ink2); font-size:15px}
+  .about h3{font-size:16px; margin:16px 0 6px}
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="top">
+    <div class="logo"><img src="icon.svg" alt=""> Quotient</div>
+    <div class="spacer"></div>
+    <div class="chip quiet num" id="topchip"></div>
+  </header>
+  <main>
+    <!-- ---------- home ---------- -->
+    <section class="view on" id="v-home">
+      <h1>How sharp is your reasoning, really?</h1>
+      <p class="lead">An adaptive test that builds every puzzle for you on the spot, meets you at your level after each answer, and reports an IQ with an honest margin of error — not just a number.</p>
+      <div class="card" id="resume-card" style="display:none">
+        <div class="label">Test in progress</div>
+        <p id="resume-text"></p>
+        <div class="row"><button class="btn" id="btn-resume">Resume</button><button class="btn ghost" id="btn-discard">Discard</button></div>
+      </div>
+      <div class="card" id="last-card" style="display:none">
+        <div class="label">Your last result</div>
+        <p id="last-text"></p>
+        <button class="btn ghost small" id="btn-last">View report</button>
+      </div>
+      <div class="card">
+        <div class="label">Mode</div>
+        <div class="seg" id="seg-mode"></div>
+        <p class="muted" id="mode-blurb" style="margin:8px 0 0"></p>
+        <div class="domainlist" id="domainlist"></div>
+      </div>
+      <div class="card">
+        <div class="label">Length</div>
+        <div class="seg" id="seg-length"></div>
+        <p class="muted" id="length-blurb" style="margin:8px 0 0"></p>
+      </div>
+      <button class="btn" id="btn-start">Start the test</button>
+      <p class="muted" style="margin-top:12px">Sit somewhere quiet with a few uninterrupted minutes. Each item has its own clock, no paper or calculator, and you can’t go back — the test adapts to every answer.</p>
+      <p class="muted"><button id="btn-about" style="color:var(--accent); font-weight:600">How the scoring works</button></p>
+    </section>
+
+    <!-- ---------- domain intro ---------- -->
+    <section class="view" id="v-intro">
+      <div class="progress"><i id="intro-prog"></i></div>
+      <div class="card">
+        <div class="label" id="intro-label">Next up</div>
+        <h2 id="intro-title" style="margin-top:4px"></h2>
+        <p id="intro-text" style="font-size:16.5px"></p>
+        <p class="muted" id="intro-tip"></p>
+        <button class="btn" id="btn-begin">Begin</button>
+      </div>
+    </section>
+
+    <!-- ---------- item ---------- -->
+    <section class="view" id="v-test">
+      <div class="progress"><i id="test-prog"></i></div>
+      <div class="meta"><span id="meta-domain"></span><span class="num" id="meta-time"></span></div>
+      <div class="timer" id="timer"><i id="timer-bar"></i></div>
+      <div id="item-body"></div>
+      <div class="confirm"><button class="btn" id="btn-confirm" disabled>Next</button></div>
+    </section>
+
+    <!-- ---------- result ---------- -->
+    <section class="view" id="v-result">
+      <div class="card hero">
+        <div class="label">Estimated IQ</div>
+        <div class="iq num" id="r-iq"></div>
+        <div class="ci num" id="r-ci"></div>
+        <div class="band" id="r-band"></div>
+        <p class="muted" id="r-bandnote" style="margin:10px 0 0"></p>
+      </div>
+      <div class="card">
+        <div class="label">Where you sit</div>
+        <svg class="bell" id="r-bell" viewBox="0 0 560 190" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Bell curve with your score marked"></svg>
+        <p class="muted num" id="r-pct" style="margin:6px 0 0"></p>
+      </div>
+      <div class="card">
+        <div class="label">Profile by domain</div>
+        <div id="r-domains"></div>
+        <p class="muted" style="margin:8px 0 0">Each domain is estimated from only a few items, so the profile is a rough shape, not a diagnosis. The reference line is 100.</p>
+      </div>
+      <div class="card">
+        <div class="label">This sitting</div>
+        <div class="stats" id="r-stats"></div>
+      </div>
+      <div class="card">
+        <details><summary>Review every item</summary><div id="r-review"></div></details>
+      </div>
+      <div class="card">
+        <div class="label">Read this before you quote the number</div>
+        <ul class="caveats" id="r-caveats"></ul>
+      </div>
+      <div class="row" style="margin-bottom:10px"><button class="btn" id="btn-share">Copy result</button><button class="btn ghost" id="btn-again">Take it again</button></div>
+      <p class="muted" style="text-align:center"><button id="btn-about2" style="color:var(--accent); font-weight:600">How the scoring works</button></p>
+    </section>
+
+    <!-- ---------- about ---------- -->
+    <section class="view about" id="v-about">
+      <h1>How Quotient scores you</h1>
+      <h3>Every item is generated</h3>
+      <p>Matrix grids, number series, rotation figures, digit spans and logic puzzles are built from a random seed the moment you need them, with their difficulty set by their structure: how many rules a matrix combines, the order of a series rule, the length of a span, the form of an argument. No two sittings share items, so nothing can be looked up or memorised. Only the verbal items come from a fixed bank, and a sitting never repeats one.</p>
+      <h3>The test adapts</h3>
+      <p>Every item carries item-response-theory parameters — how sharply it separates abilities, how hard it is, and how likely a guess is to land. After each answer your ability is re-estimated (an expected-a-posteriori estimate under a wide normal prior), and the next item is drawn at the difficulty that will tell us most about you. Domains are rotated so the profile stays balanced.</p>
+      <h3>The score and its interval</h3>
+      <p>Ability is expressed in standard-deviation units and mapped to the familiar scale: mean 100, SD 15. The 95% interval is the posterior uncertainty of that estimate. A standard sitting usually lands around ±11 points — that is the honest resolution of a 25-minute test, and any test that quotes tighter without a longer sitting is overstating itself.</p>
+      <h3>What it is not</h3>
+      <p>Item difficulties are model-based, not calibrated on a norming sample, so the scale is an informed approximation of population IQ, not a clinical measurement. Fatigue, language, distraction and practice all move scores by several points. If the number matters for a real decision, take a professionally administered test.</p>
+      <button class="btn ghost" id="btn-about-back">Back</button>
+    </section>
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="engine.js"></script>
+<script>
+(function () {
+  'use strict';
+  var E = QuotientEngine;
+  var KEY_SESSION = 'quotient.session', KEY_LAST = 'quotient.last', KEY_PREFS = 'quotient.prefs';
+
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = E.escapeHTML;
+  var ui = {
+    prefs: { mode: 'full', length: 'standard' },
+    state: null, item: null, introduced: [],
+    shownAt: 0, timer: null, selected: null, token: 0, lastReport: null
+  };
+
+  /* ---------- storage ---------- */
+  function load(key) { try { var v = localStorage.getItem(key); return v ? JSON.parse(v) : null; } catch (e) { return null; } }
+  function save(key, v) { try { if (v == null) localStorage.removeItem(key); else localStorage.setItem(key, JSON.stringify(v)); } catch (e) {} }
+  function persistSession() {
+    if (!ui.state || ui.state.finished) { save(KEY_SESSION, null); return; }
+    save(KEY_SESSION, { state: ui.state, introduced: ui.introduced });
+  }
+
+  /* ---------- views ---------- */
+  function show(id) {
+    var views = document.querySelectorAll('.view');
+    for (var i = 0; i < views.length; i++) views[i].classList.toggle('on', views[i].id === id);
+    window.scrollTo(0, 0);
+    $('topchip').textContent = '';
+  }
+  var toastT = null;
+  function toast(msg) {
+    var t = $('toast'); t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastT); toastT = setTimeout(function () { t.classList.remove('show'); }, 1800);
+  }
+
+  /* ---------- home ---------- */
+  function seg(el, entries, current, onPick) {
+    el.innerHTML = '';
+    entries.forEach(function (en) {
+      var b = document.createElement('button');
+      b.textContent = en.label; b.className = en.key === current ? 'on' : '';
+      b.addEventListener('click', function () { onPick(en.key); });
+      el.appendChild(b);
+    });
+  }
+  function renderHome() {
+    var p = ui.prefs;
+    seg($('seg-mode'), Object.keys(E.MODES).map(function (k) { return { key: k, label: E.MODES[k].label }; }), p.mode,
+      function (k) { p.mode = k; save(KEY_PREFS, p); renderHome(); });
+    $('mode-blurb').textContent = E.MODES[p.mode].blurb;
+    $('domainlist').innerHTML = E.DOMAINS.map(function (d) {
+      var off = p.mode !== 'full' && !d.cultureFair;
+      return '<div class="d' + (off ? ' off' : '') + '"><b>' + esc(d.label) + '</b>' + (off ? 'not in this mode' : E.INSTRUCTIONS[d.key].text.split('.')[0].toLowerCase() + '.') + '</div>';
+    }).join('');
+    seg($('seg-length'), Object.keys(E.LENGTHS).map(function (k) { return { key: k, label: E.LENGTHS[k].label }; }), p.length,
+      function (k) { p.length = k; save(KEY_PREFS, p); renderHome(); });
+    var L = E.LENGTHS[p.length];
+    var nDom = E.DOMAINS.filter(function (d) { return p.mode === 'full' || d.cultureFair; }).length;
+    $('length-blurb').textContent = 'About ' + L.minutes + ' minutes · between ' + (L.minPerDomain * nDom) + ' and ' + L.maxItems + ' items, stopping early once the estimate is precise enough.';
+
+    var saved = load(KEY_SESSION);
+    var rc = $('resume-card');
+    if (saved && saved.state && !saved.state.finished) {
+      rc.style.display = '';
+      $('resume-text').textContent = 'You answered ' + saved.state.asked.length + ' of up to ' + saved.state.maxItems + ' items in ' + E.MODES[saved.state.mode].label.toLowerCase() + ' mode. Pick up where you left off — the current item gets a fresh clock.';
+    } else rc.style.display = 'none';
+    var last = load(KEY_LAST);
+    var lc = $('last-card');
+    if (last && last.iq) {
+      lc.style.display = '';
+      $('last-text').innerHTML = '<b class="num">IQ ' + last.iq + '</b> <span class="num">(95% interval ' + last.ciLow + '–' + last.ciHigh + ')</span> · ' + esc(last.band) + ' · ' + last.items + ' items';
+    } else lc.style.display = 'none';
+  }
+
+  /* ---------- running the test ---------- */
+  function startTest() {
+    var seed = 'q-' + Date.now().toString(36) + '-' + Math.floor(Math.random() * 1e9).toString(36);
+    ui.state = E.createSession({ seed: seed, mode: ui.prefs.mode, length: ui.prefs.length, now: Date.now() });
+    ui.introduced = [];
+    persistSession();
+    presentNext();
+  }
+  function resumeTest(saved) {
+    ui.state = saved.state; ui.introduced = saved.introduced || [];
+    presentNext();
+  }
+  function presentNext() {
+    stopTimer();
+    if (ui.state.finished) { finishTest(); return; }
+    var item = E.nextItem(ui.state);
+    ui.item = item; ui.selected = null;
+    if (ui.introduced.indexOf(item.domain) < 0) showIntro(item);
+    else showItem(item);
+  }
+  function setProgress(el) {
+    var pr = E.progress(ui.state);
+    el.style.width = Math.round(pr.fraction * 100) + '%';
+  }
+  function showIntro(item) {
+    var ins = E.INSTRUCTIONS[item.domain];
+    setProgress($('intro-prog'));
+    $('intro-label').textContent = ui.state.asked.length === 0 ? 'First up' : 'Next up';
+    $('intro-title').textContent = ins.title;
+    $('intro-text').textContent = ins.text;
+    $('intro-tip').textContent = 'Tip: ' + ins.tip;
+    show('v-intro');
+    $('topchip').textContent = 'Item ' + (ui.state.asked.length + 1);
+  }
+  $('btn-begin').addEventListener('click', function () {
+    if (ui.introduced.indexOf(ui.item.domain) < 0) ui.introduced.push(ui.item.domain);
+    persistSession();
+    showItem(ui.item);
+  });
+
+  function optionButton(inner, i, vis) {
+    return '<button class="opt' + (vis ? ' vis' : '') + '" data-i="' + i + '"><span class="k">' + (i + 1) + '</span>' + inner + '</button>';
+  }
+  function renderBody(item) {
+    var h = '';
+    if (item.domain === 'matrix') {
+      h += '<p class="prompt">' + esc(item.prompt) + '</p><div class="grid3">';
+      for (var i = 0; i < 8; i++) h += '<div class="c">' + E.cellSVG(item.cells[i]) + '</div>';
+      h += '<div class="c missing">' + E.cellSVG(null) + '</div></div><div class="opts four">';
+      h += item.options.map(function (o, i) { return optionButton(E.cellSVG(o), i, true); }).join('');
+      h += '</div>';
+    } else if (item.domain === 'series') {
+      h += '<p class="prompt">' + esc(item.prompt) + '</p><div class="series num">' + item.terms.map(function (t) { return '<span>' + t + ',</span>'; }).join('') + '<span class="q">?</span></div>';
+      h += '<div class="opts two">' + item.options.map(function (o, i) { return optionButton('<span class="num">' + o + '</span>', i); }).join('') + '</div>';
+    } else if (item.domain === 'spatial') {
+      h += '<p class="prompt">' + esc(item.prompt) + '</p><div class="target">' + E.figureSVG(item.target, item.grid) + '</div>';
+      h += '<div class="opts four">' + item.options.map(function (o, i) { return optionButton(E.figureSVG(o, item.grid), i, true); }).join('') + '</div>';
+    } else if (item.domain === 'logic') {
+      h += '<div class="premises">' + item.premises.map(function (p) { return '<div>' + esc(p) + '</div>'; }).join('') + '</div>';
+      h += '<p class="prompt">' + esc(item.prompt) + '</p><div class="opts">' + item.options.map(function (o, i) { return optionButton(esc(o), i); }).join('') + '</div>';
+    } else if (item.domain === 'verbal') {
+      h += '<p class="prompt big">' + esc(item.prompt) + '</p><div class="opts">' + item.options.map(function (o, i) { return optionButton(esc(o), i); }).join('') + '</div>';
+    } else if (item.domain === 'memory') {
+      h += '<p class="prompt">' + esc(item.prompt) + '</p><div class="memstage" id="memstage"><span class="hint">Watch…</span></div>';
+      h += '<div id="memform" style="display:none"><input id="meminput" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Type the digits" aria-label="Digits"></div>';
+    }
+    return h;
+  }
+  function showItem(item) {
+    var dom = E.domainByKey(item.domain);
+    setProgress($('test-prog'));
+    $('meta-domain').innerHTML = '<b>' + esc(dom.label) + '</b> · item ' + (ui.state.asked.length + 1);
+    $('item-body').innerHTML = renderBody(item);
+    $('btn-confirm').disabled = true;
+    $('btn-confirm').textContent = item.type === 'span' ? 'Submit' : 'Next';
+    $('timer').classList.remove('low');
+    $('timer-bar').style.width = '100%';
+    $('meta-time').textContent = '';
+    show('v-test');
+    $('topchip').textContent = 'Item ' + (ui.state.asked.length + 1);
+    var opts = document.querySelectorAll('#item-body .opt');
+    for (var i = 0; i < opts.length; i++) opts[i].addEventListener('click', onPickOption);
+    if (item.type === 'span') presentDigits(item);
+    else startTimer(item.timeLimitMs);
+  }
+  function onPickOption(ev) {
+    var b = ev.currentTarget, i = Number(b.getAttribute('data-i'));
+    var opts = document.querySelectorAll('#item-body .opt');
+    for (var k = 0; k < opts.length; k++) opts[k].classList.toggle('on', opts[k] === b);
+    ui.selected = i;
+    $('btn-confirm').disabled = false;
+  }
+  function presentDigits(item) {
+    var token = ++ui.token, stage = $('memstage'), idx = 0;
+    function step() {
+      if (token !== ui.token) return;
+      if (idx >= item.digits.length) {
+        stage.innerHTML = '<span class="hint">' + (item.backward ? 'Now type them in REVERSE order' : 'Now type them in order') + '</span>';
+        $('memform').style.display = '';
+        var inp = $('meminput');
+        inp.addEventListener('input', function () { $('btn-confirm').disabled = E.normalizeDigits(inp.value).length === 0; });
+        inp.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !$('btn-confirm').disabled) confirmAnswer(); });
+        try { inp.focus(); } catch (e) {}
+        startTimer(item.timeLimitMs);
+        return;
+      }
+      stage.innerHTML = '<span class="digit num">' + item.digits[idx] + '</span>';
+      idx++;
+      setTimeout(function () { if (token !== ui.token) return; stage.innerHTML = ''; setTimeout(step, item.gapMs); }, item.presentMs);
+    }
+    setTimeout(step, 600);
+  }
+
+  /* ---------- the clock ---------- */
+  function startTimer(limitMs) {
+    stopTimer();
+    ui.shownAt = Date.now();
+    ui.timer = setInterval(function () { tick(limitMs); }, 100);
+    tick(limitMs);
+  }
+  function stopTimer() { if (ui.timer) { clearInterval(ui.timer); ui.timer = null; } ui.token++; }
+  function tick(limitMs) {
+    var left = limitMs - (Date.now() - ui.shownAt);
+    if (left <= 0) { submit(null); return; }
+    $('timer-bar').style.width = Math.max(0, left / limitMs * 100) + '%';
+    $('timer').classList.toggle('low', left < 10000);
+    $('meta-time').textContent = Math.ceil(left / 1000) + 's';
+  }
+  function confirmAnswer() {
+    var item = ui.item;
+    if (item.type === 'span') { var v = E.normalizeDigits($('meminput').value); if (!v) return; submit(v); }
+    else { if (ui.selected == null) return; submit(ui.selected); }
+  }
+  $('btn-confirm').addEventListener('click', confirmAnswer);
+  function submit(response) {
+    var elapsed = Date.now() - ui.shownAt;
+    stopTimer();
+    ui.state = E.answer(ui.state, ui.item, response, elapsed, Date.now());
+    persistSession();
+    if (response == null) toast('Time’s up — moving on');
+    presentNext();
+  }
+
+  /* ---------- result ---------- */
+  function finishTest() {
+    var rep = E.report(ui.state);
+    ui.lastReport = rep;
+    save(KEY_LAST, rep);
+    save(KEY_SESSION, null);
+    renderResult(rep);
+  }
+  function bellSVG(rep) {
+    var W = 560, H = 190, bc = E.bellCurve(rep.theta, W, H - 30);
+    var pts = bc.points, base = bc.baseline;
+    var path = 'M' + pts.map(function (p) { return p[0] + ',' + p[1]; }).join(' L');
+    var area = path + ' L' + W + ',' + base + ' L0,' + base + ' Z';
+    var xOf = function (iq) { return (iq - 40) / 120 * W; };
+    var lo = Math.max(0, Math.min(W, xOf(rep.ciLow))), hi = Math.max(0, Math.min(W, xOf(rep.ciHigh)));
+    var s = '<defs><clipPath id="ciclip"><rect x="' + lo + '" y="0" width="' + (hi - lo) + '" height="' + H + '"/></clipPath></defs>';
+    s += '<path d="' + area + '" fill="#e4e6fa"/>';
+    s += '<path d="' + area + '" fill="#3d44b8" opacity="0.35" clip-path="url(#ciclip)"/>';
+    s += '<path d="' + path + '" fill="none" stroke="#3d44b8" stroke-width="2"/>';
+    s += '<line x1="0" y1="' + base + '" x2="' + W + '" y2="' + base + '" stroke="#c9cde0"/>';
+    [55, 70, 85, 100, 115, 130, 145].forEach(function (iq) {
+      s += '<text x="' + xOf(iq) + '" y="' + (base + 18) + '" text-anchor="middle" font-size="12" fill="#8d92ab">' + iq + '</text>';
+    });
+    s += '<line x1="' + bc.x + '" y1="10" x2="' + bc.x + '" y2="' + base + '" stroke="#d98a1f" stroke-width="2"/>';
+    var tx = Math.max(24, Math.min(W - 24, bc.x));
+    s += '<text x="' + tx + '" y="' + (H - 4) + '" text-anchor="middle" font-size="12" font-weight="700" fill="#1d2040">You · ' + rep.iq + '</text>';
+    return s;
+  }
+  function renderResult(rep) {
+    $('r-iq').textContent = rep.iq;
+    $('r-ci').textContent = '95% interval ' + rep.ciLow + '–' + rep.ciHigh;
+    $('r-band').textContent = rep.band;
+    $('r-bandnote').textContent = rep.bandNote;
+    $('r-bell').innerHTML = bellSVG(rep);
+    $('r-pct').textContent = 'Higher than about ' + Math.round(rep.percentile) + '% of people · about 1 in ' + rep.rarity + ' score this ' + (rep.above ? 'high' : 'low') + ' or further.';
+    $('r-domains').innerHTML = rep.domains.map(function (d) {
+      var w = Math.max(2, Math.min(100, (d.iq - 55) / 90 * 100));
+      return '<div class="bar" title="' + esc(d.label) + ': ' + d.correct + ' of ' + d.n + ' correct"><span class="name">' + esc(d.short) + '</span>' +
+        '<span class="track"><i style="width:' + w + '%"></i><em style="left:' + ((100 - 55) / 90 * 100) + '%"></em></span>' +
+        '<span class="val num"><b>' + d.iq + '</b> · ' + d.correct + '/' + d.n + '</span></div>';
+    }).join('');
+    var stat = function (v, l) { return '<div class="stat"><b class="num">' + v + '</b><span>' + l + '</span></div>'; };
+    $('r-stats').innerHTML = stat(rep.items, 'items') + stat(rep.correct, 'correct') + stat(E.formatDuration(rep.medianMs), 'median') + stat(E.formatDuration(rep.durationMs), 'total');
+    $('r-review').innerHTML = rep.review.map(function (x) {
+      var dom = E.domainByKey(x.domain);
+      return '<div class="rev"><div class="h"><span class="ok ' + (x.correct ? 'y' : 'n') + '">' + (x.correct ? '✓' : '✗') + '</span><span>' + esc(x.summary) + '</span><span class="dom">' + esc(dom.short) + '</span></div>' +
+        '<div class="ans">' + (x.correct ? 'Correct' : (x.timedOut ? 'Out of time' : 'You said ' + esc(x.response)) + ' · answer: ' + esc(x.answerText)) + ' · ' + E.formatDuration(x.elapsedMs) + '</div>' +
+        '<div class="why">' + esc(x.explanation) + '</div></div>';
+    }).join('');
+    $('r-caveats').innerHTML = rep.caveats.map(function (c) { return '<li>' + esc(c) + '</li>'; }).join('');
+    show('v-result');
+  }
+  $('btn-share').addEventListener('click', function () {
+    var text = E.shareText(ui.lastReport);
+    var done = function () { toast('Copied to clipboard'); };
+    try {
+      if (navigator.share) { navigator.share({ text: text }).catch(function () {}); return; }
+      if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text).then(done, function () { window.prompt('Copy your result', text); }); return; }
+    } catch (e) {}
+    window.prompt('Copy your result', text);
+  });
+  $('btn-again').addEventListener('click', function () { ui.state = null; ui.lastReport = null; renderHome(); show('v-home'); });
+
+  /* ---------- wiring ---------- */
+  $('btn-start').addEventListener('click', startTest);
+  $('btn-resume').addEventListener('click', function () { var s = load(KEY_SESSION); if (s && s.state) resumeTest(s); else renderHome(); });
+  $('btn-discard').addEventListener('click', function () { save(KEY_SESSION, null); renderHome(); });
+  $('btn-last').addEventListener('click', function () { var last = load(KEY_LAST); if (last) { ui.lastReport = last; renderResult(last); } });
+  $('btn-about').addEventListener('click', function () { show('v-about'); });
+  $('btn-about2').addEventListener('click', function () { show('v-about'); });
+  $('btn-about-back').addEventListener('click', function () { if (ui.lastReport && !ui.state) renderResult(ui.lastReport); else { renderHome(); show('v-home'); } });
+
+  var prefs = load(KEY_PREFS);
+  if (prefs && E.MODES[prefs.mode] && E.LENGTHS[prefs.length]) ui.prefs = prefs;
+  renderHome();
+
+  window.addEventListener('load', function () {
+    try { if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function () {}); } catch (e) {}
+  });
+})();
+</script>
+</body>
+</html>
