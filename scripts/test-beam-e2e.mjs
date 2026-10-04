@@ -211,6 +211,42 @@ test('a frame jsQR misreads by one character is rejected by parseFrame, never fe
   assert.ok(E.parseFrame(text));
 });
 
+test('re-plan through the camera: Stop at Large, Start again at Small (same tid) — the receiver switches and finishes', () => {
+  // tid = CRC(stream) is independent of the density, so the sender's Stop → lower density → Start
+  // produces frames with the same tid but another K and frame size. The receiver must follow the
+  // new plan (after two consistent frames) rather than report 'bad' for every frame forever.
+  const file = FILES[1];
+  const built = E.buildStream(file.bytes, { name: file.name, type: file.type, originalSize: file.bytes.length, compressed: false });
+  const large = E.makeContext(built.stream, E.chunkBytesFor(QR.capacity(20, 'L', 'alnum')));
+  const small = E.makeContext(built.stream, E.chunkBytesFor(QR.capacity(10, 'L', 'alnum')));
+  assert.equal(large.tid, small.tid);
+  assert.ok(small.K > large.K);
+  const show = (ctx, version, seq) => {
+    const text = E.encodeFrame(ctx, seq);
+    const read = scan(QR.encode(text, { version, ec: 'L', mode: 'alnum' }));
+    assert.equal(read, text);
+    return E.parseFrame(read);
+  };
+  const dec = E.createDecoder(), events = [];
+  for (let seq = 0; seq < 4; seq++) events.push(E.decoderPush(dec, show(large, 20, seq)).type);
+  assert.deepEqual(events, ['start', 'progress', 'progress', 'progress']);
+  assert.equal(E.decoderProgress(dec).K, large.K);
+  // the sender stopped and restarted at Small: seq starts over
+  const first = E.decoderPush(dec, show(small, 10, 0));
+  assert.equal(first.type, 'bad'); assert.equal(first.replan, true);
+  assert.equal(E.decoderProgress(dec).K, large.K, 'one frame does not reset');
+  const second = E.decoderPush(dec, show(small, 10, 1));
+  assert.equal(second.type, 'switch'); assert.equal(second.K, small.K); assert.equal(second.tid, small.tid);
+  let ev = second, seq = 2, bads = 0;
+  while (ev.type !== 'complete' && seq < 3 * small.K) { ev = E.decoderPush(dec, show(small, 10, seq++)); if (ev.type === 'bad') bads++; }
+  assert.equal(ev.type, 'complete');
+  assert.equal(bads, 0, 'no further bad frames once switched');
+  const res = E.decoderResult(dec);
+  bytesEq(res.fileBytes, file.bytes);
+  assert.equal(res.manifest.n, file.name);
+  console.log(`      Large K=${large.K} → Small K=${small.K}, completed after ${E.decoderProgress(dec).framesSeen} Small frames`);
+});
+
 test('the planner\'s K matches what the decoder actually needs', () => {
   for (const preset of PRESETS) for (const file of FILES) {
     const built = E.buildStream(file.bytes, { name: file.name, type: file.type, originalSize: file.bytes.length, compressed: false });

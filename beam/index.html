@@ -138,9 +138,11 @@
   .controls .sm{flex:1; min-width:96px}
 
   /* ---------- receive ---------- */
-  .cam{position:relative; width:100%; aspect-ratio:3/4; max-height:62vh; background:#000; border-radius:18px; overflow:hidden; border:1px solid var(--line)}
+  .cam{position:relative; width:100%; aspect-ratio:3/4; max-height:62vh; background:#000; border-radius:18px; overflow:hidden; border:1px solid var(--line); container-type:size}
   .cam video{width:100%; height:100%; object-fit:cover; display:block}
-  .guide{position:absolute; left:50%; top:50%; width:72%; aspect-ratio:1/1; transform:translate(-50%,-50%); border-radius:18px; pointer-events:none;
+  /* the guide square is sized from the SMALLER side of the camera box: in landscape max-height binds,
+     and a width-only square would be clipped to two vertical lines (72cqh falls back to 72% where unsupported) */
+  .guide{position:absolute; left:50%; top:50%; width:72%; width:min(72%, 72cqh); aspect-ratio:1/1; transform:translate(-50%,-50%); border-radius:18px; pointer-events:none;
     box-shadow:0 0 0 2000px rgba(0,0,0,.28); outline:2px solid rgba(94,234,212,.75)}
   .cam.locked .guide{outline-color:var(--good)}
   .camoff{position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:20px; background:rgba(10,14,26,.78); text-align:center}
@@ -170,7 +172,7 @@
   .toast.show{opacity:1}
   @media (min-width:700px){ .cam{max-height:56vh} }
   /* older Safari (< 15) has no aspect-ratio: give the camera box and guide a height anyway */
-  @supports not (aspect-ratio: 1 / 1){ .cam{height:72vw; max-height:62vh} .guide{width:60vw; height:60vw; max-width:300px; max-height:300px} .grid i{height:10px} }
+  @supports not (aspect-ratio: 1 / 1){ .cam{height:72vw; max-height:62vh} .guide{width:60vw; height:60vw; width:min(60vw, 45vh); height:min(60vw, 45vh); max-width:300px; max-height:300px} .grid i{height:10px} }
 </style>
 </head>
 <body>
@@ -201,7 +203,7 @@
         <li><b>The receiver points its camera</b> at that screen. Every code it reads is a piece; pieces it misses are repaired by later codes, so nobody has to hold perfectly still.</li>
         <li><b>Done.</b> The file is checked against its fingerprint, then saved or shared. Nothing ever leaves the two phones.</li>
       </ol>
-      <p class="fine">Honest speed: <b>a few hundred KB a minute</b> at best. Perfect for notes, contacts, documents and shrunk photos — not for videos. Beam shows you the estimate before you start.</p>
+      <p class="fine">Honest speed: <b>a few hundred KB a minute</b> at the default settings (up to about 1 MB a minute at Max density and 12 codes a second, if the camera keeps up). Perfect for notes, contacts, documents and shrunk photos — not for videos. Beam shows you the estimate before you start.</p>
     </details>
 
     <div class="card">
@@ -310,7 +312,7 @@
   <label><input type="radio" name="dec" value="auto"> Auto — native when available</label>
   <label><input type="radio" name="dec" value="native"> Native (BarcodeDetector)</label>
   <label><input type="radio" name="dec" value="js"> JavaScript (jsQR)</label>
-  <p class="fine" id="dec-note">If the native decoder misreads or stalls, force JavaScript. Changes apply to the next camera start.</p>
+  <p class="fine" id="dec-note">If the native decoder misreads or stalls, force JavaScript. Changes apply at once — a transfer in progress keeps its pieces.</p>
 </div>
 <div class="toast" id="toast"></div>
 
@@ -381,16 +383,56 @@ function readBytes(blob, cb) {
   } catch (e) {}
   cb(null);
 }
-/* deflate-raw via the streams API when the browser has it; cb(null) means "not available" */
-function codecStream(Ctor, format, bytes, cb) {
-  if (typeof Ctor !== 'function' || typeof Response !== 'function' || typeof Blob !== 'function') { cb(null); return; }
-  try {
-    var s = new Blob([bytes]).stream().pipeThrough(new Ctor(format));
-    new Response(s).arrayBuffer().then(function (ab) { cb(new Uint8Array(ab)); }, function () { cb(null); });
-  } catch (e) { cb(null); }
+/* deflate-raw via the streams API. cb(bytes) on success, else cb(null, why) with why one of
+ *   'unsupported' — no (De)CompressionStream, or the class exists but not 'deflate-raw'
+ *                   (Chromium 80–102 throws TypeError from the constructor)
+ *   'limit'       — the output grew past `limit` bytes; the stream is cancelled there, so a
+ *                   hostile sender cannot inflate a few hundred KB of codes into gigabytes
+ *   'error'       — the data is not valid deflate-raw
+ * The output is read incrementally so the limit is enforced while inflating, not after. */
+function codecStream(Ctor, format, bytes, limit, cb) {
+  var done = false;
+  var fin = function (out, why) { if (!done) { done = true; cb(out, why); } };
+  if (typeof Ctor !== 'function' || typeof Blob !== 'function') { fin(null, 'unsupported'); return; }
+  var s;
+  try { s = new Blob([bytes]).stream().pipeThrough(new Ctor(format)); }
+  catch (e) { fin(null, 'unsupported'); return; }
+  if (!s || typeof s.getReader !== 'function') {
+    if (typeof Response !== 'function') { fin(null, 'unsupported'); return; }
+    try {
+      new Response(s).arrayBuffer().then(function (ab) {
+        var out = new Uint8Array(ab);
+        if (limit && out.length > limit) fin(null, 'limit'); else fin(out);
+      }, function () { fin(null, 'error'); });
+    } catch (e) { fin(null, 'error'); }
+    return;
+  }
+  var reader = s.getReader(), parts = [], total = 0;
+  var pump = function () {
+    reader.read().then(function (r) {
+      if (r.done) {
+        var out = new Uint8Array(total), off = 0;
+        for (var i = 0; i < parts.length; i++) { out.set(parts[i], off); off += parts[i].length; }
+        fin(out); return;
+      }
+      var piece = r.value;
+      total += piece.length;
+      if (limit && total > limit) {
+        try { var c = reader.cancel(); if (c && c.catch) c.catch(noop); } catch (e) {}
+        fin(null, 'limit'); return;
+      }
+      parts.push(piece);
+      pump();
+    }, function () { fin(null, 'error'); });
+  };
+  pump();
 }
-function deflateRaw(bytes, cb) { codecStream(window.CompressionStream, 'deflate-raw', bytes, cb); }
-function inflateRaw(bytes, cb) { codecStream(window.DecompressionStream, 'deflate-raw', bytes, cb); }
+function deflateRaw(bytes, cb) { codecStream(window.CompressionStream, 'deflate-raw', bytes, 0, cb); }
+function inflateRaw(bytes, limit, cb) { codecStream(window.DecompressionStream, 'deflate-raw', bytes, limit, cb); }
+/* Largest file a compressed transfer may inflate to. deflate-raw reaches ~1000× on sparse input, so
+ * without a ceiling ~260 KB of codes (a minute of beaming) could allocate 256 MB+ on the receiver. */
+var MAX_INFLATED = 128 * 1024 * 1024;
+var INFLATE_HINT = 'Chrome 103+, Safari 16.4+ and Firefox 113+ can';
 
 /* ============================ settings ============================ */
 var LS_KEY = 'beam:settings';
@@ -415,7 +457,8 @@ var SCREENS = ['home', 'pick', 'beam', 'receive'];
 var TITLES = { home: '', pick: 'Send', beam: 'Beaming', receive: 'Receive' };
 var cur = 'home';
 function show(name) {
-  if (cur === 'receive' && name !== 'receive') stopCamera();
+  // Leaving Receive deliberately abandons the transfer (a camera interruption keeps it — see startCamera)
+  if (cur === 'receive' && name !== 'receive') { stopCamera(); R.dec = null; resetRxUi(); }
   if (cur === 'beam' && name !== 'beam') stopBeaming();
   for (var i = 0; i < SCREENS.length; i++) $('s-' + SCREENS[i]).hidden = SCREENS[i] !== name;
   cur = name;
@@ -648,8 +691,8 @@ function renderPrepInfo() {
   var cl = $('compress-line');
   if (P.compressed) {
     var pct = Math.round((1 - P.payload.length / P.size) * 100);
-    // The receiver needs DecompressionStream to inflate (older Safari lacks it) — offer the plain bytes as a one-tap resend option.
-    cl.innerHTML = '🗜️ compressed ' + pct + '% (' + escapeHtml(E.formatBytes(P.size)) + ' → ' + escapeHtml(E.formatBytes(P.payload.length)) + '); the receiver inflates it automatically. '
+    // The receiver needs DecompressionStream('deflate-raw') to inflate (Chrome 103+, Safari 16.4+, Firefox 113+) — offer the plain bytes as a one-tap resend option.
+    cl.innerHTML = '🗜️ compressed ' + pct + '% (' + escapeHtml(E.formatBytes(P.size)) + ' → ' + escapeHtml(E.formatBytes(P.payload.length)) + '); a receiver on a current browser inflates it automatically. '
       + '<button type="button" class="linkbtn" id="btn-nocompress" style="min-height:32px">send uncompressed instead</button>';
     var nb = $('btn-nocompress');
     if (nb) nb.addEventListener('click', function () { if (picked) { picked.noCompress = true; prepare(); } });
@@ -711,20 +754,31 @@ $('file-input').addEventListener('change', function () {
 $('btn-use-note').addEventListener('click', onNote);
 $('btn-change').addEventListener('click', resetPick);
 $('shrink').addEventListener('change', function () { if (picked) prepare(); });
+/* Drag-and-drop is handled at the document level: once a file is picked the drop zone is hidden,
+ * and an uncancelled file drop anywhere else would make the browser navigate the tab to the
+ * dropped file — throwing away the prepared transfer or a beam in progress. */
 (function dragDrop() {
   var z = $('pick-zone');
-  z.addEventListener('dragover', function (ev) { ev.preventDefault(); z.className = 'drop over'; });
-  z.addEventListener('dragleave', function () { z.className = 'drop'; });
-  z.addEventListener('drop', function (ev) {
+  var canTake = function () { return cur === 'home' || cur === 'pick'; };
+  document.addEventListener('dragover', function (ev) {
+    ev.preventDefault();
+    if (canTake() && !z.hidden) z.className = 'drop over';
+  });
+  document.addEventListener('dragleave', function (ev) {
+    if (!ev.relatedTarget) z.className = 'drop';
+  });
+  document.addEventListener('drop', function (ev) {
     ev.preventDefault(); z.className = 'drop';
     var f = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
-    if (f) { show('pick'); onFile(f); }
+    if (!f) return;
+    if (!canTake()) { toast(cur === 'beam' ? 'Stop beaming before picking another file' : 'Go back to Send to pick a file'); return; }
+    show('pick'); onFile(f);
   });
 })();
 
 /* ============================ SEND: beaming ============================ */
 var B = { running: false, paused: false, ctx: null, K: 0, seq: 0, fps: E.FPS_DEFAULT, timer: 0, next: null, cur: null,
-          version: 0, ec: 'L', lock: null, encodeMs: 0, scale: 1, quiet: 4 };
+          version: 0, ec: 'L', encodeMs: 0, scale: 1, quiet: 4 };
 var hintShown = false;   // per page load — "first run" of the beaming screen
 
 function encodeSeq(seq) {
@@ -777,15 +831,23 @@ function frameTick() {
   B.next = encodeSeq(nextSeq);          // one-frame lookahead keeps paint timing even
   $('slow-hint').hidden = !(B.encodeMs > budget);
 }
+/* One screen wake lock shared by both roles (the screens are mutually exclusive). The sender needs
+ * it so the codes keep showing; the receiver needs it because a camera preview does not stop iOS
+ * from auto-locking, and a locked phone ends the camera track mid-transfer. */
+var wakeLock = null;
 function requestWakeLock() {
   try {
     if (navigator.wakeLock && typeof navigator.wakeLock.request === 'function') {
-      navigator.wakeLock.request('screen').then(function (l) { B.lock = l; }, noop);
+      navigator.wakeLock.request('screen').then(function (l) {
+        if (wakeLock && wakeLock !== l) { try { wakeLock.release(); } catch (e) {} }
+        wakeLock = l;
+        if (!B.running && !R.running) releaseWakeLock();   // granted after we already stopped
+      }, noop);
     }
   } catch (e) {}
 }
 function releaseWakeLock() {
-  if (B.lock) { try { B.lock.release(); } catch (e) {} B.lock = null; }
+  if (wakeLock) { try { wakeLock.release(); } catch (e) {} wakeLock = null; }
 }
 function startBeaming() {
   if (!P) return;
@@ -836,13 +898,19 @@ window.addEventListener('resize', function () { if (B.running) { sizeCanvas(); p
 document.addEventListener('visibilitychange', function () {
   if (document.hidden === true) { R.hidden = true; return; }
   R.hidden = false;
-  if (B.running) requestWakeLock();
+  if (B.running || R.running) requestWakeLock();   // the browser drops the lock while hidden
 });
 
 /* ============================ RECEIVE ============================ */
 var R = { stream: null, running: false, idle: false, mode: 'none', det: null, dec: null, timer: 0, statTimer: 0,
           startTs: 0, decodeTimes: [], garbageAt: 0, canvas: null, hidden: false, K: 0, gridCells: 0, gridPer: 1,
-          cardShown: false, objectUrl: '', lastSeenAt: 0 };
+          cardShown: false, objectUrl: '', lastSeenAt: 0,
+          gen: 0,            // bumped by every start and stop: a getUserMedia that resolves for an older generation is discarded
+          starting: false,   // a getUserMedia is pending — ignore further Start taps until it settles
+          gapStart: 0,       // when the camera stopped mid-transfer, so the ETA can skip the interruption
+          tid: null,         // transfer id we are showing progress for
+          replan: null,      // UI-side copy of the engine's re-plan candidate (for engines without one)
+          lastDecodeMs: 0 };
 var vid = $('cam');
 
 function setRxStatus(html, cls) {
@@ -850,7 +918,11 @@ function setRxStatus(html, cls) {
   s.innerHTML = html;
   s.className = 'status' + (cls ? ' ' + cls : '');
 }
-function decoderLabel() { return R.mode === 'native' ? 'native' : R.mode === 'js' ? 'jsQR' : 'none'; }
+function decoderLabel() {
+  if (R.mode === 'native') return 'native';
+  if (R.mode === 'js') return JW.w && !JW.failed ? 'jsQR (worker)' : 'jsQR';
+  return 'none';
+}
 function chooseDecoder(cb) {
   var want = S.decoder;
   detectNative(function (ok) {
@@ -875,12 +947,24 @@ function startCamera(auto) {
     setRxStatus('No camera is available in this browser — open Beam on a phone (Safari or Chrome) over https to receive.', 'bad');
     return;
   }
+  if (R.starting) return;                 // a Start is already pending (auto start + a tap, or a double tap)
   setRxStatus('Opening the camera…');
   var gum;
   try { gum = md.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false }); }
   catch (e) { gum = null; }
   if (!gum || typeof gum.then !== 'function') { setRxStatus('Couldn’t open the camera. Tap <b>&nbsp;Start camera&nbsp;</b> to try again.', 'bad'); return; }
+  var gen = ++R.gen;
+  R.starting = true;
+  $('btn-cam-start').disabled = true;
+  var settled = function () { R.starting = false; $('btn-cam-start').disabled = false; };
   gum.then(function (stream) {
+      settled();
+      // Back was tapped (or the camera was stopped and restarted) while the permission prompt /
+      // camera open was pending: this stream belongs to nobody — stop it, or the camera light stays on.
+      if (gen !== R.gen || cur !== 'receive') {
+        try { stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
+        return;
+      }
       R.stream = stream;
       try {
         // iOS ends the track when the app is backgrounded for a while or another app takes the camera.
@@ -891,19 +975,43 @@ function startCamera(auto) {
       var p = vid.play(); if (p && p.catch) p.catch(noop);
       $('cam-off').hidden = true;
       chooseDecoder(function () {
+        if (gen !== R.gen) return;          // stopped again while the decoder probe ran
         if (R.mode === 'none') {
           setRxStatus('This browser has no QR decoder (no BarcodeDetector and jsQR did not load). This phone can still <b>send</b>.', 'bad');
           return;
         }
-        R.dec = E.createDecoder();
-        R.running = true; R.idle = false;
-        resetRxUi();
-        setRxStatus('Point the camera at the other phone’s screen. Fill the frame with the code.');
+        var dec = R.dec;
+        R.running = true;
+        clearTimeout(R.timer); R.timer = 0;
+        R.decodeTimes = [];
+        if (dec && dec.complete) {
+          // The camera stopped after Done (or after a failed transfer): keep the card and its Save
+          // link; decoding resumes with "Receive another".
+          R.idle = true;
+          setRxStatus($('rx-error').hidden ? 'Camera is back on. Tap <b>&nbsp;Receive another&nbsp;</b> for the next file.' : 'Tap <b>&nbsp;Receive another&nbsp;</b> to try again.', $('rx-error').hidden ? 'good' : 'bad');
+        } else if (dec && dec.tid) {
+          // Interrupted mid-transfer (phone slept, another app took the camera, tab switch): the
+          // pieces we have are kept — the sender loops repair codes, so we simply carry on.
+          R.idle = false;
+          if (R.gapStart) { R.startTs += Date.now() - R.gapStart; R.gapStart = 0; }
+          var pr = E.decoderProgress(dec);
+          $('rx-progress').hidden = false;
+          updateProgress();
+          setRxStatus('Resumed with ' + pr.have + ' of ' + pr.K + ' pieces kept — keep the camera pointed until it says <b>Done</b>.', 'good');
+        } else {
+          R.dec = E.createDecoder();
+          R.idle = false;
+          resetRxUi();
+          setRxStatus('Point the camera at the other phone’s screen. Fill the frame with the code.');
+        }
+        requestWakeLock();
         clearInterval(R.statTimer);
         R.statTimer = setInterval(updateStats, 500);
         tick();
       });
     }, function (err) {
+      settled();
+      if (gen !== R.gen || cur !== 'receive') return;
       var n = (err && err.name) || '';
       if (auto && (n === 'NotAllowedError' || n === 'SecurityError' || n === 'PermissionDeniedError' || n === 'InvalidStateError'))
         setRxStatus('Tap <b>&nbsp;Start camera&nbsp;</b> to allow camera access.');
@@ -923,9 +1031,12 @@ function onTrackEnded() {
   if (!wasIdle) setRxStatus('The camera stopped (another app took it, or the phone slept). Tap <b>&nbsp;Start camera&nbsp;</b> to continue — the pieces you already have are kept.', 'bad');
 }
 function stopCamera() {
+  R.gen++;                                // a getUserMedia still in flight now belongs to nobody
+  if (R.running && R.startTs && R.dec && !R.dec.complete) R.gapStart = Date.now();
   R.running = false; R.idle = false;
   clearTimeout(R.timer); R.timer = 0;
   clearInterval(R.statTimer); R.statTimer = 0;
+  JW.busy = false;
   if (R.stream) {
     try { R.stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
     R.stream = null;
@@ -933,6 +1044,7 @@ function stopCamera() {
   try { vid.srcObject = null; } catch (e) {}
   $('cam-off').hidden = false;
   $('cam-box').className = 'cam';
+  releaseWakeLock();
 }
 function schedule(ms) {
   if (!R.running) return;
@@ -949,13 +1061,35 @@ function tick() {
       for (var i = 0; i < (codes ? codes.length : 0); i++) handleText(codes[i].rawValue);
       schedule(30);
     }, function () { schedule(60); });
-  } else {
-    var text = grabAndDecode();
-    if (text) handleText(text);
-    schedule(10);
+    return;
   }
+  var w = jsWorker();
+  if (w) {
+    // jsQR runs in a worker: the main thread only grabs frames (a few ms each) and polls for the
+    // answer, so taps and repaints are never stuck behind a 50–150 ms decode.
+    if (JW.busy) {
+      if (now() - JW.sentAt > JW_TIMEOUT_MS) jsWorkerFail();      // wedged — decode here from now on
+      schedule(10); return;
+    }
+    var img = grabFrame();
+    if (img) {
+      JW.busy = true; JW.sentAt = now(); JW.id++;
+      try { w.postMessage({ id: JW.id, data: img.data, w: img.width, h: img.height }, [img.data.buffer]); }
+      catch (e) { JW.busy = false; jsWorkerFail(); }
+    }
+    schedule(10);
+    return;
+  }
+  // No worker (file://, very old browser): decode on this thread, resting in proportion to the
+  // decode time so a slow, code-less frame does not pin the thread at 100 %.
+  var t0 = now();
+  var frame = grabFrame();
+  var text = frame ? decodeImage(frame) : null;
+  R.lastDecodeMs = now() - t0;
+  if (text) handleText(text);
+  schedule(clamp(Math.round(R.lastDecodeMs / 4), 10, 40));
 }
-function grabAndDecode() {
+function grabFrame() {
   var vw = vid.videoWidth, vh = vid.videoHeight;
   if (!vw || !vh) return null;
   var s = Math.min(1, 1280 / Math.max(vw, vh));
@@ -966,10 +1100,46 @@ function grabAndDecode() {
   var ctx = c.getContext('2d', { willReadFrequently: true }) || c.getContext('2d');
   try {
     ctx.drawImage(vid, 0, 0, w, h);
-    var img = ctx.getImageData(0, 0, w, h);
-    var res = window.jsQR(img.data, w, h, { inversionAttempts: 'dontInvert' });
+    return ctx.getImageData(0, 0, w, h);
+  } catch (e) { return null; }
+}
+function decodeImage(img) {
+  try {
+    var res = window.jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
     return res && res.data ? res.data : null;
   } catch (e) { return null; }
+}
+/* ---- jsQR in a Web Worker (built from a blob so the page stays a single file; it imports the
+ * same jsqr.js the page loaded). Any failure falls back to decoding on the main thread. ---- */
+var JW = { w: null, failed: false, busy: false, sentAt: 0, id: 0 };
+var JW_TIMEOUT_MS = 4000;
+function jsWorkerFail() {
+  JW.failed = true; JW.busy = false;
+  if (JW.w) { try { JW.w.terminate(); } catch (e) {} JW.w = null; }
+}
+function jsWorker() {
+  if (JW.w || JW.failed) return JW.w;
+  JW.failed = true;                       // flipped back below only when everything is in place
+  try {
+    if (typeof Worker !== 'function' || typeof Blob !== 'function' || typeof URL === 'undefined' || !URL.createObjectURL) return null;
+    var el = document.querySelector('script[src$="jsqr.js"]');
+    var src = el && el.src ? String(el.src) : '';
+    if (!/^https?:/i.test(src)) return null;   // importScripts needs an http(s) URL
+    var code = 'importScripts(' + JSON.stringify(src) + ');'
+      + 'self.onmessage=function(e){var d=e.data,r=null;'
+      + 'try{r=jsQR(d.data,d.w,d.h,{inversionAttempts:"dontInvert"})}catch(x){}'
+      + 'self.postMessage({id:d.id,text:r&&r.data?r.data:null})};';
+    var w = new Worker(URL.createObjectURL(new Blob([code], { type: 'text/javascript' })));
+    w.onmessage = function (e) {
+      var d = e && e.data ? e.data : {};
+      if (d.id !== JW.id) return;           // answer to a frame from before a stop/restart
+      JW.busy = false;
+      if (d.text) handleText(d.text);
+    };
+    w.onerror = function () { jsWorkerFail(); };
+    JW.w = w; JW.failed = false;
+  } catch (e) { JW.w = null; }
+  return JW.w;
 }
 function handleText(text) {
   if (!R.running || R.idle || !text) return;
@@ -986,20 +1156,38 @@ function handleText(text) {
   }
   $('cam-box').className = 'cam locked';
   var ev = E.decoderPush(R.dec, frame);
+  if (ev.type === 'bad' && isReplan(ev)) {
+    // Same file, other density: tid is CRC-32(stream) and ignores the chunk size, so when the sender
+    // stops and restarts at another density (the fix its own slow-hint suggests) the tid stays while
+    // K / frame size change, and the engine rejects every frame. One misread header is not proof, so
+    // we switch over on the second frame that agrees on the new plan. Newer engines do this
+    // themselves (ev.replan, then 'switch'); for older ones the page keeps the candidate.
+    if (!ev.replan) {
+      var rp = R.replan;
+      if (rp && rp.K === frame.K && rp.len === frame.payload.length && rp.seq !== frame.seq) {
+        R.dec = E.createDecoder();
+        ev = E.decoderPush(R.dec, frame);
+      } else {
+        R.replan = { K: frame.K, len: frame.payload.length, seq: frame.seq };
+      }
+    }
+    if (ev.type === 'bad') {
+      setRxStatus('The sender seems to have restarted at another density — switching over…', 'bad');
+      return;
+    }
+  }
+  R.replan = null;
+  var restarted = ev.tid !== undefined && ev.tid === R.tid;   // same file again (re-plan), not a new one
   switch (ev.type) {
     case 'start':
-      R.startTs = t; R.K = ev.K; R.cardShown = false;
+    case 'switch':
+      if (R.tid !== null) toast(restarted ? 'The sender restarted — starting over with the new codes.' : 'A different transfer appeared — starting over with it.');
+      R.startTs = t; R.gapStart = 0; R.K = ev.K; R.tid = ev.tid; R.cardShown = false;
       $('rx-progress').hidden = false;
       $('rx-done').hidden = true; $('rx-error').hidden = true;
+      $('rx-card').innerHTML = '<div class="fine">' + (ev.type === 'switch' ? 'New transfer — waiting for its first piece…' : 'Waiting for the first piece… the file’s name and size appear as soon as it arrives.') + '</div>';
       buildGrid(ev.K);
       setRxStatus('Receiving — keep the camera pointed until it says <b>Done</b>.', 'good');
-      updateProgress(); tryPeek();
-      break;
-    case 'switch':
-      R.startTs = t; R.K = ev.K; R.cardShown = false;
-      toast('A different transfer appeared — starting over with it.');
-      $('rx-card').innerHTML = '<div class="fine">New transfer — waiting for its first piece…</div>';
-      buildGrid(ev.K);
       updateProgress(); tryPeek();
       break;
     case 'progress':
@@ -1008,7 +1196,8 @@ function handleText(text) {
       break;
     case 'complete':
       // a one-chunk file completes on the very first frame — no 'start' was ever seen
-      if (!R.startTs) { R.startTs = t; R.K = ev.K; }
+      if (!R.startTs || ev.tid !== undefined) { R.startTs = t; R.K = ev.K; }
+      if (ev.tid !== undefined) R.tid = ev.tid;
       updateProgress();
       finishReceive();
       break;
@@ -1019,8 +1208,9 @@ function handleText(text) {
       break;
   }
 }
+function isReplan(ev) { return !!ev.replan || /^(K|frame size) changed/.test(String(ev.reason || '')); }
 function resetRxUi() {
-  R.startTs = 0; R.K = 0; R.cardShown = false; R.decodeTimes = [];
+  R.startTs = 0; R.gapStart = 0; R.K = 0; R.tid = null; R.replan = null; R.cardShown = false; R.decodeTimes = [];
   $('rx-progress').hidden = true;
   $('rx-done').hidden = true; $('rx-error').hidden = true;
   $('btn-rx-another').hidden = true;
@@ -1080,7 +1270,9 @@ function tryPeek() {
   if (!m) return;
   R.cardShown = true;
   var name = E.safeFileName(m.n), type = m.t || '';
-  $('rx-card').innerHTML = fileCardHtml(name, m.s, type, E.fileKind(type, name), '', m.z ? 'compressed' : '');
+  var tooBig = !!m.z && m.s > MAX_INFLATED;
+  $('rx-card').innerHTML = fileCardHtml(name, m.s, type, E.fileKind(type, name), '', m.z ? (tooBig ? 'compressed · over Beam’s ' + E.formatBytes(MAX_INFLATED) + ' limit' : 'compressed') : '');
+  if (tooBig) toast('This compressed file is larger than Beam’s ' + E.formatBytes(MAX_INFLATED) + ' limit — it will not open here.');
 }
 function showRxError(msg) {
   var box = $('rx-error');
@@ -1103,9 +1295,15 @@ function finishReceive() {
   };
   if (m.z) {
     setRxStatus('All pieces received — decompressing…', 'good');
-    inflateRaw(res.fileBytes, function (out) {
-      if (!out) { showRxError('This browser can’t decompress the file (no DecompressionStream support — older Safari). Ask the sender to tap “send uncompressed instead” and beam again, or receive on a newer browser.'); return; }
-      verify(out);
+    // Bound the inflated size: an honest sender's output is exactly manifest.s bytes, and nothing
+    // may grow past MAX_INFLATED however large s claims to be (manifest fields are attacker-controlled).
+    var declared = m.s > 0 ? m.s : MAX_INFLATED;
+    inflateRaw(res.fileBytes, Math.min(declared, MAX_INFLATED), function (out, why) {
+      if (out) { verify(out); return; }
+      if (why === 'unsupported') showRxError('This browser can’t decompress deflate-raw files (' + INFLATE_HINT + '). Ask the sender to tap “send uncompressed instead” and beam again, or receive on a newer browser.');
+      else if (why === 'limit' && declared > MAX_INFLATED) showRxError('This file would inflate to ' + E.formatBytes(declared) + ', more than Beam’s ' + E.formatBytes(MAX_INFLATED) + ' limit for compressed transfers. Ask the sender to tap “send uncompressed instead”.');
+      else if (why === 'limit') showRxError('The data inflated past its declared size (' + E.formatBytes(declared) + ') — it arrived corrupted. Ask the sender to beam again.');
+      else showRxError('Decompression failed — the compressed data arrived corrupted. Ask the sender to beam again, ideally at a lower density.');
     });
   } else verify(res.fileBytes);
 }
@@ -1151,9 +1349,9 @@ function showDone(m, bytes) {
   try { if (window.scrollTo) window.scrollTo(0, 0); } catch (e) {}
 }
 function receiveAnother() {
-  if (!R.stream || !R.running) { resetRxUi(); startCamera(); return; }
-  R.dec = E.createDecoder();
+  R.dec = E.createDecoder();             // fresh decoder first: startCamera keeps a complete one otherwise
   resetRxUi();
+  if (!R.stream || !R.running) { startCamera(); return; }
   R.idle = false;
   setRxStatus('Point the camera at the other phone’s screen.');
 }
@@ -1166,13 +1364,20 @@ $('btn-rx-settings').addEventListener('click', function () {
   for (var i = 0; i < radios.length; i++) radios[i].checked = radios[i].value === S.decoder;
   $('dec-note').textContent = (R.running ? 'Using ' + decoderLabel() + ' now. ' : '')
     + (nativeQR ? 'Native decoding is available here. ' : 'No native decoder here — JavaScript (jsQR) does the work. ')
-    + 'If the native decoder misreads or stalls, force JavaScript. Changes apply on the next camera start.';
+    + 'If the native decoder misreads or stalls, force JavaScript. Changes apply at once — a transfer in progress keeps its pieces.';
 });
 $('rx-pop').addEventListener('change', function (ev) {
   var v = ev.target && ev.target.value;
   if (v === 'auto' || v === 'native' || v === 'js') {
     S.decoder = v; saveSettings();
-    if (R.running) { toast('Restarting the camera with the ' + (v === 'js' ? 'JavaScript' : v) + ' decoder'); stopCamera(); startCamera(); }
+    // Swap the decoder under the running loop: the camera stream, the decoder state and the
+    // progress card are untouched (restarting the camera would have thrown the pieces away).
+    if (R.running) chooseDecoder(function () {
+      if (!R.running) return;
+      if (R.mode === 'none') { setRxStatus('No QR decoder available with that choice.', 'bad'); return; }
+      toast('Now decoding with ' + decoderLabel());
+      updateStats();
+    });
   }
 });
 document.addEventListener('click', function (ev) {

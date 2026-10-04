@@ -49,6 +49,9 @@
   var SOLITON_C = 0.1, SOLITON_DELTA = 0.5;
   var PENDING_CAP_FACTOR = 4; // pending equations are capped at 4×K (oldest dropped)
   var GE_MAX_UNKNOWN = 2048;  // joint elimination is attempted while this many chunks are still unknown
+  // One elimination pass resolves at most this many chunks' data; the rest continue on the next
+  // push, so a late joiner on a multi-MB file never freezes the receiver for seconds at once.
+  var GE_COLUMNS_PER_PUSH = 64;
 
   var PRESETS = [
     { id: 's', label: 'Small', version: 10, ec: 'L', hint: 'any camera, slow' },
@@ -253,8 +256,11 @@
 
   function safeFileName(name) {
     var s = String(name == null ? '' : name);
-    // strip path separators and control characters, collapse whitespace, trim
-    s = s.replace(/[\\\/\u0000-\u001f\u007f-\u009f]/g, '').replace(/\s+/g, ' ').replace(/^[\s.]+|[\s.]+$/g, '');
+    // strip path separators, C0/C1 control characters and the invisible Unicode direction/format
+    // controls (ALM, LRM/RLM, bidi embeddings/overrides/isolates, BOM) — a name is attacker-controlled
+    // across the air gap and an RLO would render "invoice\u202egnp.exe" as "invoiceexe.png";
+    // then collapse whitespace and trim
+    s = s.replace(/[\\\/\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, '').replace(/\s+/g, ' ').replace(/^[\s.]+|[\s.]+$/g, '');
     if (s.length > MAX_NAME) {
       s = s.slice(0, MAX_NAME);
       var last = s.charCodeAt(s.length - 1);
@@ -369,29 +375,39 @@
     return 2 * sum + e * LN2;
   }
 
-  var solitonCache = {};
+  // Single-entry memo: each side only ever works on one K at a time, and a per-K map would let a
+  // hostile screen (parseFrame accepts any K ≤ 1,679,615 — the header is outside the payload CRC)
+  // pin a ~13 MB table per distinct K forever and crash the receiver tab.
+  var solitonCacheK = -1, solitonCacheTable = null;
+
+  // Unnormalised robust soliton mass for degree d (ideal soliton ρ + the τ spike term).
+  function solitonMass(d, K, R, spike, spikeTau) {
+    var rho = d === 1 ? 1 / K : 1 / (d * (d - 1));
+    if (d < spike) return rho + R / (d * K);
+    if (d === spike) return rho + spikeTau;
+    return rho;
+  }
 
   // Cumulative robust soliton distribution for K chunks: cum[d] = P(degree ≤ d), cum[0] = 0, cum[K] = 1.
   function solitonTable(K) {
-    if (solitonCache[K]) return solitonCache[K];
+    if (K === solitonCacheK && solitonCacheTable) return solitonCacheTable;
     var cum = new Array(K + 1), d;
-    if (K <= 1) { cum[0] = 0; cum[1] = 1; solitonCache[K] = cum; return cum; }
-    var R = SOLITON_C * ln(K / SOLITON_DELTA) * Math.sqrt(K);
-    var spike = Math.floor(K / R);
-    var mu = new Array(K + 1), beta = 0;
-    for (d = 1; d <= K; d++) {
-      var rho = d === 1 ? 1 / K : 1 / (d * (d - 1));
-      var tau = 0;
-      if (d < spike) tau = R / (d * K);
-      else if (d === spike) tau = Math.max(0, R * ln(R / SOLITON_DELTA) / K);
-      mu[d] = rho + tau;
-      beta += mu[d];
+    if (K <= 1) {
+      cum[0] = 0; cum[1] = 1;
+    } else {
+      var R = SOLITON_C * ln(K / SOLITON_DELTA) * Math.sqrt(K);
+      var spike = Math.floor(K / R);
+      var spikeTau = Math.max(0, R * ln(R / SOLITON_DELTA) / K);
+      // Two passes (normaliser, then cumulative) in the same d order — the same operations in the
+      // same order on both phones, and no second K-length array.
+      var beta = 0;
+      for (d = 1; d <= K; d++) beta += solitonMass(d, K, R, spike, spikeTau);
+      var acc = 0;
+      cum[0] = 0;
+      for (d = 1; d <= K; d++) { acc += solitonMass(d, K, R, spike, spikeTau) / beta; cum[d] = acc; }
+      cum[K] = 1; // absorb rounding so a draw in [0,1) always lands
     }
-    var acc = 0;
-    cum[0] = 0;
-    for (d = 1; d <= K; d++) { acc += mu[d] / beta; cum[d] = acc; }
-    cum[K] = 1; // absorb rounding so a draw in [0,1) always lands
-    solitonCache[K] = cum;
+    solitonCacheK = K; solitonCacheTable = cum;
     return cum;
   }
 
@@ -481,9 +497,15 @@
   /* ------------------------------------------------------------------ */
 
   function createDecoder(opts) {
+    opts = opts || {};
     return {
-      elimination: !(opts && opts.elimination === false),   // tests compare peeling alone vs. peeling + elimination
+      elimination: !(opts.elimination === false),   // tests compare peeling alone vs. peeling + elimination
+      pendingCapFactor: (typeof opts.pendingCapFactor === 'number' && opts.pendingCapFactor > 0) ? opts.pendingCapFactor : PENDING_CAP_FACTOR,
+      solveColumns: (typeof opts.solveColumns === 'number' && opts.solveColumns >= 1) ? opts.solveColumns : GE_COLUMNS_PER_PUSH,
       nextSolveAt: 0,    // unique-frame count at which the next elimination attempt is allowed
+      solveMore: false,  // the last elimination pass hit solveColumns and left resolvable chunks for the next push
+      evicted: 0,        // pending equations dropped by the memory cap
+      replan: null,      // candidate { K, chunkBytes, seq } seen with our tid but another plan (see decoderPush)
       tid: null, K: 0, chunkBytes: 0,
       chunks: [],        // Uint8Array per resolved chunk, undefined otherwise
       have: 0,
@@ -503,13 +525,25 @@
     dec.seen = {};
     dec.framesSeen = 0; dec.unique = 0; dec.redundant = 0;
     dec.pending = []; dec.byChunk = {};
-    dec.nextSolveAt = 0;
+    dec.nextSolveAt = 0; dec.solveMore = false;
+    dec.evicted = 0;
+    dec.replan = null;
     dec.complete = false;
     dec.manifest = null;
   }
 
+  // target ^= src, a word at a time when both views are 4-byte aligned (chunk buffers always are;
+  // chunkBytes is only guaranteed even, so the tail is done bytewise).
   function xorInto(target, src) {
-    for (var i = 0; i < target.length; i++) target[i] ^= src[i];
+    var n = target.length, i = 0;
+    if (n >= 32 && (target.byteOffset & 3) === 0 && (src.byteOffset & 3) === 0 && src.length >= n) {
+      var words = n >>> 2;
+      var t32 = new Uint32Array(target.buffer, target.byteOffset, words);
+      var s32 = new Uint32Array(src.buffer, src.byteOffset, words);
+      for (var w = 0; w < words; w++) t32[w] ^= s32[w];
+      i = words << 2;
+    }
+    for (; i < n; i++) target[i] ^= src[i];
   }
 
   function resolveChunk(dec, i, data, resolved, queue) {
@@ -538,9 +572,10 @@
       for (j = 0; j < unknown.length; j++) {
         (dec.byChunk[unknown[j]] || (dec.byChunk[unknown[j]] = [])).push(eq);
       }
-      // Memory bound: never hold more than PENDING_CAP_FACTOR×K equations — drop the oldest.
-      var cap = PENDING_CAP_FACTOR * dec.K;
-      while (dec.pending.length > cap) dec.pending.shift().dead = true;
+      // Memory bound: never hold more than pendingCapFactor×K (default PENDING_CAP_FACTOR×K)
+      // equations — drop the oldest. Dead equations are skipped wherever byChunk still lists them.
+      var cap = Math.max(1, Math.ceil(dec.pendingCapFactor * dec.K));
+      while (dec.pending.length > cap) { dec.pending.shift().dead = true; dec.evicted++; }
       return { resolved: resolved, redundant: false };
     }
     propagate(dec, queue, resolved);
@@ -592,10 +627,14 @@
   // pending equations as unknown chunks they usually already pin every chunk down jointly, so solve
   // them over GF(2): reduced row echelon on a bit matrix (cheap), tracking which original rows make
   // up each reduced row, then XOR chunk data only for the columns that actually resolve.
+  // The data XOR is the expensive half (every resolved column combines ~P/2 chunk-sized rows once the
+  // matrix is dense), so at most maxColumns (default: unlimited) are materialised per call; when some
+  // are left over the result carries `truncated: true` and the caller runs again on the next push.
   // Returns [{ chunk, data }] — the caller feeds them through the normal resolve/propagate path.
-  function solvePending(dec) {
+  function solvePending(dec, maxColumns) {
     var U = dec.K - dec.have;
     if (U <= 0 || U > GE_MAX_UNKNOWN) return [];
+    if (!(typeof maxColumns === 'number' && maxColumns >= 1)) maxColumns = Infinity;
     var eqs = [], i, j, r;
     for (i = 0; i < dec.pending.length; i++) if (!dec.pending[i].dead) eqs.push(dec.pending[i]);
     var P = eqs.length;
@@ -629,6 +668,7 @@
       var row = pivots[i], ones = 0, k2;
       for (k2 = 0; k2 < W; k2++) ones += popcount(bits[row][k2]);
       if (ones !== 1) continue;                     // still entangled with a column no equation pins down
+      if (out.length >= maxColumns) { out.truncated = true; break; }
       var data = new Uint8Array(dec.chunkBytes), rc2 = comb[row];
       for (r = 0; r < P; r++) if (rc2[r >>> 5] & (1 << (r & 31))) xorInto(data, eqs[r].data);
       out.push({ chunk: cols[pivot[row]], data: data });
@@ -637,12 +677,16 @@
   }
 
   // Try elimination when it can pay off; throttled so a big transfer does not re-run it every frame.
+  // A pass that hit the per-push column budget leaves solveMore set and may run again on the very
+  // next push (the frames in between still count: everything they resolve shrinks the next system).
   function maybeEliminate(dec, resolved) {
     if (!dec.elimination || dec.have >= dec.K) return;
     var U = dec.K - dec.have;
     if (U > GE_MAX_UNKNOWN || dec.pending.length < U || dec.unique < dec.nextSolveAt) return;
     dec.nextSolveAt = dec.unique + Math.max(1, U >>> 4);
-    var sol = solvePending(dec);
+    var sol = solvePending(dec, dec.solveColumns);
+    dec.solveMore = !!sol.truncated;
+    if (dec.solveMore) dec.nextSolveAt = dec.unique;
     if (!sol.length) return;
     var queue = [];
     for (var i = 0; i < sol.length; i++) if (!dec.chunks[sol[i].chunk]) resolveChunk(dec, sol[i].chunk, sol[i].data, resolved, queue);
@@ -658,10 +702,27 @@
     } else if (frame.tid !== dec.tid) {
       resetDecoder(dec, frame.tid, frame.K, frame.payload.length);
       switched = true;
+    } else if (frame.K !== dec.K || frame.payload.length !== dec.chunkBytes) {
+      // Same file, different plan: tid is CRC-32(stream) and ignores chunkBytes, so when the sender
+      // stops and restarts at another density the tid stays while K and the frame size change.
+      // Treat that as a re-plan — reset and report 'switch' like a new tid — rather than rejecting
+      // every frame forever. The header is outside the payload CRC, so one frame is not proof: two
+      // frames with distinct seq that agree on the new (K, chunkBytes) are; the first is 'bad'.
+      dec.framesSeen++;
+      var rp = dec.replan;
+      if (rp && rp.K === frame.K && rp.chunkBytes === frame.payload.length && rp.seq !== frame.seq) {
+        resetDecoder(dec, frame.tid, frame.K, frame.payload.length);
+        switched = true;
+      } else {
+        dec.replan = { K: frame.K, chunkBytes: frame.payload.length, seq: frame.seq };
+        return {
+          type: 'bad', replan: true,
+          reason: frame.K !== dec.K ? 'K changed within transfer (' + frame.K + ' vs ' + dec.K + ')' : 'frame size changed within transfer'
+        };
+      }
     }
     dec.framesSeen++;
-    if (frame.K !== dec.K) return { type: 'bad', reason: 'K changed within transfer (' + frame.K + ' vs ' + dec.K + ')' };
-    if (frame.payload.length !== dec.chunkBytes) return { type: 'bad', reason: 'frame size changed within transfer' };
+    dec.replan = null; // a frame consistent with the current plan clears a lone mismatch
     if (dec.complete) return { type: 'done' };
     if (dec.seen[frame.seq] === 1) return { type: 'dup' };
     if (frame.seq < 0 || frame.seq > SEQ_MAX || frame.seq !== Math.floor(frame.seq)) return { type: 'bad', reason: 'seq out of range' };
@@ -670,7 +731,7 @@
     var idx = frameNeighbors(frame.seq, dec.K);
     var res = absorb(dec, idx, frame.payload);
     if (res.redundant) dec.redundant++;
-    else maybeEliminate(dec, res.resolved);
+    if (!res.redundant || dec.solveMore) maybeEliminate(dec, res.resolved);
     var ev;
     if (dec.have >= dec.K) {
       dec.complete = true;
@@ -842,7 +903,7 @@
   var api = {
     ALNUM: ALNUM, MAGIC: MAGIC, HEADER_LEN: HEADER_LEN, TID_LEN: TID_LEN, K_MAX: K_MAX, SEQ_MAX: SEQ_MAX,
     MAX_NAME: MAX_NAME, SOLITON_C: SOLITON_C, SOLITON_DELTA: SOLITON_DELTA, PENDING_CAP_FACTOR: PENDING_CAP_FACTOR,
-    GE_MAX_UNKNOWN: GE_MAX_UNKNOWN,
+    GE_MAX_UNKNOWN: GE_MAX_UNKNOWN, GE_COLUMNS_PER_PUSH: GE_COLUMNS_PER_PUSH,
     PRESETS: PRESETS, DEFAULT_PRESET: DEFAULT_PRESET, FPS_MIN: FPS_MIN, FPS_MAX: FPS_MAX, FPS_DEFAULT: FPS_DEFAULT,
     // primitives
     utf8Encode: utf8Encode, utf8Decode: utf8Decode,

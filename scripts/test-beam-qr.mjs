@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 /**
  * Tests for beam/qr.js — the from-scratch QR encoder that is Beam's "radio".
- * The strongest possible check: every matrix is rendered to pixels and decoded
- * by an INDEPENDENT decoder (jsQR), at every version 1–40 and every EC level.
- * If the Reed–Solomon maths, block interleaving, alignment grid, masking or
- * format/version bits were wrong anywhere, the round-trip would fail. The
- * spec tables (capacities, alignment rows, BCH vectors) are asserted against
- * the published ISO 18004 numbers as well, so a wrong table that happens to be
- * self-consistent cannot hide behind a lenient decoder.
- * Run: node scripts/test-beam-qr.mjs
+ * The strongest check: matrices are rendered to pixels and decoded by an
+ * INDEPENDENT decoder (jsQR) — every version 1–40 at L, every Beam preset
+ * version at M, and a spread of versions at M/Q/H. If the Reed–Solomon maths,
+ * block interleaving, alignment grid or masking were wrong there, the
+ * round-trip would fail. What a lenient decoder could forgive is pinned
+ * directly: both Table 9 cells (ecc per block AND block count) are compared
+ * per (version, level) against jsQR's own table, both copies of the format and
+ * version information are read back out of the matrix, and the mask penalty
+ * scorer is checked against hand-built matrices and an independent reference
+ * implementation. Run: node scripts/test-beam-qr.mjs
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -187,8 +189,11 @@ test('block structure agrees with jsQR\'s own version table for all 40 versions 
       const nBlocks = blocks.reduce((s, b) => s + b[0], 0), data = blocks.reduce((s, b) => s + b[0] * b[1], 0);
       assert.equal(QR.dataCodewords(v, ec), data, `v${v}${ec} data codewords`);
       assert.equal(QR.totalCodewords(v), data + nBlocks * ecc, `v${v}${ec} total codewords`);
-      // the ecc-per-block and block-count cells themselves: the ecc bytes a one-block encode emits must be `ecc` long
-      assert.equal(QR.rsEncode(new Uint8Array(blocks[0][1]), ecc).length, ecc);
+      // the two cells themselves, not just their product: a same-product typo (e.g. v13-M 22×9 → 18×11)
+      // keeps every codeword count right yet emits a symbol no decoder can read
+      const cell = QR.blockStructure(v, ec);
+      assert.equal(cell.eccPerBlock, ecc, `v${v}${ec} ecc codewords per block`);
+      assert.equal(cell.numBlocks, nBlocks, `v${v}${ec} block count`);
       cells++;
     });
   }
@@ -253,6 +258,15 @@ test('versions 1,5,7,10,14,21,27,33,40 at M/Q/H round-trip at exact capacity', (
   }
 });
 
+test("every Beam preset version (10,15,20,25,30) at M round-trips at exact capacity — the UI's EC toggle", () => {
+  // the page offers EC M at every density preset; these cells are not in the M/Q/H spread above
+  for (const v of [10, 15, 20, 25, 30]) {
+    const cap = QR.capacity(v, 'M', 'alnum');
+    const code = roundTrip(fill(QR.ALNUM, cap, v * 100 + 77), { ec: 'M', version: v, mode: 'alnum' });
+    assert.equal(code.version, v); assert.equal(code.ec, 'M');
+  }
+});
+
 test('numeric mode: auto-detected, all three remainder lengths, small and large', () => {
   const c1 = roundTrip('41', {});                              // 2-digit remainder (7 bits)
   assert.equal(c1.mode, 'numeric'); assert.equal(c1.version, 1);
@@ -273,6 +287,25 @@ test('byte mode: UTF-8 (accents, emoji, CJK) and the full 8-bit range round-trip
   roundTrip('x'.repeat(QR.capacity(9, 'L', 'byte')), { ec: 'L' });                 // 8-bit count at v9
   assert.equal(roundTrip('y'.repeat(QR.capacity(10, 'L', 'byte')), { ec: 'L' }).version, 10); // 16-bit count
   assert.equal(roundTrip('z'.repeat(QR.capacity(40, 'H', 'byte')), { ec: 'H' }).version, 40);
+});
+
+test('utf8Bytes: valid text matches TextEncoder; a lone surrogate becomes U+FFFD, never an invalid 3-byte sequence', () => {
+  const te = new TextEncoder();
+  const same = (s) => deepEq(QR.utf8Bytes(s), Array.from(te.encode(s)), JSON.stringify(s));
+  same(''); same('plain ascii'); same('café'); same('日本語'); same('😀'); same('a😀b🧭');
+  same('\ud83d');                 // lone high surrogate
+  same('\udc00');                 // lone low surrogate
+  same('A\ud83dB');               // high surrogate followed by a non-surrogate
+  same('x\ud83d');                // high surrogate at the very end
+  same('\ud83d\ud83d\ude00');     // stray high then a real pair
+  deepEq(QR.utf8Bytes('\ud83d'), [0xef, 0xbf, 0xbd]);
+  // a sliced-mid-emoji string still yields a readable symbol: the decoder sees valid UTF-8 with U+FFFD in place
+  const code = QR.encode('A\ud83dB', { mode: 'byte' });
+  const dec = decode(code);
+  assert.ok(dec, 'decoder found no QR');
+  deepEq(Array.from(dec.binaryData), [65, 0xef, 0xbf, 0xbd, 66]);
+  assert.equal(dec.data, 'A\ufffdB');
+  assert.doesNotThrow(() => new TextDecoder('utf-8', { fatal: true }).decode(new Uint8Array(QR.utf8Bytes('A\ud83dB\udc00'))));
 });
 
 test('fixed version option: short text in a big symbol, exact size, still decodes', () => {
@@ -310,6 +343,89 @@ test('auto mask picks a pattern in 0..7 and different content can land on differ
     seen.add(code.mask);
   }
   assert.ok(seen.size > 1, 'penalty scoring never varied the mask');
+});
+
+/* ---- mask penalty: the scorer itself, not just "the mask varies" ---- */
+
+/** Independent reference of ISO 18004 §7.8.3.1 (ZXing semantics: in-matrix light runs for N3, floor for N4). */
+function refPenalty(m) {
+  const size = m.length, get = (r, c) => (m[r][c] ? 1 : 0);
+  let score = 0;
+  const runs = (line) => { let s = 0, run = 1; for (let i = 1; i <= line.length; i++) { if (i < line.length && line[i] === line[i - 1]) run++; else { if (run >= 5) s += 3 + (run - 5); run = 1; } } return s; };
+  const lines = [];
+  for (let r = 0; r < size; r++) lines.push(Array.from({ length: size }, (_, c) => get(r, c)));
+  for (let c = 0; c < size; c++) lines.push(Array.from({ length: size }, (_, r) => get(r, c)));
+  for (const line of lines) score += runs(line);                                                      // N1
+  for (let r = 0; r + 1 < size; r++) for (let c = 0; c + 1 < size; c++) {                              // N2
+    const v = get(r, c); if (v === get(r, c + 1) && v === get(r + 1, c) && v === get(r + 1, c + 1)) score += 3;
+  }
+  const finder = [1, 0, 1, 1, 1, 0, 1];
+  for (const line of lines) {                                                                          // N3
+    for (let i = 0; i + 7 <= line.length; i++) {
+      if (!finder.every((b, k) => line[i + k] === b)) continue;
+      if (i >= 4 && line.slice(i - 4, i).every((b) => b === 0)) score += 40;
+      if (i + 11 <= line.length && line.slice(i + 7, i + 11).every((b) => b === 0)) score += 40;
+    }
+  }
+  let dark = 0; for (const line of lines.slice(0, size)) for (const b of line) dark += b;             // N4
+  score += 10 * Math.floor(Math.abs((dark * 100) / (size * size) - 50) / 5);
+  return score;
+}
+const checker = (size) => Array.from({ length: size }, (_, r) => Array.from({ length: size }, (_, c) => (r + c) % 2 === 0));
+
+test('maskPenalty: each rule N1..N4 scores a hand-built matrix exactly as the spec says', () => {
+  // a checkerboard has no runs, no 2×2 blocks, no finder-like pattern and is exactly 50 % dark → 0
+  assert.equal(QR.maskPenalty(checker(12)), 0);
+  assert.equal(QR.maskPenalty(checker(21)), 0);
+  // N1: one row of 12 equal modules in an otherwise penalty-free checkerboard → 3 + (12 − 5) = 10 (dark 78/144 = 54 % → N4 0)
+  let m = checker(12); m[5] = m[5].map(() => true);
+  assert.equal(QR.maskPenalty(m), 10);
+  // N1 at the threshold: a run of exactly 5 → 3; a run of 4 → 0
+  m = checker(12); m[5] = [0, 1, 1, 1, 1, 1, 0, 1, 0, 1, 0, 1].map(Boolean);
+  assert.equal(QR.maskPenalty(m), 3);
+  m = checker(12); m[5] = [0, 1, 1, 1, 1, 0, 1, 0, 1, 0, 1, 0].map(Boolean);
+  assert.equal(QR.maskPenalty(m), 0);
+  // N2: a single 2×2 dark block (only two new dark modules, every neighbouring 2×2 stays mixed) → 3
+  m = checker(12); m[4][4] = m[4][5] = m[5][4] = m[5][5] = true;
+  assert.equal(QR.maskPenalty(m), 3);
+  // N3: 1011101 followed by 0000 in one row (the row still has 6 dark modules, so N4 stays 0) → 40
+  m = checker(12); m[5] = [1, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0, 1].map(Boolean);
+  assert.equal(QR.maskPenalty(m), 40);
+  // N3 counts each light side separately: 0000 1011101 0000 → 80 (and the mirror image scores the same)
+  m = checker(16); m[7] = [1, 0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0].map(Boolean);
+  assert.equal(QR.maskPenalty(m), 80);
+  // N3 in a column too
+  m = checker(12); for (let r = 0; r < 12; r++) m[r][5] = [1, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0, 1][r] === 1;
+  assert.equal(QR.maskPenalty(m), 40);
+  // N4: period-3 "110" rows shifted one per row — no runs ≥ 3, no uniform 2×2, 96/144 = 66.7 % dark → floor(16.7/5)·10 = 30
+  m = Array.from({ length: 12 }, (_, r) => Array.from({ length: 12 }, (_, c) => ((c - r) % 3 + 3) % 3 !== 2));
+  assert.equal(QR.maskPenalty(m), 30);
+  // all four rules at once: an all-dark 10×10 = N1 20 lines × 8 + N2 81 × 3 + N4 10 steps × 10 = 503
+  assert.equal(QR.maskPenalty(Array.from({ length: 10 }, () => new Array(10).fill(true))), 503);
+  // the reference implementation agrees on every fixture above
+  for (const fx of [checker(12), m]) assert.equal(QR.maskPenalty(fx), refPenalty(fx));
+  assert.throws(() => QR.maskPenalty([]), /square/);
+  assert.throws(() => QR.maskPenalty([[true, false], [true]]), /square/);
+});
+
+test('auto mask is the argmin of the penalty over all 8 masks, judged by an independent scorer', () => {
+  let compared = 0;
+  for (const [v, ec, i] of [[1, 'L', 1], [2, 'M', 2], [4, 'L', 3], [4, 'Q', 4], [7, 'H', 5], [10, 'L', 6], [10, 'M', 7], [15, 'M', 8], [20, 'L', 9], [30, 'M', 10]]) {
+    const text = fill(QR.ALNUM, Math.min(QR.capacity(v, ec, 'alnum'), 40 * v), 5000 + i);
+    const auto = QR.encode(text, { version: v, ec });
+    const scores = [];
+    for (let mask = 0; mask < 8; mask++) {
+      const forced = QR.encode(text, { version: v, ec, mask });
+      const ref = refPenalty(forced.modules);
+      assert.equal(QR.maskPenalty(forced.modules), ref, `v${v}${ec} mask ${mask}: scorer disagrees with the reference`);
+      scores.push(ref); compared++;
+    }
+    const best = Math.min(...scores);
+    assert.equal(scores[auto.mask], best, `v${v}${ec}: auto mask ${auto.mask} scores ${scores[auto.mask]}, best is ${best} (${scores.join(',')})`);
+    assert.equal(auto.mask, scores.indexOf(best), `v${v}${ec}: ties resolve to the lowest mask number`);
+    deepEq(auto.modules, QR.encode(text, { version: v, ec, mask: auto.mask }).modules, 'auto result equals the forced encode of the same mask');
+  }
+  assert.equal(compared, 80);
 });
 
 test('forced mode: byte for digits, and impossible forcings throw', () => {
@@ -370,6 +486,65 @@ test('every emitted matrix is square with only booleans and the fixed function p
     for (const r of p) for (const c of p) {
       if ((r === 6 && c === 6) || (r === 6 && c === size - 7) || (r === size - 7 && c === 6)) continue;
       assert.equal(m[r][c], true); assert.equal(m[r - 1][c], false); assert.equal(m[r - 2][c - 2], true);
+    }
+  }
+});
+
+/** Read both copies of the 15 format bits and (v ≥ 7) both copies of the 18 version bits back out of a matrix. */
+function readInfoCopies(code) {
+  const m = code.modules, size = code.size, bit = (r, c) => (m[r][c] ? 1 : 0);
+  let f1 = 0, f2 = 0, v1 = 0, v2 = 0;
+  for (let fb = 0; fb < 15; fb++) {
+    f1 |= (fb < 6 ? bit(fb, 8) : fb === 6 ? bit(7, 8) : fb === 7 ? bit(8, 8) : fb === 8 ? bit(8, 7) : bit(8, 14 - fb)) << fb;
+    f2 |= (fb < 8 ? bit(8, size - 1 - fb) : bit(size - 15 + fb, 8)) << fb;
+  }
+  if (code.version >= 7) {
+    for (let vi = 0; vi < 18; vi++) {
+      v1 |= bit(Math.floor(vi / 3), size - 11 + (vi % 3)) << vi;
+      v2 |= bit(size - 11 + (vi % 3), Math.floor(vi / 3)) << vi;
+    }
+  }
+  return { f1, f2, v1, v2 };
+}
+
+test('both copies of the format information and of the version information are present and correct', () => {
+  // a decoder is happy with ONE intact copy, so the round-trips above cannot see a broken second copy;
+  // real scanners rely on it when a corner is under glare — read every copy back out of the matrix
+  let checked = 0;
+  for (const v of [1, 2, 6, 7, 10, 15, 21, 30, 40]) {
+    for (const ec of ['L', 'M', 'Q', 'H']) {
+      for (const mask of [null, 0, 3, 7]) {
+        const code = QR.encode('BEAM ' + v + ec, mask == null ? { version: v, ec } : { version: v, ec, mask });
+        const want = QR.formatBits(ec, code.mask), got = readInfoCopies(code), tag = `v${v}${ec} mask ${code.mask}`;
+        assert.equal(got.f1, want, `${tag}: format copy 1 (top-left) reads ${got.f1.toString(16)}, want ${want.toString(16)}`);
+        assert.equal(got.f2, want, `${tag}: format copy 2 (top-right + bottom-left) reads ${got.f2.toString(16)}, want ${want.toString(16)}`);
+        if (v >= 7) {
+          const wv = QR.versionBits(v);
+          assert.equal(got.v1, wv, `${tag}: version copy 1 (top-right) reads ${got.v1.toString(16)}, want ${wv.toString(16)}`);
+          assert.equal(got.v2, wv, `${tag}: version copy 2 (bottom-left) reads ${got.v2.toString(16)}, want ${wv.toString(16)}`);
+        }
+        checked++;
+      }
+    }
+  }
+  assert.equal(checked, 9 * 4 * 4);
+});
+
+test('either copy alone carries the symbol: blank one format/version copy and the decoder still reads it via the other', () => {
+  // decoder-side complement to the read-back above (does not share the encoder's coordinate formulas)
+  const blankFormat1 = (m, size) => { for (let i = 0; i <= 8; i++) { if (i !== 6) { m[i][8] = false; m[8][i] = false; } } };
+  const blankFormat2 = (m, size) => { for (let i = 0; i < 8; i++) { m[8][size - 1 - i] = false; m[size - 1 - i][8] = false; } m[size - 8][8] = true; };
+  const blankVersion1 = (m, size) => { for (let r = 0; r < 6; r++) for (let c = size - 11; c < size - 8; c++) m[r][c] = false; };
+  const blankVersion2 = (m, size) => { for (let r = size - 11; r < size - 8; r++) for (let c = 0; c < 6; c++) m[r][c] = false; };
+  for (const [v, ec] of [[3, 'L'], [7, 'M'], [10, 'L'], [15, 'M'], [20, 'Q'], [30, 'M']]) {
+    const text = 'BEAM COPY ' + v + ec;
+    const mutations = v >= 7 ? [blankFormat1, blankFormat2, blankVersion1, blankVersion2] : [blankFormat1, blankFormat2];
+    for (const mutate of mutations) {
+      const code = QR.encode(text, { version: v, ec });
+      const copy = { ...code, modules: code.modules.map((row) => row.slice()) };
+      mutate(copy.modules, copy.size);
+      const dec = decode(copy, jsQR);
+      assert.ok(dec && dec.data === text, `v${v}${ec}: symbol unreadable after ${mutate.name} — the other copy did not carry it`);
     }
   }
 });

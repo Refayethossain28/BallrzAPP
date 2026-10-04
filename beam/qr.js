@@ -88,6 +88,12 @@
     var e = EC_LEVELS[ec].idx;
     return totalCodewords(version) - ECC_PER_BLOCK[e][version - 1] * NUM_BLOCKS[e][version - 1];
   }
+  /** The Table 9 cells themselves: { eccPerBlock, numBlocks } for a version/level (exposed so tests can pin each cell). */
+  function blockStructure(version, ec) {
+    checkVersion(version); checkEc(ec);
+    var e = EC_LEVELS[ec].idx;
+    return { eccPerBlock: ECC_PER_BLOCK[e][version - 1], numBlocks: NUM_BLOCKS[e][version - 1] };
+  }
   function countBits(mode, version) { return MODES[mode].count[version < 10 ? 0 : version < 27 ? 1 : 2]; }
 
   /** Alignment pattern centre coordinates (both axes share them); none for v1. */
@@ -176,11 +182,18 @@
     }
   };
 
+  /** UTF-8 bytes of a JS string. Surrogate pairs combine; a lone surrogate becomes U+FFFD (EF BF BD), as TextEncoder does. */
   function utf8Bytes(s) {
     var out = [];
     for (var i = 0; i < s.length; i++) {
-      var c = s.codePointAt(i);
-      if (c > 0xffff) i++;
+      var c = s.charCodeAt(i);
+      if (c >= 0xd800 && c <= 0xdbff && i + 1 < s.length) {
+        var d = s.charCodeAt(i + 1);
+        if (d >= 0xdc00 && d <= 0xdfff) { c = 0x10000 + ((c - 0xd800) << 10) + (d - 0xdc00); i++; }
+        else c = 0xfffd;                                     // high surrogate not followed by a low one
+      } else if (c >= 0xd800 && c <= 0xdfff) {
+        c = 0xfffd;                                          // lone low surrogate, or a high one at the very end
+      }
       if (c < 0x80) out.push(c);
       else if (c < 0x800) out.push(0xc0 | (c >> 6), 0x80 | (c & 63));
       else if (c < 0x10000) out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
@@ -357,6 +370,18 @@
   var N3_A = new Uint8Array([1, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0]);
   var N3_B = new Uint8Array([0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 1]);
 
+  /** The N1..N4 penalty score of a size×size matrix given as rows of booleans/0-1 (the shape encode() returns). */
+  function maskPenalty(modules) {
+    if (!modules || typeof modules.length !== 'number' || !modules.length) throw new Error('maskPenalty needs a non-empty square matrix');
+    var size = modules.length, flat = new Uint8Array(size * size);
+    for (var r = 0; r < size; r++) {
+      var row = modules[r];
+      if (!row || row.length !== size) throw new Error('maskPenalty needs a square matrix (row ' + r + ')');
+      for (var c = 0; c < size; c++) flat[r * size + c] = row[c] ? 1 : 0;
+    }
+    return penalty(flat, size);
+  }
+
   /**
    * Encode `text` → { version, ec, mode, size, mask, modules }.
    * opts: ec ('L' default), version (fixed) or minVersion/maxVersion, mode (force), mask (force 0..7).
@@ -519,12 +544,14 @@
     capacity: capacity,
     dataCodewords: dataCodewords,
     totalCodewords: totalCodewords,
+    blockStructure: blockStructure,
     encode: encode,
     toSVG: toSVG,
     formatBits: formatBits,
     versionBits: versionBits,
     alignmentPositions: alignmentPositions,
     rsEncode: rsEncode,
+    maskPenalty: maskPenalty,
     utf8Bytes: utf8Bytes,
     detectMode: detectMode,
   };

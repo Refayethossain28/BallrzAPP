@@ -4,7 +4,7 @@
  * assets are cache-first for speed. Nothing here ever talks to a server other
  * than the one that served the page — the transfer itself is screen → camera.
  * Bump CACHE to force a clean reinstall. */
-const CACHE = 'beam-v1';
+const CACHE = 'beam-v2';
 const ASSETS = ['./', './index.html', './qr.js', './engine.js', './jsqr.js',
                 './manifest.json', './icon.svg',
                 './icon-180.png', './icon-192.png', './icon-512.png'];

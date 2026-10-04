@@ -180,6 +180,22 @@ test('safeFileName strips separators and control chars, trims, truncates, falls 
   assert.equal(E.MAX_NAME, 180);
   assert.equal(E.safeFileName('y'.repeat(179) + '🌸').length, 179, 'never leaves a dangling surrogate');
 });
+test('safeFileName strips Unicode direction/format controls so a name cannot disguise its extension', () => {
+  assert.equal(E.safeFileName('invoice\u202egnp.exe'), 'invoicegnp.exe', 'RLO (U+202E) removed');
+  for (const cp of [0x061c, 0x200e, 0x200f, 0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069, 0xfeff]) {
+    const out = E.safeFileName('a' + String.fromCharCode(cp) + 'b.txt');
+    assert.equal(out, 'ab.txt', `U+${cp.toString(16)} stripped`);
+  }
+  assert.equal(E.safeFileName('\u202e\u202e'), 'beam-file', 'nothing but controls falls back');
+  // legitimate joiners and scripts survive: ZWJ emoji sequences, Persian ZWNJ, RTL text itself
+  assert.equal(E.safeFileName('👨\u200d💻.png'), '👨\u200d💻.png');
+  assert.equal(E.safeFileName('می\u200cخواهم.txt'), 'می\u200cخواهم.txt');
+  assert.equal(E.safeFileName('שלום.pdf'), 'שלום.pdf');
+  // and the sanitised name is what travels in the manifest
+  const built = E.buildStream(u8('x'), { name: 'invoice\u202egnp.exe', type: 'application/octet-stream' });
+  assert.equal(built.manifest.n, 'invoicegnp.exe');
+  assert.equal(E.parseStream(built.stream).manifest.n, 'invoicegnp.exe');
+});
 
 /* ---------- chunking & capacity ---------- */
 test('chunkBytesFor: even, derived from alnum capacity, throws when too small', () => {
@@ -227,6 +243,37 @@ test('solitonTable: cumulative, length K+1, starts at 0, ends at 1, degree-1 mas
   const t100 = E.solitonTable(100);
   assert.ok(t100[1] > 0.03 && t100[1] < 0.08, `K=100 degree-1 ≈ 4.8 %, got ${t100[1]}`);
   assert.ok(t100[2] - t100[1] > 0.3, 'degree 2 dominates (ideal soliton 1/2)');
+  // reference values pin the arithmetic (both phones must build the identical table)
+  assert.equal(E.solitonTable(100)[1], 0.04817779432295241);
+  assert.equal(E.solitonTable(1000)[7], 0.7696681389197401);
+});
+test('solitonTable memo is single-entry: a table for another K releases the previous one', () => {
+  // A per-K map would let a hostile screen pin ~13 MB per distinct K forever (parseFrame accepts any
+  // K ≤ K_MAX and tid/K sit outside the payload CRC). Each side only ever works on one K at a time.
+  const t50 = E.solitonTable(50);
+  assert.equal(E.solitonTable(50), t50, 'same K → same table');
+  const t60 = E.solitonTable(60);
+  assert.equal(E.solitonTable(60), t60);
+  assert.notEqual(E.solitonTable(50), t50, 'the K=50 table was dropped when K=60 was built');
+  deepEq(E.solitonTable(50), t50, 'but it is rebuilt identically');
+});
+test('frameNeighbors samples degrees from the soliton table (degree-1 share and CDF track solitonTable)', () => {
+  // Nothing else ties the sampler to the table: an encoder that never emits degree-1 coded frames
+  // would pass every other suite and strand late joiners on files above GE_MAX_UNKNOWN chunks.
+  const N = 2000;
+  for (const K of [10, 100, 1000]) {
+    const t = E.solitonTable(K), hist = new Map();
+    for (let seq = K; seq < K + N; seq++) { const d = E.frameNeighbors(seq, K).length; hist.set(d, (hist.get(d) || 0) + 1); }
+    const share1 = (hist.get(1) || 0) / N;
+    assert.ok(share1 > 0, `K=${K}: some coded frames must have degree 1`);
+    assert.ok(share1 > 0.5 * t[1] && share1 < 1.5 * t[1], `K=${K}: degree-1 share ${share1.toFixed(4)} vs table ${t[1].toFixed(4)}`);
+    let acc = 0;
+    for (let d = 1; d <= Math.min(K, 8); d++) {
+      acc += (hist.get(d) || 0) / N;
+      assert.ok(Math.abs(acc - t[d]) < 0.03, `K=${K}: empirical P(degree ≤ ${d}) = ${acc.toFixed(3)} vs table ${t[d].toFixed(3)}`);
+    }
+    assert.ok(hist.get(2) / N > 0.3, `K=${K}: degree 2 dominates`);
+  }
 });
 test('frameNeighbors: systematic prefix is the identity', () => {
   for (const K of [1, 5, 100]) for (let s = 0; s < K; s++) deepEq(E.frameNeighbors(s, K), [s]);
@@ -323,6 +370,31 @@ test('parseFrame returns null (never throws) on every kind of malformed input', 
   for (const [name, text] of Object.entries(bad)) assert.equal(E.parseFrame(text), null, `should reject: ${name}`);
   for (const v of [null, undefined, 123, {}, [], new Uint8Array(5)]) assert.equal(E.parseFrame(v), null);
   assert.ok(E.parseFrame(good), 'the original still parses');
+});
+
+/** A hand-assembled frame with an arbitrary header — what a hostile screen can show (CRC covers the payload only). */
+function craftFrame(tidSeed, K, seq, payload) {
+  const tag = (b) => E.base45Encode(new Uint8Array([(E.crc32(b) >>> 24) & 255, (E.crc32(b) >>> 16) & 255, (E.crc32(b) >>> 8) & 255, E.crc32(b) & 255]));
+  return 'B1' + tag(u8('tid' + tidSeed)) + E.toBase36(K, 4) + E.toBase36(seq, 5) + tag(payload) + E.base45Encode(payload);
+}
+test('hostile frames with distinct tids and huge K are handled without retaining per-K state', () => {
+  const dec = E.createDecoder();
+  const payload = new Uint8Array([1, 2]);
+  const t50 = E.solitonTable(50);
+  for (let i = 0; i < 3; i++) {
+    const f = E.parseFrame(craftFrame(i, E.K_MAX - i, E.K_MAX + 5, payload));
+    assert.ok(f && f.K === E.K_MAX - i, 'parseFrame accepts the maximal K');
+    const ev = E.decoderPush(dec, f);
+    assert.ok(ev.type === (i === 0 ? 'start' : 'switch'), `coded frame adopted as a new transfer (${ev.type})`);
+    assert.equal(E.decoderProgress(dec).K, E.K_MAX - i);
+  }
+  assert.notEqual(E.solitonTable(50), t50, 'only the latest table is memoised — nothing accumulates per K');
+  // a real transfer afterwards is unaffected
+  const t = transfer(randomBytes(300, 7), 20);
+  let last = null;
+  for (let seq = 0; seq < t.K; seq++) last = E.decoderPush(dec, frameAt(t.ctx, seq));
+  assert.equal(last.type, 'complete');
+  bytesEq(E.decoderResult(dec).fileBytes, t.bytes);
 });
 
 /* ---------- decoder scenarios ---------- */
@@ -486,17 +558,72 @@ test('(g) decoderResult on a corrupt reassembly throws "corrupt transfer"', () =
   dec.chunks[0][0] ^= 0xff; // wreck the manifest length
   assert.throws(() => E.decoderResult(dec), /corrupt transfer/);
 });
-test('bad: same tid with inconsistent K or frame size is rejected without resetting', () => {
+test('bad: a lone same-tid frame with inconsistent K or frame size is rejected without resetting', () => {
   const { ctx } = transfer(randomBytes(300, 81), 20);
   const dec = E.createDecoder();
   E.decoderPush(dec, frameAt(ctx, 0));
   const f1 = frameAt(ctx, 1); f1.K = f1.K + 1;
-  assert.equal(E.decoderPush(dec, f1).type, 'bad');
+  const ev1 = E.decoderPush(dec, f1);
+  assert.equal(ev1.type, 'bad');
+  assert.match(ev1.reason, /K changed within transfer/);
   const f2 = frameAt(ctx, 2); f2.payload = f2.payload.subarray(0, 10);
-  assert.equal(E.decoderPush(dec, f2).type, 'bad');
+  const ev2 = E.decoderPush(dec, f2);
+  assert.equal(ev2.type, 'bad');
+  assert.match(ev2.reason, /frame size changed/);
   assert.equal(E.decoderPush(dec, null).type, 'bad');
   assert.equal(E.decoderProgress(dec).have, 1);
   assert.equal(E.decoderPush(dec, frameAt(ctx, 1)).type, 'progress', 'still the same transfer');
+  // the same misread shown twice (same seq) is still not a re-plan
+  const f3 = frameAt(ctx, 3); f3.K = f3.K + 1;
+  assert.equal(E.decoderPush(dec, f3).type, 'bad');
+  assert.equal(E.decoderPush(dec, { ...f3, payload: f3.payload }).type, 'bad', 'same seq twice does not reset');
+  assert.equal(E.decoderProgress(dec).have, 2, 'progress intact');
+  assert.equal(E.decoderPush(dec, frameAt(ctx, 2)).type, 'progress');
+  // a consistent frame in between clears the candidate: alternating mismatches never reset
+  const f4 = frameAt(ctx, 4); f4.K = f4.K + 1;
+  assert.equal(E.decoderPush(dec, f4).type, 'bad');
+  assert.equal(E.decoderPush(dec, frameAt(ctx, 5)).type, 'progress');
+  const f6 = frameAt(ctx, 6); f6.K = f6.K + 1;
+  assert.equal(E.decoderPush(dec, f6).type, 'bad');
+  assert.equal(E.decoderProgress(dec).have, 4, 'still the original transfer');
+});
+test('re-plan: the same file beamed again at another density (same tid, new K) switches instead of locking on bad', () => {
+  // tid = CRC(stream) ignores chunkBytes: Stop → lower the density → Start keeps the tid but changes K
+  // and the frame size. The receiver must follow (two distinct-seq frames agreeing on the new plan),
+  // not reject every frame forever.
+  const built = E.buildStream(randomBytes(5000, 82), { name: 'photo.jpg', type: 'image/jpeg' });
+  const big = E.makeContext(built.stream, 816), small = E.makeContext(built.stream, 248);
+  assert.equal(big.tid, small.tid, 'same stream, same tid');
+  assert.notEqual(big.K, small.K);
+  for (const [from, to] of [[big, small], [small, big]]) {
+    const dec = E.createDecoder();
+    E.decoderPush(dec, frameAt(from, 0));
+    E.decoderPush(dec, frameAt(from, 1));
+    assert.equal(E.decoderProgress(dec).have, 2);
+    const first = E.decoderPush(dec, frameAt(to, 0));
+    assert.equal(first.type, 'bad', 'one frame is not proof (the header is outside the payload CRC)');
+    assert.equal(first.replan, true);
+    assert.equal(E.decoderProgress(dec).K, from.K, 'not reset yet');
+    const second = E.decoderPush(dec, frameAt(to, 1));
+    assert.equal(second.type, 'switch', 'two consistent frames → re-plan');
+    assert.equal(second.tid, to.tid);
+    assert.equal(second.K, to.K);
+    const p = E.decoderProgress(dec);
+    assert.equal(p.K, to.K); assert.equal(p.have, 1); assert.equal(p.framesSeen, 1);
+    let ev = null, seq = 2;
+    while (!dec.complete && seq < 3 * to.K) ev = E.decoderPush(dec, frameAt(to, seq++));
+    assert.equal(ev.type, 'complete');
+    const res = E.decoderResult(dec);
+    bytesEq(res.fileBytes, randomBytes(5000, 82));
+    assert.equal(res.manifest.n, 'photo.jpg');
+  }
+  // an EC toggle changes only the frame size at the same K-ish: also a re-plan
+  const ecL = E.makeContext(built.stream, 816), ecM = E.makeContext(built.stream, 640);
+  const dec = E.createDecoder();
+  E.decoderPush(dec, frameAt(ecL, 0));
+  assert.equal(E.decoderPush(dec, frameAt(ecM, 0)).type, 'bad');
+  assert.equal(E.decoderPush(dec, frameAt(ecM, 1)).type, 'switch');
+  assert.equal(E.decoderProgress(dec).K, ecM.K);
 });
 test('K=1: the very first frame completes (reported as complete, carrying tid)', () => {
   const t = transfer(u8('hi'), 200);
@@ -512,14 +639,68 @@ test('K=1: the very first frame completes (reported as complete, carrying tid)',
   const dec2 = E.createDecoder();
   assert.equal(E.decoderPush(dec2, frameAt(t.ctx, 99)).type, 'complete');
 });
-test('decoder loses nothing when the pending cap evicts the oldest equation', () => {
-  const t = transfer(randomBytes(300, 91), 20);
-  const dec = E.createDecoder();
-  let seq = t.K, ev = null;
-  while (seq < 60 * t.K) { ev = E.decoderPush(dec, frameAt(t.ctx, seq++)); if (ev.type === 'complete') break; }
-  assert.equal(ev.type, 'complete');
-  assert.ok(E.decoderProgress(dec).pending <= E.PENDING_CAP_FACTOR * t.K);
+test('pending cap: the oldest equation is evicted (dead, counted) and the transfer still completes', () => {
+  // Ordinary runs never come near 4×K pending (peeling collapses equations as fast as they arrive), so
+  // the cap is lowered through the test hook and only multi-neighbour coded frames are fed: with no
+  // chunk known, pure peeling cannot collapse them, so each one parks until the cap evicts.
+  assert.equal(E.createDecoder().pendingCapFactor, E.PENDING_CAP_FACTOR, 'default factor');
+  assert.equal(E.PENDING_CAP_FACTOR, 4);
+  const t = transfer(randomBytes(40, 91), 20);
+  assert.ok(t.K >= 5 && t.K <= 12, `small K (${t.K})`);
+  const factor = 0.5, cap = Math.ceil(factor * t.K);
+  const dec = E.createDecoder({ elimination: false, pendingCapFactor: factor });
+  let seq = t.K;
+  const nextMulti = () => { while (E.frameNeighbors(seq, t.K).length < 2) seq++; return seq++; };
+  while (dec.pending.length < cap) E.decoderPush(dec, frameAt(t.ctx, nextMulti()));
+  assert.equal(dec.pending.length, cap);
+  assert.equal(dec.evicted, 0);
+  assert.equal(dec.have, 0);
+  const oldest = dec.pending[0], second = dec.pending[1];
+  const ev = E.decoderPush(dec, frameAt(t.ctx, nextMulti()));
+  assert.equal(ev.type, 'progress');
+  assert.equal(dec.pending.length, cap, 'cap holds');
+  assert.equal(dec.evicted, 1, 'one eviction counted');
+  assert.equal(oldest.dead, true, 'the evicted equation is marked dead');
+  assert.ok(dec.pending.indexOf(oldest) < 0, 'and is gone from the live list');
+  assert.equal(dec.pending[0], second, 'FIFO: the next oldest moved up');
+  assert.equal(E.decoderProgress(dec).pending, cap);
+  // the sender keeps looping: everything still decodes byte-identically despite the dropped equations
+  let last = null, s = 0;
+  while (!dec.complete && s < 60 * t.K) last = E.decoderPush(dec, frameAt(t.ctx, s++));
+  assert.equal(last.type, 'complete');
+  assert.ok(dec.evicted >= 1);
   bytesEq(E.decoderResult(dec).fileBytes, t.bytes);
+  // and the default 4×K cap is honoured by an ordinary coded-only run
+  const t2 = transfer(randomBytes(300, 91), 20);
+  const dec2 = E.createDecoder();
+  let seq2 = t2.K, ev2 = null;
+  while (seq2 < 60 * t2.K) { ev2 = E.decoderPush(dec2, frameAt(t2.ctx, seq2++)); if (ev2.type === 'complete') break; }
+  assert.equal(ev2.type, 'complete');
+  assert.ok(E.decoderProgress(dec2).pending <= E.PENDING_CAP_FACTOR * t2.K);
+  bytesEq(E.decoderResult(dec2).fileBytes, t2.bytes);
+});
+test('peeling alone (no elimination) finishes a late joiner from coded frames only — degree-1 frames do arrive', () => {
+  // Pins the fountain code's self-sufficiency: above GE_MAX_UNKNOWN unknowns the decoder is peeling only,
+  // so a late joiner on a multi-MB file depends on degree-1 coded frames showing up at the soliton rate.
+  for (const [bytes, seed] of [[4000, 93], [10000, 94], [16000, 95]]) {
+    const t = transfer(randomBytes(bytes, seed), 20);
+    const dec = E.createDecoder({ elimination: false });
+    let seq = 3 * t.K, used = 0, ev = null;
+    while (used < 3 * t.K) { used++; ev = E.decoderPush(dec, frameAt(t.ctx, seq++)); if (ev.type === 'complete') break; }
+    assert.equal(ev.type, 'complete', `K=${t.K}: peeling-only late joiner never completed`);
+    assert.ok(used < 1.6 * t.K, `K=${t.K}: used ${used} frames`);
+    bytesEq(E.decoderResult(dec).fileBytes, t.bytes);
+  }
+});
+test('xorInto word path: chunk sizes ≡ 0 and ≡ 2 (mod 4) decode byte-identically from coded frames only', () => {
+  for (const cb of [32, 34, 100, 102, 816, 630]) {
+    const t = transfer(randomBytes(cb * 23 + 5, cb), cb);
+    const dec = E.createDecoder();
+    let seq = 2 * t.K, ev = null, used = 0;
+    while (used < 4 * t.K) { used++; ev = E.decoderPush(dec, frameAt(t.ctx, seq++)); if (ev.type === 'complete') break; }
+    assert.equal(ev.type, 'complete', `chunkBytes=${cb}`);
+    bytesEq(E.decoderResult(dec).fileBytes, t.bytes, `chunkBytes=${cb}`);
+  }
 });
 
 /* ---------- inactivation: Gaussian elimination over the pending equations ---------- */
@@ -539,11 +720,44 @@ test('solvePending: rank-deficient equations resolve nothing; full rank resolves
   const sol = E.solvePending(dec).sort((a, b) => a.chunk - b.chunk);
   deepEq(sol.map((s) => s.chunk), [0, 1, 2], 'full rank resolves all three');
   for (const s of sol) bytesEq(s.data, c[s.chunk], `chunk ${s.chunk} data`);
+  // a column budget stops the (expensive) data phase early and says so
+  const part = E.solvePending(dec, 2);
+  assert.equal(part.length, 2);
+  assert.equal(part.truncated, true);
+  for (const s of part) bytesEq(s.data, c[s.chunk]);
+  assert.equal(E.solvePending(dec, 3).truncated, undefined, 'exactly enough budget is not truncated');
+  assert.equal(E.solvePending(dec, 0).length, 3, 'a non-positive budget means unlimited');
   // a dead equation is ignored; fewer live equations than unknowns → no attempt
   dec.pending[3].dead = true;
   assert.equal(E.solvePending(dec).length, 0);
   dec.pending = [dec.pending[0]];
   assert.equal(E.solvePending(dec).length, 0, 'P < U is skipped');
+});
+test('elimination is budgeted per push: a late joiner resolves at most solveColumns chunks by elimination per frame, then continues', () => {
+  assert.equal(E.createDecoder().solveColumns, E.GE_COLUMNS_PER_PUSH);
+  assert.ok(E.GE_COLUMNS_PER_PUSH >= 16 && E.GE_COLUMNS_PER_PUSH <= 256, `budget ${E.GE_COLUMNS_PER_PUSH}`);
+  const t = transfer(randomBytes(4000, 25), 20);
+  const run = (solveColumns) => {
+    const dec = E.createDecoder({ solveColumns });
+    let seq = 3 * t.K, used = 0, truncatedPushes = 0, ev = null;
+    while (used < 3 * t.K) {
+      used++;
+      ev = E.decoderPush(dec, frameAt(t.ctx, seq++));
+      if (dec.solveMore) {
+        truncatedPushes++;
+        assert.equal(dec.nextSolveAt, dec.unique, 'a truncated pass may continue on the very next push');
+      }
+      if (ev.type === 'complete') break;
+    }
+    assert.equal(ev.type, 'complete');
+    bytesEq(E.decoderResult(dec).fileBytes, t.bytes);
+    return { used, truncatedPushes };
+  };
+  const unlimited = run(Infinity), budgeted = run(4);
+  assert.equal(unlimited.truncatedPushes, 0);
+  assert.ok(budgeted.truncatedPushes >= 1, 'the small budget was hit at least once');
+  assert.ok(budgeted.used <= unlimited.used + 20, `budgeting costs a handful of frames at most: ${budgeted.used} vs ${unlimited.used}`);
+  assert.ok(E.createDecoder({ solveColumns: 0 }).solveColumns === E.GE_COLUMNS_PER_PUSH, 'invalid budget → default');
 });
 test('elimination finishes seeded lossy runs in no more frames than peeling alone (fewer overall), same bytes', () => {
   const t = transfer(randomBytes(10000, 23), 20);
@@ -571,16 +785,79 @@ test('elimination finishes seeded lossy runs in no more frames than peeling alon
   assert.ok(K > 400 && K < 600, `K=${K} — this test is about a mid-size transfer`);
 });
 test('elimination is throttled: nextSolveAt advances by max(1, unknown/16) unique frames per attempt', () => {
-  const t = transfer(randomBytes(4000, 24), 20);
-  const dec = E.createDecoder();
-  // coded frames only (late joiner): pending grows until P ≥ U triggers the first attempt
-  let seq = t.K, attempts = 0, last = -1;
-  while (!dec.complete && seq < 40 * t.K) {
+  // A lossy mid-size run gives several attempts. nextSolveAt starts at 0 and only an attempt changes it,
+  // so `last` starts at 0 too (the untouched initial value must not count as an attempt). The unknown
+  // count at attempt time is bracketed: peeling inside the same push happens before the attempt (so
+  // unknown ≤ the pre-push count) and elimination resolves chunks after it (so unknown ≥ the post-push count).
+  const t = transfer(randomBytes(10000, 23), 20);
+  const run = (seed) => {
+    const r = E.rng(seed), dec = E.createDecoder({ solveColumns: Infinity });
+    let seq = 0, attempts = 0, last = 0;
+    while (!dec.complete && seq < 40 * t.K) {
+      const text = E.encodeFrame(t.ctx, seq++);
+      if (r() < 0.3) continue;
+      const unknownBefore = dec.K - dec.have;
+      E.decoderPush(dec, E.parseFrame(text));
+      if (dec.nextSolveAt === last) continue;
+      attempts++;
+      assert.ok(dec.unique >= last, `attempt at unique=${dec.unique} before the previous nextSolveAt=${last}`);
+      const step = dec.nextSolveAt - dec.unique, unknownAfter = dec.K - dec.have;
+      const lo = Math.max(1, unknownAfter >>> 4), hi = Math.max(1, unknownBefore >>> 4);
+      assert.ok(step >= lo && step <= hi, `step ${step} outside [${lo}, ${hi}] (unknown before ${unknownBefore}, after ${unknownAfter})`);
+      last = dec.nextSolveAt;
+    }
+    assert.ok(dec.complete);
+    bytesEq(E.decoderResult(dec).fileBytes, t.bytes);
+    return attempts;
+  };
+  const attempts = [1, 2, 3, 4].map(run);
+  assert.ok(attempts.every((a) => a >= 1), `every run attempted elimination: ${attempts}`);
+  assert.ok(attempts.some((a) => a >= 2), `some run attempted more than once: ${attempts}`);
+  // coded frames only (late joiner): the first attempt waits until P ≥ U; no attempt before that
+  const dec = E.createDecoder({ solveColumns: Infinity });
+  let seq = t.K;
+  while (dec.nextSolveAt === 0 && seq < 4 * t.K) {
     E.decoderPush(dec, frameAt(t.ctx, seq++));
-    if (dec.nextSolveAt !== last) { attempts++; last = dec.nextSolveAt; }
+    if (dec.nextSolveAt === 0) assert.ok(dec.pending.length < dec.K - dec.have || dec.complete, 'no attempt while P < U');
   }
-  assert.ok(dec.complete);
-  assert.ok(attempts >= 1 && attempts < dec.unique, `attempts ${attempts} of ${dec.unique} unique frames`);
+  assert.ok(dec.nextSolveAt > 0, 'an attempt happened');
+  assert.ok(dec.nextSolveAt - dec.unique >= 1);
+  // The exact formula, with many unknowns left: a cycle of degree-2 equations {i, i+1} spans only the
+  // even-parity vectors, so with even-degree coded frames the system stays rank-deficient (rank K−1),
+  // every attempt resolves nothing and the unknown count is exactly K at each attempt.
+  const t2 = transfer(randomBytes(2000, 26), 20);
+  const K = t2.K;
+  assert.ok(K >= 64, `K=${K} so that K>>>4 ≥ 4`);
+  const d2 = E.createDecoder({ solveColumns: Infinity });
+  const evenCoded = (() => { let s = K; return () => { while (E.frameNeighbors(s, K).length % 2 !== 0) s++; return frameAt(t2.ctx, s++); }; })();
+  assert.equal(E.decoderPush(d2, evenCoded()).type, 'start');
+  assert.equal(d2.have, 0);
+  for (let i = 0; i < K; i++) {
+    const j = (i + 1) % K, data = E.chunkAt(t2.ctx.stream, i, 20);
+    const cj = E.chunkAt(t2.ctx.stream, j, 20);
+    for (let b = 0; b < 20; b++) data[b] ^= cj[b];
+    const eq = { idx: [Math.min(i, j), Math.max(i, j)], data, dead: false };
+    d2.pending.push(eq);
+    for (const c of eq.idx) (d2.byChunk[c] || (d2.byChunk[c] = [])).push(eq);
+  }
+  assert.ok(d2.pending.length >= K, 'P ≥ U from here on');
+  const step = Math.max(1, K >>> 4);
+  assert.ok(step >= 4);
+  const expected = [];
+  for (let n = 0; n < 3 * step; n++) {
+    E.decoderPush(d2, evenCoded());
+    assert.equal(d2.have, 0, 'rank-deficient: nothing ever resolves');
+    if (d2.unique >= (expected.length ? expected[expected.length - 1] : 0) && d2.nextSolveAt !== (expected.length ? expected[expected.length - 1] : 0)) {
+      expected.push(d2.nextSolveAt);
+      assert.equal(d2.nextSolveAt, d2.unique + step, `attempt at unique=${d2.unique} schedules the next ${step} unique frames later`);
+    } else {
+      assert.equal(d2.nextSolveAt, expected[expected.length - 1], `no attempt at unique=${d2.unique} before nextSolveAt`);
+    }
+  }
+  assert.equal(expected.length, 3, `three attempts over ${3 * step} frames: ${expected}`);
+  assert.equal(expected[0], 2 + step, 'first attempt on the first push with P ≥ U');
+  assert.equal(expected[1], expected[0] + step);
+  assert.equal(expected[2], expected[1] + step);
 });
 
 /* ---------- peekManifest ---------- */
