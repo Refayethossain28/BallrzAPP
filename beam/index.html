@@ -846,12 +846,18 @@ function frameTick() {
   B.cur = f; B.seq = f.seq;
   paintCurrent();
   updateBeamHud();
-  var budget = 1000 / B.fps;
-  B.due = now() + budget;
+  var budget = 1000 / B.fps, t = now();
+  // Accumulate the due time (rather than re-basing it on the swap instant) so the AVERAGE period is
+  // exactly 1000/fps even though each swap lands on a display refresh; a fresh start after a pause
+  // or a long stall begins from now.
+  B.due = (B.due && t - B.due < budget) ? B.due + budget : t + budget;
   armFrame();
   var nextSeq = f.seq + 1 >= SEQ_LIMIT ? 0 : f.seq + 1;
+  var prevMs = B.encodeMs;
   B.next = encodeSeq(nextSeq);          // one-frame lookahead keeps paint timing even
-  $('slow-hint').hidden = !(B.encodeMs > budget);
+  // Dense repair frames cost 2–3× a sparse one to encode: judge the warning on the slower of the
+  // last two frames so it does not flicker on and off every other code.
+  $('slow-hint').hidden = !(Math.max(B.encodeMs, prevMs) > budget);
 }
 /* Codes switch on display refreshes: a requestAnimationFrame loop runs every vsync and swaps the
  * code at the first refresh on or after the due time (allowing half a 60 Hz refresh early so the
@@ -868,6 +874,7 @@ function rafTick() {
   if (now() >= B.due - 8) frameTick(); else B.raf = requestAnimationFrame(rafTick);
 }
 function cancelFrame() {
+  B.due = 0;
   clearTimeout(B.timer); B.timer = 0;
   if (B.raf && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(B.raf);
   B.raf = 0;
@@ -1227,6 +1234,7 @@ function handleText(text) {
       var rp = R.replan;
       if (rp && rp.K === frame.K && rp.len === frame.payload.length && rp.seq !== frame.seq) {
         R.dec = E.createDecoder();
+        R.window = [];
         ev = E.decoderPush(R.dec, frame);
       } else {
         R.replan = { K: frame.K, len: frame.payload.length, seq: frame.seq };
@@ -1248,6 +1256,8 @@ function handleText(text) {
     case 'switch':
       if (R.tid !== null) toast(restarted ? 'The sender restarted — starting over with the new codes.' : 'A different transfer appeared — starting over with it.');
       R.startTs = t; R.gapStart = 0; R.K = ev.K; R.tid = ev.tid; R.cardShown = false;
+      R.window = [{ seq: frame.seq, t: t }];      // the link advice must not mix two transfers' frame numbers
+      $('rx-advice').textContent = '';
       $('rx-progress').hidden = false;
       $('rx-done').hidden = true; $('rx-error').hidden = true;
       $('rx-card').innerHTML = '<div class="fine">' + (ev.type === 'switch' ? 'New transfer — waiting for its first piece…' : 'Waiting for the first piece… the file’s name and size appear as soon as it arrives.') + '</div>';

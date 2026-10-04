@@ -10,12 +10,13 @@
  *   - primitives: UTF-8, base45 (RFC 9285), CRC-32, FNV-1a, mulberry32
  *   - stream & manifest: [u16 manifestLen][manifest JSON][file bytes]
  *   - chunking: fixed-size, zero-padded chunks of the stream
- *   - fountain code: a systematic first pass, then repair frames that
- *     alternate between robust-soliton (low degree, peelable — for a
- *     receiver that joined late or missed a lot) and dense random (half of
- *     all chunks — finishes a receiver missing a few chunks in about that
- *     many frames); both phones derive a frame's neighbour set from (K, seq)
- *     alone, so nothing has to be negotiated
+ *   - fountain code: a systematic first pass, then repair frames mixing
+ *     robust-soliton (low degree, peelable — for a receiver that joined
+ *     late or missed a lot) with dense random ones (half of all chunks —
+ *     finishes a receiver missing a few chunks in about that many frames):
+ *     every other frame up to 1 024 chunks, every 8th above; both phones
+ *     derive a frame's neighbour set from (K, seq) alone, nothing is
+ *     negotiated
  *   - frame codec: 23-char header + base45 payload, every char in the QR
  *     alphanumeric set, every frame of a transfer the same length
  *   - peeling decoder: strips known chunks from each incoming equation and
@@ -60,6 +61,10 @@
   // parked: dense repair frames only pay off once the receiver is missing a few hundred chunks or
   // fewer, and parking them earlier would cost O(K) memory and propagation work per frame.
   var PARK_MAX_DEGREE = 512;
+  // Above 2×PARK_MAX_DEGREE chunks a dense frame cannot park until the receiver is missing fewer than
+  // ~1 000 chunks, so on big transfers only every 8th repair frame is dense: a receiver near the end
+  // still finishes in a few seconds, while one that joined late loses little airtime.
+  var DENSE_EVERY_LARGE = 8;
 
   var PRESETS = [
     { id: 's', label: 'Small', version: 10, ec: 'L', hint: 'any camera, slow' },
@@ -456,13 +461,36 @@
   //                      a receiver that joined late or missed a lot), odd j → dense (finishes a
   //                      receiver that is missing only a few chunks in about that many frames)
   //   seq ≥ K, protocol 1  robust-soliton only (the first release; bit-identical to its output)
+  // Is repair frame j (= seq − K) dense under protocol 2? Every other one on transfers up to
+  // 2×PARK_MAX_DEGREE chunks (where a dense frame always parks), every 8th above that.
+  function repairIsDense(j, K) {
+    if (K <= 2 * PARK_MAX_DEGREE) return (j % 2) === 1;
+    return (j % DENSE_EVERY_LARGE) === DENSE_EVERY_LARGE - 1;
+  }
+
   function frameNeighbors(seq, K, v) {
     if (seq < K) return [seq];
     var r = rng(hashStr('beam:' + K + ':' + seq));
     if (K === 1) return [0];
-    if ((v == null || v >= 2) && ((seq - K) % 2) === 1) return denseSubset(r, K);
+    if ((v == null || v >= 2) && repairIsDense(seq - K, K)) return denseSubset(r, K);
     var d = sampleDegree(r, K);
     return sampleDistinct(r, K, d);
+  }
+
+  // The receiver's view of a dense frame: the same subset as denseSubset, but counting unknown chunks
+  // as it goes and giving up (null) as soon as more than PARK_MAX_DEGREE are unknown — so a frame that
+  // will be discarded costs O(PARK_MAX_DEGREE) work, not O(K), whatever K a hostile header claims.
+  function denseNeighborsBounded(dec, seq) {
+    var K = dec.K, r = rng(hashStr('beam:' + K + ':' + seq));
+    var out = [], unknown = 0;
+    for (var i = 0; i < K; i++) {
+      if (r() < 0.5) {
+        out.push(i);
+        if (!dec.chunks[i] && ++unknown > PARK_MAX_DEGREE) return null;
+      }
+    }
+    if (!out.length) out.push(Math.floor(r() * K));
+    return out;
   }
 
   function xorChunkInto(out, stream, i, chunkBytes) {
@@ -475,7 +503,18 @@
   function framePayload(stream, seq, K, chunkBytes, v) {
     var idx = frameNeighbors(seq, K, v);
     var out = chunkAt(stream, idx[0], chunkBytes);
-    for (var j = 1; j < idx.length; j++) xorChunkInto(out, stream, idx[j], chunkBytes);
+    // Dense frames XOR ~K/2 chunks: go a word at a time straight over the stream when the chunk
+    // size and the stream's offset allow it (every preset but Medium has a 4-byte-multiple chunk).
+    var words = (chunkBytes % 4 === 0 && stream.byteOffset % 4 === 0 && idx.length > 1)
+      ? new Uint32Array(stream.buffer, stream.byteOffset, stream.length >>> 2) : null;
+    var out32 = words ? new Uint32Array(out.buffer, 0, chunkBytes >>> 2) : null, wpc = chunkBytes >>> 2;
+    for (var j = 1; j < idx.length; j++) {
+      var start = idx[j] * chunkBytes;
+      if (words && start + chunkBytes <= stream.length) {
+        var w0 = start >>> 2;
+        for (var w = 0; w < wpc; w++) out32[w] ^= words[w0 + w];
+      } else xorChunkInto(out, stream, idx[j], chunkBytes);
+    }
     return out;
   }
 
@@ -591,16 +630,22 @@
 
   // Strip known chunks, then resolve or park. Returns { resolved: [chunk indices], redundant: bool }.
   function absorb(dec, idx, payload) {
+    var unknown = [], j, i;
+    var resolved = [], queue = [];
+    // Decide the frame's fate before touching any chunk data: nothing to learn, or too dense to park.
+    for (j = 0; j < idx.length; j++) {
+      if (!dec.chunks[idx[j]]) {
+        unknown.push(idx[j]);
+        if (unknown.length > PARK_MAX_DEGREE) return { resolved: resolved, redundant: false, discarded: true };
+      }
+    }
+    if (unknown.length === 0) return { resolved: resolved, redundant: true };
     var data = new Uint8Array(dec.chunkBytes);
     data.set(payload);
-    var unknown = [], j, i;
     for (j = 0; j < idx.length; j++) {
       i = idx[j];
-      if (dec.chunks[i]) xorInto(data, dec.chunks[i]); else unknown.push(i);
+      if (dec.chunks[i]) xorInto(data, dec.chunks[i]);
     }
-    var resolved = [], queue = [];
-    if (unknown.length === 0) return { resolved: resolved, redundant: true };
-    if (unknown.length > PARK_MAX_DEGREE) return { resolved: resolved, redundant: false, discarded: true };
     if (unknown.length === 1) {
       resolveChunk(dec, unknown[0], data, resolved, queue);
     } else {
@@ -723,7 +768,9 @@
   function maybeEliminate(dec, resolved) {
     if (!dec.elimination || dec.have >= dec.K) return;
     var U = dec.K - dec.have;
-    if (U > GE_MAX_UNKNOWN || dec.pending.length < U || dec.unique < dec.nextSolveAt) return;
+    // Nothing a pass could do right now → drop the continue flag, or decoderContinue would spin.
+    if (U > GE_MAX_UNKNOWN || dec.pending.length < U) { dec.solveMore = false; return; }
+    if (dec.unique < dec.nextSolveAt) return;
     dec.nextSolveAt = dec.unique + eliminationStep(U);
     var sol = solvePending(dec, dec.solveColumns);
     dec.solveMore = !!sol.truncated;
@@ -772,8 +819,15 @@
     dec.unique++;
     if (dec.minSeq < 0 || frame.seq < dec.minSeq) dec.minSeq = frame.seq;
     if (frame.seq > dec.maxSeq) dec.maxSeq = frame.seq;
-    var idx = frameNeighbors(frame.seq, dec.K, dec.v);
-    var res = absorb(dec, idx, frame.payload);
+    var idx = null, res = null;
+    if (dec.v >= 2 && dec.K > 1 && frame.seq >= dec.K && repairIsDense(frame.seq - dec.K, dec.K)) {
+      idx = denseNeighborsBounded(dec, frame.seq);
+      if (!idx) res = { resolved: [], redundant: false, discarded: true };
+    }
+    if (!res) {
+      if (!idx) idx = frameNeighbors(frame.seq, dec.K, dec.v);
+      res = absorb(dec, idx, frame.payload);
+    }
     if (res.redundant) dec.redundant++;
     if (res.discarded) dec.discarded++;
     if (!(res.redundant || res.discarded) || dec.solveMore) maybeEliminate(dec, res.resolved);
@@ -835,6 +889,9 @@
     if (typeof minSeq !== 'number' || typeof maxSeq !== 'number' || minSeq < 0 || maxSeq < minSeq) return null;
     var shown = maxSeq - minSeq + 1;
     if (shown < 20 || unique < 2 || elapsed < 3) return null;
+    // A sender cannot show more than FPS_MAX codes a second: a wider span means the window straddles
+    // a sequence wrap or two transfers, which says nothing about the link.
+    if (shown > 2 * FPS_MAX * Math.max(elapsed, 1) + 20) return null;
     var missRate = Math.max(0, Math.min(1, 1 - unique / shown));
     var senderFps = (maxSeq - minSeq) / elapsed;
     var advice = 'ok';
@@ -996,7 +1053,7 @@
   var api = {
     ALNUM: ALNUM, MAGIC: MAGIC, MAGICS: MAGICS, HEADER_LEN: HEADER_LEN, TID_LEN: TID_LEN, K_MAX: K_MAX, SEQ_MAX: SEQ_MAX,
     MAX_NAME: MAX_NAME, SOLITON_C: SOLITON_C, SOLITON_DELTA: SOLITON_DELTA, PENDING_CAP_FACTOR: PENDING_CAP_FACTOR,
-    GE_MAX_UNKNOWN: GE_MAX_UNKNOWN, GE_COLUMNS_PER_PUSH: GE_COLUMNS_PER_PUSH, PARK_MAX_DEGREE: PARK_MAX_DEGREE,
+    GE_MAX_UNKNOWN: GE_MAX_UNKNOWN, GE_COLUMNS_PER_PUSH: GE_COLUMNS_PER_PUSH, PARK_MAX_DEGREE: PARK_MAX_DEGREE, DENSE_EVERY_LARGE: DENSE_EVERY_LARGE,
     SHRINK_LEVELS: SHRINK_LEVELS, DEFAULT_SHRINK: DEFAULT_SHRINK,
     PRESETS: PRESETS, DEFAULT_PRESET: DEFAULT_PRESET, FPS_MIN: FPS_MIN, FPS_MAX: FPS_MAX, FPS_DEFAULT: FPS_DEFAULT,
     // primitives
@@ -1009,7 +1066,7 @@
     // chunking
     chunkBytesFor: chunkBytesFor, chunkCount: chunkCount, chunkAt: chunkAt,
     // fountain code & frames
-    solitonTable: solitonTable, frameNeighbors: frameNeighbors, framePayload: framePayload,
+    solitonTable: solitonTable, repairIsDense: repairIsDense, frameNeighbors: frameNeighbors, framePayload: framePayload,
     makeContext: makeContext, encodeFrame: encodeFrame, parseFrame: parseFrame,
     // decoder
     createDecoder: createDecoder, decoderPush: decoderPush, decoderContinue: decoderContinue, decoderProgress: decoderProgress,
