@@ -55,6 +55,10 @@
   #btnFS { font: inherit; font-size: 12px; line-height: 1; width: 26px; height: 22px;
     background: none; border: 1px solid var(--line); border-radius: 7px; color: var(--dim); cursor: pointer; }
   #btnFS:active { color: var(--cyan); border-color: var(--cyan); }
+  #btnTV { font: inherit; font-size: 12px; line-height: 1; height: 22px; padding: 0 6px;
+    background: none; border: 1px solid var(--line); border-radius: 7px; color: var(--dim); cursor: pointer; }
+  #btnTV.on { color: var(--green); border-color: var(--green);
+    text-shadow: 0 0 8px rgba(77,232,161,.5); }
   #power { display: flex; align-items: center; gap: 6px; color: var(--dim); font-size: 10px; letter-spacing: .15em; }
   #power .led { width: 7px; height: 7px; border-radius: 50%; background: var(--green);
     box-shadow: 0 0 8px var(--green); animation: breathe 2.4s ease-in-out infinite; }
@@ -171,6 +175,13 @@
   body.theater #screen { flex: 1; height: auto; aspect-ratio: auto; max-width: none;
     align-self: stretch; border-radius: 8px; }
   body.theater #btnEject { display: inline-flex; }
+  /* ---------- tv: AirPlaying to a television, playing by controller ---------- */
+  /* Mirroring is invisible to a web page — Safari fires no event for it — so
+     the shell hides its touch pads when a controller connects (that's what
+     your hands are on once the picture is on the TV) and the 📺 button
+     covers every other case by hand. */
+  body.tv #controls, body.tv #speaker { display: none; }
+  body.tv #shell { justify-content: center; }
 </style>
 </head>
 <body>
@@ -180,6 +191,7 @@
     <div id="plateBtns">
       <button id="btnEject" aria-label="eject cartridge">⏏ EJECT</button>
       <span id="padLed">🎮</span>
+      <button id="btnTV" aria-label="hide touch controls" title="TV mode: hide touch controls">📺</button>
       <button id="btnFS" aria-label="fullscreen" title="fullscreen (F)">⛶</button>
       <div id="power"><span class="led"></span>POWER</div>
     </div>
@@ -482,7 +494,7 @@
   var fuseState = null, fuseAnim = null, fusePulse = null;
   var brkState = null, brkHeld = { left: false, right: false }, brkPointerX = null, brkTrail = [];
   var emuFrame = null; // the Ultra 64 cartridge: a whole other machine in-screen
-  var EMU_BUILD = '11'; // bump to force the emulator iframe past a stale SW cache
+  var EMU_BUILD = '12'; // bump to force the emulator iframe past a stale SW cache
 
   // versus (pong) state
   var vsPhase = null;         // 'pick' | 'net' | 'match'
@@ -527,6 +539,8 @@
     emuFrame.src = base + '&v=' + EMU_BUILD;
     emuFrame.setAttribute('allow', 'fullscreen; gamepad; autoplay');
     emuFrame.setAttribute('title', 'Ultra 64 — N64 emulator');
+    // a cartridge slotted mid-TV-mode should boot with its touch pads hidden
+    emuFrame.addEventListener('load', function () { if (tvOn) tellEmuTouch(); });
     $('screen').appendChild(emuFrame);
     try { emuFrame.focus(); } catch (e) {}
   }
@@ -561,6 +575,34 @@
   }
   $('btnFS').addEventListener('click', toggleFullscreen);
   $('btnEject').addEventListener('click', function () { pressB(); });
+
+  /* ---------------- TV mode: the on-screen buttons get out of the way ---------------- */
+  // Auto: a controller connecting flips it on, the last one leaving flips it
+  // off. Manual: the 📺 button overrides either way, and the override resets
+  // once all controllers are gone so the pads always come back for touch play.
+  // Emulator cartridges draw their own virtual gamepad inside the iframe, so
+  // the state is forwarded there by postMessage too.
+  var tvOn = false, tvManual = null;
+  function tellEmuTouch() {
+    if (emuFrame && emuFrame.contentWindow) {
+      try { emuFrame.contentWindow.postMessage({ arcadeTouch: tvOn ? 'hide' : 'show' }, '*'); } catch (e) {}
+    }
+  }
+  function applyTV() {
+    var want = tvManual !== null ? tvManual : padsOn > 0;
+    if (want === tvOn) return;
+    tvOn = want;
+    document.body.classList.toggle('tv', tvOn);
+    var b = $('btnTV');
+    b.className = tvOn ? 'on' : '';
+    b.title = tvOn ? 'show touch controls' : 'TV mode: hide touch controls';
+    b.setAttribute('aria-label', tvOn ? 'show touch controls' : 'hide touch controls');
+    tellEmuTouch();
+  }
+  $('btnTV').addEventListener('click', function () {
+    tvManual = !tvOn;
+    applyTV();
+  });
 
   /* ---------------- gamepads: Bluetooth/USB controllers land here ---------------- */
   // Paired controllers surface through the Gamepad API. Pad 0 drives the
@@ -623,6 +665,8 @@
       padsOn = pads.length;
       $('padLed').className = padsOn ? 'on' : '';
       $('padLed').textContent = padsOn > 1 ? '🎮×' + padsOn : '🎮';
+      if (!padsOn) tvManual = null; // controllers gone: back to auto, pads return
+      applyTV();
     }
     if (!pads.length) return;
     if (mode === 'play' && isExternal(currentId)) return; // the emulator owns its pads

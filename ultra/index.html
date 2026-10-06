@@ -216,7 +216,7 @@
   <p class="loader-note">This searches Ultra's bundled cartridges and a curated list of open-source homebrew. Ultra does not search for or download commercial game ROMs — those are copyrighted. Community entries open a web search for that title's own legal release, which you can then paste into “Load a ROM” above.</p>
 </section>
 
-<section>
+<section id="controllerSection">
   <h2>Controller</h2>
   <div class="pad-row">
     <div class="dpad">
@@ -548,6 +548,16 @@ window.addEventListener('keyup', function (e) { var b = M.keymap[e.key]; if (!b)
 
 var bootQs = String(location.search || '');
 if (bootQs.indexOf('embed=1') !== -1) document.documentElement.className += ' embed';
+
+// TV mode: the hosting Arcade shell's 📺 button hides this page's on-screen
+// controller by postMessage. This machine page reads no gamepads (touch and
+// keyboard only), so there is no auto-hide here — only the explicit ask.
+window.addEventListener('message', function (e) {
+  var d = e.data;
+  if (!d || (d.arcadeTouch !== 'hide' && d.arcadeTouch !== 'show')) return;
+  var sec = document.getElementById('controllerSection');
+  if (sec) sec.style.display = d.arcadeTouch === 'hide' ? 'none' : '';
+});
 var bootMachine = /[?&]machine=(n64|dc)\b/.exec(bootQs);
 switchMachine(bootMachine ? bootMachine[1] : 'n64');
 requestAnimationFrame(tick);

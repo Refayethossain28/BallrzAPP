@@ -385,6 +385,45 @@
     renderGrid();
   }
 
+  /* TV mode: hide EmulatorJS's virtual gamepad when real controls exist.
+     AirPlay mirroring is invisible to a web page, so the trigger is a
+     controller connecting (gamepadconnected) or the Arcade shell saying so
+     by postMessage ({ arcadeTouch: 'hide' | 'show' } — its 📺 button).
+     changeSettingOption('virtual-gamepad', …) is EmulatorJS's own settings
+     path (menuOptionChanged → toggleVirtualGamepad), but it only exists
+     after the settings menu builds at game start — so the desired state is
+     remembered and re-applied until it lands. */
+  var touchWant = null, touchApplied = null;
+  function applyTouchWant() {
+    if (touchWant === null || touchWant === touchApplied) return;
+    var emu = window.EJS_emulator;
+    if (!emu || typeof emu.changeSettingOption !== 'function') return;
+    try {
+      emu.changeSettingOption('virtual-gamepad', touchWant === 'hide' ? 'disabled' : 'enabled');
+      touchApplied = touchWant;
+    } catch (e) {}
+  }
+  function anyPadConnected() {
+    try {
+      var pads = navigator.getGamepads ? navigator.getGamepads() : [];
+      for (var i = 0; i < pads.length; i++) if (pads[i] && pads[i].connected) return true;
+    } catch (e) {}
+    return false;
+  }
+  window.addEventListener('gamepadconnected', function () {
+    touchWant = 'hide'; applyTouchWant();
+  });
+  window.addEventListener('gamepaddisconnected', function () {
+    if (!anyPadConnected()) { touchWant = 'show'; applyTouchWant(); }
+  });
+  window.addEventListener('message', function (e) {
+    var d = e.data;
+    if (d && (d.arcadeTouch === 'hide' || d.arcadeTouch === 'show')) {
+      touchWant = d.arcadeTouch; applyTouchWant();
+    }
+  });
+  setInterval(applyTouchWant, 500); // no-op once applied; catches late emulator boot
+
   grid.addEventListener('click', function (e) {
     var el = e.target;
     var id = el && el.getAttribute && el.getAttribute('data-sys');
