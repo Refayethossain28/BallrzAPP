@@ -675,7 +675,9 @@ var TS = (function () {
         a.config = aac ? { objectType: h.objectType, sampleRateIndex: h.sampleRateIndex, channels: h.channels } : null;
       }
       var frame = aac ? data.slice(i + h.headerLength, i + h.frameLength) : data.slice(i, i + h.frameLength);
-      out.audio.push({ pts: pts, dts: pts, data: frame, duration: samplesPerFrame });
+      // Every AAC/MP3 frame is a random access point. The muxer writes the sync flag from `key`, so a sample
+      // without it would be written as non-sync (depends_on=1) — an audio track MSE cannot seek in.
+      out.audio.push({ pts: pts, dts: pts, data: frame, duration: samplesPerFrame, key: true });
       a.lastPts = pts;
       i += h.frameLength;
     }

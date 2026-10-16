@@ -899,10 +899,18 @@
   function canNativeHls() {
     try { return !!video && typeof video.canPlayType === 'function' && str(video.canPlayType('application/vnd.apple.mpegurl')) !== ''; } catch (e) { return false; }
   }
+  // Whether Media Source Extensions exist at all. Which codecs this browser can decode is a
+  // separate, per-stream question (variants are filtered by codec, and a TS stream is checked once
+  // its codecs are known): a browser without H.264 — open-source Chromium builds, some Linux
+  // Firefox installs — must still play VP9/Opus or MP3 HLS through MSE rather than refuse up front.
+  var MSE_PROBES = ['video/mp4; codecs="avc1.42e01e,mp4a.40.2"', 'video/mp4; codecs="vp09.00.10.08,opus"',
+    'video/mp4; codecs="av01.0.01M.08"', 'video/mp4; codecs="hvc1.1.6.L93.B0"', 'audio/mp4; codecs="mp4a.40.2"',
+    'audio/mp4; codecs="mp4a.6b"', 'audio/mp4; codecs="opus"'];
   function canMse() {
     try {
-      return typeof MediaSource !== 'undefined' && typeof MediaSource.isTypeSupported === 'function' &&
-        MediaSource.isTypeSupported('video/mp4; codecs="avc1.42e01e,mp4a.40.2"') === true;
+      if (typeof MediaSource === 'undefined' || typeof MediaSource.isTypeSupported !== 'function') return false;
+      for (var i = 0; i < MSE_PROBES.length; i++) if (MediaSource.isTypeSupported(MSE_PROBES[i]) === true) return true;
+      return false;
     } catch (e) { return false; }
   }
   function hasWebCrypto() {
@@ -1150,6 +1158,9 @@
   }
   function onMediaError() {
     if (player.status === 'idle' || !player.item) return;
+    // A fatal reason already on screen (unsupported codec, blocked fetch, SAMPLE-AES…) is more
+    // useful than the generic media error the element raises while being torn down after it.
+    if (player.status === 'error') return;
     var err = video.error;
     if (!err) return;
     if (player.hls && player.hls.alive()) { player.hls.destroy(); player.hls = null; }
@@ -1375,6 +1386,7 @@
   function createHlsController(cfg) {
     var url = cfg.url, video = cfg.video;
     var alive = true, msOpen = false, ms = null, objectUrl = null, endedAll = false;
+    var anyAppended = false;   // endOfStream() before the first append is itself a media error in Chrome
     var master = null, masterUrl = url, variants = [], variantIdx = -1, manualIdx = null;
     var caps = { maxHeight: cfg.dataSaver ? 480 : (cfg.maxHeight || null), maxBandwidth: cfg.dataSaver ? 1.5e6 : null };
     var ewma = E.hlsEwmaCreate();
@@ -1606,7 +1618,7 @@
             sb.remove(start, dur === Infinity ? end : Math.min(end, dur));
             return;
           }
-          if (op.bytes) { sb.appendBuffer(op.bytes); loader.ops.shift(); return; }
+          if (op.bytes) { sb.appendBuffer(op.bytes); anyAppended = true; loader.ops.shift(); return; }
           loader.ops.shift();
         } catch (e) {
           if (e && e.name === 'QuotaExceededError' && op.bytes && !op.retried) {
@@ -2074,7 +2086,10 @@
       try { video.removeEventListener('seeking', onSeeking); } catch (e) { /* ignore */ }
       if (ms) {
         try { ms.removeEventListener('sourceopen', onSourceOpen); } catch (e) { /* ignore */ }
-        try { if (ms.readyState === 'open') ms.endOfStream(); } catch (e) { /* ignore */ }
+        // Only close a stream that received data: endOfStream() on a MediaSource that never saw an
+        // init segment is reported by Chrome as DEMUXER_ERROR_COULD_NOT_OPEN, which would replace the
+        // honest reason we are tearing down for (e.g. an unsupported codec) with a generic media error.
+        try { if (ms.readyState === 'open' && anyAppended) ms.endOfStream(); } catch (e) { /* ignore */ }
       }
       if (objectUrl && typeof URL !== 'undefined' && URL.revokeObjectURL) { try { URL.revokeObjectURL(objectUrl); } catch (e) { /* ignore */ } }
       ms = null; objectUrl = null;
