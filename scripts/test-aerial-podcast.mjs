@@ -39,6 +39,12 @@ function runner(name) {
 }
 const E = loadEngine();
 const { test, run, assert } = runner('podcast');
+// Hostile-input cases assert the shape of their result (caps honoured, output derived from input) rather than a
+// per-case wall clock; their elapsed time is summed and checked once, generously, by the last test in this file.
+// A quadratic regression in any of them costs minutes, so the bound discriminates without being flaky on a
+// loaded runner.
+let hostileMs = 0;
+const hostile = (name, fn) => test(name, () => { const t0 = Date.now(); fn(); hostileMs += Date.now() - t0; });
 const NOW = Date.UTC(2026, 9, 16, 12, 0, 0);
 const FEED_URL = 'https://feeds.example.com/night-signals.xml';
 
@@ -336,11 +342,10 @@ test('xmlParse: junk inside a tag is skipped one character at a time', () => {
   deepEq(r.root.attrs, { x: '1' });
   assert.equal(r.root.text, 't');
 });
-test('xmlParse: 10k nested elements terminate quickly, capped depth, capped error list', () => {
-  const t0 = Date.now();
+// Timing lives in the hostile battery at the end of this file (one generous bound over every case); the tests
+// here assert the structural caps that make the work bounded.
+hostile('xmlParse: 10k nested elements: capped depth, capped error list, serialisable tree', () => {
   const r = E.xmlParse('<a>'.repeat(10000) + '</a>'.repeat(10000));
-  const ms = Date.now() - t0;
-  assert.ok(ms < 1500, `took ${ms}ms`);
   assert.equal(r.ok, true);
   let depth = 0, n = r.root;
   while (n.children.length) { n = n.children[0]; depth++; }
@@ -350,15 +355,16 @@ test('xmlParse: 10k nested elements terminate quickly, capped depth, capped erro
   assert.ok(/more error\(s\) not shown/.test(r.errors[r.errors.length - 1]));
   assert.ok(JSON.stringify(r).length > 0, 'the tree must be serialisable');
 });
-test('xmlParse: pathological inputs finish fast and never throw', () => {
+hostile('xmlParse: pathological inputs never throw, keep the documented shape and the error cap', () => {
   const cases = ['<'.repeat(50000), '<a '.repeat(20000), '</a>'.repeat(20000), '&#'.repeat(20000), '&amp'.repeat(20000) + ';', '<!--'.repeat(5000), '<![CDATA['.repeat(5000), '"'.repeat(20000), '<a x="' + 'y'.repeat(100000), JUNK_STR.repeat(4)];
   for (const s of cases) {
-    const t0 = Date.now();
     const r = E.xmlParse(s);
-    assert.ok(Date.now() - t0 < 1500, 'slow on case ' + s.slice(0, 10));
-    assert.equal(typeof r.ok, 'boolean');
-    assert.ok(Array.isArray(r.errors));
+    assert.equal(typeof r.ok, 'boolean', s.slice(0, 10));
+    assert.ok(Array.isArray(r.errors) && r.errors.length <= 102, 'error cap on ' + s.slice(0, 10));
+    assert.equal(r.ok, r.root !== null);
   }
+  assert.equal(E.xmlParse('<a>' + '<'.repeat(50000) + '</a>').root.text, '<'.repeat(50000), 'every stray "<" is text');
+  assert.equal(E.xmlChildren(E.xmlParse('<a>' + '</a>'.repeat(20000)).root).length, 0, 'stray close tags change nothing');
 });
 test('xmlParse: empty / non-text / binary input → ok:false with a reason, no throw', () => {
   deepEq(E.xmlParse(''), { ok: false, root: null, errors: ['empty document'] });
@@ -665,7 +671,7 @@ test('feed with no items is ok with zero episodes; junk feedUrl leaves relative 
   deepEq(rel.episodes.map(e => e.id), ['2']);
   assert.equal(rel.skipped, 1);
 });
-test('hostile feed: oversized description is capped, 10k-deep item structure terminates, junk-typed values ignored', () => {
+hostile('hostile feed: oversized description is capped, 10k-deep item structure terminates, junk-typed values ignored', () => {
   const big = '<rss><channel><item><guid>g</guid><enclosure url="https://h/x.mp3"/><description>' + 'y'.repeat(60000) + '</description><itunes:season>abc</itunes:season><itunes:episode>-1</itunes:episode><itunes:explicit>maybe</itunes:explicit><itunes:duration>junk</itunes:duration><pubDate>yesterday-ish</pubDate></item></channel></rss>';
   const r = E.podcastParseFeed(big, FEED_URL);
   assert.ok(r.episodes[0].description.length <= 20000);
@@ -674,10 +680,10 @@ test('hostile feed: oversized description is capped, 10k-deep item structure ter
   assert.equal(r.episodes[0].explicit, false);
   assert.equal(r.episodes[0].duration, null);
   assert.equal(r.episodes[0].published, null);
-  const t0 = Date.now();
   const deep = E.podcastParseFeed('<rss><channel>' + '<item>'.repeat(10000) + '<guid>d</guid><enclosure url="https://h/d.mp3"/>' + '</item>'.repeat(10000) + '</channel></rss>', FEED_URL);
-  assert.ok(Date.now() - t0 < 2000);
   assert.equal(deep.ok, true);
+  assert.equal(deep.count, 1, 'the one real item is found below the depth cap; the rest are empty');
+  assert.ok(deep.warnings.length <= 102 && deep.warnings.some(w => /nesting deeper than/.test(w)));
 });
 
 /* ===================== directory (iTunes Search API) ===================== */
@@ -897,13 +903,197 @@ test('determinism: identical input → identical output across every parser', ()
   deepEq(E.opmlParse(E.opmlBuild(E.PODCAST_FEATURED)), E.PODCAST_FEATURED.map(s => ({ title: s.title, feedUrl: s.feedUrl })));
 });
 test('junk sweep: every export survives hostile arguments without throwing', () => {
-  const junk = [undefined, null, 0, -1, NaN, Infinity, '', ' ', 'x', '<', '&', 12, 1e21, true, {}, [], [null], { id: null }, () => {}, new Uint8Array(0), new Uint8Array([0xff, 0xfe, 0x3c]), JUNK, JUNK_STR, RSS_FULL];
+  const junk = [undefined, null, 0, -1, NaN, Infinity, '', ' ', 'x', '<', '&', 12, 1e21, true, {}, [], [null], { id: null }, () => {}, new Uint8Array(0), new Uint8Array([0xff, 0xfe, 0x3c]), JUNK, JUNK_STR, RSS_FULL, '\uD83D', 'a'.repeat(199) + '\u{1F600}', 'constructor', '__proto__'];
   const fns = ['xmlParse', 'xmlChild', 'xmlChildren', 'xmlText', 'podcastParseFeed', 'podcastDurationSeconds', 'stripHtml', 'itunesSearchUrl', 'itunesLookupUrl', 'podcastNormalizeItunes', 'podcastNormalizeFeedUrl', 'podcastIsFeedUrl', 'podcastEpisodeKey', 'opmlParse', 'opmlBuild', 'podcastMergeEpisodes'];
   for (const name of fns) {
     assert.equal(typeof E[name], 'function', name);
     for (const a of junk) for (const b of junk) E[name](a, b);
   }
   deepEq(Object.keys(E.podcast).sort(), [...fns, 'PODCAST_FEATURED'].sort());
+});
+
+/* ===================== hostile input: bounded, linear-time work ===================== */
+// Each case once cost its input squared (stripHtml rescanned to the end of the string from every unterminated
+// tag; collectItems rebuilt its array per child; every field lookup rescanned the channel's siblings) or was
+// unbounded (a 20 MB description was flattened whole before the cap). The assertions pin the result shapes;
+// the wall clock is checked once over all of them by the last test in the file.
+const ITEM = i => `<item><title>Ep ${i}</title><guid>g${i}</guid><enclosure url="https://h/${i}.mp3" type="audio/mpeg" length="100"/><pubDate>Thu, 01 Oct 2026 00:00:${String(i % 60).padStart(2, '0')} GMT</pubDate><description>d</description></item>`;
+const FEED_WITH = inner => `<rss><channel><title>t</title><item><guid>g</guid><enclosure url="https://h/x.mp3"/>${inner}</item></channel></rss>`;
+hostile('stripHtml: 50 KB of unterminated tags of every rule (block, inline, li, td, svg) is text', () => {
+  for (const open of ['<p ', '<a ', '<li ', '<td ', '<svg ', '<P class="x" ']) {
+    const s = open.repeat(Math.ceil(51200 / open.length));
+    assert.equal(E.stripHtml(s), s.trim(), JSON.stringify(open));
+  }
+});
+hostile('stripHtml: 1 MB of unterminated tags is text; unterminated comment/script swallow the rest', () => {
+  assert.equal(E.stripHtml('<p '.repeat(349525)).length, 349525 * 3 - 1);
+  assert.equal(E.stripHtml('keep<!--' + '<!--'.repeat(12800)), 'keep');
+  assert.equal(E.stripHtml('keep<script>' + '<script>'.repeat(6400) + 'alert(1)'), 'keep');
+});
+hostile('podcastParseFeed: a 1 MB CDATA description of unterminated tags yields the capped text', () => {
+  const r = E.podcastParseFeed(FEED_WITH('<description><![CDATA[' + '<p '.repeat(349525) + ']]></description>'), FEED_URL);
+  assert.equal(r.episodes[0].description.length, 20000);
+  assert.ok(r.episodes[0].description.startsWith('<p <p <p '));
+});
+hostile('podcastParseFeed: a 512 KB description of raw <p> elements is flattened within the markup budget, not whole', () => {
+  const r = E.podcastParseFeed(FEED_WITH('<description>' + '<p>x</p>'.repeat(65536) + '</description>'), FEED_URL);
+  assert.equal(r.episodes[0].description.length, 20000);
+  assert.ok(r.episodes[0].description.startsWith('x\n\nx\n\nx'));
+  const cdata = E.podcastParseFeed(FEED_WITH('<description><![CDATA[' + '<p>x</p>'.repeat(65536) + ']]></description>'), FEED_URL);
+  assert.equal(cdata.episodes[0].description, r.episodes[0].description, 'raw and CDATA markup flatten alike');
+});
+hostile('podcastParseFeed: 30k items are all found, in date order, with no duplicates (collectItems is one pass)', () => {
+  const N = 30000;
+  const r = E.podcastParseFeed('<rss><channel><title>t</title>' + Array.from({ length: N }, (_, i) => ITEM(i)).join('') + '</channel></rss>', FEED_URL);
+  assert.equal(r.ok, true);
+  assert.equal(r.count, N);
+  assert.equal(r.skipped, 0);
+  assert.equal(new Set(r.episodes.map(e => e.id)).size, N);
+  for (let k = 1; k < N; k++) assert.ok(r.episodes[k - 1].published >= r.episodes[k].published, 'newest first at ' + k);
+  assert.equal(r.episodes[0].published, Date.UTC(2026, 9, 1, 0, 0, 59));
+});
+hostile('xmlParse: a parent keeps at most 200k children (with one warning); feed field lookups over them stay cheap', () => {
+  const r = E.xmlParse('<c><title>t</title>' + '<i/>'.repeat(300000) + '</c>');
+  assert.equal(r.ok, true);
+  assert.equal(E.xmlChildren(r.root).length, 200000);
+  assert.equal(r.errors.filter(e => /more than 200000 children in <c>/.test(e)).length, 1);
+  const feed = E.podcastParseFeed('<rss><channel><title>t</title>' + '<i/>'.repeat(300000) + '</channel></rss>', FEED_URL);
+  assert.equal(feed.ok, true);
+  assert.equal(feed.title, 't');
+  assert.equal(feed.count, 0);
+  assert.ok(feed.warnings.some(w => /more than 200000 children/.test(w)));
+});
+hostile('podcastDurationSeconds: a long run of inner whitespace is junk, not a quadratic regex match', () => {
+  assert.equal(E.podcastDurationSeconds('1h' + ' '.repeat(50000) + 'x'), null);
+  assert.equal(E.podcastDurationSeconds('1h' + ' '.repeat(70) + '2m'), null, 'longer than any real duration');
+  assert.equal(E.podcastDurationSeconds('1 h   2 \t m'), 3720, 'short inner runs collapse');
+});
+hostile('xmlParse: element and attribute names in diagnostics are cut to 60 characters', () => {
+  const name = 'n'.repeat(300000);
+  const r = E.xmlParse('<a>' + ('</' + name + '>').repeat(150) + '</a>');
+  assert.ok(r.errors.every(e => e.length < 120), 'longest message ' + Math.max(...r.errors.map(e => e.length)));
+  assert.ok(/^line 1: stray <\/n{59}…> ignored$/.test(r.errors[0]), r.errors[0]);
+  const w = E.podcastParseFeed('<' + name + '>', FEED_URL).warnings;
+  assert.ok(w.every(e => e.length < 120));
+  assert.ok(/duplicate attribute n{59}… in <a> ignored/.test(E.xmlParse('<a ' + name + '="1" ' + name + '="2"/>').errors[0]));
+});
+
+/* ===================== correctness fixes found by the same review ===================== */
+test('stripHtml: a quoted attribute may contain ">"; an unbalanced quote ends at the first ">"; declarations go', () => {
+  assert.equal(E.stripHtml('<a title="x > y">link</a> rest'), 'link rest');
+  assert.equal(E.stripHtml("<p data-x='a>b'>t</p>"), 't');
+  assert.equal(E.stripHtml('<a href="x>text</a> more'), 'text more');
+  assert.equal(E.stripHtml('<!DOCTYPE html><?xml version="1.0"?>x<!y>z'), 'xz');
+  assert.equal(E.stripHtml('a <!b'), 'a <!b', 'an unterminated declaration is text');
+});
+test('podcastParseFeed: ids and categories named like Object.prototype properties are kept', () => {
+  const ids = ['constructor', 'toString', 'hasOwnProperty', '__proto__', 'valueOf', 'normal'];
+  const r = E.podcastParseFeed('<rss><channel><itunes:category text="constructor"/><itunes:category text="Comedy"/><itunes:category text="comedy"/>'
+    + ids.map(id => `<item><guid>${id}</guid><enclosure url="https://h/${id}.mp3" type="audio/mpeg"/></item>`).join('') + '</channel></rss>', FEED_URL);
+  deepEq(r.episodes.map(e => e.id), ids);
+  assert.equal(r.skipped, 0);
+  deepEq(r.categories, ['constructor', 'Comedy']);
+  const dup = E.podcastParseFeed('<rss><channel>' + '<item><guid>__proto__</guid><enclosure url="https://h/p.mp3"/></item>'.repeat(2) + '</channel></rss>', FEED_URL);
+  assert.equal(dup.count, 1, 'a real duplicate is still a duplicate');
+  assert.equal(dup.skipped, 1);
+});
+test('xmlChild/xmlChildren: a prefixed element stands in for an unprefixed name only when the node has no exact match', () => {
+  const r = E.xmlParse('<c><a:title>P</a:title><a:entry/><itunes:image href="i"/></c>');
+  assert.equal(E.xmlText(E.xmlChild(r.root, 'title')), 'P');
+  assert.equal(E.xmlChild(r.root, 'TITLE').name, 'a:title');
+  assert.equal(E.xmlChild(r.root, 'b:title'), null, 'a wanted prefix is exact');
+  assert.equal(E.xmlChild(r.root, 'image').name, 'itunes:image', 'nothing else called image here');
+  const both = E.xmlParse('<c><a:title>P</a:title><title>A</title><Title>B</Title></c>');
+  deepEq(E.xmlChildren(both.root, 'title').map(E.xmlText), ['A', 'B']);
+  const list = E.xmlChildren(both.root, 'title');
+  list.push(null);
+  assert.equal(E.xmlChildren(both.root, 'title').length, 2, 'callers get their own array');
+  deepEq(JSON.parse(JSON.stringify(E.xmlParse('<a>t</a>').root.children[0])), { name: '#text', attrs: {}, children: [], text: 't' }, 'text node shape');
+});
+test('Atom: a feed that binds its namespace to a prefix (<a:feed>/<a:entry>) parses like a plain one', () => {
+  const r = E.podcastParseFeed('<a:feed xmlns:a="http://www.w3.org/2005/Atom"><a:title>prefixed atom</a:title><a:link rel="alternate" href="https://p.example.org/"/>'
+    + '<a:entry><a:id>1</a:id><a:title>One</a:title><a:link rel="enclosure" href="https://h/1.mp3" type="audio/mpeg"/><a:updated>2026-10-01T00:00:00Z</a:updated></a:entry></a:feed>', 'https://feeds.example.com/x.xml');
+  assert.equal(r.kind, 'atom');
+  assert.equal(r.title, 'prefixed atom');
+  assert.equal(r.link, 'https://p.example.org/');
+  assert.equal(r.count, 1);
+  deepEq([r.episodes[0].id, r.episodes[0].title, r.episodes[0].url, r.episodes[0].published], ['1', 'One', 'https://h/1.mp3', Date.UTC(2026, 9, 1)]);
+});
+test('xml:base on the feed, entry or link resolves relative enclosure/link hrefs; the feed URL is the fallback', () => {
+  const r = E.podcastParseFeed('<feed xmlns="http://www.w3.org/2005/Atom" xml:base="https://media.example.org/pod/"><title>t</title>'
+    + '<link rel="alternate" href="site/"/>'
+    + '<entry><id>1</id><link rel="enclosure" href="ep1.mp3" type="audio/mpeg"/><link rel="alternate" href="ep1.html"/></entry>'
+    + '<entry xml:base="/other/"><id>2</id><link rel="enclosure" href="ep2.mp3" type="audio/mpeg"/><link rel="alternate" xml:base="https://blog.example.net/" href="ep2.html"/></entry>'
+    + '<entry xml:base="not a base"><id>3</id><link rel="enclosure" href="ep3.mp3" type="audio/mpeg"/></entry></feed>', 'https://feeds.example.com/atom.xml');
+  assert.equal(r.link, 'https://media.example.org/pod/site/');
+  deepEq(r.episodes.map(e => [e.id, e.url, e.link]), [
+    ['1', 'https://media.example.org/pod/ep1.mp3', 'https://media.example.org/pod/ep1.html'],
+    ['2', 'https://media.example.org/other/ep2.mp3', 'https://blog.example.net/ep2.html'],
+    ['3', 'https://media.example.org/pod/ep3.mp3', '']
+  ]);
+  const rss = E.podcastParseFeed('<rss><channel xml:base="https://cdn.example.org/show/"><item><guid>1</guid><enclosure url="a.mp3" type="audio/mpeg"/></item></channel></rss>', FEED_URL);
+  assert.equal(rss.episodes[0].url, 'https://cdn.example.org/show/a.mp3');
+});
+test('titles: known HTML tags are stripped, other angle-bracket text survives, entities decode', () => {
+  const t = title => E.podcastParseFeed(`<rss><channel><title>${title}</title><item><title>${title}</title><guid>1</guid><enclosure url="https://h/1.mp3"/></item></channel></rss>`, FEED_URL);
+  const r = t('Interview with &lt;Guest Name&gt; today &lt;LIVE&gt;');
+  assert.equal(r.title, 'Interview with <Guest Name> today <LIVE>');
+  assert.equal(r.episodes[0].title, r.title);
+  assert.equal(t('<![CDATA[Ep 3: <b>Bold</b> &amp; <span class="x">plain</span><br>next]]>').title, 'Ep 3: Bold & plain next');
+  assert.equal(t('Tom &amp;amp; Jerry &amp;#8212; 3').title, 'Tom & Jerry — 3', 'double-escaped entities (a common generator bug) still decode');
+  assert.equal(t('5 &lt; 7 and &lt;3 and a&lt;b').title, '5 < 7 and <3 and a<b');
+  assert.equal(t('a&lt;b and c&gt;d').title, 'ad', '"<b and c>" cannot be told from a bold tag');
+});
+test('enclosure type must be a media-type token (else derived from the URL) and length a sane byte count', () => {
+  const ep = (attrs) => E.podcastParseFeed(`<rss><channel><item><guid>g</guid><enclosure url="https://h/x.mp3" ${attrs}/></item></channel></rss>`, FEED_URL).episodes[0];
+  deepEq([ep('type="audio/' + 'x'.repeat(1000000) + '" length="1e308"').type, ep('type="audio/' + 'x'.repeat(1000000) + '" length="1e308"').length], ['audio/mpeg', null]);
+  assert.equal(ep('type="audio/mpeg; codecs=mp3" length="12345.9"').type, 'audio/mpeg');
+  assert.equal(ep('type="audio/mpeg; codecs=mp3" length="12345.9"').length, 12345);
+  assert.equal(ep('type="audio/x-m4a"').type, 'audio/x-m4a');
+  assert.equal(ep('type="AUDIO/MPEG"').type, 'audio/mpeg');
+  assert.equal(ep('type="audio/<b>junk</b>"').type, 'audio/mpeg');
+  assert.equal(ep('length="99999999999999"').length, null, '100 TB is not an episode');
+  assert.equal(ep('length="99999999999999"').type, 'audio/mpeg');
+});
+test('podcastNormalizeFeedUrl: a backslash in the address, a port above 65535 → null; underscores in host labels pass', () => {
+  for (const bad of ['https://evil.com\\@good.com/feed', 'https://good.com/feed\\x', 'https://example.com:99999/x', 'example.com:65536/feed']) assert.equal(E.podcastNormalizeFeedUrl(bad), null, bad);
+  assert.equal(E.podcastNormalizeFeedUrl('https://example.com:65535/x'), 'https://example.com:65535/x');
+  assert.equal(E.podcastNormalizeFeedUrl('https://feeds_x.example.com/feed'), 'https://feeds_x.example.com/feed');
+  assert.equal(E.podcastIsFeedUrl('https://evil.com\\@good.com/feed'), false);
+});
+test('itunesSearchUrl: a term cut inside an emoji or holding a lone surrogate still encodes', () => {
+  const cut = E.itunesSearchUrl('a'.repeat(199) + '\u{1F600}');
+  assert.equal(cut, 'https://itunes.apple.com/search?media=podcast&entity=podcast&term=' + 'a'.repeat(199) + '&limit=25&country=GB');
+  assert.equal(E.itunesSearchUrl('\uD83D'), 'https://itunes.apple.com/search?media=podcast&entity=podcast&term=%EF%BF%BD&limit=25&country=GB');
+  assert.equal(E.itunesSearchUrl('x\uDE00y'), 'https://itunes.apple.com/search?media=podcast&entity=podcast&term=x%EF%BF%BDy&limit=25&country=GB');
+  assert.equal(E.itunesSearchUrl('\u{1F600}'.repeat(100)).split('term=')[1].split('&')[0], '%F0%9F%98%80'.repeat(100), 'whole pairs survive');
+});
+test('podcastNormalizeItunes: ids are positive integers as written; episode counts are bounded', () => {
+  assert.equal(E.podcastNormalizeItunes({ feedUrl: 'https://a.b/f', collectionId: 0.5 }).id, 'feed:https://a.b/f');
+  assert.equal(E.podcastNormalizeItunes({ feedUrl: 'https://a.b/f', collectionId: 1e21 }).id, 'feed:https://a.b/f');
+  assert.equal(E.podcastNormalizeItunes({ feedUrl: 'https://a.b/f', collectionId: -3, trackId: '42' }).id, 'itunes:42');
+  assert.equal(E.podcastNormalizeItunes({ feedUrl: 'https://a.b/f', trackCount: 1e21 }).episodeCount, null);
+  assert.equal(E.podcastNormalizeItunes({ feedUrl: 'https://a.b/f', trackCount: 2087.7 }).episodeCount, 2087);
+});
+test('xmlParse: a start tag reported after its attributes keeps its own line and does not inflate later ones', () => {
+  deepEq(E.xmlParse('<a\n\n\n" x="1"').errors, ['line 4: unexpected """ in <a> skipped', 'line 1: unclosed start tag <a> at end of input', 'line 4: unclosed <a> at end of input']);
+  deepEq(E.xmlParse('\n<a\n\n"\n<b/></a>').errors, ['line 4: unexpected """ in <a> skipped', 'line 5: unclosed start tag <a>']);
+});
+test('xmlParse: bytes honour a declared single-byte encoding; a UTF-8 BOM or an unknown label means UTF-8', () => {
+  const enc = s => new TextEncoder().encode(s);
+  const latin = Uint8Array.from([...enc('<?xml version="1.0" encoding="ISO-8859-1"?><rss><channel><title>Caf'), 0xE9, ...enc('</title></channel></rss>')]);
+  assert.equal(E.podcastParseFeed(latin, FEED_URL).title, 'Café');
+  // (0xE9 rather than a C1 byte: Node's ICU passes 0x80-0x9F through for this label where browsers remap them.)
+  const cp = Uint8Array.from([...enc("<?xml version='1.0' encoding='windows-1252' ?><rss><channel><title>"), 0x41, 0xE9, ...enc('</title></channel></rss>')]);
+  assert.equal(E.podcastParseFeed(cp, FEED_URL).title, 'Aé');
+  const bom = Uint8Array.from([0xEF, 0xBB, 0xBF, ...enc('<?xml version="1.0" encoding="ISO-8859-1"?><rss><channel><title>Café</title></channel></rss>')]);
+  assert.equal(E.podcastParseFeed(bom, FEED_URL).title, 'Café', 'a BOM outranks the declaration');
+  const bogus = enc('<?xml version="1.0" encoding="x-no-such-label"?><rss><channel><title>Café</title></channel></rss>');
+  assert.equal(E.podcastParseFeed(bogus, FEED_URL).title, 'Café');
+  assert.equal(E.podcastParseFeed(enc('<?xml version="1.0" encoding="UTF-8"?><rss><channel><title>Café</title></channel></rss>').buffer, FEED_URL).title, 'Café');
+});
+test('hostile battery: the cases above together finish in well under 10 s (a quadratic regression takes minutes)', () => {
+  assert.ok(hostileMs < 10000, `hostile cases took ${hostileMs} ms`);
 });
 
 run();

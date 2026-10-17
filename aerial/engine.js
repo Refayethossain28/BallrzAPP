@@ -96,7 +96,9 @@
     }
 
     /* ---------- URLs (pure, no URL constructor so it behaves the same everywhere) ---------- */
-    var URL_RE = /^([a-zA-Z][a-zA-Z0-9+.-]*:)?(\/\/([^\/?#]*))?([^?#]*)(\?[^#]*)?(#.*)?$/;
+    // The authority also ends at a backslash: WHATWG URL (every browser) treats '\' like '/' in http(s) URLs, so
+    // "https://evil\@good/x" is fetched from evil — the host these helpers name must be the host the browser uses.
+    var URL_RE = /^([a-zA-Z][a-zA-Z0-9+.-]*:)?(\/\/([^\/\\?#]*))?([^?#]*)(\?[^#]*)?(#.*)?$/;
     function splitUrl(u) {
       var m = URL_RE.exec(String(u == null ? '' : u).trim());
       if (!m) return null;
@@ -144,7 +146,7 @@
     function urlOrigin(url) {
       var p = splitUrl(url);
       if (!p || !p.scheme || p.authority === null) return '';
-      return p.scheme + '//' + p.authority.replace(/^[^@]*@/, '');
+      return p.scheme + '//' + p.authority.replace(/^.*@/, '');   // userinfo ends at the LAST '@', as in the browser
     }
     function urlHost(url) {
       var o = urlOrigin(url);
@@ -152,7 +154,7 @@
       return o.replace(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//, '').replace(/:\d+$/, '').toLowerCase();
     }
     function urlPath(url) { var p = splitUrl(url); return p ? p.path : ''; }
-    function isHttpUrl(s) { return /^https?:\/\/[^\s/?#]+/i.test(String(s == null ? '' : s).trim()); }
+    function isHttpUrl(s) { return /^https?:\/\/[^\s/?#\\]+/i.test(String(s == null ? '' : s).trim()); }
     function isHttps(url) { return /^https:\/\//i.test(String(url == null ? '' : url).trim()); }
     // An http:// stream on an https:// page is blocked by every browser (mixed content).
     function isMixedContent(url, pageProtocol) {
@@ -196,18 +198,24 @@
       }
       return { kind: kind, ext: ext, mime: mime };
     }
-    // .pls / .m3u / stream-list .m3u8 files resolve to the stream URLs they list.
+    // .pls / .m3u / stream-list .m3u8 files resolve to the stream URLs they list. The caller follows the first
+    // playable entry, so the list is capped: a megabyte of unique lines must not be deduped quadratically or kept.
+    var MAX_PLAYLIST_URLS = 100;
     function parsePlaylistFile(text, baseUrl) {
-      var out = [], lines = String(text == null ? '' : text).replace(/^﻿/, '').split(/\r?\n/);
-      for (var i = 0; i < lines.length; i++) {
+      var out = [], seen = new Set(), lines = String(text == null ? '' : text).replace(/^﻿/, '').split(/\r?\n/);
+      for (var i = 0; i < lines.length && out.length < MAX_PLAYLIST_URLS; i++) {
         var line = lines[i].trim();
         if (!line) continue;
         var m = /^File\d*\s*=\s*(.+)$/i.exec(line);
         if (m) { line = m[1].trim(); }
-        else if (line.charAt(0) === '#' || line.charAt(0) === '[' || /^(Title|Length|NumberOfEntries|Version)\d*\s*=/i.test(line)) continue;
+        // Any other Key=value line is .pls metadata (Title, Length, NumberOfEntries, Version, …), never an entry.
+        else if (line.charAt(0) === '#' || line.charAt(0) === '[' || /^[A-Za-z][A-Za-z0-9 ]*=/.test(line)) continue;
+        // A URL reference never carries whitespace or <>" unencoded: an HTML error page served for a .pls must not
+        // resolve into a bogus "stream" URL that the player then tries to open.
+        if (/[\s<>"]/.test(line)) continue;
         if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(line) || baseUrl) {
           var u = baseUrl ? resolveUrl(baseUrl, line) : line;
-          if (isHttpUrl(u) && out.indexOf(u) === -1) out.push(u);
+          if (isHttpUrl(u) && !seen.has(u)) { seen.add(u); out.push(u); }
         }
       }
       return out;
@@ -282,28 +290,62 @@
       return d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate());
     }
     var MONTHS = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
-    var TZ = { ut: 0, utc: 0, gmt: 0, z: 0, est: -5, edt: -4, cst: -6, cdt: -5, mst: -7, mdt: -6, pst: -8, pdt: -7, bst: 1, cet: 1, cest: 2 };
-    // RFC 822/2822 ("Tue, 14 Aug 2026 12:00:00 +0000") and ISO 8601 → ms epoch, or null. Deterministic, no locale.
+    // RFC 822 zone names plus the regional ones feeds actually use (hours east of UTC). An unknown alphabetic zone
+    // counts as UTC, which is what RFC 2822 §4.3 prescribes for them ("-0000"); CST/IST stay their RFC 822 meaning.
+    var TZ = {
+      ut: 0, utc: 0, gmt: 0, z: 0, wet: 0, west: 1, bst: 1, cet: 1, cest: 2, eet: 2, eest: 3, msk: 3, sast: 2,
+      est: -5, edt: -4, cst: -6, cdt: -5, mst: -7, mdt: -6, pst: -8, pdt: -7, akst: -9, akdt: -8, hst: -10, ast: -4, adt: -3,
+      jst: 9, kst: 9, hkt: 8, sgt: 8, awst: 8, acst: 9.5, acdt: 10.5, aest: 10, aedt: 11, nzst: 12, nzdt: 13
+    };
+    // Optional clock ("9:30", "21:30:00", "9:30 PM") then an optional zone ("GMT", "PDT", "+0100", "+01:00").
+    var TIME_PART = '(?:[\\s,]+(\\d{1,2}):(\\d{2})(?::(\\d{2}))?\\s*(AM|PM)?)?\\s*([A-Za-z]{1,4}|[+-]\\d{2}:?\\d{2})?$';
+    var DAY_FIRST_RE = new RegExp('^(?:[A-Za-z]{3,9},?\\s*)?(\\d{1,2})\\s+([A-Za-z]{3})[a-z]*\\.?,?\\s+(\\d{2,4})' + TIME_PART, 'i');     // Tue, 13 Oct 2026 21:30:00 +0000
+    // The weekday prefix must end in whitespace, or the regex could split "October" into a weekday and a month "ber".
+    var MONTH_FIRST_RE = new RegExp('^(?:[A-Za-z]{3,9},?\\s+)?([A-Za-z]{3})[a-z]*\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})' + TIME_PART, 'i'); // October 13, 2026 9:30 PM
+    var SLASH_RE = new RegExp('^(\\d{1,4})\\/(\\d{1,2})\\/(\\d{1,4})' + TIME_PART, 'i');                                                   // 10/13/2026 or 2026/10/13
+    var ISO_RE = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?\s*(Z|[+-]\d{2}:?\d{2})?)?$/i;
+    var ZONED_RE = /(?:\b(?:UTC?|GMT)(?:[+-]\d{1,2}(?::?\d{2})?)?|\bZ|[+-]\d{2}:?\d{2})$/i;
+    // Minutes east of UTC for a zone token; nothing or an unknown name is UTC (see TZ).
+    function zoneOffset(tz) {
+      if (!tz) return 0;
+      var m = /^([+-])(\d{2}):?(\d{2})$/.exec(tz);
+      if (m) return (m[1] === '-' ? -1 : 1) * ((+m[2]) * 60 + (+m[3]));
+      var name = tz.toLowerCase();
+      return TZ.hasOwnProperty(name) ? TZ[name] * 60 : 0;
+    }
+    function calendarMs(year, mon, day, h, mi, sec, ampm, tz) {
+      if (year < 100) year += year < 50 ? 2000 : 1900;
+      if (mon < 0 || mon > 11 || day < 1 || day > 31) return null;
+      h = +(h || 0);
+      if (ampm) { if (h === 12) h = 0; if (ampm.toUpperCase() === 'PM') h += 12; }
+      return Date.UTC(year, mon, day, h, +(mi || 0), +(sec || 0)) - zoneOffset(tz) * MINUTE;
+    }
+    // RFC 822/2822 ("Tue, 14 Aug 2026 12:00:00 +0000"), ISO 8601, and the sloppy forms feeds use ("October 13,
+    // 2026 9:30 PM", "10/13/2026") → ms epoch, or null. Deterministic, no locale: a date without a zone is read as
+    // UTC on every device. Date.parse is only consulted for strings that name their zone, because for the rest it
+    // would use the machine's local zone and the same feed would sort differently on every phone.
     function parseDate(str) {
       if (isNum(str)) return str;
       str = String(str == null ? '' : str).trim();
       if (!str) return null;
-      var m = /^(?:[A-Za-z]{3},?\s*)?(\d{1,2})\s+([A-Za-z]{3})[a-z]*\.?\s+(\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?\s*([A-Za-z]{1,4}|[+-]\d{4})?$/.exec(str);
-      if (m && MONTHS.hasOwnProperty(m[2].toLowerCase())) {
-        var year = +m[3]; if (year < 100) year += year < 50 ? 2000 : 1900;
-        var ms = Date.UTC(year, MONTHS[m[2].toLowerCase()], +m[1], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
-        var tz = m[7] ? m[7] : '+0000', off = 0;
-        if (/^[+-]\d{4}$/.test(tz)) off = (tz.charAt(0) === '-' ? -1 : 1) * ((+tz.slice(1, 3)) * 60 + (+tz.slice(3, 5)));
-        else if (TZ.hasOwnProperty(tz.toLowerCase())) off = TZ[tz.toLowerCase()] * 60;
-        return ms - off * MINUTE;
-      }
-      m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?\s*(Z|[+-]\d{2}:?\d{2})?)?$/i.exec(str);
+      var m = DAY_FIRST_RE.exec(str);
+      if (m && MONTHS.hasOwnProperty(m[2].toLowerCase())) return calendarMs(+m[3], MONTHS[m[2].toLowerCase()], +m[1], m[4], m[5], m[6], m[7], m[8]);
+      m = MONTH_FIRST_RE.exec(str);
+      if (m && MONTHS.hasOwnProperty(m[1].toLowerCase())) return calendarMs(+m[3], MONTHS[m[1].toLowerCase()], +m[2], m[4], m[5], m[6], m[7], m[8]);
+      m = SLASH_RE.exec(str);
       if (m) {
-        var ms2 = Date.UTC(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0), m[7] ? Math.round(+('0.' + m[7]) * 1000) : 0);
-        var z = m[8], off2 = 0;
-        if (z && z.toUpperCase() !== 'Z') { var zz = z.replace(':', ''); off2 = (zz.charAt(0) === '-' ? -1 : 1) * ((+zz.slice(1, 3)) * 60 + (+zz.slice(3, 5))); }
-        return ms2 - off2 * MINUTE;
+        // Four digits first is year/month/day; otherwise month/day/year, the order Date.parse assumes for feeds.
+        if (m[1].length === 4) return calendarMs(+m[1], +m[2] - 1, +m[3], m[4], m[5], m[6], m[7], m[8]);
+        if (m[3].length === 4 || m[3].length === 2) return calendarMs(+m[3], +m[1] - 1, +m[2], m[4], m[5], m[6], m[7], m[8]);
+        return null;
       }
+      m = ISO_RE.exec(str);
+      if (m) {
+        if (+m[2] < 1 || +m[2] > 12 || +m[3] < 1 || +m[3] > 31) return null;
+        var ms2 = Date.UTC(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0), m[7] ? Math.round(+('0.' + m[7]) * 1000) : 0);
+        return ms2 - (m[8] && m[8].toUpperCase() !== 'Z' ? zoneOffset(m[8]) : 0) * MINUTE;
+      }
+      if (!ZONED_RE.test(str)) return null;
       var t = Date.parse(str);
       return isNum(t) ? t : null;
     }
@@ -361,7 +403,7 @@
         if (c < 0x80) s += String.fromCharCode(c);
         else if (c < 0xe0) { c2 = bytes[i++]; s += String.fromCharCode(((c & 31) << 6) | (c2 & 63)); }
         else if (c < 0xf0) { c2 = bytes[i++]; c3 = bytes[i++]; s += String.fromCharCode(((c & 15) << 12) | ((c2 & 63) << 6) | (c3 & 63)); }
-        else { c2 = bytes[i++]; c3 = bytes[i++]; c4 = bytes[i++]; var cp = ((c & 7) << 18) | ((c2 & 63) << 12) | ((c3 & 63) << 6) | (c4 & 63) - 0x10000; s += String.fromCharCode(0xd800 + (cp >> 10), 0xdc00 + (cp & 1023)); }
+        else { c2 = bytes[i++]; c3 = bytes[i++]; c4 = bytes[i++]; var cp = (((c & 7) << 18) | ((c2 & 63) << 12) | ((c3 & 63) << 6) | (c4 & 63)) - 0x10000; s += String.fromCharCode(0xd800 + (cp >> 10), 0xdc00 + (cp & 1023)); }   // the −0x10000 applies to the whole code point, not the last byte
       }
       return s;
     }
@@ -453,6 +495,7 @@
         pes: {},                             // pid → { chunks, size, declared } PES being gathered
         video: {
           sps: null, pps: null, width: null, height: null, codec: null,
+          chromaFormatIdc: null, bitDepthLuma: null, bitDepthChroma: null, // from the SPS; the avcC extension bytes need them
           pending: null, pendingTiming: null, // unterminated NAL (with its start code) + the PES timing it began in
           au: newAu(), lastPts: null, lastDts: null, lastDuration: null, junkLogged: false
         },
@@ -489,7 +532,7 @@
       var au = v.au && typeof v.au === 'object' ? v.au : {}, nals = Array.isArray(au.nals) ? au.nals.filter(isBytes) : [];
       v.au = { nals: nals, pts: numOrNull(au.pts), dts: numOrNull(au.dts), hasVcl: nals.length > 0 && au.hasVcl === true, idr: au.idr === true, recovery: au.recovery === true };
       if (v.au.pts === null) v.au.dts = null; else if (v.au.dts === null) v.au.dts = v.au.pts;
-      ['lastPts', 'lastDts', 'lastDuration', 'width', 'height'].forEach(function (k2) { v[k2] = numOrNull(v[k2]); });
+      ['lastPts', 'lastDts', 'lastDuration', 'width', 'height', 'chromaFormatIdc', 'bitDepthLuma', 'bitDepthChroma'].forEach(function (k2) { v[k2] = numOrNull(v[k2]); });
       v.sps = bytesOrNull(v.sps); v.pps = bytesOrNull(v.pps); v.pending = bytesOrNull(v.pending);
       if (!v.pending || !(v.pendingTiming && typeof v.pendingTiming === 'object')) v.pendingTiming = null;
       else v.pendingTiming = { pts: numOrNull(v.pendingTiming.pts), dts: numOrNull(v.pendingTiming.dts), used: v.pendingTiming.used === true };
@@ -601,8 +644,9 @@
         flushPendingPes(st, st.audioPid, 'audio', out);
         dropAudioRemainder(st, out);
         st.audioPid = audioPid; st.audioKind = audioKind;
+        // `codec` is only reported once a frame has fixed the sample rate (for MP3 as for AAC): a consumer that
+        // trusts a PMT-time codec would build an audio track with no timescale and play MP3 at 90 kHz.
         st.audio = tsCreateState().audio;
-        if (audioKind === 'mp3') st.audio.codec = 'mp3';
       }
       if (id3Pid !== st.id3Pid) { flushPendingPes(st, st.id3Pid, 'id3', out); st.id3Pid = id3Pid; }
     }
@@ -713,9 +757,12 @@
       var hdr = parsePesHeader(data);
       if (!hdr.ok) { pushError(out.errors, 'pes', hdr.error, pid); return; }
       var payload = data.subarray(hdr.payloadStart);
-      // Unwrap against the newest media timestamp so a 33-bit wrap inside a state stays monotonic.
-      var ref = kind === 'video' ? st.video.lastPts : kind === 'audio' ? st.audio.lastPts
-        : (st.video.lastPts !== null ? st.video.lastPts : st.audio.lastPts);
+      // Unwrap against the newest media timestamp so a 33-bit wrap inside a state stays monotonic. The tracks share
+      // one clock: until a track has a timestamp of its own it unwraps against the other's, so a segment whose first
+      // video PES sits just after 2^33 and whose first audio PES sits just before it (a packager cut at the IDR;
+      // the audio PES of that instant was written earlier) does not put the tracks 26.5 h apart for the whole session.
+      var own = kind === 'video' ? st.video.lastPts : kind === 'audio' ? st.audio.lastPts : null;
+      var ref = own !== null ? own : (st.video.lastPts !== null ? st.video.lastPts : st.audio.lastPts);
       var pts = hdr.pts === null ? null : tsUnwrapPts(hdr.pts, ref);
       var dts = hdr.dts === null ? pts : tsUnwrapPts(hdr.dts, pts);
       if (kind === 'video' && pts !== null) st.video.lastPts = pts;
@@ -734,9 +781,9 @@
       var b = toBytes(nal);
       return b && b.length ? b[0] & 0x1f : -1;
     }
-    // Positions just after each 00 00 01 start code.
-    function findStartCodes(data) {
-      var starts = [], i = 0, n = data.length;
+    // Positions just after each 00 00 01 start code (at or after `from`; the scan is position-independent).
+    function findStartCodes(data, from) {
+      var starts = [], i = from > 0 ? from : 0, n = data.length;
       while (i + 2 < n) {
         var c = data[i + 2];
         if (c > 1) { i += 3; continue; }                                   // no start code can end here
@@ -898,16 +945,31 @@
     // A PES payload is one slice of a continuous Annex B stream: NALs may straddle PES packets, so the
     // trailing (unterminated) NAL is kept with the timing of the PES it began in.
     function processVideoPes(st, payload, timing, out, truncated) {
-      var v = st.video, pendLen = v.pending ? v.pending.length : 0;
-      var data = pendLen ? concat([v.pending, payload]) : payload;
-      var starts = findStartCodes(data);
-      if (!starts.length) {
+      var v = st.video, pendLen = v.pending ? v.pending.length : 0, data;
+      if (!pendLen) data = payload;
+      else {
+        // The pending NAL grows in place while its own ArrayBuffer has room (capacity doubles on reallocation), so a
+        // NAL spread over many PES packets costs one copy per doubling, not one copy of everything per packet.
+        // Nothing else views the bytes beyond the pending length: NAL views are only cut from a buffer the pending
+        // then leaves (slice below), and normalizeState clones the pending to its exact size at every call boundary.
+        var need = pendLen + payload.length, room = v.pending.buffer.byteLength - v.pending.byteOffset;
+        if (room >= need) data = new Uint8Array(v.pending.buffer, v.pending.byteOffset, need);
+        else { data = new Uint8Array(new ArrayBuffer(Math.max(need, 2 * room)), 0, need); data.set(v.pending, 0); }
+        data.set(payload, pendLen);
+      }
+      // The pending bytes hold at most one start code, at offset 0 (that is how they were cut), so only the two
+      // bytes that could begin a code straddling the old/new boundary are scanned again; re-scanning the whole
+      // accumulation on every PES made a long run of PES packets without a start code quadratic.
+      var starts = findStartCodes(data, pendLen > 2 ? pendLen - 2 : 0);
+      if (!starts.length) { // no new start code: the pending NAL goes on (bounded), or the bytes are junk
         if (pendLen) {
           if (data.length > MAX_PENDING_BYTES) { pushError(out.errors, 'video', 'NAL exceeded ' + MAX_PENDING_BYTES + ' bytes without a start code; discarded'); v.pending = null; v.pendingTiming = null; return; }
-          v.pending = data.slice();
+          v.pending = data; // our own (growable) buffer, never a view into the caller's bytes
         } else if (!v.junkLogged) { v.junkLogged = true; pushError(out.errors, 'video', data.length + ' bytes before the first start code ignored'); }
         return;
       }
+      // A new code ends the pending NAL, whose own start code (offset 0) the partial scan did not revisit.
+      if (pendLen > 2 && v.pending[0] === 0 && v.pending[1] === 0 && v.pending[2] === 1) starts.unshift(3);
       if (!pendLen && starts[0] > 3 && trimTrailingZeros(data, 0, starts[0] - 3) > 0 && !v.junkLogged) {
         v.junkLogged = true;
         pushError(out.errors, 'video', (starts[0] - 3) + ' bytes before the first start code ignored');
@@ -954,6 +1016,7 @@
       var info = parseSps(nal);
       if (!info.ok) { pushError(out.errors, 'video', info.error); return; }
       v.width = info.width; v.height = info.height; v.codec = info.codec;
+      v.chromaFormatIdc = info.chromaFormatIdc; v.bitDepthLuma = info.bitDepthLuma; v.bitDepthChroma = info.bitDepthChroma;
     }
     // Close the access unit under construction. `nextTiming` is the PES timing of the AU that follows,
     // which gives the exact DTS delta; the final AU (flush) inherits the previous delta.
@@ -985,14 +1048,19 @@
       if (b[o] !== 0xff || (b[o + 1] & 0xf6) !== 0xf0) return { ok: false, error: 'adts: no sync' };
       var protectionAbsent = b[o + 1] & 1;
       var profile = (b[o + 2] >> 6) & 3, sampleRateIndex = (b[o + 2] >> 2) & 0x0f;
-      var channels = ((b[o + 2] & 1) << 2) | ((b[o + 3] >> 6) & 3);
+      // channel_configuration (ISO 14496-3 table 1.19) is the channel count only for 1–6: 7 is 7.1 (8 channels)
+      // and 0 means the count comes from a PCE inside the raw data block, which this parser does not read.
+      var channelConfiguration = ((b[o + 2] & 1) << 2) | ((b[o + 3] >> 6) & 3);
+      var channels = channelConfiguration === 7 ? 8 : channelConfiguration === 0 ? null : channelConfiguration;
       var frameLength = ((b[o + 3] & 3) << 11) | (b[o + 4] << 3) | ((b[o + 5] >> 5) & 7);
       var headerLength = protectionAbsent ? 7 : 9;
+      var blocks = (b[o + 6] & 3) + 1; // number_of_raw_data_blocks_in_frame + 1: 1024 samples each
       if (sampleRateIndex > 12) return { ok: false, error: 'adts: reserved sampling_frequency_index' };
       if (frameLength < headerLength + 1) return { ok: false, error: 'adts: frame_length ' + frameLength + ' too small' };
       return {
         ok: true, frameLength: frameLength, headerLength: headerLength, objectType: profile + 1,
-        sampleRateIndex: sampleRateIndex, sampleRate: AAC_SAMPLE_RATES[sampleRateIndex], channels: channels, crc: !protectionAbsent
+        sampleRateIndex: sampleRateIndex, sampleRate: AAC_SAMPLE_RATES[sampleRateIndex],
+        channels: channels, channelConfiguration: channelConfiguration, blocks: blocks, crc: !protectionAbsent
       };
     }
     // MPEG-1/2/2.5 layer I/II/III frame header (ISO 11172-3 §2.4.1.3 / 13818-3).
@@ -1004,7 +1072,10 @@
       var bitrateIndex = (b[o + 2] >> 4) & 0x0f, sampleRateIndex = (b[o + 2] >> 2) & 3, padding = (b[o + 2] >> 1) & 1;
       var channelMode = (b[o + 3] >> 6) & 3;
       if (versionBits === 1 || layerBits === 0 || sampleRateIndex === 3) return { ok: false, error: 'mpa: reserved version/layer/sample rate' };
-      if (bitrateIndex === 0 || bitrateIndex === 15) return { ok: false, error: 'mpa: free-format or invalid bitrate' };
+      // Free format (index 0) is legal but its frame length can only be measured between syncs; not supported, and
+      // flagged apart from plain junk so the demuxer can say why such a stream stays silent.
+      if (bitrateIndex === 0) return { ok: false, error: 'mpa: free-format bitrate not supported', freeFormat: true };
+      if (bitrateIndex === 15) return { ok: false, error: 'mpa: invalid bitrate index' };
       var version = versionBits === 3 ? 1 : versionBits === 2 ? 2 : 2.5, layer = 4 - layerBits;
       var sampleRate = MPA_SAMPLE_RATES[version][sampleRateIndex];
       var bitrate = (version === 1 ? MPA_BITRATES_V1 : MPA_BITRATES_V2)[layer][bitrateIndex] * 1000;
@@ -1039,22 +1110,30 @@
         pesPts = a.lastPts !== null && a.sampleRate ? a.lastPts + Math.round(frameTicks(a.sampleRate, a.samplesPerFrame)) : (a.lastPts || 0);
         pushError(out.errors, 'audio', 'PES without PTS; timestamp extrapolated', st.audioPid);
       }
-      var i = 0, inPes = 0, minHeader = aac ? 7 : 4;
+      // Frames that start in this PES are spaced by their sample counts from the PES PTS (a frame may hold more
+      // than one raw data block, so the step is counted in samples, not frames).
+      var i = 0, samplesInPes = 0, minHeader = aac ? 7 : 4, multiBlock = 0;
       while (i < n) {
         if (n - i < minHeader) break; // header cut by the PES boundary → remainder
         var h = parseAudioHeader(st, data, i);
         if (!h.ok) {
           var j = findAudioSync(st, data, i + 1);
-          if (j < 0) { pushError(out.errors, 'audio', (n - i) + ' bytes without a frame sync discarded', st.audioPid); i = n; break; }
+          if (j < 0) {
+            pushError(out.errors, 'audio', h.freeFormat ? 'free-format MPEG audio is not supported; ' + (n - i) + ' bytes discarded' : (n - i) + ' bytes without a frame sync discarded', st.audioPid);
+            i = n; break;
+          }
           pushError(out.errors, 'audio', (j - i) + ' bytes skipped to resync', st.audioPid);
           i = j;
           continue;
         }
         if (i + h.frameLength > n) break; // frame body cut by the PES boundary → remainder
-        var samplesPerFrame = aac ? 1024 : h.samplesPerFrame;
+        // An ADTS frame may carry several raw data blocks (1024 samples each); the sample keeps them together but
+        // must span all of them, or every later frame in the PES would be stamped too early and overlap.
+        var samplesPerFrame = aac ? 1024 * h.blocks : h.samplesPerFrame;
+        if (aac && h.blocks > 1) multiBlock++;
         var startedInRemainder = i < remLen;
-        var pts = startedInRemainder ? a.remainderPts : pesPts + Math.round(inPes * frameTicks(h.sampleRate, samplesPerFrame));
-        if (!startedInRemainder) inPes++;
+        var pts = startedInRemainder ? a.remainderPts : pesPts + Math.round(frameTicks(h.sampleRate, samplesInPes));
+        if (!startedInRemainder) samplesInPes += samplesPerFrame;
         if (a.sampleRate !== h.sampleRate || a.channels !== h.channels || a.samplesPerFrame !== samplesPerFrame || (aac && (!a.config || a.config.objectType !== h.objectType))) {
           a.codec = aac ? 'mp4a.40.' + h.objectType : 'mp3';
           a.sampleRate = h.sampleRate; a.channels = h.channels; a.samplesPerFrame = samplesPerFrame;
@@ -1067,8 +1146,9 @@
         a.lastPts = pts;
         i += h.frameLength;
       }
+      if (multiBlock) pushError(out.errors, 'audio', multiBlock + ' ADTS frame(s) with several raw data blocks; each kept as one sample', st.audioPid);
       if (i < n) {
-        if (!(i < remLen)) a.remainderPts = a.sampleRate ? pesPts + Math.round(inPes * frameTicks(a.sampleRate, a.samplesPerFrame)) : pesPts;
+        if (!(i < remLen)) a.remainderPts = a.sampleRate ? pesPts + Math.round(frameTicks(a.sampleRate, samplesInPes)) : pesPts;
         a.remainder = data.slice(i);
       } else { a.remainder = null; a.remainderPts = null; }
       if (truncated) dropAudioRemainder(st, out);
@@ -1122,7 +1202,11 @@
       var v = st.video, a = st.audio;
       return {
         state: st,
-        video: st.videoPid !== null ? { codec: v.codec, sps: v.sps, pps: v.pps, width: v.width, height: v.height, timescale: TS_TIMESCALE, samples: out.video } : null,
+        video: st.videoPid !== null ? {
+          codec: v.codec, sps: v.sps, pps: v.pps, width: v.width, height: v.height,
+          chromaFormatIdc: v.chromaFormatIdc, bitDepthLuma: v.bitDepthLuma, bitDepthChroma: v.bitDepthChroma,
+          timescale: TS_TIMESCALE, samples: out.video
+        } : null,
         audio: st.audioPid !== null ? { codec: a.codec, sampleRate: a.sampleRate, channels: a.channels, config: a.config, timescale: a.sampleRate, samples: out.audio } : null,
         id3: out.id3,
         errors: out.errors
@@ -1804,7 +1888,12 @@
           entry.kind = 'unknown';
           entry.data = bytes.subarray(body, p + size);
         }
-        if (kids >= 0 && kids <= p + size) entry.children = parseRange(bytes, kids, p + size, depth + 1).boxes;
+        // A sample entry's children are one level down like a container's, and a stsd can sit inside a 'wave' that
+        // sits inside an entry, so the same depth cap applies here or a nested stsd/mp4a bomb recurses until the stack dies.
+        if (kids >= 0 && kids <= p + size) {
+          if (depth < MAX_DEPTH) entry.children = parseRange(bytes, kids, p + size, depth + 1).boxes;
+          else box.truncated = true;
+        }
         entry.codec = entry.kind === 'unknown' ? type.trim() : entryCodec(entry);
         box.entries.push(entry);
         p += size;
@@ -1962,6 +2051,12 @@
     var KEEP_BEHIND_SEC = 30;            // how much played media stays appended for instant short seeks back
     var GAP_JUMP_STALL_MS = 1000, GAP_JUMP_MAX_AHEAD = 2, GAP_JUMP_NUDGE = 0.05;
     var VAR_RE = /\{\$([A-Za-z0-9_-]+)\}/g; // EXT-X-DEFINE variable reference
+    // EXT-X-DEFINE amplifies: a {$X} reference is 4 bytes of input and |VALUE| bytes of output, on every line, so
+    // without a budget a 100 KB playlist expands to hundreds of MB and kills the tab before a segment is fetched.
+    var MAX_DEFINE_VALUE = 2048;           // a variable is substituted into URLs; the app refuses URLs longer than this anyway
+    var MAX_EXPANDED_LINE = 8192;          // one URI or attribute list after substitution
+    var MAX_EXPANSION = 4 * 1024 * 1024;   // all substituted text in one playlist
+    var MAX_NOTE = 64;                     // METHOD / KEYFORMAT are remote text that ends up in messages
     var isNum = UTIL.isNum;
 
     /* ---------- small helpers ---------- */
@@ -2052,9 +2147,14 @@
     function hlsParse(text, baseUrl, opts) {
       opts = opts || {};
       var base = typeof baseUrl === 'string' ? baseUrl.trim() : '';
-      var errors = [], overflow = 0, unsupported = [], unknownTags = [], vars = {};
+      var errors = [], overflow = 0, unsupported = [], noted = new Set(), unknownTags = [], vars = {}, expanded = 0;
       function err(lineNo, msg) { if (errors.length < MAX_ERRORS) errors.push((lineNo ? 'line ' + lineNo + ': ' : '') + msg); else overflow++; }
-      function note(what) { if (unsupported.indexOf(what) === -1) unsupported.push(what); }
+      // Bounded and indexed: a playlist can carry thousands of distinct KEY METHOD values, and an indexOf dedupe
+      // over an unbounded list made parsing quadratic in them (re-run on every live reload).
+      function note(what) {
+        what = String(what).slice(0, MAX_NOTE);
+        if (noted.size < MAX_ERRORS && !noted.has(what)) { noted.add(what); unsupported.push(what); }
+      }
       function resolve(uri) { return base ? UTIL.resolveUrl(base, uri) : uri; }
       function invalid(why) { return { kind: 'invalid', url: base || null, errors: [why].concat(errors) }; }
 
@@ -2071,13 +2171,24 @@
       var pendingStreamInf = null, pendingInf = null, pendingByteRange = null, pendingDisc = false, pendingGap = false, pendingPdt = null;
       var key = null, map = null, bitrate = null, discCount = 0, nextPdt = null, clock = 0, lastSeg = null;
 
+      // Returns the substituted line, or null when the line must be dropped because it blew the expansion budget.
       function substitute(s, lineNo) {
         if (s.indexOf('{$') === -1) return s;
-        return s.replace(VAR_RE, function (m, name) {
-          if (hasOwn(vars, name)) return vars[name];
-          err(lineNo, 'undefined variable {$' + name + '}');
-          return m;
+        var grown = 0, over = false;
+        var out = s.replace(VAR_RE, function (m, name) {
+          if (!hasOwn(vars, name)) { err(lineNo, 'undefined variable {$' + name + '}'); return m; }
+          grown += vars[name].length;
+          if (s.length + grown > MAX_EXPANDED_LINE || expanded + grown > MAX_EXPANSION) { over = true; return m; }
+          return vars[name];
         });
+        if (over) { err(lineNo, 'EXT-X-DEFINE expansion exceeds the size limit; line dropped'); return null; }
+        expanded += grown;
+        return out;
+      }
+      function setVar(name, value, lineNo) {
+        value = String(value);
+        if (value.length > MAX_DEFINE_VALUE) err(lineNo, 'EXT-X-DEFINE value for ' + name + ' is longer than ' + MAX_DEFINE_VALUE + ' characters');
+        else vars[name] = value;
       }
       function parseIv(v, lineNo) {
         if (v === undefined) return null;
@@ -2115,14 +2226,14 @@
           if (!/^[A-Za-z0-9_-]+$/.test(name)) err(lineNo, 'EXT-X-DEFINE has an invalid NAME');
           else if (hasOwn(vars, name)) err(lineNo, 'EXT-X-DEFINE redefines ' + name);
           else if (a.VALUE === undefined) err(lineNo, 'EXT-X-DEFINE without VALUE');
-          else vars[name] = String(a.VALUE);
+          else setVar(name, a.VALUE, lineNo);
         } else if (a.IMPORT !== undefined) {
           var im = String(a.IMPORT);
-          if (opts.variables && hasOwn(opts.variables, im)) vars[im] = String(opts.variables[im]);
+          if (opts.variables && hasOwn(opts.variables, im)) setVar(im, opts.variables[im], lineNo);
           else { note('EXT-X-DEFINE IMPORT'); err(lineNo, 'EXT-X-DEFINE IMPORT="' + im + '" has no value (pass the master playlist variables)'); }
         } else if (a.QUERYPARAM !== undefined) {
           var qp = String(a.QUERYPARAM), qv = queryParam(base, qp);
-          if (qv !== null) vars[qp] = qv;
+          if (qv !== null) setVar(qp, qv, lineNo);
           else { note('EXT-X-DEFINE QUERYPARAM'); err(lineNo, 'EXT-X-DEFINE QUERYPARAM="' + qp + '" is not in the playlist URL'); }
         } else err(lineNo, 'EXT-X-DEFINE without NAME, IMPORT or QUERYPARAM');
       }
@@ -2318,10 +2429,11 @@
           var name = (colon === -1 ? line.slice(1) : line.slice(1, colon)).trim().toUpperCase();
           var value = colon === -1 ? '' : line.slice(colon + 1);
           if (name !== 'EXT-X-DEFINE') value = substitute(value, lineNo);
-          tag(name, value, lineNo);
+          if (value !== null) tag(name, value, lineNo);
           continue;
         }
         var uri = substitute(line, lineNo);
+        if (uri === null) { pendingStreamInf = null; pendingInf = null; pendingByteRange = null; pendingGap = false; pendingPdt = null; continue; }
         if (pendingStreamInf) emitVariant(uri, lineNo);
         else if (pendingInf) emitSegment(uri, lineNo);
         else err(lineNo, 'URI without a preceding EXTINF or EXT-X-STREAM-INF: ' + UTIL.truncate(uri, 60));
@@ -2396,8 +2508,9 @@
         if (v && typeof v === 'object' && isNum(v.bandwidth)) all.push({ i: i, bw: v.bandwidth, h: v.resolution && isNum(v.resolution.height) ? v.resolution.height : null, codecs: codecList(v.codecs) });
       }
       if (!all.length) return -1;
-      // Codec support is a hard filter (the decoder cannot be argued with); if it rejects everything we still
-      // answer with the lowest so the UI fails on a real append error rather than on nothing.
+      // Codec support is a hard filter (the decoder cannot be argued with). If it rejects EVERY variant the filter is
+      // more likely wrong than the stream (an exotic codec string, a probe that is unavailable), so the choice goes on
+      // as if support were unknown — the normal pick, not the lowest — and a real append error then reports honestly.
       var playable = all.filter(function (c) {
         if (!supported || !c.codecs.length) return true;
         try { return supported(c.codecs) !== false; } catch (e) { return true; }
@@ -2486,6 +2599,10 @@
       for (i = anchor - 1, t = anchorStart; i >= 0; i--) { s = out.segments[i]; s.end = t; s.start = t - s.duration; t = s.start; }
       out.stale = out.segments[out.segments.length - 1].seq < prevLast.seq;
       out.advanced = out.stale ? 0 : out.segments.filter(function (x) { return x.seq > prevLast.seq; }).length;
+      // The parser's totalDuration is the end of ITS clock (from 0); on the continued timeline the end is the last
+      // segment's end. The controller sets ms.duration and the seekable end from it once a live stream gets ENDLIST,
+      // and a window-relative value there clamped every seek to the start of a stream that had run for hours.
+      out.totalDuration = out.segments[out.segments.length - 1].end;
       return out;
     }
     function hlsSegmentAt(pl, t) {
@@ -2653,7 +2770,14 @@
     /* ---------- input coercion: the API sends numbers as strings in places, and callers send anything ---------- */
     function isObj(x) { return x !== null && typeof x === 'object' && !Array.isArray(x); }
     function str(v) { return typeof v === 'string' ? v : (typeof v === 'number' && isFinite(v)) ? String(v) : ''; }
-    function text(v, max) { return UTIL.collapseWs(str(v)).slice(0, max || MAX_NAME); }
+    // Controls and the invisible or direction-overriding characters are stripped from display text: a record named
+    // "SomaFM\u202e…" renders reversed, and a zero-width space makes a lookalike that dodges dedupe. U+200C/U+200D
+    // stay: ZWNJ is part of Persian/Arabic spelling and ZWJ binds emoji sequences. Whitespace controls become a space.
+    var CONTROL_RE = /[\u0000-\u001f\u007f-\u009f\u200b\u2060\u202a-\u202e\u2066-\u2069\ufeff]/g;
+    function text(v, max) {
+      var clean = str(v).replace(CONTROL_RE, function (c) { return /[\t\n\v\f\r]/.test(c) ? ' ' : ''; });
+      return UTIL.collapseWs(clean).slice(0, max || MAX_NAME);
+    }
     function num(v, dflt) {
       if (typeof v === 'string') v = v.trim() === '' ? NaN : Number(v);
       return typeof v === 'number' && isFinite(v) ? v : dflt;
@@ -3080,19 +3204,45 @@
     var MAX_TITLE = 500;
     var MAX_CATEGORIES = 20;
     var MAX_URL = 2048;
+    var MAX_CHILDREN = 200000;    // per parent: the largest real feeds carry ~30k items; a million empty siblings is an attack on memory
+    var MAX_MARKUP = 8 * MAX_DESCRIPTION;  // stripping only shrinks markup, so this much input always fills a description
+    var MAX_NAME_SHOWN = 60;      // element/attribute names quoted in diagnostics; a hostile name is as long as the document
+    var MAX_DURATION_TEXT = 64;   // "1 hour 23 minutes 45 seconds" is 28 characters; anything longer is not a duration
     var ITUNES = 'https://itunes.apple.com';
     var MS_DURATION_THRESHOLD = 7 * 24 * 3600;  // no episode lasts a week: a bigger plain number is milliseconds (a known generator bug)
 
     /* ---------- small coercions: feeds and callers send anything ---------- */
-    function isObj(x) { return x !== null && typeof x === 'object' && !Array.isArray(x); }
+    // Builtins the hot paths touch are held locally: in a vm sandbox (the house tests) every global lookup goes
+    // through the context's interceptor, which made a three-token isObj the top of the profile; neutral in browsers.
+    var isArray = Array.isArray, ownProp = Object.prototype.hasOwnProperty;
+    function isObj(x) { return x !== null && typeof x === 'object' && !isArray(x); }
     function str(v) { return typeof v === 'string' ? v : (typeof v === 'number' && isFinite(v)) ? String(v) : ''; }
-    function text(v, max) { return UTIL.collapseWs(str(v)).slice(0, max || MAX_TITLE); }
+    // A cut never ends on a high surrogate: that would leave half an emoji, which encodeURIComponent rejects.
+    function cap(s, max) {
+      if (s.length <= max) return s;
+      s = s.slice(0, max);
+      var c = s.charCodeAt(s.length - 1);
+      return c >= 0xD800 && c <= 0xDBFF ? s.slice(0, -1) : s;
+    }
+    function text(v, max) { return cap(UTIL.collapseWs(str(v)), max || MAX_TITLE); }
+    // encodeURIComponent throws on a lone surrogate (a pasted half of an emoji); it is replaced instead.
+    function enc(s) {
+      try { return encodeURIComponent(s); } catch (e) { /* lone surrogate: repair below */ }
+      var out = '';
+      for (var i = 0; i < s.length; i++) {
+        var c = s.charCodeAt(i);
+        if (c >= 0xD800 && c <= 0xDBFF && i + 1 < s.length && s.charCodeAt(i + 1) >= 0xDC00 && s.charCodeAt(i + 1) <= 0xDFFF) { out += s.slice(i, i + 2); i++; }
+        else out += (c >= 0xD800 && c <= 0xDFFF) ? '�' : s.charAt(i);
+      }
+      return encodeURIComponent(out);
+    }
+    function short(name) { return name.length > MAX_NAME_SHOWN ? name.slice(0, MAX_NAME_SHOWN - 1) + '…' : name; }
     function num(v, dflt) {
       if (typeof v === 'string') v = v.trim() === '' ? NaN : Number(v);
       return typeof v === 'number' && isFinite(v) ? v : dflt;
     }
     function localName(name) { name = str(name); return name.slice(name.lastIndexOf(':') + 1).toLowerCase(); }
-    function hasOwn(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+    function hasOwn(o, k) { return ownProp.call(o, k); }
 
     /* ---------- entities ---------- */
     // The XML five, the whole Latin-1 block (U+00A0..U+00FF in order) and the punctuation/symbol names that
@@ -3138,15 +3288,40 @@
     var UNQUOTED_RE = /[^\s>]*/y;
     var WS_RE = /\s*/y;
     function sticky(re, s, at) { re.lastIndex = at; var m = re.exec(s); return m ? m[0] : null; }
+    var EMPTY_ATTRS = Object.freeze({}), EMPTY_KIDS = Object.freeze([]);
     function makeNode(name) { return { name: name, attrs: {}, children: [], text: '' }; }
-    function isElement(node) { return isObj(node) && typeof node.name === 'string' && node.name.charAt(0) !== '#' && Array.isArray(node.children); }
-    function sameName(a, b) { return a === b || a.toLowerCase() === b.toLowerCase(); }
+    function isElement(node) { return isObj(node) && typeof node.name === 'string' && node.name.charAt(0) !== '#' && isArray(node.children); }
+    function sameName(a, b) {
+      if (a === b) return true;
+      var n = a.length;
+      if (n !== b.length) return false;
+      for (var i = 0; i < n; i++) {
+        var x = a.charCodeAt(i), y = b.charCodeAt(i);
+        if (x === y) continue;
+        if (x >= 65 && x <= 90) x += 32;
+        if (y >= 65 && y <= 90) y += 32;
+        if (x !== y) return (x > 127 || y > 127) && a.toLowerCase() === b.toLowerCase();
+      }
+      return true;
+    }
     // Bytes are recognised by shape, not `instanceof`: a fetch() body or a test fixture may come from another realm.
+    // A declared non-UTF-8 encoding (ISO-8859-1 and windows-1252 are still common on self-hosted feeds) is honoured
+    // when the bytes carry no UTF-8 BOM and the platform knows the label; everything else decodes as UTF-8.
+    var ENCODING_RE = /^\s*<\?xml[^>]{0,200}?encoding\s*=\s*["']([A-Za-z0-9._-]+)/;
+    function bytesToText(bytes) {
+      if (typeof TextDecoder !== 'undefined' && bytes.length > 5 && !(bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF)) {
+        var head = '';
+        for (var k = 0; k < bytes.length && k < 200; k++) head += String.fromCharCode(bytes[k]);
+        var m = ENCODING_RE.exec(head), label = m ? m[1].toLowerCase() : '';
+        if (label && label !== 'utf-8' && label !== 'utf8') { try { return new TextDecoder(label).decode(bytes); } catch (e) { /* unknown label: UTF-8 below */ } }
+      }
+      return UTIL.textOf(bytes);
+    }
     function textInput(input) {
       if (typeof input === 'string') return input;
       var tag = Object.prototype.toString.call(input);
-      if (tag === '[object Uint8Array]') return UTIL.textOf(input);
-      if (tag === '[object ArrayBuffer]') return UTIL.textOf(new Uint8Array(input));
+      if (tag === '[object Uint8Array]') return bytesToText(input);
+      if (tag === '[object ArrayBuffer]') return bytesToText(new Uint8Array(input));
       return null;
     }
 
@@ -3154,30 +3329,39 @@
       var text = textInput(input);
       if (text === null) return { ok: false, root: null, errors: ['input is not text'] };
       if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
-      text = text.replace(/\r\n?/g, '\n');
+      if (text.indexOf('\r') !== -1) text = text.replace(/\r\n?/g, '\n');
       var n = text.length, i = 0;
       var errors = [], suppressed = 0, lineNo = 1, linePos = 0;
       var doc = makeNode('#document'), stack = [doc];
-      var depthWarned = false;
+      var depthWarned = false, childrenWarned = false;
 
-      // Errors arrive in document order, so one forward scan serves every line-number lookup.
+      // Errors mostly arrive in document order, so one forward cursor serves the line-number lookups. The one
+      // report that lands behind the cursor (a start tag reported at its '<' after its attributes were) counts
+      // back from the cursor without moving it, so the lines of later messages are not inflated.
       function err(at, msg) {
         if (errors.length >= MAX_ERRORS) { suppressed++; return; }
-        for (var nl = text.indexOf('\n', linePos); nl !== -1 && nl < at; nl = text.indexOf('\n', linePos)) { lineNo++; linePos = nl + 1; }
-        linePos = at;
-        errors.push('line ' + lineNo + ': ' + msg);
+        var line = lineNo;
+        if (at >= linePos) {
+          for (var nl = text.indexOf('\n', linePos); nl !== -1 && nl < at; nl = text.indexOf('\n', linePos)) { lineNo++; linePos = nl + 1; }
+          linePos = at; line = lineNo;
+        } else {
+          for (var k = text.lastIndexOf('\n', linePos - 1); k !== -1 && k >= at; k = k > 0 ? text.lastIndexOf('\n', k - 1) : -1) line--;
+        }
+        errors.push('line ' + line + ': ' + msg);
       }
       function parent() { return stack[stack.length - 1]; }
+      // Text nodes share one frozen empty attrs/children pair: a description of millions of tiny elements was
+      // three objects per text run, which is what pushed a 20 MB feed past a phone's heap.
       function addText(s) {
         if (!s) return;
         var p = parent(), last = p.children[p.children.length - 1];
         if (last && last.name === '#text') last.text += s;
-        else p.children.push({ name: '#text', attrs: {}, children: [], text: s });
+        else if (p.children.length < MAX_CHILDREN) p.children.push({ name: '#text', attrs: EMPTY_ATTRS, children: EMPTY_KIDS, text: s });
         p.text += s;
       }
       // Pop every element above stack[k] as unclosed, then stack[k] itself (the one a close tag matched).
       function unwind(k, at, why) {
-        for (var d = stack.length - 1; d > k; d--) err(at, 'unclosed <' + stack[d].name + '> ' + why);
+        for (var d = stack.length - 1; d > k; d--) err(at, 'unclosed <' + short(stack[d].name) + '> ' + why);
         stack.length = k;
       }
       function findOpen(name) {
@@ -3210,8 +3394,8 @@
         else end = gt + 1;
         if (name === null) { err(at, 'close tag without a name ignored'); return end; }
         var k = findOpen(name);
-        if (k < 1) { err(at, 'stray </' + name + '> ignored'); return end; }
-        unwind(k, at, 'closed by </' + name + '>');
+        if (k < 1) { err(at, 'stray </' + short(name) + '> ignored'); return end; }
+        unwind(k, at, 'closed by </' + short(name) + '>');
         return end;
       }
       function openTag(at, name) {
@@ -3222,9 +3406,9 @@
           var ch = text.charAt(j);
           if (ch === '>') { j++; done = true; break; }
           if (ch === '/' && text.charAt(j + 1) === '>') { j += 2; done = true; selfClosing = true; break; }
-          if (ch === '<') { err(j, 'unclosed start tag <' + name + '>'); done = true; break; }  // the '<' belongs to the next token
+          if (ch === '<') { err(j, 'unclosed start tag <' + short(name) + '>'); done = true; break; }  // the '<' belongs to the next token
           var an = sticky(ATTR_NAME_RE, text, j);
-          if (an === null) { err(j, 'unexpected "' + ch + '" in <' + name + '> skipped'); j++; continue; }
+          if (an === null) { err(j, 'unexpected "' + ch + '" in <' + short(name) + '> skipped'); j++; continue; }
           j += an.length;
           j += sticky(WS_RE, text, j).length;
           var value = '';
@@ -3237,7 +3421,7 @@
               if (raw === null || raw.indexOf('<') !== -1) {
                 // An unbalanced quote would swallow the rest of the document. XML forbids '<' inside a value, so
                 // the first '<' or '>' after the quote is a far more likely end of this tag than the next quote.
-                err(j, 'unterminated attribute value in <' + name + '>');
+                err(j, 'unterminated attribute value in <' + short(name) + '>');
                 var stop = j + 1;
                 while (stop < n && text.charAt(stop) !== '<' && text.charAt(stop) !== '>') stop++;
                 value = text.slice(j + 1, stop); j = stop;
@@ -3245,13 +3429,15 @@
             } else { value = sticky(UNQUOTED_RE, text, j); j += value.length; }
           }
           if (an === '__proto__') err(j, 'attribute __proto__ ignored');
-          else if (hasOwn(attrs, an)) err(j, 'duplicate attribute ' + an + ' in <' + name + '> ignored');
+          else if (hasOwn(attrs, an)) err(j, 'duplicate attribute ' + short(an) + ' in <' + short(name) + '> ignored');
           else attrs[an] = decodeEntities(value);
         }
-        if (!done) err(at, 'unclosed start tag <' + name + '> at end of input');
-        var el = makeNode(name);
+        if (!done) err(at, 'unclosed start tag <' + short(name) + '> at end of input');
+        var el = makeNode(name), p = parent();
         el.attrs = attrs;
-        parent().children.push(el);
+        // Past MAX_CHILDREN the element is still parsed (so the document's structure stays in step) but not kept.
+        if (p.children.length < MAX_CHILDREN) p.children.push(el);
+        else if (!childrenWarned) { childrenWarned = true; err(at, 'more than ' + MAX_CHILDREN + ' children in <' + short(p.name) + '>; the rest are dropped'); }
         if (!selfClosing) {
           if (stack.length - 1 < MAX_DEPTH) stack.push(el);
           else if (!depthWarned) { depthWarned = true; err(at, 'nesting deeper than ' + MAX_DEPTH + '; deeper elements kept empty'); }
@@ -3288,7 +3474,7 @@
           i++;
         }
       }
-      for (var d = stack.length - 1; d >= 1; d--) err(n, 'unclosed <' + stack[d].name + '> at end of input');
+      for (var d = stack.length - 1; d >= 1; d--) err(n, 'unclosed <' + short(stack[d].name) + '> at end of input');
 
       var roots = doc.children.filter(isElement);
       if (!roots.length) {
@@ -3300,22 +3486,51 @@
       return { ok: true, root: roots[0], errors: errors };
     }
 
+    // Element lookups scan the children with a case-insensitive comparison that allocates nothing: ASCII letters
+    // fold in place and only a non-ASCII mismatch falls back to toLowerCase. podcastParseFeed makes ~27 lookups
+    // per item and ~25 on the channel; with MAX_CHILDREN bounding the siblings, a scan is both linear and cheaper
+    // than any per-node index (which cost a Map and a WeakMap entry per element on a 100k-item feed).
+    // A wanted name without a prefix matches that exact name and, only when the node has none, the same local
+    // name under any prefix (<a:entry>/<a:title> in an Atom feed that binds its namespace to a prefix); a wanted
+    // name with a prefix ('itunes:image') matches that name only, so 'image' never means it.
+    function localIs(name, want) {   // want: lowercase, no prefix
+      var start = name.lastIndexOf(':') + 1, n = want.length;
+      if (name.length - start !== n) return false;
+      for (var i = 0; i < n; i++) {
+        var c = name.charCodeAt(start + i);
+        if (c >= 65 && c <= 90) c += 32;
+        if (c !== want.charCodeAt(i)) return false;
+      }
+      return true;
+    }
+    // Calls fn on each matching element child in document order and returns the first truthy result (or '');
+    // with no fn, returns the matches as an array. (One function, so the two-pass rule lives in one place.)
+    function eachNamed(node, want, fn) {
+      var kids = node.children, k, c, r, any = false, out = fn ? null : [];
+      for (k = 0; k < kids.length; k++) {
+        c = kids[k];
+        if (isElement(c) && sameName(c.name, want)) { any = true; if (out) out.push(c); else if ((r = fn(c))) return r; }
+      }
+      if (any || want.indexOf(':') !== -1) return out || '';
+      var local = want.toLowerCase();
+      for (k = 0; k < kids.length; k++) {
+        c = kids[k];
+        if (isElement(c) && c.name.indexOf(':') !== -1 && localIs(c.name, local)) { if (out) out.push(c); else if ((r = fn(c))) return r; }
+      }
+      return out || '';
+    }
+    function identity(c) { return c; }
     function xmlChildren(node, name) {
-      if (!isObj(node) || !Array.isArray(node.children)) return [];
-      var want = name == null ? null : str(name);
-      return node.children.filter(function (c) { return isElement(c) && (want === null || sameName(c.name, want)); });
+      if (!isObj(node) || !isArray(node.children)) return [];
+      if (name == null) return node.children.filter(isElement);
+      return eachNamed(node, str(name), null);
     }
     function xmlChild(node, name) {
-      if (!isObj(node) || !Array.isArray(node.children)) return null;
-      var want = str(name);
-      for (var k = 0; k < node.children.length; k++) {
-        var c = node.children[k];
-        if (isElement(c) && sameName(c.name, want)) return c;
-      }
-      return null;
+      if (!isObj(node) || !isArray(node.children)) return null;
+      return eachNamed(node, str(name), identity) || null;
     }
     function deepText(node, depth) {
-      if (!Array.isArray(node.children) || !node.children.length || depth > MAX_DEPTH) return str(node.text);
+      if (!isArray(node.children) || !node.children.length || depth > MAX_DEPTH) return str(node.text);
       var s = '';
       for (var k = 0; k < node.children.length; k++) {
         var c = node.children[k];
@@ -3331,44 +3546,93 @@
     function attr(node, name) {
       if (!isObj(node) || !isObj(node.attrs)) return '';
       if (hasOwn(node.attrs, name)) return str(node.attrs[name]);
-      var keys = Object.keys(node.attrs);
-      for (var k = 0; k < keys.length; k++) if (sameName(keys[k], name)) return str(node.attrs[keys[k]]);
+      for (var k in node.attrs) if (hasOwn(node.attrs, k) && sameName(k, name)) return str(node.attrs[k]);   // no Object.keys allocation per miss
       return '';
     }
     // The markup inside an element, rebuilt from the tree: text as text, child elements as tags. This is what
-    // a description that contained raw (unescaped) HTML looked like before the XML parser saw it.
-    function innerMarkup(node, depth) {
-      var s = '';
-      for (var k = 0; k < node.children.length; k++) {
-        var c = node.children[k];
-        if (!isObj(c)) continue;
-        if (c.name === '#text') s += str(c.text);
-        else if (isElement(c)) s += c.children.length && depth < MAX_DEPTH ? '<' + c.name + '>' + innerMarkup(c, depth + 1) + '</' + c.name + '>' : '<' + c.name + '/>';
+    // a description that contained raw (unescaped) HTML looked like before the XML parser saw it. Rebuilding
+    // stops at `budget` characters: the result is only ever stripped and cut to MAX_DESCRIPTION, so a 20 MB
+    // description must cost the budget, not 20 MB of string building and stripping.
+    function innerMarkup(node, depth, budget) {
+      var parts = [], used = 0;
+      function add(s) {
+        if (s.length > budget - used) s = s.slice(0, budget - used);
+        if (s) { parts.push(s); used += s.length; }
       }
-      return s;
+      function walk(node, depth) {
+        for (var k = 0; k < node.children.length && used < budget; k++) {
+          var c = node.children[k];
+          if (!isObj(c)) continue;
+          if (c.name === '#text') add(str(c.text));
+          else if (!isElement(c)) continue;
+          else if (c.children.length && depth < MAX_DEPTH) { add('<' + c.name + '>'); walk(c, depth + 1); add('</' + c.name + '>'); }
+          else add('<' + c.name + '/>');
+        }
+      }
+      walk(node, depth);
+      return parts.join('');
     }
 
     /* ---------- HTML → plain text ---------- */
-    var BLOCK_RE = /<\/?(?:p|div|br|ul|ol|h[1-6]|blockquote|pre|tr|table|thead|tbody|tfoot|section|article|header|footer|hr|dd|dt|dl|figure|figcaption|address|aside|nav|main|center|form|fieldset|details|summary|caption)\b[^>]*>/gi;
+    // One left-to-right pass. Every '<' is examined once and a tag body never extends past the next '<', so the
+    // cost is the length of the input: the regex version (ten passes with `[^>]*` bodies) rescanned to the end
+    // of the string from every unterminated "<p " and took seconds on 50 KB of them. A quoted attribute value
+    // may hold '>' (title="a > b") without ending the tag.
+    var BLOCK_TAGS = {}, DROP_TAGS = { script: 1, style: 1, template: 1, svg: 1, head: 1 }, DROP_END = {};
+    'p div br ul ol h1 h2 h3 h4 h5 h6 blockquote pre tr table thead tbody tfoot section article header footer hr dd dt dl figure figcaption address aside nav main center form fieldset details summary caption'.split(' ').forEach(function (t) { BLOCK_TAGS[t] = 1; });
+    Object.keys(DROP_TAGS).forEach(function (t) { DROP_END[t] = new RegExp('<\\/' + t + '\\s*>', 'gi'); });
+    var TAG_RE = /<(\/?)([A-Za-z][A-Za-z0-9]*)/y;
+    // Index just past the '>' that ends the tag starting at `lt`, or -1 when none comes before the next '<' (an
+    // unterminated tag, which stays text). A '>' inside quotes does not end the tag; if the quote never closes,
+    // the first '>' does.
+    function tagEnd(s, lt) {
+      var q = 0, gt = -1;
+      for (var i = lt + 1; i < s.length; i++) {
+        var ch = s.charCodeAt(i);
+        if (ch === 60) break;                                                       // '<': a tag never contains one
+        if (q) { if (ch === q) q = 0; else if (ch === 62 && gt === -1) gt = i; }
+        else if (ch === 62) return i + 1;
+        else if (ch === 34 || ch === 39) q = ch;
+      }
+      return gt === -1 ? -1 : gt + 1;
+    }
     function stripHtml(html) {
       var s = str(html);
       if (!s) return '';
-      s = s.replace(/\r\n?/g, '\n')
-        .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
-        .replace(/<!--[\s\S]*?-->/g, '')
-        .replace(/<(script|style|template|svg|head)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, '')
-        .replace(/<\/br\s*>/gi, '')
-        .replace(/<li\b[^>]*>/gi, '\n• ')
-        .replace(/<\/li\s*>/gi, '')
-        .replace(/<\/?(?:td|th)\b[^>]*>/gi, ' ')
-        .replace(BLOCK_RE, '\n')
-        .replace(/<\/?[A-Za-z][^>]*>/g, '');     // a bare '<' followed by a space or digit ("a < b", "<3") is text and survives
-      s = decodeEntities(s).replace(/\u00A0/g, ' ');
+      s = s.replace(/\r\n?/g, '\n').replace(/<!\[CDATA\[|\]\]>/g, '');   // CDATA markers unwrap; the content is still HTML
+      var out = [], i = 0, n = s.length;
+      while (i < n) {
+        var lt = s.indexOf('<', i);
+        if (lt === -1) { out.push(s.slice(i)); break; }
+        if (lt > i) out.push(s.slice(i, lt));
+        i = lt + 1;
+        var next = s.charAt(lt + 1), end;
+        if (next === '!' || next === '?') {                                     // comment, declaration or PI: never text
+          if (s.startsWith('<!--', lt)) { end = s.indexOf('-->', lt + 4); i = end === -1 ? n : end + 3; }
+          else { end = tagEnd(s, lt); if (end === -1) out.push('<'); else i = end; }
+          continue;
+        }
+        TAG_RE.lastIndex = lt;
+        var m = TAG_RE.exec(s);
+        if (!m || (end = tagEnd(s, lt)) === -1) { out.push('<'); continue; }    // "a < b", "<3", "<p " with no '>': text
+        var name = m[2].toLowerCase(), closing = m[1] === '/';
+        i = end;
+        if (!closing && hasOwn(DROP_TAGS, name)) {                               // <script>…</script>: the content is not text
+          var re = DROP_END[name];
+          re.lastIndex = i;
+          var dm = re.exec(s);
+          i = dm ? dm.index + dm[0].length : n;                                   // unterminated: the rest is script, not notes
+        } else if (name === 'br') { if (!closing) out.push('\n'); }
+        else if (name === 'li') { if (!closing) out.push('\n• '); }
+        else if (name === 'td' || name === 'th') out.push(' ');
+        else if (hasOwn(BLOCK_TAGS, name)) out.push('\n');
+      }
+      s = decodeEntities(out.join('')).replace(/\u00A0/g, ' ');
       return s.replace(/[ \t\f\v]+/g, ' ').replace(/ ?\n ?/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
     }
     // Rich text of a feed element: its content as HTML (escaped or CDATA'd markup is text to the XML parser; raw
     // markup became child elements and is rebuilt), then flattened.
-    function richText(node) { return isObj(node) ? stripHtml(innerMarkup(node, 0)).slice(0, MAX_DESCRIPTION) : ''; }
+    function richText(node) { return isObj(node) ? cap(stripHtml(innerMarkup(node, 0, MAX_MARKUP)), MAX_DESCRIPTION) : ''; }
 
     /* ---------- durations ---------- */
     var CLOCK_RE = /^(?:(\d{1,3}):)?(\d{1,3}):(\d{1,2})(?:\.(\d+))?$/;
@@ -3377,7 +3641,10 @@
     function podcastDurationSeconds(v) {
       if (typeof v === 'number') return isFinite(v) && v >= 0 ? plainSeconds(v) : null;
       var s = str(v).trim().toLowerCase(), m;
-      if (!s) return null;
+      // WORDS_RE has adjacent optional whitespace groups, which backtrack quadratically over a long inner run
+      // of spaces; a real duration is short, and runs of whitespace inside it mean nothing.
+      if (!s || s.length > MAX_DURATION_TEXT) return null;
+      s = s.replace(/\s+/g, ' ');
       if ((m = /^(\d+(?:\.\d+)?)$/.exec(s))) return plainSeconds(+m[1]);
       if ((m = CLOCK_RE.exec(s))) return UTIL.round((+(m[1] || 0)) * 3600 + (+m[2]) * 60 + (+m[3]) + (m[4] ? +('0.' + m[4]) : 0), 3);
       if ((m = ISO_RE.exec(s)) && (m[1] || m[2] || m[3] || m[4])) return UTIL.round((+(m[1] || 0)) * 86400 + (+(m[2] || 0)) * 3600 + (+(m[3] || 0)) * 60 + (+(m[4] || 0)), 3);
@@ -3388,13 +3655,15 @@
 
     /* ---------- feed URLs ---------- */
     var FEED_SCHEMES = { feed: 1, itpc: 1, pcast: 1, podcast: 1, rss: 1 };
-    var HOST_RE = /^(?:localhost|\d{1,3}(?:\.\d{1,3}){3}|[a-z0-9\u00A0-\uFFFF-]+(?:\.[a-z0-9\u00A0-\uFFFF-]+)+|\[[0-9a-f:.]+\])(?::\d{1,5})?$/;
+    var HOST_RE = /^(?:localhost|\d{1,3}(?:\.\d{1,3}){3}|[a-z0-9_\u00A0-\uFFFF-]+(?:\.[a-z0-9_\u00A0-\uFFFF-]+)+|\[[0-9a-f:.]+\])(?::\d{1,5})?$/;   // '_' in a label: browsers accept it, some feed hosts use it
     // Canonical form of whatever a person pasted: feed:/itpc:/pcast: → https:, scheme-less → https://, scheme and
     // host lowercased, fragment dropped, empty path → '/'. The same feed must always produce the same key.
     function podcastNormalizeFeedUrl(s) {
       if (typeof s !== 'string') return null;
       s = s.trim().replace(/^<(.+)>$/, '$1').trim();
-      if (!s || s.length > MAX_URL || /[\s<>"]/.test(s)) return null;
+      // A backslash is a slash to the browser's URL parser ("https://evil.com\@good.com/" fetches evil.com) while
+      // the plain split below would read the host as good.com; such a link is refused rather than mislabelled.
+      if (!s || s.length > MAX_URL || /[\s<>"\\]/.test(s)) return null;
       var m = /^([a-zA-Z][a-zA-Z0-9+.-]*):(.*)$/.exec(s);
       // "example.com:8080/feed" and "localhost:3000/rss" have a colon but no scheme; a scheme has no dot and is
       // not followed by a port number.
@@ -3408,8 +3677,8 @@
       if (!p || !p.scheme || !p.authority) return null;
       var at = p.authority.lastIndexOf('@');
       var userinfo = at === -1 ? '' : p.authority.slice(0, at + 1);
-      var host = (at === -1 ? p.authority : p.authority.slice(at + 1)).toLowerCase();
-      if (!HOST_RE.test(host)) return null;
+      var host = (at === -1 ? p.authority : p.authority.slice(at + 1)).toLowerCase(), port = /:(\d+)$/.exec(host);
+      if (!HOST_RE.test(host) || (port && +port[1] > 65535)) return null;   // fetch() throws on a port above 65535
       s = p.scheme.toLowerCase() + '//' + userinfo + host + (p.path || '/') + p.query;
       return UTIL.isHttpUrl(s) ? s : null;
     }
@@ -3432,7 +3701,7 @@
     function absUrl(base, u) {
       u = str(u).trim();
       if (!u || u.length > MAX_URL) return '';
-      if (base) u = UTIL.resolveUrl(base, u);
+      if (base && !(u.indexOf('/.') === -1 && UTIL.isHttpUrl(u))) u = UTIL.resolveUrl(base, u);   // resolution is the identity on an absolute URL with no dot segments
       return UTIL.isHttpUrl(u) ? u : '';
     }
 
@@ -3445,7 +3714,10 @@
       if (!t) return !hasOwn(NON_MEDIA_EXT, UTIL.extOf(url));
       return t.indexOf('audio/') === 0 || t.indexOf('video/') === 0 || hasOwn(PLAYABLE_APP_TYPES, t);
     }
-    function lengthOf(v) { var n = num(v, 0); return n > 0 ? Math.floor(n) : null; }
+    // RFC 6838 type/subtype tokens: anything else ("audio/*" from media:content's medium, a megabyte of junk that
+    // would land in the localStorage feed cache) is not a media type and is replaced by the URL's own.
+    var MIME_RE = /^[a-z0-9!#$&^_.+-]{1,64}\/[a-z0-9!#$&^_.+-]{1,64}$/;
+    function lengthOf(v) { var n = num(v, 0); return n > 0 && n < 1e13 ? Math.floor(n) : null; }   // a byte count: 10 TB is already absurd
     function positiveInt(v) { var s = str(v).trim(); return /^\d{1,6}$/.test(s) && +s > 0 ? +s : null; }
     function explicitOf(v) {
       var s = str(v).trim().toLowerCase();
@@ -3461,63 +3733,76 @@
       return text(s.replace(/<[^>]*>/g, ''));
     }
     function firstNonEmpty(node, names, fn) {
-      for (var k = 0; k < names.length; k++) {
-        var kids = xmlChildren(node, names[k]);
-        for (var j = 0; j < kids.length; j++) { var v = fn(kids[j]); if (v) return v; }
-      }
+      if (!isObj(node) || !isArray(node.children)) return '';
+      for (var k = 0; k < names.length; k++) { var v = eachNamed(node, names[k], fn); if (v) return v; }
       return '';
     }
-    function plain(node) { return text(stripHtml(xmlText(node))); }
+    // Titles are plain text by spec, but generators do put HTML in them, so known HTML tags go (block-level ones
+    // as a space); anything else in angle brackets ("Interview with <Guest Name>", "<LIVE>") is the text it is.
+    var TITLE_BLOCK_RE = /<\/?(?:br|p|div|li|ol|ul|h[1-6]|blockquote|pre|hr)\b[^<>]*>/gi;
+    var TITLE_INLINE_RE = /<\/?(?:a|abbr|b|big|cite|code|del|em|font|i|img|ins|mark|q|s|small|span|strike|strong|sub|sup|time|tt|u|wbr)\b[^<>]*>/gi;
+    function plain(node) { return text(decodeEntities(xmlText(node).replace(TITLE_BLOCK_RE, ' ').replace(TITLE_INLINE_RE, ''))); }
     function hrefOrText(node) { return attr(node, 'href') || attr(node, 'url') || xmlText(xmlChild(node, 'url')) || xmlText(node); }
+    // xml:base (RFC 4287 §2 for Atom; XML Base generally): a relative URL resolves against the nearest declared
+    // base, so a feed served from a CDN that names the publisher's host as base still points at the right media.
+    function baseOf(node, inherited) { var b = attr(node, 'xml:base'); return b ? (absUrl(inherited, b) || inherited) : inherited; }
     function linkOf(node, base) {
-      var links = xmlChildren(node, 'link').concat(xmlChildren(node, 'atom:link'));
+      var links = linkElements(node);
       for (var k = 0; k < links.length; k++) {
-        var l = links[k], rel = attr(l, 'rel').toLowerCase(), u = absUrl(base, xmlText(l));
-        if (!u && (rel === '' || rel === 'alternate')) u = absUrl(base, attr(l, 'href'));
+        var l = links[k], rel = attr(l, 'rel').toLowerCase(), b = baseOf(l, base), u = absUrl(b, xmlText(l));
+        if (!u && (rel === '' || rel === 'alternate')) u = absUrl(b, attr(l, 'href'));
         if (u) return u;
       }
       return '';
     }
-    function dateOf(node) {
-      return firstNonEmpty(node, ['pubDate', 'dc:date', 'published', 'updated', 'issued', 'atom:published', 'atom:updated', 'a10:updated', 'lastBuildDate'], function (c) {
-        var t = UTIL.parseDate(xmlText(c));
-        return UTIL.isNum(t) ? t : '';
-      }) || null;
+    function linkElements(node) {
+      var links = xmlChildren(node, 'link'), more = xmlChildren(node, 'atom:link');
+      return more.length ? links.concat(more) : links;
     }
+    var DATE_NAMES = ['pubDate', 'dc:date', 'published', 'updated', 'issued', 'atom:published', 'atom:updated', 'a10:updated', 'lastBuildDate'];
+    function dateText(c) { var t = UTIL.parseDate(xmlText(c)); return UTIL.isNum(t) ? t : ''; }
+    function dateOf(node) { return firstNonEmpty(node, DATE_NAMES, dateText) || null; }
     // Every element called `name` anywhere below `node`, in document order. An unclosed <item> swallows the items
     // after it as children; walking the whole subtree still finds them.
-    function collectItems(node, name, depth) {
-      var out = [];
+    // One accumulator threads through the walk: rebuilding the array with concat for every child copied the whole
+    // list each time, which made a 100k-item feed cost minutes. `name` is a bare local name ('item', 'entry'),
+    // so a prefixed <a:entry> matches too.
+    function collectItems(node, name, depth, out) {
       for (var k = 0; k < node.children.length; k++) {
         var c = node.children[k];
         if (!isElement(c)) continue;
-        if (sameName(c.name, name)) out.push(c);
-        if (depth < MAX_DEPTH) out = out.concat(collectItems(c, name, depth + 1));
+        if (localIs(c.name, name)) out.push(c);
+        if (depth < MAX_DEPTH) collectItems(c, name, depth + 1, out);
       }
       return out;
     }
     function mediaGroupChildren(item, name) {
-      var out = xmlChildren(item, name);
-      xmlChildren(item, 'media:group').forEach(function (g) { out = out.concat(xmlChildren(g, name)); });
+      var out = xmlChildren(item, name), groups = xmlChildren(item, 'media:group');
+      for (var k = 0; k < groups.length; k++) out = out.concat(xmlChildren(groups[k], name));
       return out;
     }
     // Enclosure preference: <enclosure url> → <media:content url> of an audio/video type → link rel=enclosure.
     function enclosureOf(item, base) {
-      var candidates = [];
-      xmlChildren(item, 'enclosure').forEach(function (e) { candidates.push({ url: attr(e, 'url'), type: attr(e, 'type'), length: attr(e, 'length') }); });
-      mediaGroupChildren(item, 'media:content').forEach(function (e) {
-        var type = attr(e, 'type'), medium = attr(e, 'medium').toLowerCase();
-        if (!type && (medium === 'audio' || medium === 'video')) type = medium + '/*';
-        if (!medium || medium === 'audio' || medium === 'video') candidates.push({ url: attr(e, 'url'), type: type, length: attr(e, 'fileSize') });
-      });
-      xmlChildren(item, 'link').concat(xmlChildren(item, 'atom:link')).forEach(function (l) {
-        if (attr(l, 'rel').toLowerCase() === 'enclosure') candidates.push({ url: attr(l, 'href'), type: attr(l, 'type'), length: attr(l, 'length') });
-      });
-      for (var k = 0; k < candidates.length; k++) {
-        var url = absUrl(base, candidates[k].url);
+      var candidates = [], k, e, l;
+      var encs = xmlChildren(item, 'enclosure');
+      for (k = 0; k < encs.length; k++) { e = encs[k]; candidates.push({ url: attr(e, 'url'), type: attr(e, 'type'), length: attr(e, 'length'), base: baseOf(e, base) }); }
+      var media = mediaGroupChildren(item, 'media:content');
+      for (k = 0; k < media.length; k++) {
+        e = media[k];
+        var mtype = attr(e, 'type'), medium = attr(e, 'medium').toLowerCase();
+        if (!mtype && (medium === 'audio' || medium === 'video')) mtype = medium + '/*';
+        if (!medium || medium === 'audio' || medium === 'video') candidates.push({ url: attr(e, 'url'), type: mtype, length: attr(e, 'fileSize'), base: baseOf(e, base) });
+      }
+      var links = linkElements(item);
+      for (k = 0; k < links.length; k++) {
+        l = links[k];
+        if (attr(l, 'rel').toLowerCase() === 'enclosure') candidates.push({ url: attr(l, 'href'), type: attr(l, 'type'), length: attr(l, 'length'), base: baseOf(l, base) });
+      }
+      for (k = 0; k < candidates.length; k++) {
+        var url = absUrl(candidates[k].base, candidates[k].url);
         if (!url || !playableType(candidates[k].type, url)) continue;
         var type = str(candidates[k].type).toLowerCase().split(';')[0].trim();
-        if (!type || type.slice(-2) === '/*') type = UTIL.classifyMedia(url).mime || '';
+        if (!MIME_RE.test(type)) type = UTIL.classifyMedia(url).mime || '';   // covers '' and the 'audio/*' placeholder too
         return { url: url, type: type, length: lengthOf(candidates[k].length) };
       }
       return null;
@@ -3555,7 +3840,7 @@
       return '';
     }
     function categoriesOf(channel) {
-      var out = [], seen = {};
+      var out = [], seen = Object.create(null);   // no prototype: a category called "constructor" is a category
       function add(t) { t = text(t, 100); var k = t.toLowerCase(); if (t && !seen[k] && out.length < MAX_CATEGORIES) { seen[k] = 1; out.push(t); } }
       function walk(node, depth) {
         xmlChildren(node, 'itunes:category').forEach(function (c) {
@@ -3580,6 +3865,8 @@
       else if (rn === 'channel') { kind = 'rss'; channel = root; }
       else if (rn === 'feed') { kind = 'atom'; channel = root; }
       else return feedResult(false, 'not a podcast feed (root element <' + text(root.name, 60) + '>)', doc.errors);
+      base = baseOf(root, base);
+      if (channel !== root) base = baseOf(channel, base);
 
       var out = feedResult(true, null, doc.errors);
       out.kind = kind;
@@ -3597,9 +3884,10 @@
       out.language = text(firstNonEmpty(channel, ['language', 'dc:language'], xmlText) || attr(channel, 'xml:lang') || attr(root, 'xml:lang'), 20).toLowerCase();
       out.categories = categoriesOf(channel);
 
-      var items = collectItems(root, kind === 'atom' ? 'entry' : 'item', 0), seen = {}, episodes = [];
+      // `seen` has no prototype: a guid of "constructor" or "__proto__" is an id like any other, not a duplicate.
+      var items = collectItems(root, kind === 'atom' ? 'entry' : 'item', 0, []), seen = Object.create(null), episodes = [];
       for (var k = 0; k < items.length; k++) {
-        var ep = episodeOf(items[k], base, out);
+        var ep = episodeOf(items[k], baseOf(items[k], base), out);
         if (!ep || seen[ep.id]) { out.skipped++; continue; }
         seen[ep.id] = 1;
         episodes.push(ep);
@@ -3633,7 +3921,7 @@
       opts = isObj(opts) ? opts : {};
       var limit = Math.round(UTIL.clamp(num(opts.limit, 25), 1, 200));
       var country = /^[A-Za-z]{2}$/.test(str(opts.country)) ? opts.country.toUpperCase() : 'GB';
-      return ITUNES + '/search?media=podcast&entity=podcast&term=' + encodeURIComponent(term) + '&limit=' + limit + '&country=' + country;
+      return ITUNES + '/search?media=podcast&entity=podcast&term=' + enc(term) + '&limit=' + limit + '&country=' + country;
     }
     // Takes a numeric collection id or an Apple Podcasts page URL (…/id1200361736), which people paste.
     function itunesLookupUrl(id) {
@@ -3646,19 +3934,21 @@
       if (!isObj(r)) return null;
       var feedUrl = podcastNormalizeFeedUrl(r.feedUrl);
       if (!feedUrl) return null;
-      var id = num(r.collectionId, 0) || num(r.trackId, 0);
+      // Ids are positive integers as written: 0.5 floored to 0 would merge every fractional id into "itunes:0",
+      // and 1e21 would stringify in exponent form. Apple sends well-formed ids; this is the only validation layer.
+      var id = /^\d{1,16}$/.test(str(r.collectionId)) ? +r.collectionId : /^\d{1,16}$/.test(str(r.trackId)) ? +r.trackId : 0;
       var genre = text(r.primaryGenreName, 100);
       if (!genre && Array.isArray(r.genres)) genre = text(r.genres.filter(function (g) { return str(g) && str(g).toLowerCase() !== 'podcasts'; })[0], 100);
       var count = num(r.trackCount, -1);
       return {
         type: 'show',
-        id: id > 0 ? 'itunes:' + Math.floor(id) : 'feed:' + feedUrl,
+        id: id > 0 ? 'itunes:' + id : 'feed:' + feedUrl,
         title: text(r.collectionName) || text(r.trackName) || UTIL.urlHost(feedUrl),
         author: text(r.artistName),
         feedUrl: feedUrl,
         image: absUrl('', r.artworkUrl600) || absUrl('', upscaleArtwork(r.artworkUrl100)) || absUrl('', r.artworkUrl60),
         genre: genre,
-        episodeCount: count >= 0 ? Math.floor(count) : null,
+        episodeCount: count >= 0 && count <= 1e6 ? Math.floor(count) : null,   // no show has a million episodes; junk is unknown
         link: absUrl('', r.collectionViewUrl) || absUrl('', r.trackViewUrl)
       };
     }
@@ -3760,7 +4050,10 @@
     var FINISHED_RATIO = 0.95; // outros and end credits: the last 5% counts as heard
     var MAX_SLEEP_MIN = 24 * 60;
     var KEY_RE = /^(radio|podcast|video|show):./;
-    var CONTROL_RE = /[\u0000-\u001f\u007f-\u009f]/g;
+    // C0/C1 controls plus the invisible and direction-overriding characters (zero-width space, word joiner, bidi
+    // embeddings/overrides/isolates, BOM): a title "ok\u202egnp.exe" would display as "okexe.png". U+200C/U+200D
+    // stay: ZWNJ is part of Persian/Arabic spelling and ZWJ binds emoji sequences.
+    var CONTROL_RE = /[\u0000-\u001f\u007f-\u009f\u200b\u2060\u202a-\u202e\u2066-\u2069\ufeff]/g;
     var IMAGE_MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml', ico: 'image/x-icon' };
 
     var LIB_KEYS = ['v', 'favourites', 'recents', 'resume', 'subscriptions', 'queue', 'settings', 'sleep', 'updatedAt'];
@@ -3787,7 +4080,7 @@
     }
     // Control characters: the whitespace kind (tab, newline…) becomes a space, the rest (NUL, escapes) vanish.
     function text(v, max) {
-      var clean = str(v).replace(CONTROL_RE, function (c) { return /\s/.test(c) ? ' ' : ''; });
+      var clean = str(v).replace(CONTROL_RE, function (c) { return /[\t\n\v\f\r]/.test(c) ? ' ' : ''; });
       return cap(UTIL.collapseWs(clean), max || MAX_TEXT);
     }
     function httpUrl(v) {

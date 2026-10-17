@@ -427,6 +427,72 @@ test('garbage: binary junk, HTML page, empty, non-strings → invalid without th
   const r = E.hlsParse(many, 'https://h/');
   assert.ok(r.errors.length <= 52 && r.errors.some(e => /more errors/.test(e)), 'overflow note');
 });
+test('media: EXT-X-DISCONTINUITY-SEQUENCE before the first segment seeds discSeq; EXT-X-I-FRAMES-ONLY is reported', () => {
+  const p = E.hlsParse('#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXT-X-MEDIA-SEQUENCE:10\n#EXT-X-DISCONTINUITY-SEQUENCE:5\n#EXTINF:6,\na.ts\n#EXT-X-DISCONTINUITY\n#EXTINF:6,\nb.ts\n#EXTINF:6,\nc.ts\n#EXT-X-ENDLIST', 'https://h/x.m3u8');
+  deepEq(p.errors, []);
+  deepEq([p.mediaSequence, p.discontinuitySequence], [10, 5]);
+  deepEq(p.segments.map(s => [s.seq, s.discontinuity, s.discSeq]), [[10, false, 5], [11, true, 6], [12, false, 6]]);
+  const i = E.hlsParse('#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXT-X-I-FRAMES-ONLY\n#EXTINF:6,\n#EXT-X-BYTERANGE:1000@0\na.ts\n#EXTINF:6,\n#EXT-X-BYTERANGE:500\na.ts\n#EXT-X-ENDLIST', 'https://h/x.m3u8');
+  deepEq([i.kind, i.iFramesOnly, i.errors], ['media', true, []]);
+  deepEq(i.segments.map(s => s.byteRange), [{ offset: 0, length: 1000 }, { offset: 1000, length: 500 }]);
+  assert.equal(E.hlsParse(FMP4, FMP4_URL).iFramesOnly, false);
+});
+test('media: a second EXT-X-MAP mid-playlist switches the init segment; the map byte range is independent of the segment chain', () => {
+  const p = E.hlsParse('#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXT-X-MAP:URI="init1.mp4",BYTERANGE="500@0"\n#EXTINF:6,\n#EXT-X-BYTERANGE:1000@500\na.mp4\n#EXTINF:6,\n#EXT-X-BYTERANGE:1000\na.mp4\n#EXT-X-DISCONTINUITY\n#EXT-X-MAP:URI="init2.mp4"\n#EXTINF:6,\n#EXT-X-BYTERANGE:2000\nb.mp4\n#EXTINF:6,\nc.mp4\n#EXT-X-ENDLIST', 'https://h/v/x.m3u8');
+  deepEq(p.errors, []);
+  deepEq(p.segments.map(s => s.map.url), ['https://h/v/init1.mp4', 'https://h/v/init1.mp4', 'https://h/v/init2.mp4', 'https://h/v/init2.mp4']);
+  deepEq(p.segments.map(s => s.map.byteRange), [{ offset: 0, length: 500 }, { offset: 0, length: 500 }, null, null]);
+  assert.equal(p.segments[0].map, p.segments[1].map, 'one map object per EXT-X-MAP tag');
+  assert.notEqual(p.segments[1].map, p.segments[2].map);
+  deepEq(p.segments.map(s => s.byteRange), [{ offset: 500, length: 1000 }, { offset: 1500, length: 1000 }, { offset: 2500, length: 2000 }, null], 'the segment byte-range chain continues across the map change');
+  deepEq(p.segments.map(s => s.discSeq), [0, 0, 1, 1]);
+});
+test('media: EXT-X-DEFINE expansion is capped (VALUE length, one line, whole playlist) so a tiny playlist cannot allocate gigabytes', () => {
+  const def = (n) => '#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXT-X-DEFINE:NAME="X",VALUE="' + 'v'.repeat(n) + '"\n';
+  const ok = E.hlsParse(def(2048) + '#EXTINF:1,\n{$X}.ts\n#EXT-X-ENDLIST', 'https://h/x.m3u8');
+  deepEq(ok.errors, []);
+  assert.equal(ok.segments[0].uri.length, 2048 + 3);
+  const long = E.hlsParse(def(2049) + '#EXTINF:1,\n{$X}.ts\n#EXT-X-ENDLIST', 'https://h/x.m3u8');
+  assert.ok(long.errors.some(e => /EXT-X-DEFINE value for X is longer than 2048/.test(e)), long.errors.join('|'));
+  assert.ok(long.errors.some(e => /undefined variable \{\$X\}/.test(e)), 'an over-long VALUE defines nothing');
+  assert.equal(long.segments[0].uri, '{$X}.ts');
+  // one line: 5 × 2000 = 10 KB > 8 KB → that URI (and the EXTINF before it) is dropped, the next segment survives
+  const line = E.hlsParse(def(2000) + '#EXT-X-KEY:METHOD=AES-128,URI="{$X}{$X}{$X}{$X}{$X}"\n#EXTINF:1,\n{$X}{$X}{$X}{$X}{$X}\n#EXTINF:1,\nok.ts\n#EXT-X-ENDLIST', 'https://h/x.m3u8');
+  deepEq(line.segments.map(s => [s.uri, s.key]), [['ok.ts', null]]);
+  assert.equal(line.errors.filter(e => /expansion exceeds the size limit/.test(e)).length, 2, 'the KEY line and the URI line');
+  assert.ok(!line.errors.some(e => /EXTINF without URI/.test(e)), 'the orphaned EXTINF is dropped quietly');
+  // whole playlist: 700 lines × 6 KB = 4.2 MB of substitutions > 4 MB → the tail is dropped, the head parses
+  let big = def(2048);
+  for (let i = 0; i < 700; i++) big += '#EXTINF:1,\n{$X}{$X}{$X}\n';
+  const p = E.hlsParse(big + '#EXT-X-ENDLIST', 'https://h/x.m3u8');
+  assert.equal(p.kind, 'media');
+  assert.equal(p.segments.length, 682, '4 MB / 6 KB per line');
+  assert.ok(p.segments.reduce((n, s) => n + s.uri.length, 0) <= 4 * 1024 * 1024);
+  assert.ok(p.errors.some(e => /expansion exceeds the size limit/.test(e)));
+  assert.ok(p.errors.length <= 52, 'error list stays capped');
+  const hostile = def(2000) + ('#EXTINF:1,\n' + '{$X}'.repeat(2000) + '\n').repeat(50) + '#EXT-X-ENDLIST\n';
+  const h = noThrow(() => E.hlsParse(hostile, 'https://h/x.m3u8'));
+  assert.equal(h.kind, 'invalid', 'every line blew the line cap → no segments at all, and no 200 MB of strings');
+  const q = E.hlsParse('#EXTM3U\n#EXT-X-DEFINE:QUERYPARAM="t"\n#EXT-X-TARGETDURATION:1\n#EXTINF:1,\n{$t}.ts\n', 'https://h/x.m3u8?t=' + 'q'.repeat(3000));
+  assert.ok(q.errors.some(e => /value for t is longer/.test(e)), 'QUERYPARAM and IMPORT values share the cap');
+});
+test('media: unsupported[] is deduped, capped at 50 and its entries truncated (METHOD is remote text)', () => {
+  let pl = '#EXTM3U\n#EXT-X-TARGETDURATION:1\n';
+  for (let i = 0; i < 80; i++) pl += '#EXT-X-KEY:METHOD=M' + i + ',URI="k"\n#EXT-X-KEY:METHOD=M' + i + ',URI="k"\n';
+  pl += '#EXT-X-KEY:METHOD=' + 'L'.repeat(100) + ',URI="k"\n#EXTINF:1,\ns.ts\n#EXT-X-ENDLIST\n';
+  const p = E.hlsParse(pl, 'https://h/x.m3u8');
+  assert.equal(p.unsupported.length, 50);
+  assert.equal(new Set(p.unsupported).size, 50, 'no duplicates');
+  deepEq(p.unsupported.slice(0, 3), ['M0', 'M1', 'M2']);
+  const t = E.hlsParse('#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXT-X-KEY:METHOD=' + 'L'.repeat(100) + ',URI="k"\n#EXTINF:1,\ns.ts\n#EXT-X-ENDLIST\n', 'https://h/x.m3u8');
+  assert.equal(t.unsupported[0].length, 64);
+  // linear, not quadratic: 20k distinct methods parse in well under a second
+  let many = '#EXTM3U\n#EXT-X-TARGETDURATION:1\n';
+  for (let i = 0; i < 20000; i++) many += '#EXT-X-KEY:METHOD=K' + i + ',URI="k"\n';
+  const t0 = Date.now();
+  assert.equal(E.hlsParse(many + '#EXTINF:1,\ns.ts\n#EXT-X-ENDLIST\n', 'https://h/x.m3u8').unsupported.length, 50);
+  assert.ok(Date.now() - t0 < 2000, 'took ' + (Date.now() - t0) + ' ms');
+});
 test('parse: deterministic (same input → identical JSON)', () => {
   for (const [text, url] of [[MASTER, MASTER_URL], [FMP4, FMP4_URL], [TS_VOD, TS_URL], [LIVE1, LIVE_URL], [LLHLS, LL_URL], [DEFINE, DEFINE_URL], [PDT, PDT_URL], [MESSY, 'https://h/']]) {
     assert.equal(JSON.stringify(E.hlsParse(text, url)), JSON.stringify(E.hlsParse(text, url)));
@@ -496,11 +562,18 @@ test('choose: caps (maxHeight, maxBandwidth) never drop below the lowest', () =>
 });
 test('choose: codec filter removes hevc; a filter that throws or rejects all is survivable', () => {
   assert.equal(choose({ bandwidth: 20000000, supportedCodecs: noHevc }), 3);
+  // A filter that rejects EVERY variant is treated as unknown support: the normal pick proceeds (highest fitting),
+  // NOT the lowest, so the case is asserted at a bandwidth where the two answers differ (2 vs 5).
   assert.equal(choose({ bandwidth: 20000000, supportedCodecs: () => false }), 4, 'reject-all → treated as unknown support');
+  assert.equal(choose({ bandwidth: 3000000, supportedCodecs: () => false }), 2, 'reject-all at 3 Mbps → the normal pick (540p), not the lowest (audio-only, 5)');
+  assert.equal(choose({ bandwidth: 3000000, supportedCodecs: () => false }), choose({ bandwidth: 3000000 }));
   assert.equal(choose({ bandwidth: 20000000, supportedCodecs: () => { throw new Error('boom'); } }), 4);
   assert.equal(E.hlsChooseVariant([{ bandwidth: 100, codecs: [] }, { bandwidth: 200, codecs: ['hvc1'] }], { bandwidth: 10000, supportedCodecs: noHevc }), 0, 'no codecs listed → cannot be rejected');
 });
 test('choose: up-switch hysteresis with low and high buffer, partial step, immediate down-switch', () => {
+  // Rule under test: step up only when next.bandwidth × upHysteresis ≤ estimate × safety (i.e. estimate ≥ 1.5625 ×
+  // next.bandwidth at the defaults). This is deliberately NOT SPEC's literal "estimate ≥ next.bandwidth × safety ×
+  // upHysteresis": at the defaults 0.8 × 1.25 = 1.0, which is looser than the ordinary pick and so a no-op.
   // budget 2.4 Mbps targets 540p (2.177 Mbps) but 2.177 × 1.25 = 2.72 > 2.4 → stay at 360p
   assert.equal(choose({ bandwidth: 3000000, current: 1, bufferedSec: 5 }), 1);
   assert.equal(choose({ bandwidth: 3000000, current: 1, bufferedSec: 20 }), 2, 'a healthy buffer waives the hysteresis');
@@ -602,10 +675,25 @@ test('merge: advancing reload keeps the timeline continuous', () => {
   assert.equal(E.hlsLiveStart(m), 24);
   assert.equal(live2.segments[0].start, 0, 'input playlist not mutated');
   assert.equal(m.kind, 'media');
-  assert.equal(m.totalDuration, 30);
+  assert.equal(m.totalDuration, 42, 'totalDuration is the end of the continued timeline, not the parser\'s window-relative clock');
   const again = E.hlsMerge(m, E.hlsParse(liveFixture(104, 5), LIVE_URL));
   deepEq(again.segments.map(s => s.start), [24, 30, 36, 42, 48]);
   assert.equal(again.advanced, 2);
+  assert.equal(again.totalDuration, 54);
+});
+test('merge: totalDuration tracks the timeline end through a long live run, its ENDLIST and a stale reload', () => {
+  // 100 sliding reloads of a 5 × 2 s window: the controller sets ms.duration and the seekable end from
+  // totalDuration once the playlist gains ENDLIST, so it must be the timeline end (210), not the window (10).
+  const win = (seq, end) => { let s = `#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:${seq}\n`; for (let i = 0; i < 5; i++) s += `#EXTINF:2,\ns${seq + i}.ts\n`; return s + (end ? '#EXT-X-ENDLIST\n' : ''); };
+  let pl = E.hlsParse(win(0, false), LIVE_URL);
+  assert.equal(pl.totalDuration, 10);
+  for (let k = 1; k <= 100; k++) pl = E.hlsMerge(pl, E.hlsParse(win(k, k === 100), LIVE_URL));
+  deepEq([pl.endList, pl.live, pl.segments[0].start, pl.segments[4].end], [true, false, 200, 210]);
+  assert.equal(pl.totalDuration, 210);
+  assert.equal(pl.totalDuration, E.hlsLiveEdge(pl));
+  assert.equal(E.hlsSegmentAt(pl, 209.9), 4, 'the end of the timeline is still inside the last segment');
+  assert.equal(E.hlsMerge(live2, live3).totalDuration, 24, 'a stale reload anchored backwards still ends where its last segment ends');
+  assert.equal(E.hlsMerge(null, live1).totalDuration, 30, 'a first load keeps the parser value');
 });
 test('merge: stale (backwards) reload is flagged, still anchored', () => {
   const m = E.hlsMerge(live2, live3);

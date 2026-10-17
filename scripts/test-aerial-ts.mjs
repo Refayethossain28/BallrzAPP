@@ -9,7 +9,7 @@
  * Run: node scripts/test-aerial-ts.mjs
  */
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as __fs from 'node:fs';
@@ -31,21 +31,23 @@ function loadEngine() {
 // vm-sandbox values carry the sandbox's prototypes; compare cross-realm by shape.
 const deepEq = (a, b, m) => __assert.equal(JSON.stringify(a), JSON.stringify(b), m);
 function runner(name) {
-  const tests = [];
+  const tests = [], skipped = [];
   const test = (n, f) => tests.push([n, f]);
+  // A case that cannot run here (no ffmpeg, an encoder missing) is announced and counted apart: never a ✓.
+  const skip = (what, why) => { skipped.push(what); console.log(`  [skip] ${name}: ${what} — ${why}`); };
   const run = () => {
     let passed = 0, failed = 0;
     for (const [n, f] of tests) {
       try { f(); passed++; console.log(`  ✓ ${n}`); }
       catch (e) { failed++; console.log(`  ✗ ${n}\n      ${e && e.stack ? e.stack.split('\n').slice(0, 4).join('\n      ') : e}`); }
     }
-    console.log(`\n${name}: ${passed} passed, ${failed} failed`);
+    console.log(`\n${name}: ${passed} passed, ${failed} failed${skipped.length ? `, ${skipped.length} skipped` : ''}`);
     process.exit(failed ? 1 : 0);
   };
-  return { test, run, assert: __assert };
+  return { test, run, skip, assert: __assert };
 }
 const E = loadEngine();
-const { test, run, assert } = runner('ts');
+const { test, run, skip, assert } = runner('ts');
 const NOW = Date.UTC(2026, 9, 16, 12, 0, 0); // fixed clock (the demuxer takes no clock; kept for house convention)
 const WRAP = 2 ** 33;
 
@@ -78,6 +80,7 @@ function bitWriter() {
     u(n, v) { for (let i = n - 1; i >= 0; i--) bits.push(Math.floor(v / 2 ** i) & 1); },
     ue(v) { const x = v + 1, len = Math.floor(Math.log2(x)); for (let i = 0; i < len; i++) bits.push(0); w.u(len + 1, x); },
     se(v) { w.ue(v > 0 ? 2 * v - 1 : -2 * v); },
+    align() { while (bits.length % 8) bits.push(0); }, // pcm_alignment_zero_bits
     rbsp() { bits.push(1); while (bits.length % 8) bits.push(0); const out = new Uint8Array(bits.length / 8); for (let i = 0; i < bits.length; i++) out[i >> 3] |= bits[i] << (7 - (i & 7)); return out; },
   };
   return w;
@@ -384,9 +387,16 @@ test('parseSps: truncated, junk, empty and non-byte input are rejected without t
 test('parseAdts: fields, CRC variant, offsets, and every rejection path', () => {
   const f = adtsFrame(filler(50, 1), { srIndex: 4, channels: 2, profile: 1 });
   const h = E.parseAdts(f, 0);
-  deepEq(h, { ok: true, frameLength: 57, headerLength: 7, objectType: 2, sampleRateIndex: 4, sampleRate: 44100, channels: 2, crc: false });
+  deepEq(h, { ok: true, frameLength: 57, headerLength: 7, objectType: 2, sampleRateIndex: 4, sampleRate: 44100, channels: 2, channelConfiguration: 2, blocks: 1, crc: false });
   const c = E.parseAdts(cat(filler(5, 2), adtsFrame(filler(10, 3), { crc: true, profile: 0, srIndex: 11, channels: 6 })), 5);
   assert.equal(c.ok, true); assert.equal(c.headerLength, 9); assert.equal(c.frameLength, 19); assert.equal(c.objectType, 1); assert.equal(c.sampleRate, 8000); assert.equal(c.channels, 6); assert.equal(c.crc, true);
+  // channel_configuration is a table index, not a count: 7 is 7.1 (8 speakers), 0 defers to an in-band PCE (count unknown)
+  const c71 = E.parseAdts(adtsFrame(filler(10, 4), { channels: 7 }), 0);
+  deepEq([c71.channelConfiguration, c71.channels], [7, 8]);
+  const pce = E.parseAdts(adtsFrame(filler(10, 5), { channels: 0 }), 0);
+  deepEq([pce.channelConfiguration, pce.channels], [0, null]);
+  const two = Uint8Array.from(adtsFrame(filler(10, 6))); two[6] = 0xfc | 1; // number_of_raw_data_blocks_in_frame = 1 → two 1024-sample blocks
+  assert.equal(E.parseAdts(two, 0).blocks, 2);
   assert.equal(E.parseAdts(f, 1).ok, false, 'no sync at offset 1');
   assert.equal(E.parseAdts(f, f.length - 3).ok, false, 'too short');
   assert.equal(E.parseAdts(f, -1).ok, false);
@@ -589,6 +599,89 @@ test('PTS wraparound inside one state: samples stay monotonic across 2^33', () =
   assert.equal(o.id3[0].pts, base);
 });
 
+test('PTS wrap between the tracks of a fresh state: the first PES of each track lands on the other\'s lap, not 26.5 h away', () => {
+  // A packager cuts at an IDR just after 2^33 while the audio PES of that instant was written just before it
+  // (ffmpeg's TS muxer interleaves audio ahead); joining there, each track's first PES must unwrap against the other.
+  const build = (first) => {
+    const m = new Mux().psi(0, patSection()).psi(0x1000, PMT_AV);
+    const video = () => m.es(VID, pes(0xe0, annexB([AUD, SPS_BASE, PPS, IDR]), { pts: 0, unbounded: true })).es(VID, pes(0xe0, annexB([AUD, P1]), { pts: 3600, unbounded: true }));
+    const audio = () => m.es(AUD_PID, pes(0xc0, cat(adtsFrame(AAC_BODIES[0]), adtsFrame(AAC_BODIES[1])), { pts: WRAP - 900 }));
+    if (first === 'audio') { audio(); video(); } else { video(); audio(); }
+    m.es(ID3_PID, pes(0xbd, ID3_DATA, { pts: 10 }));
+    return m.bytes();
+  };
+  const a = demuxAll([build('audio')]);
+  deepEq(a.errors, []);
+  deepEq(viewAudio(a.audio).map(s => s.pts), [WRAP - 900, WRAP + 1020], 'audio first: it keeps its raw lap');
+  deepEq(viewSamples(a.video).map(s => s.pts), [WRAP, WRAP + 3600], 'video then unwraps onto the audio\'s lap (0 → 2^33)');
+  assert.equal(a.id3[0].pts, WRAP + 10);
+  const v = demuxAll([build('video')]);
+  deepEq(v.errors, []);
+  deepEq(viewSamples(v.video).map(s => s.pts), [0, 3600], 'video first: it keeps its raw lap');
+  deepEq(viewAudio(v.audio).map(s => s.pts), [-900, 1020], 'audio then unwraps onto the video\'s lap (2^33 − 900 → −900)');
+  assert.equal(v.id3[0].pts, 10);
+  // a track with timestamps of its own still unwraps against itself (the other track being far behind is irrelevant)
+  const own = demuxAll([build('video'), build('video')]);
+  deepEq(viewAudio(own.audio).map(s => s.pts), [-900, 1020, -900, 1020]);
+});
+
+test('video track reports the SPS chroma format and bit depths (what the avcC extension bytes need)', () => {
+  const r = E.tsDemux(REF);
+  deepEq([r.video.chromaFormatIdc, r.video.bitDepthLuma, r.video.bitDepthChroma], [1, 8, 8], 'baseline: 4:2:0 8-bit');
+  const none = E.tsDemux(new Mux().psi(0, patSection()).psi(0x1000, pmtSection([{ type: 0x1b, pid: VID }])).bytes());
+  deepEq([none.video.codec, none.video.chromaFormatIdc, none.video.bitDepthLuma, none.video.bitDepthChroma], [null, null, null, null], 'null until an SPS is seen');
+  const sps422 = encodeSps({ profileIdc: 122, levelIdc: 41, chromaFormatIdc: 2, bitDepthLumaMinus8: 2, bitDepthChromaMinus8: 2, widthMbs: 20, heightMapUnits: 15 }).nal;
+  const m = new Mux().psi(0, patSection()).psi(0x1000, pmtSection([{ type: 0x1b, pid: VID }]));
+  m.es(VID, pes(0xe0, annexB([AUD, sps422, PPS, IDR]), { pts: 0, unbounded: true }));
+  const o = demuxAll([m.bytes()]);
+  deepEq(o.errors, []);
+  deepEq([o.videoTrack.codec, o.videoTrack.chromaFormatIdc, o.videoTrack.bitDepthLuma, o.videoTrack.bitDepthChroma], ['avc1.7a0029', 2, 10, 10], 'High 4:2:2 10-bit');
+  // survives state threading and a stale state missing the slots
+  const threaded = E.tsFlush({ ...o.state, video: { ...o.state.video, chromaFormatIdc: undefined } });
+  assert.equal(threaded.video.chromaFormatIdc, null);
+  assert.equal(E.tsFlush(o.state).video.bitDepthLuma, 10);
+});
+
+test('start codes straddling PES packets are found at every cut; a NAL spread over thousands of PES packets costs linear time and still hits the cap', () => {
+  const m0 = new Mux().psi(0, patSection()).psi(0x1000, pmtSection([{ type: 0x1b, pid: VID }]));
+  const au1 = annexB([AUD, SPS_BASE, PPS, IDR]), au2 = annexB([AUD, P1]);
+  const stream = cat(au1, au2);
+  // cut inside au2's 4-byte start code (00 00 00 01) and right after it: the pending bytes end with 0, 00, 000 or the whole code
+  for (const into of [1, 2, 3, 4]) {
+    const m = new Mux().psi(0, patSection()).psi(0x1000, pmtSection([{ type: 0x1b, pid: VID }]));
+    const cutAt = au1.length + into;
+    m.es(VID, pes(0xe0, stream.subarray(0, cutAt), { pts: 100, unbounded: true }));
+    m.es(VID, pes(0xe0, stream.subarray(cutAt), { pts: 3700, unbounded: true }));
+    const o = demuxAll([m.bytes()]);
+    deepEq(o.errors, [], 'cut ' + into);
+    // (durations are not asserted: which PES an access unit whose start code is itself split "commences in" is
+    // ambiguous, and the engine then falls back to the default duration for the unit before it)
+    deepEq(viewSamples(o.video).map(s => [s.pts, s.dts, s.key, s.data]), [
+      [100, 100, true, hex(avcc([SPS_BASE, PPS, IDR]))],
+      [3700, 3700, false, hex(avcc([P1]))],
+    ], 'cut ' + into + ' bytes into the start code');
+  }
+  // one IDR, then 3000 unbounded 1 KB PES packets without a start code (a NAL spread over 3 MB), then a real AU:
+  // the open NAL must grow in amortised linear time (this took seconds when every PES re-scanned and re-copied it)
+  m0.es(VID, pes(0xe0, au1, { pts: 100, unbounded: true }));
+  for (let i = 0; i < 3000; i++) m0.es(VID, pes(0xe0, filler(1000, i + 7), { pts: 100 + i, unbounded: true }));
+  m0.es(VID, pes(0xe0, au2, { pts: 3700, unbounded: true }));
+  const bytes = m0.bytes();
+  const t0 = Date.now();
+  const o = demuxAll([bytes]);
+  const ms = Date.now() - t0;
+  assert.ok(ms < 2000, `3 MB open NAL demuxed in ${ms} ms`); // ~60 ms here; the quadratic version needs ~5 s
+  deepEq(o.errors, []);
+  deepEq(viewSamples(o.video).map(s => [s.pts, s.key, s.data.length / 2]), [[100, true, avcc([SPS_BASE, PPS, IDR]).length + 3000 * 1000], [3700, false, avcc([P1]).length]], 'the junk rode along inside the IDR NAL');
+  // the 8 MB cap still applies to a NAL that never ends (it was only ever checked when no start code was pending)
+  const big = new Mux().psi(0, patSection()).psi(0x1000, pmtSection([{ type: 0x1b, pid: VID }]));
+  big.es(VID, pes(0xe0, au1, { pts: 100, unbounded: true }));
+  for (let i = 0; i < 45; i++) big.es(VID, pes(0xe0, filler(190000, i + 3), { pts: 100 + i, unbounded: true })); // 8.55 MB
+  const ob = demuxAll([big.bytes()]);
+  assert.ok(ob.errors.some(e => e.type === 'video' && /NAL exceeded 8388608 bytes/.test(e.message)), JSON.stringify(ob.errors));
+  deepEq(viewSamples(ob.video), [], 'the unbounded NAL was discarded');
+});
+
 test('B-frames: DTS < PTS gives cts, durations from DTS deltas', () => {
   const m = new Mux();
   m.psi(0, patSection()).psi(0x1000, pmtSection([{ type: 0x1b, pid: VID }]));
@@ -675,15 +768,44 @@ test('MP3 in TS (stream type 0x03): frames split on headers, 1152-sample duratio
   m.es(AUD_PID, pes(0xc0, cat(frames[0], frames[1], frames[2]), { pts: 5000 }));
   m.es(AUD_PID, pes(0xc0, frames[3], { pts: 5000 + 7053 }));
   const r0 = E.tsDemux(m.bytes().subarray(0, 188 * 2));
-  assert.equal(r0.audio.codec, 'mp3', 'codec known from the PMT before any frame');
-  assert.equal(r0.audio.sampleRate, null);
+  // The PMT names the stream kind, but `codec` waits for the first frame (as for AAC): a track announced with
+  // codec 'mp3' and timescale null would be built on the 90 kHz clock and play at 2× speed.
+  assert.equal(r0.state.audioKind, 'mp3', 'stream kind known from the PMT');
+  assert.equal(r0.audio.codec, null, 'codec waits for the first frame');
+  assert.equal(r0.audio.sampleRate, null); assert.equal(r0.audio.timescale, null);
   const o = demuxAll([m.bytes()]);
   deepEq(o.errors, []);
   assert.equal(o.audioTrack.codec, 'mp3'); assert.equal(o.audioTrack.sampleRate, 44100); assert.equal(o.audioTrack.channels, 2); assert.equal(o.audioTrack.config, null); assert.equal(o.audioTrack.timescale, 44100);
   deepEq(viewAudio(o.audio), frames.map((f, i) => ({ pts: 5000 + Math.round(i * 1152 * 90000 / 44100), dts: 5000 + Math.round(i * 1152 * 90000 / 44100), duration: 1152, data: hex(f) })));
   // MPEG-2 audio stream type (0x04) also maps to mp3
   const m2 = new Mux().psi(0, patSection()).psi(0x1000, pmtSection([{ type: 0x04, pid: AUD_PID }]));
-  assert.equal(E.tsDemux(m2.bytes()).audio.codec, 'mp3');
+  m2.es(AUD_PID, pes(0xc0, mp3Frame(5), { pts: 100 }));
+  const o2 = E.tsDemux(m2.bytes());
+  assert.equal(o2.state.audioKind, 'mp3'); assert.equal(o2.audio.codec, 'mp3'); assert.equal(o2.audio.timescale, 44100);
+});
+
+test('audio: free-format MPEG audio (bitrate_index 0) is reported as unsupported, not as junk', () => {
+  const m = new Mux().psi(0, patSection()).psi(0x1000, pmtSection([{ type: 0x03, pid: AUD_PID }]));
+  const free = cat([0xff, 0xfb, 0x00, 0x00], filler(300, 1)); // MPEG-1 layer III, bitrate_index 0: length only measurable between syncs
+  m.es(AUD_PID, pes(0xc0, cat(free, free, free), { pts: 1000 }));
+  const o = demuxAll([m.bytes()]);
+  deepEq(viewAudio(o.audio), []);
+  assert.equal(o.errors.length, 1); assert.equal(o.errors[0].type, 'audio');
+  assert.match(o.errors[0].message, /free-format MPEG audio is not supported; 912 bytes discarded/);
+  assert.equal(E.parseMpegAudioHeader(free, 0).freeFormat, true);
+  assert.equal(E.parseMpegAudioHeader([0xff, 0xfb, 0xf0, 0x00], 0).freeFormat, undefined, 'index 15 is invalid, not free format');
+});
+
+test('audio: an ADTS frame with several raw data blocks spans all of them, so the next frame in the PES is not stamped early', () => {
+  const m = new Mux().psi(0, patSection()).psi(0x1000, pmtSection([{ type: 0x0f, pid: AUD_PID }]));
+  const two = Uint8Array.from(adtsFrame(filler(80, 1))); two[6] = 0xfc | 1; // number_of_raw_data_blocks_in_frame = 1 → 2048 samples
+  m.es(AUD_PID, pes(0xc0, cat(two, adtsFrame(filler(40, 2)), adtsFrame(filler(40, 3))), { pts: 1000 }));
+  m.es(AUD_PID, pes(0xc0, adtsFrame(filler(40, 4)), {})); // no PTS: extrapolated from the last frame's end
+  const o = demuxAll([m.bytes()]);
+  deepEq(viewAudio(o.audio).map(s => [s.pts, s.duration, s.data.length / 2]), [[1000, 2048, 80], [4840, 1024, 40], [6760, 1024, 40], [8680, 1024, 40]]);
+  deepEq(o.errors.map(e => e.type), ['audio', 'audio']);
+  assert.match(o.errors[0].message, /1 ADTS frame\(s\) with several raw data blocks/);
+  assert.match(o.errors[1].message, /without PTS/);
 });
 
 test('audio: junk between frames is resynced, PES without PTS is extrapolated, both logged', () => {
@@ -815,9 +937,10 @@ test('junk input never throws: random bytes, fake syncs, text, empty, null, obje
     const f = E.tsFlush(r.state);
     assert.ok(Array.isArray(f.errors));
     shapes.push(JSON.stringify({ v: r.video, a: r.audio }));
-    // a state that went through junk still demuxes a good stream
+    // a state that went through junk still demuxes a good stream (unconditionally: a junk state that swallowed the
+    // next good stream is exactly what this must catch)
     const o = demuxAll([REF], f.state);
-    if (o.video.length) deepEq(viewSamples(o.video).map(s => s.pts), [90000, 93600, 97200]);
+    deepEq(viewSamples(o.video).map(s => s.pts), [90000, 93600, 97200], 'good stream after junk input ' + inputs.indexOf(inp));
   }
   assert.ok(E.tsDemux('string').errors[0].type === 'input');
   assert.ok(E.tsDemux(randomBytes(3000, 7)).errors.some(e => e.type === 'sync'));
@@ -857,12 +980,14 @@ test('junk payloads on real pids: random PES bodies and random PSI sections', ()
 });
 
 /* ================= tests: real fixtures via ffmpeg / ffprobe ================= */
-const haveFfmpeg = spawnSync('ffmpeg', ['-version']).status === 0 && spawnSync('ffprobe', ['-version']).status === 0;
+const onPath = (cmd) => { const r = spawnSync(cmd, ['-version']); return !r.error && r.status === 0; };
+const haveFfmpeg = onPath('ffmpeg') && onPath('ffprobe');
 if (!haveFfmpeg) {
-  console.log('  (ffmpeg/ffprobe not on PATH — skipping real-fixture cross-checks)');
+  skip('real-fixture cross-checks (ffmpeg baseline/high/audio/mp3/ac8/wrap/paff)', 'ffmpeg/ffprobe not on PATH');
 } else {
   const dir = mkdtempSync(join(tmpdir(), 'aerial-ts-'));
   process.on('exit', () => rmSync(dir, { recursive: true, force: true }));
+  const firstLine = (s) => String(s || '').trim().split('\n')[0];
   const V = ['-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=25'];
   const A = (sr = 48000) => ['-f', 'lavfi', '-i', `sine=frequency=440:sample_rate=${sr}`];
   const X264 = (profile, extra) => ['-c:v', 'libx264', '-profile:v', profile, '-pix_fmt', 'yuv420p', '-g', '25', ...extra];
@@ -871,12 +996,13 @@ if (!haveFfmpeg) {
     high: [...V, ...A(), '-t', '2', ...X264('high', ['-bf', '2', '-x264-params', 'bframes=2:b-pyramid=0']), '-c:a', 'aac', '-b:a', '64k'],
     audio: [...A(), '-t', '2', '-c:a', 'aac', '-b:a', '64k'],
     mp3: [...V, ...A(44100), '-t', '2', ...X264('baseline', ['-bf', '0']), '-c:a', 'libmp3lame', '-b:a', '64k'],
+    ac8: [...A(), '-t', '1', '-c:a', 'aac', '-ac', '8', '-b:a', '256k'], // 7.1: ADTS channel_configuration 7 = 8 channels
   };
   const files = {};
   for (const [name, args] of Object.entries(FIXTURES)) {
     const out = join(dir, name + '.ts');
-    const r = spawnSync('ffmpeg', ['-y', '-v', 'error', ...args, '-f', 'mpegts', out]);
-    if (r.status !== 0) { console.log(`  (ffmpeg failed for ${name}: ${r.stderr}) — skipping`); continue; }
+    const r = spawnSync('ffmpeg', ['-y', '-v', 'error', ...args, '-f', 'mpegts', out], { encoding: 'utf8' });
+    if (r.status !== 0) { skip(`ffmpeg ${name} cross-checks`, `ffmpeg could not encode it (${firstLine(r.stderr)})`); continue; }
     files[name] = readFileSync(out);
   }
   const probe = (file, ...args) => JSON.parse(spawnSync('ffprobe', ['-v', 'error', '-print_format', 'json', ...args, file]).stdout);
@@ -964,6 +1090,116 @@ if (!haveFfmpeg) {
       }
     });
   }
+
+  /* ----- a packager cut that straddles the 33-bit wrap ----- */
+  // -output_ts_offset puts the stream ~1.7 s before 2^33 / 90 kHz; IDR every 5 frames gives several cut points.
+  const wrapFile = join(dir, 'wrap.ts');
+  const wrapEnc = spawnSync('ffmpeg', ['-y', '-v', 'error', '-nostdin', ...V, ...A(), '-t', '3', ...X264('high', ['-preset', 'ultrafast', '-bf', '2', '-g', '5']), '-c:a', 'aac', '-b:a', '64k', '-output_ts_offset', '95442', '-f', 'mpegts', wrapFile], { encoding: 'utf8' });
+  if (wrapEnc.status !== 0) skip('ffmpeg wrap cross-checks', `ffmpeg could not encode it (${firstLine(wrapEnc.stderr)})`);
+  else test('ffmpeg wrap: a segment cut at an IDR next to the 2^33 wrap keeps audio and video on one clock (= ffprobe with its audio lap folded)', () => {
+    const bytes = new Uint8Array(readFileSync(wrapFile));
+    // index the packets: pid, PES pts of a PUSI packet, stream id, whether its payload starts an IDR slice
+    const pk = [];
+    for (let p = 0; p + 188 <= bytes.length; p += 188) {
+      const pid = ((bytes[p + 1] & 0x1f) << 8) | bytes[p + 2], pusi = !!(bytes[p + 1] & 0x40), afc = (bytes[p + 3] >> 4) & 3;
+      const e = { p, pid, pts: null, sid: 0, idr: false };
+      if (pusi && (afc & 1) && pid !== 0 && pid !== 0x1fff) {
+        let o = p + 4; if (afc & 2) o += 1 + bytes[p + 4];
+        if (bytes[o] === 0 && bytes[o + 1] === 0 && bytes[o + 2] === 1 && (bytes[o + 7] & 0x80)) {
+          e.sid = bytes[o + 3];
+          e.pts = ((bytes[o + 9] & 0x0e) >> 1) * 2 ** 30 + (((bytes[o + 10] << 22) | ((bytes[o + 11] & 0xfe) << 14) | (bytes[o + 12] << 7) | (bytes[o + 13] >> 1)) >>> 0);
+          const pay = bytes.subarray(o + 9 + bytes[o + 8], p + 188);
+          for (let i = 0; i + 3 < pay.length; i++) if (pay[i] === 0 && pay[i + 1] === 0 && pay[i + 2] === 1 && (pay[i + 3] & 0x1f) === 5) e.idr = true;
+        }
+      }
+      pk.push(e);
+    }
+    const first = E.tsDemux(bytes).state, pat = pk.find(e => e.pid === 0), pmt = pk.find(e => e.pid === first.pmtPid);
+    assert.ok(pat && pmt, 'PAT and PMT found');
+    const isVideo = e => e.pid === first.videoPid, isAudio = e => e.pid === first.audioPid, lap = t => t < WRAP / 2 ? 1 : 0;
+    assert.ok(pk.some(e => e.pts !== null && e.pts > WRAP - 900000) && pk.some(e => e.pts !== null && e.pts < 900000), 'the stream crosses 2^33');
+    // every packager-style cut (PAT + PMT + everything from an IDR PES on) whose first video and first audio PES sit on different laps
+    const cuts = [];
+    for (let i = 0; i < pk.length; i++) {
+      const e = pk[i];
+      if (!(e.pts !== null && isVideo(e) && e.idr)) continue;
+      const firstAudio = pk.slice(i).find(x => x.pts !== null && isAudio(x));
+      if (firstAudio && lap(e.pts) !== lap(firstAudio.pts)) cuts.push({ e, firstAudio });
+    }
+    assert.ok(cuts.length >= 1, 'at least one IDR cut straddles the wrap');
+    for (const { e, firstAudio } of cuts) {
+      const seg = cat(bytes.subarray(pat.p, pat.p + 188), bytes.subarray(pmt.p, pmt.p + 188), bytes.subarray(e.p));
+      const o = demuxAll([seg]);
+      const v = viewSamples(o.video), a = viewAudio(o.audio);
+      assert.ok(v.length > 5 && a.length > 5, 'both tracks demuxed');
+      assert.ok(Math.abs(a[0].pts - v[0].dts) < 90000, `first audio (${a[0].pts}) within a second of the first video (${v[0].dts}); raw PES pts ${firstAudio.pts} vs ${e.pts}`);
+      assert.ok(v.every((s, i) => i === 0 || s.dts > v[i - 1].dts) && a.every((s, i) => i === 0 || s.pts > a[i - 1].pts), 'both tracks monotonic');
+      // ffprobe on the same cut: it does not fold the audio lap at stream start, so fold its numbers onto the video lap
+      const cutFile = join(dir, 'wrap-cut.ts');
+      writeFileSync(cutFile, seg);
+      const fold = t => t - Math.round((t - v[0].dts) / WRAP) * WRAP;
+      deepEq(v.map(s => [s.dts, s.pts]), probe(cutFile, '-show_packets', '-select_streams', 'v:0').packets.map(p => [fold(+p.dts), fold(+p.pts)]), 'video dts/pts = ffprobe');
+      deepEq(a.map(s => s.pts), probe(cutFile, '-show_packets', '-select_streams', 'a:0').packets.map(p => fold(+p.pts)), 'audio pts = ffprobe folded onto the video lap');
+    }
+  });
+
+  /* ----- PAFF (field-coded) H.264, as ffmpeg's own TS muxer writes it ----- */
+  // A genuine decodable stream: 32x32 Main profile, frame_mbs_only_flag = 0, every picture a field (I_PCM IDR top
+  // field, then P fields that skip every macroblock). ffmpeg's h264 parser keeps one packet per field and its TS
+  // muxer writes one PES, one AUD and one PTS per field; the engine must emit exactly that (and not merge pairs).
+  const paffRaw = (() => {
+    const nal = (refIdc, type, w) => cat([0, 0, 0, 1], [(refIdc << 5) | type], escapeRbsp(w.rbsp()));
+    const sps = bitWriter();
+    sps.u(8, 77); sps.u(8, 0); sps.u(8, 30); sps.ue(0);      // Main, level 3.0, sps_id
+    sps.ue(0); sps.ue(2); sps.ue(1); sps.u(1, 0);             // log2_max_frame_num 4 bits, poc type 2, 1 ref frame, no gaps
+    sps.ue(1); sps.ue(0);                                     // 2 MBs wide, 1 map unit high → 32x32 frame, 32x16 fields
+    sps.u(1, 0); sps.u(1, 0);                                 // frame_mbs_only_flag = 0 (field coded), mbaff = 0 (PAFF)
+    sps.u(1, 1); sps.u(1, 0);                                 // direct_8x8_inference, no cropping
+    sps.u(1, 1); sps.u(1, 0); sps.u(1, 0); sps.u(1, 0); sps.u(1, 0); // VUI: no sar / overscan / signal / chroma loc
+    sps.u(1, 1); sps.u(32, 1); sps.u(32, 50); sps.u(1, 1);   // timing 1/50 fixed → 25 frames = 50 fields per second
+    sps.u(1, 0); sps.u(1, 0); sps.u(1, 0); sps.u(1, 0);      // no hrd / pic_struct / bitstream restriction
+    const pps = bitWriter();
+    pps.ue(0); pps.ue(0); pps.u(1, 0); pps.u(1, 0); pps.ue(0); pps.ue(0); pps.ue(0); pps.u(1, 0); pps.u(2, 0); pps.se(0); pps.se(0); pps.se(0); pps.u(1, 0); pps.u(1, 0); pps.u(1, 0);
+    const iField = (bottom) => {
+      const w = bitWriter();
+      w.ue(0); w.ue(7); w.ue(0); w.u(4, 0); w.u(1, 1); w.u(1, bottom); w.ue(0); // first_mb 0, I, pps 0, frame_num 0, field_pic_flag, bottom_field_flag, idr_pic_id
+      w.u(1, 0); w.u(1, 0); w.se(0);                                              // no_output_of_prior_pics, long_term_reference, slice_qp_delta
+      for (let mb = 0; mb < 2; mb++) { w.ue(25); w.align(); for (let i = 0; i < 384; i++) w.u(8, 0x80); } // I_PCM × 2
+      return nal(3, 5, w);
+    };
+    const pField = (frameNum, bottom) => {
+      const w = bitWriter();
+      w.ue(0); w.ue(5); w.ue(0); w.u(4, frameNum); w.u(1, 1); w.u(1, bottom);     // first_mb 0, P, pps 0, frame_num, field_pic_flag, bottom_field_flag
+      w.u(1, 0); w.u(1, 0); w.u(1, 0); w.se(0);                                   // no ref idx override / list modification / adaptive marking, qp delta
+      w.ue(2);                                                                     // mb_skip_run = 2: the whole field skipped
+      return nal(2, 1, w);
+    };
+    const parts = [nal(3, 7, sps), nal(3, 8, pps), iField(0), pField(0, 1)];
+    for (let f = 1; f < 6; f++) parts.push(pField(f, 0), pField(f, 1));
+    return cat(...parts);
+  })();
+  const paffH264 = join(dir, 'paff.h264'), paffTs = join(dir, 'paff.ts');
+  writeFileSync(paffH264, paffRaw);
+  const paffMux = spawnSync('ffmpeg', ['-y', '-v', 'error', '-nostdin', '-f', 'h264', '-framerate', '25', '-i', paffH264, '-c', 'copy', '-f', 'mpegts', paffTs], { encoding: 'utf8' });
+  if (paffMux.status !== 0) skip('ffmpeg paff cross-checks', `ffmpeg could not mux the field-coded stream (${firstLine(paffMux.stderr)})`);
+  else test('ffmpeg paff: field-coded H.264 (one PES + AUD + PTS per field, as ffmpeg muxes it) gives one sample per field = ffprobe\'s packet list; the stream decodes', () => {
+    const dec = spawnSync('ffmpeg', ['-v', 'error', '-nostdin', '-i', paffTs, '-f', 'null', '-'], { encoding: 'utf8' });
+    assert.equal(dec.status, 0, dec.stderr); assert.equal((dec.stderr || '').trim(), '', 'the synthetic PAFF stream is a real, decodable one');
+    const bytes = new Uint8Array(readFileSync(paffTs));
+    const packets = probe(paffTs, '-show_packets', '-select_streams', 'v:0').packets;
+    assert.equal(packets.length, 12, '6 frames = 12 field pictures, one packet each');
+    const o = demuxAll([bytes]);
+    deepEq(o.errors, []);
+    assert.equal(E.parseSps(o.videoTrack.sps).frameMbsOnly, false);
+    assert.equal(E.nalType(o.videoTrack.pps), 8);
+    const v = viewSamples(o.video);
+    deepEq(v.map(s => [s.pts, s.dts, s.duration, s.key]), packets.map(p => [+p.pts, +p.dts, 1800, p.flags.includes('K')]), 'one 1800-tick sample per field, timestamps as ffprobe');
+    for (const s of o.video) { // every sample holds exactly one field picture (one slice NAL), never a merged pair
+      let off = 0, slices = 0;
+      while (off < s.data.length) { const t = s.data[off + 4] & 0x1f; if (t === 1 || t === 5) slices++; off += 4 + E.u32be(s.data, off); }
+      assert.equal(off, s.data.length); assert.equal(slices, 1);
+    }
+  });
 }
 
 test('fixed clock is unused by the demuxer (pure): results do not depend on NOW', () => {

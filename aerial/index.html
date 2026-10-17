@@ -3,6 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- No Referer on any request the page makes (fetch, <video>, <img>, the service-worker script): stream hosts, directory
+     mirrors and feed servers never learn where Aerial runs. A host that insists on a Referer (hotlink protection) will
+     refuse, and that stream then fails honestly instead of every stream reporting the user's origin. -->
+<meta name="referrer" content="no-referrer">
+<!-- The CSP a meta tag can carry at no cost: no plugins, no <base> hijack of the relative engine.js / sw.js URLs. Framing
+     protection (frame-ancestors / X-Frame-Options) cannot be set from HTML and must come from the host's headers; the
+     #play deep-link handler ignores links while framed as the in-page half of that guard. -->
+<meta http-equiv="Content-Security-Policy" content="object-src 'none'; base-uri 'none'">
 <meta name="theme-color" content="#0b1020">
 <meta name="description" content="Aerial — internet radio, podcasts and live TV, streamed the honest way. Tens of thousands of live stations, any podcast feed, any HLS or MP4 link, with no backend of its own.">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -31,7 +39,7 @@
     --bg:#f4f6fc; --bg2:#e9edf8; --card:#ffffff; --card2:#eef2fb;
     --line:#dde2f1; --line2:#c3cae0;
     --ink:#141a33; --ink2:#525a7d; --ink3:#8a91b0;
-    --accent:#0a9fc4; --accent-ink:#ffffff; --accent-soft:#dcf4fb;
+    --accent:#06748f; --accent-ink:#ffffff; --accent-soft:#dcf4fb;   /* 5.4:1 with white, 4.6:1+ on every light surface (WCAG AA) */
     --amber:#c97a12; --good:#1f8a5b; --bad:#c0392b;
     --shadow:0 12px 36px rgba(20,26,51,.18);
     color-scheme:light;
@@ -41,7 +49,7 @@
       --bg:#f4f6fc; --bg2:#e9edf8; --card:#ffffff; --card2:#eef2fb;
       --line:#dde2f1; --line2:#c3cae0;
       --ink:#141a33; --ink2:#525a7d; --ink3:#8a91b0;
-      --accent:#0a9fc4; --accent-ink:#ffffff; --accent-soft:#dcf4fb;
+      --accent:#06748f; --accent-ink:#ffffff; --accent-soft:#dcf4fb;
       --amber:#c97a12; --good:#1f8a5b; --bad:#c0392b;
       --shadow:0 12px 36px rgba(20,26,51,.18);
       color-scheme:light;
@@ -128,7 +136,7 @@
   .kv:first-of-type{border-top:none}
   .kv .k{color:var(--ink)}
   .kv .k small{display:block; color:var(--ink3); font-size:12.5px}
-  .kv select{width:auto; padding:6px 10px; border-radius:9px; font-size:14px}
+  .kv select{width:auto; padding:5px 10px; border-radius:9px; font-size:16px}   /* 16px: iOS Safari zooms the page for any smaller focused control */
   .switch{position:relative; width:46px; height:28px; border-radius:999px; background:var(--line2); transition:background .2s; flex:none}
   .switch::after{content:''; position:absolute; top:3px; left:3px; width:22px; height:22px; border-radius:50%; background:#fff; transition:transform .2s; box-shadow:0 1px 2px rgba(0,0,0,.3)}
   .switch[aria-checked="true"]{background:var(--accent)}
@@ -143,11 +151,13 @@
     align-items:center; justify-content:center; font-weight:800; font-size:18px; color:var(--accent); flex:none; position:relative}
   .item .art img{width:100%; height:100%; object-fit:cover; display:block}
   .item .art.sq{border-radius:8px}
-  .item .meta{min-width:0}
-  .item .name{font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
-  .item .sub{color:var(--ink3); font-size:12.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px}
+  /* The row's main action is a real <button> (the title block); the ♡/⊕/✕ buttons sit beside it, not inside it. */
+  .item .meta{min-width:0; display:block; width:100%; text-align:left}
+  .item .meta:focus-visible{outline-offset:0; border-radius:6px}
+  .item .name{display:block; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .item .sub{display:block; color:var(--ink3); font-size:12.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px}
   .item .sub b{color:var(--ink2); font-weight:600}
-  .item .prog{height:3px; background:var(--bg2); border-radius:999px; overflow:hidden; margin-top:6px}
+  .item .prog{display:block; height:3px; background:var(--bg2); border-radius:999px; overflow:hidden; margin-top:6px}
   .item .prog i{display:block; height:100%; background:var(--accent); border-radius:999px}
   .item .acts{display:flex; gap:2px; align-items:center}
   .item .acts button{width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center;
@@ -434,7 +444,7 @@
 </div>
 
 <!-- Full player sheet -->
-<div id="sheet" role="dialog" aria-label="Now playing" aria-hidden="true">
+<div id="sheet" role="dialog" aria-modal="true" aria-label="Now playing" aria-hidden="true">
   <div class="sheet-inner">
     <div class="sheet-bar">
       <button class="iconbtn" id="sheet-close" aria-label="Close player">⌄</button>
@@ -497,7 +507,7 @@
   <div class="bar"><i id="mini-bar"></i></div>
 </div>
 
-<nav class="tabs" aria-label="Sections">
+<nav class="tabs" id="tabbar" aria-label="Sections">
   <div class="inner" id="tabs">
     <button data-tab="radio"><span class="ico" aria-hidden="true">📻</span>Radio</button>
     <button data-tab="podcasts"><span class="ico" aria-hidden="true">🎙️</span>Podcasts</button>
@@ -521,7 +531,7 @@
   /* =====================================================================
      STATE & STORAGE
      ===================================================================== */
-  var KEY_LIB = 'aerial.library', KEY_FEEDS = 'aerial.feeds', KEY_UI = 'aerial.ui', KEY_RADIO_PREFIX = 'aerial.radio.';
+  var KEY_LIB = 'aerial.library', KEY_FEEDS = 'aerial.feeds', KEY_RADIO_PREFIX = 'aerial.radio.';
   var TABS = ['radio', 'podcasts', 'tv', 'library'];
   var FEED_TTL_MS = 60 * 60 * 1000;
   var DIRECTORY_TIMEOUT = 8000, PLAYLIST_TIMEOUT = 10000, SEGMENT_TIMEOUT = 20000, FEED_TIMEOUT = 15000, PROBE_TIMEOUT = 2000;
@@ -530,6 +540,23 @@
   var SLEEP_MINUTES = [15, 30, 45, 60, 90];
   var SEGMENT_RETRY_MS = [500, 1000, 2000];
   var EPISODE_PAGE = 25, FEED_EPISODE_CAP = 300, FEED_CACHE_CAP = 40;
+  var FEED_MAX_BYTES = 8 * 1024 * 1024;     // a feed body past this is abandoned mid-download: parsing is synchronous, on the main thread
+  // The same cap on everything else the page parses or buffers — the timeout bounds time, not size, and a rogue
+  // directory mirror, playlist or stream could otherwise cost the tab tens of MB and seconds of main-thread parsing.
+  // Directory answers are also cut to the row count that was asked for before anything is normalised, rendered or cached.
+  var DIRECTORY_MAX_BYTES = 1024 * 1024, PLAYLIST_MAX_BYTES = 4 * 1024 * 1024, PLAYLIST_FILE_MAX_BYTES = 256 * 1024;
+  var SEGMENT_MAX_BYTES = 128 * 1024 * 1024, KEY_MAX_BYTES = 1024;
+  var RADIO_TOP_LIMIT = 30, RADIO_SEARCH_LIMIT = 50, POD_SEARCH_LIMIT = 25;
+  var ERROR_TEXT_CAP = 600;                 // the longest honest message is ~300 chars; nothing remote may grow the panel past a paragraph
+  // The stored feed cache is squeezed level by level until it fits this many UTF-16 units (~2 MiB): a 5 MiB origin
+  // quota (Safari) must always keep room for the library, which is the data that matters.
+  var FEED_CACHE_CHARS = 1000000;
+  var FEED_STORE_LEVELS = [
+    { extras: FEED_CACHE_CAP, episodes: FEED_EPISODE_CAP, notes: 0 },
+    { extras: 10, episodes: 100, notes: 0 },
+    { extras: 0, episodes: 50, notes: 500 },
+    { extras: 0, episodes: 20, notes: 200 }
+  ];
 
   var SAMPLE_STREAMS = [
     { title: 'Big Buck Bunny', note: 'HLS adaptive (TS)', url: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8' },
@@ -572,7 +599,8 @@
 
   var lib = null;                           // the library object — only ever replaced through engine reducers
   var events = [];                          // last EVENT_LOG_CAP log lines (test hook)
-  var rows = {};                            // key → item for every row currently rendered (click delegation)
+  var rowRegistry = {};                     // list element id → { key → item } for the rows that list shows right now (see fillList)
+  var rowTarget = null;                     // the registry of the list being filled; rowHTML registers each item there
   var ui = { tab: 'radio', sheetOpen: false, menuOpen: false, fatal: false };
   var player = {
     item: null, status: 'idle', error: null, strategy: null, kind: null,
@@ -590,8 +618,16 @@
     try { lib = raw ? E.libraryDeserialize(raw) : E.libraryEmpty(); } catch (e) { lib = E.libraryEmpty(); }
     if (!lib || typeof lib !== 'object') lib = E.libraryEmpty();
   }
+  // The library never waits on the feed cache: when the origin's quota is hit the cache is thrown out first (it is
+  // rebuilt on demand) and the write retried; only a second failure is reported, once, instead of losing data silently.
   function saveLibrary() {
-    try { localStorage.setItem(KEY_LIB, E.librarySerialize(lib)); } catch (e) { /* quota or private mode: keep going in memory */ }
+    var json = E.librarySerialize(lib), err = null;
+    try { localStorage.setItem(KEY_LIB, json); ui.storageWarned = false; return; } catch (e) { err = e; }
+    try { localStorage.removeItem(KEY_FEEDS); } catch (e) { /* ignore */ }
+    try { localStorage.setItem(KEY_LIB, json); ui.storageWarned = false; log('library saved after evicting the feed cache'); return; } catch (e) { err = e; }
+    log('library save failed: ' + errMsg(err));
+    // Deferred so it outlives the toast of the action that triggered the save ("Added to favourites" would hide it).
+    if (!ui.storageWarned) { ui.storageWarned = true; setTimeout(function () { toast('Couldn\'t save your library — this browser\'s storage is full.'); }, 0); }
   }
   // Every library mutation goes through here: reducer result in, persisted, re-rendered where cheap.
   function commit(next) {
@@ -601,14 +637,6 @@
   }
   function settings() { return lib.settings || {}; }
 
-  function loadUi() {
-    var saved = null;
-    try { saved = JSON.parse(localStorage.getItem(KEY_UI) || 'null'); } catch (e) { saved = null; }
-    return saved && typeof saved === 'object' ? saved : {};
-  }
-  function saveUi() {
-    try { localStorage.setItem(KEY_UI, JSON.stringify({ tab: ui.tab })); } catch (e) { /* best effort */ }
-  }
   function sessionGet(key) {
     try { var v = sessionStorage.getItem(KEY_RADIO_PREFIX + key); return v ? JSON.parse(v) : null; } catch (e) { return null; }
   }
@@ -655,15 +683,71 @@
     };
   }
 
+  // The status code and Aerial's own word for it — never the server's reason phrase, which is free text of the host's
+  // choosing and would be shown as if it were Aerial's diagnosis ("403 Your session expired, sign in at …").
+  var HTTP_REASONS = { 400: 'bad request', 401: 'sign-in required', 403: 'forbidden', 404: 'not found', 410: 'gone', 429: 'too many requests', 500: 'server error', 502: 'bad gateway', 503: 'unavailable', 504: 'gateway timeout' };
   function httpError(res) {
-    var e = new Error('The server answered ' + res.status + (res.statusText ? ' ' + res.statusText : ''));
-    e.name = 'HttpError'; e.status = res.status;
+    var status = parseInt(res.status, 10) || 0, reason = HTTP_REASONS[status];
+    var e = new Error('The server answered ' + status + (reason ? ' (' + reason + ')' : ''));
+    e.name = 'HttpError'; e.status = status;
     return e;
   }
+  // Remote text that lands inside one of Aerial's own sentences (a CODECS value, a KEY METHOD, a parser complaint, a
+  // feed error): one line, no control / bidi / zero-width characters, cut short. quoteRemote() also wraps it in quotes
+  // so it reads as data the stream sent, never as the app's own advice.
+  function cleanRemote(text, n) {
+    return E.truncate(E.collapseWs(str(text).replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, '')), n || 60);
+  }
+  function quoteRemote(text, n) { return '"' + cleanRemote(text, n) + '"'; }
   function timeoutError(ms) {
     var e = new Error('No answer after ' + Math.round(ms / 1000) + ' s');
     e.name = 'TimeoutError';
     return e;
+  }
+  function tooLargeError(maxBytes) {
+    var size = maxBytes >= 1048576 ? Math.round(maxBytes / 1048576) + ' MB' : Math.round(maxBytes / 1024) + ' KB';
+    var e = new Error('That is more than ' + size + ' — bigger than Aerial will read in the browser');
+    e.name = 'TooLargeError';
+    return e;
+  }
+  function concatChunks(chunks, total) {
+    var out = new Uint8Array(total), off = 0;
+    for (var i = 0; i < chunks.length; i++) { out.set(chunks[i], off); off += chunks[i].length; }
+    return out;
+  }
+  // A body is read whole by default. With `maxBytes` it is streamed and abandoned — request aborted — past the cap
+  // (an honest Content-Length short-circuits), so a huge or endless response can't exhaust memory or freeze the tab.
+  function readBody(res, read, maxBytes, abort) {
+    if (!read) return Promise.resolve(null);
+    var declared = 0;
+    try { declared = parseInt(res.headers && typeof res.headers.get === 'function' ? res.headers.get('content-length') : '', 10) || 0; } catch (e) { declared = 0; }
+    if (maxBytes && declared > maxBytes) { abort(); return Promise.reject(tooLargeError(maxBytes)); }
+    var canStream = !!maxBytes && typeof TextDecoder !== 'undefined' && !!res.body && typeof res.body.getReader === 'function';
+    if (!canStream) {
+      var whole = read === 'text' ? res.text() : read === 'json' ? res.json() : res.arrayBuffer();
+      return Promise.resolve(whole).then(function (b) {
+        var size = b && typeof b.byteLength === 'number' ? b.byteLength : typeof b === 'string' ? b.length : 0;
+        if (maxBytes && size > maxBytes) throw tooLargeError(maxBytes);
+        return b;
+      });
+    }
+    var reader = res.body.getReader(), chunks = [], total = 0;
+    return new Promise(function (resolve, reject) {
+      var pump = function () {
+        Promise.resolve(reader.read()).then(function (r) {
+          if (!r || r.done || !r.value) { resolve(concatChunks(chunks, total)); return; }
+          total += r.value.length;
+          if (total > maxBytes) { try { reader.cancel(); } catch (e) { /* ignore */ } abort(); reject(tooLargeError(maxBytes)); return; }
+          chunks.push(r.value);
+          pump();
+        }, reject);
+      };
+      pump();
+    }).then(function (bytes) {
+      if (read === 'bytes') return bytes;
+      var text = new TextDecoder('utf-8').decode(bytes);
+      return read === 'json' ? JSON.parse(text) : text;
+    });
   }
   // One fetch wrapper for every remote read: CORS mode, no credentials, a hard timeout that also covers the body,
   // an optional parent signal, and the body read into the requested shape. Resolves {res, text|json|bytes}.
@@ -695,19 +779,31 @@
     return fetch(url, init).then(function (res) {
       if (!res.ok) { cleanup(); throw httpError(res); }
       var read = opts.read || null;
-      var body = read === 'text' ? res.text() : read === 'json' ? res.json() : read === 'bytes' ? res.arrayBuffer() : null;
-      return Promise.resolve(body).then(function (b) {
+      return readBody(res, read, opts.maxBytes || 0, function () { if (ac) ac.abort(); }).then(function (b) {
         cleanup();
         var out = { res: res, url: str(res.url) || url };
         if (read === 'text') out.text = str(b);
         else if (read === 'json') out.json = b;
         else if (read === 'bytes') out.bytes = b instanceof Uint8Array ? b : new Uint8Array(b);
         return out;
-      }, fail);
-    }, fail);
+      }, function (err) { fail(bodyError(err)); });
+    }, function (err) { fail(networkError(err)); });
   }
-  // A fetch TypeError means the browser refused or lost the request — CORS by far the most common cause online.
-  function isFetchTypeError(err) { return !!err && err.name === 'TypeError'; }
+  // Only fetch() itself rejecting — always a TypeError — means the browser refused or never completed the request, CORS
+  // by far the most common cause online; it is tagged here so the CORS message can never be pinned on anything else.
+  // A body that stops arriving (the connection dropped mid-download) is a TypeError too, and a TypeError thrown by
+  // the player's own code is a bug: both fall through to the generic messages, in their own words.
+  function networkError(err) {
+    if (!err || err.name !== 'TypeError') return err;
+    var e = new Error(errMsg(err)); e.name = 'NetworkError'; e.cause = err;
+    return e;
+  }
+  function bodyError(err) {
+    if (!err || err.name !== 'TypeError') return err;
+    var e = new Error('The download was cut short'); e.name = 'BodyError'; e.cause = err;
+    return e;
+  }
+  function isFetchTypeError(err) { return !!err && err.name === 'NetworkError'; }
 
   function safeImgUrl(u) { return E.isHttpUrl(u) ? str(u).trim() : ''; }
   function initialOf(text) {
@@ -827,11 +923,21 @@
     return { type: 'video', url: url, title: title || E.urlHost(url) || url, note: note || '' };
   }
 
+  // Every list of rows is filled through here: the registry rowHTML writes into is the one for THIS list, reset on
+  // every render, so bindList() can only ever hand a tap the item this list rendered under that key. A remote record
+  // (a directory station, a feed episode) whose key collides with a built-in starter's, or with a row of any other
+  // list, therefore answers taps in its own list alone — it can't make the SomaFM row play someone else's stream.
+  function fillList(el, build) {
+    if (!el) return;
+    var id = str(el.id), prev = rowTarget;
+    rowTarget = id ? (rowRegistry[id] = {}) : {};
+    try { el.innerHTML = build(); } finally { rowTarget = prev; }
+  }
   // Row HTML for every list in the app. Every remote string passes through esc(); the item is registered for delegation.
   function rowHTML(item, opts) {
     opts = opts || {};
     var key = itemKey(item);
-    rows[key] = item;
+    if (rowTarget) rowTarget[key] = item;
     var playing = isNowPlaying(item);
     var r = opts.progress !== false ? resumeOf(item) : null;
     var acts = '';
@@ -847,13 +953,17 @@
     }
     var sub = opts.subtitle != null ? str(opts.subtitle) : itemSubtitle(item);
     var eq = playing ? '<div class="eq" aria-hidden="true"><i></i><i></i><i></i></div>' : '';
-    var prog = r ? '<div class="prog" aria-hidden="true"><i style="width:' + Math.round(E.clamp(r.position / r.duration, 0, 1) * 100) + '%"></i></div>' : '';
+    var prog = r ? '<span class="prog" aria-hidden="true"><i style="width:' + Math.round(E.clamp(r.position / r.duration, 0, 1) * 100) + '%"></i></span>' : '';
     var desc = opts.description ? '<div class="desc">' + esc(opts.description) + '</div>' : '';
-    return '<div class="item' + (playing ? ' now' : '') + (playing && player.status === 'paused' ? ' paused' : '') + '" data-key="' + esc(key) + '" role="button" tabindex="0" aria-label="' + esc(opts.ariaLabel || ('Play ' + itemTitle(item))) + '">' +
+    // ARIA forbids interactive descendants inside a role=button, so the row itself is plain: the title block is the
+    // play/open <button> (its name carries the subtitle), the actions are sibling buttons, and a pointer tap anywhere
+    // on the row still plays through click delegation.
+    var label = (opts.ariaLabel || ('Play ' + itemTitle(item))) + (sub ? ', ' + sub : '');
+    return '<div class="item' + (playing ? ' now' : '') + (playing && player.status === 'paused' ? ' paused' : '') + '" data-key="' + esc(key) + '">' +
       '<div class="art' + (item.type === 'show' || item.type === 'podcast' ? ' sq' : '') + '" data-initial="' + esc(initialOf(itemTitle(item))) + '">' +
         (safeImgUrl(itemImage(item)) ? '<img src="' + esc(safeImgUrl(itemImage(item))) + '" alt="" loading="lazy" referrerpolicy="no-referrer" decoding="async">' : esc(initialOf(itemTitle(item)))) + eq +
       '</div>' +
-      '<div class="meta"><div class="name">' + esc(itemTitle(item)) + '</div><div class="sub">' + esc(sub) + '</div>' + prog + '</div>' +
+      '<button type="button" class="meta" data-act="play" aria-label="' + esc(label) + '"><span class="name">' + esc(itemTitle(item)) + '</span><span class="sub">' + esc(sub) + '</span>' + prog + '</button>' +
       '<div class="acts">' + acts + '</div>' + desc +
     '</div>';
   }
@@ -868,25 +978,50 @@
         if (t.getAttribute && t.getAttribute('data-key')) { key = t.getAttribute('data-key'); rowEl = t; break; }
         t = t.parentNode;
       }
-      if (!key || !rows[key]) return;
-      var item = rows[key];
+      var reg = rowRegistry[str(el.id)];
+      var item = key && reg && Object.prototype.hasOwnProperty.call(reg, key) ? reg[key] : null;
+      if (!item) return;
+      if (act === 'play') act = null;   // the row's main button is the same action as a tap on the row
       if (act && handlers[act]) { ev.preventDefault(); ev.stopPropagation(); handlers[act](item, rowEl); return; }
       if (!act && handlers.tap) { ev.preventDefault(); handlers.tap(item, rowEl); }
     };
-    el.addEventListener('click', dispatch);
-    el.addEventListener('keydown', function (ev) {
-      if ((ev.key === 'Enter' || ev.key === ' ') && ev.target && ev.target.getAttribute && ev.target.getAttribute('data-key')) dispatch(ev);
-    });
+    el.addEventListener('click', dispatch);   // keyboard activation arrives here too: every target in a row is a real <button>
+  }
+  // Patch the rendered rows for one item in place; rebuilding every list would collapse open show notes and drop focus.
+  function rowsFor(key) {
+    try { return document.querySelectorAll('.item[data-key="' + str(key).replace(/["\\]/g, '\\$&') + '"]'); } catch (e) { return null; }
+  }
+  function syncFavButtons(item) {
+    var on = isFav(item), list = rowsFor(itemKey(item));
+    if (!list || typeof list.length !== 'number') return;
+    for (var i = 0; i < list.length; i++) {
+      var b = list[i].querySelector ? list[i].querySelector('[data-act="fav"]') : null;
+      if (!b) continue;
+      b.classList.toggle('on', on);
+      b.textContent = on ? '♥' : '♡';
+      b.setAttribute('aria-label', on ? 'Remove from favourites' : 'Add to favourites');
+    }
+  }
+  // .now rows show equaliser bars that pause with playback.
+  function syncNowRows() {
+    var list;
+    try { list = document.querySelectorAll('.item.now'); } catch (e) { return; }
+    if (!list || typeof list.length !== 'number') return;
+    for (var i = 0; i < list.length; i++) list[i].classList.toggle('paused', player.status === 'paused');
   }
   function toggleFav(item) {
     commit(E.toggleFavourite(lib, item, now()));
     toast(isFav(item) ? 'Added to favourites' : 'Removed from favourites');
-    renderAll();
+    syncFavButtons(item);
+    renderFavourites();      // the only list whose membership changed
+    renderPlayerChrome();
   }
   function addToQueue(item) {
-    commit(E.queueAdd(lib, item, now()));
+    var next = E.queueAdd(lib, item, now());
+    if (next === lib) { toast(queueIndexOf(item) >= 0 ? 'Already in Up next' : 'Up next is full'); return; }   // the engine ignores duplicates and a full queue
+    commit(next);
     toast('Added to Up next');
-    renderLibrary();
+    renderQueue();
     renderPlayerChrome();
   }
 
@@ -919,11 +1054,12 @@
 
   function setStatus(s, err) {
     player.status = s;
-    player.error = s === 'error' ? str(err || 'Something went wrong.') : null;
+    player.error = s === 'error' ? E.truncate(str(err || 'Something went wrong.'), ERROR_TEXT_CAP) : null;
     if (s === 'error') log('error: ' + player.error);
     try { document.body.dataset.status = s; } catch (e) { /* no dataset in this DOM */ }
     try { document.body.setAttribute('data-status', s); } catch (e) { /* ignore */ }
     renderPlayerChrome();
+    syncNowRows();
   }
 
   function createVideoElement() {
@@ -1000,7 +1136,8 @@
     }
     setStatus('loading');
     log('play ' + item.type + ' ' + item.url);
-    commit(E.recordPlay(lib, item, now()));
+    // Recents are recorded in onPlaying, once the stream has demonstrably started — not here, where a mixed-content,
+    // unsupported or dead link would land at the top of Recents and fail again on tap.
     var r = resumeOf(item);
     if (r && r.position > 10) player.startAt = r.position;
     if (E.isMixedContent(item.url, pageProtocol())) { setStatus('error', mixedContentMessage(item)); renderAll(); return; }
@@ -1020,7 +1157,7 @@
     if (item.type === 'radio' && item.hls) c.kind = 'hls';
     if (c.kind !== 'playlist') return Promise.resolve({ url: url, kind: c.kind, mime: c.mime });
     if (depth >= 3) return Promise.reject(new Error('This playlist file points at more playlist files — Aerial followed three and gave up.'));
-    return fetchTimed(url, { timeout: DIRECTORY_TIMEOUT, read: 'text' }).then(function (r) {
+    return fetchTimed(url, { timeout: DIRECTORY_TIMEOUT, read: 'text', maxBytes: PLAYLIST_FILE_MAX_BYTES }).then(function (r) {
       if (token !== player.token) throw Object.assign(new Error('cancelled'), { aborted: true });
       var urls = E.parsePlaylistFile(r.text, r.url);
       if (!urls.length) throw new Error('That playlist file doesn\'t list any streams.');
@@ -1059,7 +1196,7 @@
         player.hls.start();
       } else {
         video.src = src.url;
-        if (player.startAt != null && plan.strategy === 'direct') {
+        if (player.startAt != null && (plan.strategy === 'direct' || plan.strategy === 'native-hls')) {   // live: duration is Infinity, so no seek
           var at = player.startAt;
           var once = function () { video.removeEventListener('loadedmetadata', once); if (token === player.token && isFinite(video.duration) && at < video.duration - 5) video.currentTime = at; };
           video.addEventListener('loadedmetadata', once);
@@ -1071,9 +1208,13 @@
       if (token === player.token) setStatus('error', errMsg(err));
     });
   }
+  // A media element routed through a suspended AudioContext is silent, so every gesture meant to make sound resumes it.
+  function vizResume() {
+    try { if (viz.ctx && viz.ctx.state === 'suspended' && typeof viz.ctx.resume === 'function') { var r = viz.ctx.resume(); if (r && r.then) r.then(noop, noop); } } catch (e) { /* ignore */ }
+  }
   function attemptPlay(token) {
     var p;
-    try { if (viz.ctx && viz.ctx.state === 'suspended' && typeof viz.ctx.resume === 'function') { var r = viz.ctx.resume(); if (r && r.then) r.then(noop, noop); } } catch (e) { /* ignore */ }
+    vizResume();
     try { p = video.play(); } catch (e) { p = Promise.reject(e); }
     if (!p || typeof p.then !== 'function') return;
     p.then(noop, function (err) {
@@ -1098,19 +1239,26 @@
     if (!player.item) return;
     playItem(player.item, { fromHistory: true });
   }
-  function togglePlay() {
+  // "Play" as a command (Media Session, a headset button): never pauses what is already playing.
+  function resumePlayback() {
     if (!player.item) return;
     if (player.status === 'error' || player.status === 'idle') { retryCurrent(); return; }
-    if (video.paused) {
-      if (player.item.type === 'radio' && player.status === 'paused' && !player.hls) { retryCurrent(); return; }  // a paused live stream is stale; rejoin live
-      attemptPlay(player.token);
-    } else {
-      video.pause();
-    }
+    if (!video.paused) return;
+    if (player.item.type === 'radio' && player.status === 'paused' && !player.hls) { retryCurrent(); return; }  // a paused live stream is stale; rejoin live
+    // HLS live through MSE: after a pause longer than the hold-back the buffer is stale too; rejoin instead of
+    // playing old audio up to a stall at the buffer's end.
+    if (player.hls && player.hls.isLive() && player.status === 'paused') { var ls = player.hls.liveStatus(); if (ls && ls.behindLive) player.hls.goLive(); }
+    attemptPlay(player.token);
+  }
+  function togglePlay() {
+    if (!player.item) return;
+    if (player.status === 'error' || player.status === 'idle' || video.paused) { resumePlayback(); return; }
+    video.pause();
   }
   function unmute() {
     video.muted = false;
     player.muteFallback = false;
+    vizResume();             // the muted-autoplay fallback left the visualiser's context suspended; this tap is the gesture that may resume it
     renderPlayerChrome();
   }
 
@@ -1121,6 +1269,8 @@
     setStatus('playing');
     if (!player.recorded) {
       player.recorded = true;
+      commit(E.recordPlay(lib, player.item, now()));
+      renderRecents();
       setMediaSessionMetadata(player.item);
       if (player.item && player.item.type === 'radio') radioRegisterClick(player.item);
       if (player.vizOn) vizStart();
@@ -1134,6 +1284,7 @@
     stopResumeTimer();
     setStatus(video.ended ? player.status : 'paused');
     setMediaSessionState('paused');
+    renderContinueLists();   // "Continue listening" and the progress bars follow the position just saved
   }
   function onWaiting() { player.buffering = true; renderPlayerChrome(); }
   function onCanPlay() { player.buffering = false; renderPlayerChrome(); }
@@ -1218,6 +1369,9 @@
     if (player.hls) return player.hls.isLive();
     return !!player.item && player.status !== 'idle' && video.duration === Infinity;
   }
+  function hasSeekableRange() {
+    try { return !!video.seekable && video.seekable.length > 0; } catch (e) { return false; }
+  }
   function isSeekable() {
     if (!player.item || player.item.type === 'radio') return false;
     if (player.hls) return true;
@@ -1249,10 +1403,10 @@
     try { video.playbackRate = it && (it.type === 'podcast' || it.type === 'video') && !isLive() ? rate : 1; } catch (e) { /* unsupported rate */ }
   }
   function nudgeVolume(delta) {
-    try { video.volume = E.clamp(video.volume + delta, 0, 1); if (video.volume > 0 && video.muted) video.muted = false; } catch (e) { /* ignore */ }
+    try { video.volume = E.clamp(video.volume + delta, 0, 1); if (video.volume > 0 && video.muted) { video.muted = false; vizResume(); } } catch (e) { /* ignore */ }
     toast('Volume ' + Math.round(video.volume * 100) + '%');
   }
-  function toggleMute() { video.muted = !video.muted; if (!video.muted) player.muteFallback = false; renderPlayerChrome(); }
+  function toggleMute() { video.muted = !video.muted; if (!video.muted) { player.muteFallback = false; vizResume(); } renderPlayerChrome(); }
   function toggleFullscreen() {
     if (!isVideoPlayback()) return;
     try {
@@ -1298,7 +1452,7 @@
     var ms = mediaSession();
     if (!ms || typeof ms.setActionHandler !== 'function') return;
     var handlers = {
-      play: function () { togglePlay(); },
+      play: function () { resumePlayback(); },
       pause: function () { if (!video.paused) video.pause(); },
       stop: function () { stopPlayback(); },
       seekbackward: function (d) { skip(-((d && d.seekOffset) || SKIP_SECONDS)); },
@@ -1334,9 +1488,20 @@
   }
 
   /* ---------- keyboard ---------- */
+  // Space on a focused button, link or switch activates it (a default-prevented keydown would swallow that click);
+  // 'k' stays the play/pause key that works everywhere.
+  function isActivationTarget(ev) {
+    var t = ev && ev.target;
+    if (!t || !t.tagName) return false;
+    var tag = str(t.tagName).toLowerCase();
+    if (tag === 'button' || tag === 'a' || tag === 'summary') return true;
+    var role = t.getAttribute ? str(t.getAttribute('role')) : '';
+    return /^(button|switch|menuitem|tab|link|checkbox|option)$/.test(role);
+  }
   function onKeyDown(ev) {
     if (!ev || isTypingTarget(ev) || ev.metaKey || ev.ctrlKey || ev.altKey) return;
     if (ev.key === 'Escape') { if (ui.menuOpen) { closeMenu(); ev.preventDefault(); } else if (ui.sheetOpen) { closeSheet(); ev.preventDefault(); } return; }
+    if (ev.key === ' ' && isActivationTarget(ev)) return;
     if (!player.item) return;
     switch (ev.key) {
       case ' ': case 'k': togglePlay(); break;
@@ -1396,6 +1561,8 @@
     var keyCache = {};                        // key url → Promise<CryptoKey>, fetched once per stream
     var pendingStart = cfg.startAt != null ? cfg.startAt : null;   // applied once that time is buffered
     var TS_CLOCK = E.TS_TIMESCALE || 90000;   // the clock every MPEG-TS timestamp is expressed in
+    var GAP_JUMP_MAX = 2;                     // the stall watchdog's gap jump crosses holes up to this long (engine: hlsGapJump)
+    var playlistAc = typeof AbortController !== 'undefined' ? new AbortController() : null;   // every playlist fetch; aborted on destroy
 
     // One loader per stream: the main variant and, when the variant carries no audio, the alternate audio rendition.
     function createLoader(name) {
@@ -1403,7 +1570,8 @@
         name: name, url: null, pl: null, variant: null, lastSeq: null, sb: null, mime: null, codecs: null, ops: [],
         tsState: E.tsCreateState(), needsInit: true, tracks: null, timescale: 90000, mapKey: null, seqNo: 0, format: null,
         resetTimeline: true, inflight: null, retries: 0, retryTimer: null, finished: false, switching: false,
-        reloadTimer: null, reloadDelay: 0, reloadErrors: 0, emptySegments: 0, onUpdateEnd: null, onSbError: null
+        reloadTimer: null, reloadDelay: 0, reloadErrors: 0, emptySegments: 0, onUpdateEnd: null, onSbError: null,
+        ctsShift: 0, refilledAt: null   // ctsShift: TS video decode-time shear (see processTs); refilledAt: last followPlayhead target
       };
     }
 
@@ -1411,11 +1579,13 @@
     function fatalError(msg) { var e = new Error(msg); e.fatal = true; return e; }
     function abortError() { var e = new Error('aborted'); e.name = 'AbortError'; return e; }
     function fail(msg) { if (!alive) return; log('hls: fatal — ' + msg); cfg.onError(msg); }
-    function getText(u) { return fetchTimed(u, { timeout: PLAYLIST_TIMEOUT, read: 'text' }); }
+    // Every playlist fetch hangs off one controller-wide signal, so destroy() cancels the ones still in flight (a 10 s
+    // playlist timeout would otherwise outlive the player and compete with the next stream's first segment).
+    function getText(u) { return fetchTimed(u, { timeout: PLAYLIST_TIMEOUT, read: 'text', maxBytes: PLAYLIST_MAX_BYTES, signal: playlistAc ? playlistAc.signal : undefined }); }
     function parsePlaylist(r, base) {
       // A media playlist may EXT-X-DEFINE:IMPORT variables the master defined; hand them down.
       var pl = E.hlsParse(r.text, r.url || base, { variables: master && master.variables ? master.variables : null });
-      if (pl.kind === 'invalid') throw fatalError(pl.errors && pl.errors.length ? 'This isn\'t a valid HLS playlist: ' + pl.errors[0] : 'This isn\'t a valid HLS playlist.');
+      if (pl.kind === 'invalid') throw fatalError(pl.errors && pl.errors.length ? 'This isn\'t a valid HLS playlist: ' + cleanRemote(pl.errors[0], 160) : 'This isn\'t a valid HLS playlist.');   // the parser's complaint embeds the playlist's own tokens
       return pl;
     }
     function playlistErrorMessage(err) {
@@ -1432,6 +1602,19 @@
     function supportedCodecs(codecs) { return !codecs || !codecs.length || codecs.every(codecSupported); }
     // After a step-down the failed variant stays off limits for a minute, or ABR would climb straight back into it.
     var abrCap = null;                        // { bandwidth, until }
+    // A variant whose playlist failed to load is left alone for a minute too: ABR would otherwise pick it again on the
+    // very next tick and spin in a fetch loop (hundreds of 404s a second) while the current variant starves.
+    var failedUntil = {};                     // variant index → time until which it is not a candidate
+    function pickVariant(est, bufferedSec) {
+      var t = now(), cands = [], current = null;
+      for (var i = 0; i < variants.length; i++) {
+        if (i !== variantIdx && failedUntil[i] > t) continue;
+        if (i === variantIdx) current = cands.length;
+        cands.push(variants[i]);
+      }
+      var pick = E.hlsChooseVariant(cands, chooseOpts({ bandwidth: est, current: current, bufferedSec: bufferedSec }));
+      return pick >= 0 && pick < cands.length ? variants.indexOf(cands[pick]) : -1;
+    }
     function chooseOpts(extra) {
       var maxBw = caps.maxBandwidth;
       if (abrCap && abrCap.until > now()) maxBw = maxBw == null ? abrCap.bandwidth : Math.min(maxBw, abrCap.bandwidth);
@@ -1464,22 +1647,44 @@
       var unsupported = pl.unsupported || [];
       if (methods['SAMPLE-AES'] || methods['SAMPLE-AES-CTR'] || methods['SAMPLE-AES-CENC'] || unsupported.indexOf('SAMPLE-AES') >= 0) return MSG.sampleAes;
       var other = Object.keys(methods).filter(function (m) { return m !== 'NONE' && m !== 'AES-128'; });
-      if (other.length) return 'This stream uses ' + other[0] + ' encryption, which Aerial can\'t decrypt.';
+      if (other.length) return 'This stream uses ' + quoteRemote(other[0], 40) + ' encryption, which Aerial can\'t decrypt.';
       if (methods['AES-128'] && !hasWebCrypto()) return MSG.noWebCrypto;
       return null;
     }
+    // CODECS values are the stream's own words: each quoted and cut short, and only a handful of them (quoteRemote).
     function describeCodecs(list) {
       var seen = {}, out = [];
-      list.forEach(function (v) { (v.codecs || []).forEach(function (c) { if (!seen[c]) { seen[c] = true; out.push(c); } }); });
+      list.forEach(function (v) { (v.codecs || []).forEach(function (c) { if (!seen[c]) { seen[c] = true; out.push(quoteRemote(c, 40)); } }); });
+      if (out.length > 6) out = out.slice(0, 6).concat(['+' + (out.length - 6) + ' more']);
       return out.length ? out.join(', ') : 'no CODECS declared';
     }
-    // Point a loader at the segment holding time t (live start, resume position, seek target).
+    // Point a loader at the segment holding time t (live start, resume position, seek target); t is on main's timeline.
     function positionLoader(loader, t) {
       var segs = loader.pl.segments;
+      if (loader === audio) t -= audioClockDelta();
       var i = E.hlsSegmentAt(loader.pl, t);
       if (i < 0) i = t <= 0 ? 0 : segs.length - 1;
       loader.lastSeq = segs[i].seq - 1;
+      loader.refilledAt = null;
     }
+    // A media playlist's clock starts at 0 at ITS first listed segment, so the audio rendition's "4 s" is not main's
+    // "4 s" whenever the two live windows differ (lengths, sequence numbers, reloads at different moments) — each
+    // loader anchored on its own clock put audio a whole segment away from the video. Everything the controller does
+    // is in main's timeline; the rendition's times are shifted by this delta: program-date-time when both playlists
+    // carry it, otherwise the same media sequence number is the same moment (how renditions are kept in step).
+    function audioClockDelta() {
+      var mp = main.pl, ap = audio && audio.pl;
+      if (!mp || !ap || !mp.segments.length || !ap.segments.length) return 0;
+      var m0 = firstWithPdt(mp.segments), a0 = firstWithPdt(ap.segments);
+      if (m0 && a0) return m0.start - (a0.start + (m0.programDateTime - a0.programDateTime) / 1000);
+      var bySeq = {};
+      for (var i = 0; i < ap.segments.length; i++) bySeq[ap.segments[i].seq] = ap.segments[i];
+      for (var j = 0; j < mp.segments.length; j++) { var a = bySeq[mp.segments[j].seq]; if (a) return mp.segments[j].start - a.start; }
+      return 0;
+    }
+    function firstWithPdt(segs) { for (var i = 0; i < segs.length; i++) if (segs[i].programDateTime != null) return segs[i]; return null; }
+    function timelineStart(loader, seg) { return loader === audio ? seg.start + audioClockDelta() : seg.start; }
+    function timelineEnd(loader) { return loader === audio ? loader.pl.totalDuration + audioClockDelta() : loader.pl.totalDuration; }
 
     /* ---------- 1. playlists ---------- */
     function start() {
@@ -1520,30 +1725,34 @@
       pendingStart = startAt > 0 ? startAt : null;
       positionLoader(main, startAt);
       log('hls: ' + (live ? 'live' : 'vod') + ' playlist, ' + pl.segments.length + ' segments, target ' + pl.targetDuration + 's, start at ' + startAt.toFixed(1) + 's');
-      var p = Promise.resolve();
-      // RFC 8216 §4.3.4.2.1: an AUDIO rendition with a URI holds the audio; without one the variant's own segments do.
-      if (variant && master && variant.audioGroup) {
-        var lang = '';
-        try { lang = str(navigator.language); } catch (e) { lang = ''; }
-        var rend = E.hlsSelectAudioRendition(master.media || [], variant, { language: lang });
-        var rurl = rend ? (rend.url || (rend.uri ? E.resolveUrl(masterUrl, rend.uri) : null)) : null;
-        if (rurl && E.isHttpUrl(rurl)) {
-          audio = createLoader('audio');
-          audio.url = rurl;
-          audio.reloadDelay = main.reloadDelay;
-          p = getText(rurl).then(function (r) {
-            if (!alive) return;
-            var apl = parsePlaylist(r, rurl);
-            if (apl.kind !== 'media') throw fatalError('The audio rendition playlist isn\'t a media playlist.');
-            var g = encryptionGuard(apl);
-            if (g) throw fatalError(g);
-            audio.pl = apl;
-            positionLoader(audio, startAt);
-            log('hls: alternate audio "' + str(rend.name || rend.language || 'default') + '"');
-          });
-        }
-      }
+      var rend = renditionFor(variant);
+      var p = rend ? getText(rend.url).then(function (r) { if (alive) applyRendition(rend, parseRendition(r, rend), startAt); }) : Promise.resolve();
       return p.then(function () { if (alive) openMediaSource(); });
+    }
+    // RFC 8216 §4.3.4.2.1: an AUDIO rendition with a URI holds the audio; without one the variant's own segments do.
+    function renditionFor(variant) {
+      if (!variant || !master || !variant.audioGroup) return null;
+      var lang = '';
+      try { lang = str(navigator.language); } catch (e) { lang = ''; }
+      var rend = E.hlsSelectAudioRendition(master.media || [], variant, { language: lang });
+      var rurl = rend ? (rend.url || (rend.uri ? E.resolveUrl(masterUrl, rend.uri) : null)) : null;
+      return rurl && E.isHttpUrl(rurl) ? { url: rurl, name: str(rend.name || rend.language || 'default') } : null;
+    }
+    function parseRendition(r, rend) {
+      var apl = parsePlaylist(r, rend.url);
+      if (apl.kind !== 'media') throw fatalError('The audio rendition playlist isn\'t a media playlist.');
+      var g = encryptionGuard(apl);
+      if (g) throw fatalError(g);
+      return apl;
+    }
+    // Make `apl` the audio loader's playlist (creating the loader when the variant so far carried its own audio) and
+    // continue it from `at` on the shared timeline.
+    function applyRendition(rend, apl, at) {
+      var fresh = !audio, a = audio || createLoader('audio');
+      audio = a;
+      a.url = rend.url; a.pl = apl; a.reloadDelay = main.reloadDelay;
+      if (fresh) { positionLoader(a, at); if (live && msOpen) scheduleReload(a); } else jumpLoader(a, at);
+      log('hls: alternate audio "' + rend.name + '"' + (fresh ? '' : ' replaces the previous rendition'));
     }
 
     /* ---------- 2. MediaSource & SourceBuffers ---------- */
@@ -1582,7 +1791,7 @@
     function ensureSourceBuffer(loader, codecs) {
       var mime = E.mimeForCodecs(codecs);
       if (!loader.sb) {
-        if (!MediaSource.isTypeSupported(mime)) throw fatalError('This browser can\'t decode this stream\'s codecs (' + codecs.join(', ') + ').');
+        if (!MediaSource.isTypeSupported(mime)) throw fatalError('This browser can\'t decode this stream\'s codecs (' + describeCodecs([{ codecs: codecs }]) + ').');
         if (!ms || ms.readyState !== 'open') throw fatalError('The media source closed before playback could start.');
         var sb = ms.addSourceBuffer(mime);
         try { sb.mode = 'segments'; } catch (e) { /* already the default for ISO BMFF */ }
@@ -1593,7 +1802,7 @@
         loader.sb = sb; loader.mime = mime;
         log('hls: ' + loader.name + ' SourceBuffer ' + mime);
       } else if (loader.mime !== mime) {
-        if (!MediaSource.isTypeSupported(mime)) throw fatalError('This browser can\'t decode this stream\'s codecs (' + codecs.join(', ') + ').');
+        if (!MediaSource.isTypeSupported(mime)) throw fatalError('This browser can\'t decode this stream\'s codecs (' + describeCodecs([{ codecs: codecs }]) + ').');
         if (typeof loader.sb.changeType === 'function') enqueue(loader, { fn: function () { loader.sb.changeType(mime); } });
         loader.mime = mime;
         log('hls: ' + loader.name + ' codecs changed → ' + mime);
@@ -1648,7 +1857,9 @@
       if (pendingStart == null || video.readyState < 1) return;
       var ranges = rangesOf(video.buffered);
       for (var i = 0; i < ranges.length; i++) {
-        if (ranges[i][0] <= pendingStart + 0.5 && ranges[i][1] > pendingStart) {
+        // Live: the segment holding the start position can leave the window before it is fetched, so the first data
+        // lands later than planned; the playhead goes there (waiting for that exact time would wait forever).
+        if (ranges[i][1] > pendingStart && (ranges[i][0] <= pendingStart + 0.5 || live)) {
           var t = Math.max(pendingStart, ranges[i][0] + 0.05);
           pendingStart = null;
           log('hls: playhead → ' + t.toFixed(2) + 's');
@@ -1682,28 +1893,58 @@
       if (alive && !endedAll) scheduleTick(300);
     }
     function step(loader) {
-      if (loader.inflight || loader.switching || loader.retryTimer || loader.finished || !loader.pl) return;
-      var ct = video.currentTime || 0;
+      if (loader.inflight || loader.switching || loader.retryTimer || !loader.pl) return;
+      // Until the start position is applied the playhead sits at 0: plan around where it is about to be.
+      var head = pendingStart != null ? pendingStart : (video.currentTime || 0);
       var ranges = loader.sb ? rangesOf(loader.sb.buffered) : [];
-      var plan = E.hlsBufferPlan({ currentTime: ct, buffered: ranges, targetBuffer: live ? 20 : 30, maxBuffer: 60, live: live });
+      var plan = E.hlsBufferPlan({ currentTime: head, buffered: ranges, targetBuffer: live ? 20 : 30, maxBuffer: 60, live: live });
       if (plan.evictBefore != null && plan.evictBefore > 0 && loader.sb && !loader.ops.some(function (op) { return !!op.remove; })) {
         enqueue(loader, { remove: [0, plan.evictBefore] });
       }
       if (plan.action !== 'load') return;
+      if (followPlayhead(loader, head, plan) || loader.finished) return;
       if (loader === main && manualIdx == null && variants.length > 1) {
         var est = E.hlsEwmaEstimate(ewma);
-        var pick = E.hlsChooseVariant(variants, chooseOpts({ bandwidth: est, current: variantIdx, bufferedSec: plan.bufferedAhead || 0 }));
-        if (pick >= 0 && pick < variants.length && pick !== variantIdx) {
+        var pick = pickVariant(est, plan.bufferedAhead || 0);
+        if (pick >= 0 && pick !== variantIdx) {
           switchVariant(pick, 'abr, estimate ' + E.formatBitrate(est)).then(function () { scheduleTick(0); }, function () { scheduleTick(0); });
           return;
         }
       }
       var seg = E.hlsNextSegment(loader.pl, loader.lastSeq);
+      // RFC 8216 §4.4.4.7: an EXT-X-GAP segment is missing by design and must not be requested. Skip it; the media
+      // timeline has a hole there too, so the next real segment is re-anchored on its playlist start, and the stall
+      // watchdog moves the playhead across the hole when it gets there.
+      while (seg && seg.gap) {
+        log('hls: ' + loader.name + ' skips gap segment ' + seg.seq);
+        if (!loader.resetTimeline) { flushTs(loader); loader.tsState = E.tsCreateState(); }
+        loader.lastSeq = seg.seq; loader.resetTimeline = true;
+        seg = E.hlsNextSegment(loader.pl, seg.seq);
+      }
       if (!seg) {
         if (!live) { flushTs(loader); loader.finished = true; log('hls: ' + loader.name + ' reached the last segment'); }
         return;
       }
       loadSegment(loader, seg);
+    }
+    // The loader fills the buffer from the end of the range the playhead is in (hls.js: getNextFragment(bufferInfo.end)).
+    // After a seek forward and back into the earlier range, or once a later range was evicted, it is somewhere else —
+    // finished, or past a hole too long for the gap jump — and the playhead would run into that hole and stop for good.
+    function followPlayhead(loader, head, plan) {
+      var pl = loader.pl, fillAt = head + (plan.bufferedAhead || 0);
+      var hole = plan.holeAhead && plan.holeAhead.end - plan.holeAhead.start > GAP_JUMP_MAX ? plan.holeAhead : null;
+      var slack = Math.max(2, pl.targetDuration || 6), astray;
+      if (loader.finished) astray = !!hole || fillAt < timelineEnd(loader) - slack;
+      else { var next = E.hlsNextSegment(pl, loader.lastSeq); astray = !!hole && !(next && next.start <= hole.start + slack); }
+      if (!astray) return false;
+      if (loader.refilledAt != null && fillAt < loader.refilledAt + 0.5) return false;   // the playlist promises more than the media holds: not again
+      var i = E.hlsSegmentAt(pl, fillAt - (loader === audio ? audioClockDelta() : 0));
+      if (i < 0 || pl.segments[i].gap) return false;                                       // not listed (live window) or a gap: the watchdog's job
+      log('hls: ' + loader.name + ' loader → ' + fillAt.toFixed(2) + 's to fill the buffer ahead of the playhead');
+      jumpLoader(loader, fillAt);
+      loader.refilledAt = fillAt;
+      scheduleTick(0);
+      return true;
     }
     function loadSegment(loader, seg) {
       var ac = typeof AbortController !== 'undefined' ? new AbortController() : null;
@@ -1731,7 +1972,7 @@
       });
     }
     function fetchSegmentBytes(u, byteRange, ac) {
-      var opts = { timeout: SEGMENT_TIMEOUT, read: 'bytes' };
+      var opts = { timeout: SEGMENT_TIMEOUT, read: 'bytes', maxBytes: SEGMENT_MAX_BYTES };
       if (byteRange) opts.headers = { Range: 'bytes=' + byteRange.offset + '-' + (byteRange.offset + byteRange.length - 1) };
       if (ac) opts.signal = ac.signal;
       return fetchTimed(u, opts).then(function (r) {
@@ -1751,7 +1992,7 @@
     /* ---------- AES-128 (WebCrypto) ---------- */
     function getKey(keyUrl, ac) {
       if (!keyCache[keyUrl]) {
-        var opts = { timeout: PLAYLIST_TIMEOUT, read: 'bytes' };
+        var opts = { timeout: PLAYLIST_TIMEOUT, read: 'bytes', maxBytes: KEY_MAX_BYTES };   // a key is 16 bytes; anything bigger is not one
         if (ac) opts.signal = ac.signal;
         var p = fetchTimed(keyUrl, opts).then(function (r) {
           if (r.bytes.length !== 16) throw new Error('The stream\'s key isn\'t 16 bytes long.');
@@ -1765,7 +2006,7 @@
     function decryptIfNeeded(seg, bytes, ac) {
       var key = seg.key;
       if (!key || !key.method || key.method === 'NONE') return Promise.resolve(bytes);
-      if (key.method !== 'AES-128') return Promise.reject(fatalError(key.method.indexOf('SAMPLE-AES') === 0 ? MSG.sampleAes : 'This stream uses ' + key.method + ' encryption, which Aerial can\'t decrypt.'));
+      if (key.method !== 'AES-128') return Promise.reject(fatalError(key.method.indexOf('SAMPLE-AES') === 0 ? MSG.sampleAes : 'This stream uses ' + quoteRemote(key.method, 40) + ' encryption, which Aerial can\'t decrypt.'));
       if (!hasWebCrypto()) return Promise.reject(fatalError(MSG.noWebCrypto));
       if (!E.isHttpUrl(key.url)) return Promise.reject(fatalError('This stream\'s key URL isn\'t an http(s) address Aerial can fetch.'));
       return getKey(key.url, ac).then(function (ck) {
@@ -1777,7 +2018,18 @@
     }
 
     /* ---------- demux / remux / passthrough ---------- */
-    function looksLikeTs(b) { return b.length >= 188 && b[0] === 0x47 && (b.length < 376 || b[188] === 0x47); }
+    // MPEG-TS: sync bytes 188 apart. A segment may begin with a few bytes of padding or the tail of a cut packet (the
+    // demuxer resyncs from there itself), so the sync is looked for anywhere in the first packet's worth; a box header
+    // up front is fragmented MP4 whatever the bytes further on happen to be.
+    function looksLikeTs(b) {
+      if (b.length < 188) return false;
+      if (b.length >= 8 && /^(ftyp|styp|moof|moov|sidx|emsg|prft|free|skip|mdat|uuid)$/.test(String.fromCharCode(b[4], b[5], b[6], b[7]))) return false;
+      if (b.length < 376) return b[0] === 0x47;
+      for (var i = 0; i < 188 && i + 188 < b.length; i++) {
+        if (b[i] === 0x47 && b[i + 188] === 0x47 && (i + 376 >= b.length || b[i + 376] === 0x47)) return true;
+      }
+      return false;
+    }
     function looksLikePackedAudio(b) {
       if (b.length < 4) return false;
       if (b[0] === 0x49 && b[1] === 0x44 && b[2] === 0x33) return true;                  // ID3 timed-metadata header
@@ -1796,9 +2048,12 @@
       // and the pending unit belongs elsewhere, so the state is simply dropped.
       if (seg.discontinuity && !loader.resetTimeline) flushTs(loader);
       if (loader.resetTimeline || seg.discontinuity) loader.tsState = E.tsCreateState();
+      // A new period brings new parameter sets even when the codec string stays (a resolution change across an ad
+      // break); the SourceBuffer must get them in a fresh init segment, not keep decoding with the old avcC.
+      if (seg.discontinuity) loader.needsInit = true;
       var result = E.tsDemux(bytes, loader.tsState);
       loader.tsState = result.state;
-      if (result.errors && result.errors.length) log('hls: ts seq ' + seg.seq + ': ' + result.errors.length + ' demux warning(s), first: ' + str(result.errors[0]));
+      if (result.errors && result.errors.length) log('hls: ts seq ' + seg.seq + ': ' + result.errors.length + ' demux warning(s), first: ' + str(result.errors[0].message || result.errors[0].type || result.errors[0]));
       var v = result.video && result.video.codec && result.video.sps && result.video.pps ? result.video : null;
       var a = result.audio && result.audio.codec ? result.audio : null;
       var tracks = [];
@@ -1828,26 +2083,40 @@
         loader.needsInit = false; loader.tracks = tracks; loader.codecs = codecs;
       }
       // Every TS timestamp is a 90 kHz tick, whatever the track's own timescale, so the offset is computed in that clock.
-      var first = firstTsDts(result);
-      if (first != null && (loader.resetTimeline || seg.discontinuity)) {
-        enqueue(loader, { offset: E.hlsTimestampOffset({ segmentStart: seg.start, firstDts: first, timescale: TS_CLOCK }) });
+      // The timeline is anchored on PRESENTATION time: the first frame shown lands on the segment's start. Anchoring
+      // the first frame DECODED put video with B-frames one or two frames late against separately anchored audio
+      // (lip-sync error on every demuxed stream, re-introduced at every seek and switch).
+      var first = firstTsPts(result);
+      if (first && (loader.resetTimeline || seg.discontinuity)) {
+        loader.ctsShift = first.shear;
+        enqueue(loader, { offset: E.hlsTimestampOffset({ segmentStart: timelineStart(loader, seg), firstDts: first.pts, timescale: TS_CLOCK }) });
         loader.resetTimeline = false;
       }
       appendTsSamples(loader, result);
     }
-    function firstTsDts(result) {
-      var v = result.video, a = result.audio;
-      if (v && v.samples && v.samples.length) return v.samples[0].dts;
-      if (a && a.samples && a.samples.length) return a.samples[0].dts;
-      return null;
+    // Earliest presentation time among the demuxed samples, and the shear that puts the first video frame's decode
+    // time onto its presentation time (its composition offset; 0 without B-frames). With the shear, nothing is appended
+    // before the anchor — the same arithmetic hls.js uses when it remuxes TS (initPTS / initDTS).
+    function firstTsPts(result) {
+      var v = result.video, a = result.audio, pts = null, shear = 0;
+      if (v && v.samples && v.samples.length) {
+        shear = Math.max(0, v.samples[0].pts - v.samples[0].dts);
+        for (var i = 0; i < v.samples.length; i++) if (pts === null || v.samples[i].pts < pts) pts = v.samples[i].pts;
+      }
+      if (a && a.samples && a.samples.length && (pts === null || a.samples[0].pts < pts)) pts = a.samples[0].pts;
+      return pts === null ? null : { pts: pts, shear: shear };
     }
-    // One moof+mdat per track (video first). tfdt is rescaled from 90 kHz into the track's timescale (the sample rate for audio).
+    // One moof+mdat per track (video first). tfdt is rescaled from 90 kHz into the track's timescale (the sample rate for
+    // audio). Video decode times are moved up by the timeline's shear and composition offsets down by the same amount, so
+    // every frame still presents at its own pts while the first decode time equals the first presentation time.
     function appendTsSamples(loader, result) {
       (loader.tracks || []).forEach(function (t) {
         var src = t.type === 'video' ? result.video : result.audio;
         var samples = src && src.samples ? src.samples : null;
         if (!samples || !samples.length) return;
-        var bmdt = Math.max(0, Math.round(samples[0].dts * t.timescale / TS_CLOCK));
+        var shear = t.type === 'video' ? loader.ctsShift || 0 : 0;
+        var bmdt = Math.max(0, Math.round((samples[0].dts + shear) * t.timescale / TS_CLOCK));
+        if (shear) samples = samples.map(function (s) { return { data: s.data, duration: s.duration, key: s.key, cts: s.cts - shear }; });
         var media = E.mp4MediaSegment(t, samples, { sequenceNumber: ++loader.seqNo, baseMediaDecodeTime: bmdt });
         if (media) enqueue(loader, { bytes: media });
       });
@@ -1880,12 +2149,34 @@
       return prep.then(function () {
         if (!alive) throw abortError();
         if (loader.resetTimeline || seg.discontinuity) {
-          var dts = E.mp4Tfdt(bytes);
-          if (dts != null) enqueue(loader, { offset: E.hlsTimestampOffset({ segmentStart: seg.start, firstDts: dts, timescale: loader.timescale }) });
+          var pts = fmp4FirstPts(bytes, loader.tracks, loader.timescale);
+          if (pts != null) enqueue(loader, { offset: E.hlsTimestampOffset({ segmentStart: timelineStart(loader, seg), firstDts: pts, timescale: 1 }) });
           loader.resetTimeline = false;
         }
         enqueue(loader, { bytes: bytes });
       });
+    }
+    // Earliest presentation time (seconds) in a fragmented MP4 segment: per traf, tfdt plus the first sample's
+    // composition offset, in THAT track's timescale (tfhd names the track, the init segment gave its timescale).
+    // Reading the first tfdt in the video's timescale anchored a segment whose first traf is audio (48 kHz) at
+    // audio_tfdt / 90000 — seconds away from where the playlist said it was.
+    function fmp4FirstPts(bytes, tracks, fallbackScale) {
+      var byId = {}, best = null, boxes;
+      (tracks || []).forEach(function (t) { if (t.id != null && t.timescale) byId[t.id] = t.timescale; });
+      try { boxes = E.mp4ParseBoxes(bytes); } catch (e) { return null; }
+      boxes.forEach(function (moof) {
+        if (moof.type !== 'moof') return;
+        (moof.children || []).forEach(function (traf) {
+          if (traf.type !== 'traf') return;
+          var tfhd = E.mp4FindBox(traf, 'tfhd'), tfdt = E.mp4FindBox(traf, 'tfdt'), trun = E.mp4FindBox(traf, 'trun');
+          if (!tfdt || tfdt.baseMediaDecodeTime == null) return;
+          var scale = (tfhd && byId[tfhd.trackId]) || fallbackScale || 90000;
+          var cts = trun && trun.samples && trun.samples.length && trun.samples[0].cts ? trun.samples[0].cts : 0;
+          var t = (tfdt.baseMediaDecodeTime + cts) / scale;
+          if (best === null || t < best) best = t;
+        });
+      });
+      return best;
     }
     function setupFmp4Init(loader, initBytes, appendInit) {
       loader.format = 'fmp4';
@@ -1898,7 +2189,7 @@
       loader.timescale = vt && vt.timescale ? vt.timescale : 90000;
       if (loader.needsInit || !sameCodecs(loader.codecs, codecs)) ensureSourceBuffer(loader, codecs);
       loader.codecs = codecs; loader.needsInit = false;
-      loader.tracks = tracks.map(function (t) { return { type: t.type, codec: t.codec, timescale: t.timescale, width: t.width || 0, height: t.height || 0 }; });
+      loader.tracks = tracks.map(function (t) { return { id: t.id, type: t.type, codec: t.codec, timescale: t.timescale, width: t.width || 0, height: t.height || 0 }; });
       if (appendInit) enqueue(loader, { bytes: initBytes });
     }
 
@@ -1909,23 +2200,36 @@
       variantIdx = idx; main.switching = true;
       log('hls: variant → ' + E.hlsVariantLabel(variants[idx]) + ' (' + why + ')');
       cfg.onUpdate();
-      return getText(variants[idx].url).then(function (r) {
+      // The new variant may need a different AUDIO rendition (another group), one at all (muxed → demuxed) or none any
+      // more; its playlist is fetched alongside so the switch is applied whole or not at all.
+      var rend = renditionFor(variants[idx]);
+      var newRend = rend && !(audio && audio.url === rend.url);
+      return Promise.all([getText(variants[idx].url), newRend ? getText(rend.url) : null]).then(function (rs) {
         if (!alive) return;
-        var pl = parsePlaylist(r, variants[idx].url);
+        var pl = parsePlaylist(rs[0], variants[idx].url);
         if (pl.kind !== 'media') throw fatalError('The variant playlist isn\'t a media playlist.');
         var g = encryptionGuard(pl);
         if (g) throw fatalError(g);
+        var apl = newRend ? parseRendition(rs[1], rend) : null;
         main.pl = main.pl ? E.hlsMerge(main.pl, pl) : pl;     // keeps the timeline continuous across variants
         main.url = variants[idx].url; main.variant = variants[idx];
         flushTs(main);                                        // the old variant's last access unit completes its segment
         main.needsInit = true; main.mapKey = null; main.resetTimeline = true; main.tsState = E.tsCreateState();
         main.finished = false; main.switching = false;
+        if (!rend) { if (audio) dropAlternateAudio('the new variant carries its own audio'); }
+        else if (newRend) {
+          var at = pendingStart != null ? pendingStart : (video.currentTime || 0);
+          if (!audio) flushAhead(main);                       // muxed audio buffered ahead must not play over the rendition
+          applyRendition(rend, apl, at);
+        }
         cfg.onUpdate();
       }).catch(function (err) {
         if (!alive) return;
         main.switching = false;
         variantIdx = prev;
-        log('hls: variant switch failed: ' + errMsg(err));
+        failedUntil[idx] = now() + 60000;
+        if (manualIdx === idx) manualIdx = null;
+        log('hls: variant switch failed: ' + errMsg(err) + ' — ' + E.hlsVariantLabel(variants[idx]) + ' is off limits for a minute');
         cfg.onUpdate();
         throw err;
       });
@@ -1958,9 +2262,11 @@
     }
     function reloadPlaylist(loader) {
       if (!alive || !loader.pl || !loader.pl.live) return;
-      getText(loader.url).then(function (r) {
+      var u = loader.url;
+      getText(u).then(function (r) {
         if (!alive) return;
-        var next = parsePlaylist(r, loader.url);
+        if (loader.url !== u) { scheduleReload(loader); return; }   // a variant/rendition switch happened meanwhile: not this playlist any more
+        var next = parsePlaylist(r, u);
         if (next.kind !== 'media') throw fatalError('The live playlist turned into something that isn\'t a media playlist.');
         var prev = loader.pl;
         var merged = E.hlsMerge(prev, next);
@@ -1968,6 +2274,15 @@
         if (merged.stale) log('hls: ' + loader.name + ' reload went backwards — ignored');
         else loader.pl = merged;
         loader.reloadErrors = 0;
+        if (merged.jumped && !merged.stale) {
+          // No sequence number in common with the previous window (the device slept, the encoder restarted): the merge
+          // continued the timeline after the last known segment, so the next media must be re-anchored there rather
+          // than land at its raw timestamps minutes away; the playhead rejoins at the new window's live start.
+          var t = E.hlsLiveStart(main.pl, { holdBack: holdBackOf(main.pl) });
+          log('hls: ' + loader.name + ' playlist window jumped — rejoining at ' + t.toFixed(1) + 's');
+          jumpLoader(loader, t);
+          if (loader === main) pendingStart = t;
+        }
         if (loader === main) {
           lastReloadAt = now();
           if (!loader.pl.live) {
@@ -2005,7 +2320,7 @@
     function onSeeking() {
       if (!alive) return;
       var t = video.currentTime || 0;
-      if (withinRanges(rangesOf(video.buffered), t)) return;    // MSE resumes from buffered data by itself
+      if (withinRanges(rangesOf(video.buffered), t)) { scheduleTick(0); return; }   // MSE resumes from buffered data; the loader follows (followPlayhead)
       log('hls: seek to ' + t.toFixed(2) + 's is outside the buffer — loading from there');
       jumpLoader(main, t);
       if (audio) jumpLoader(audio, t);
@@ -2030,14 +2345,28 @@
       if (stallMs < 1000 || video.readyState >= 3) return;
       var ranges = rangesOf(video.buffered);
       var target = E.hlsGapJump({ currentTime: t, buffered: ranges, stalledMs: stallMs, readyState: video.readyState });
+      // A gap the loader skipped (EXT-X-GAP) is too long for the gap jump: continue right after it.
+      if (target == null && main.pl) { var gi = E.hlsSegmentAt(main.pl, t); if (gi >= 0 && main.pl.segments[gi].gap) target = main.pl.segments[gi].end + 0.05; }
       if (target != null && isFinite(target)) {
         log('hls: gap jump ' + t.toFixed(2) + 's → ' + target.toFixed(2) + 's');
         stallMs = 0;
         try { video.currentTime = target; } catch (e) { /* ignore */ }
         return;
       }
-      // Live only: a long stall with nothing buffered at the playhead means we fell out of the window — rejoin at the live start.
-      if (live && stallMs >= 6000 && !withinRanges(ranges, t)) { stallMs = 0; log('hls: stalled behind the live window — rejoining'); goLive(); }
+      scheduleTick(0);   // ticks stop after endOfStream; a stall means the loader may have to refill behind a hole
+      // Live only: a long stall with nothing buffered at the playhead, at a time the playlist no longer lists, means we
+      // fell out of the window — rejoin at the live start. Not while the start position is still pending (the first
+      // segment downloading on a slow link would be aborted every 6 s and never arrive), and not while the playhead
+      // is still inside the window, where the loader is simply behind and catching up.
+      if (live && stallMs >= 6000 && pendingStart == null && !withinRanges(ranges, t) && behindWindow(t)) {
+        stallMs = 0;
+        log('hls: stalled behind the live window — rejoining');
+        goLive();
+      }
+    }
+    function behindWindow(t) {
+      var segs = main.pl && main.pl.segments;
+      return !!segs && segs.length > 0 && t < segs[0].start - 0.05 && E.hlsSegmentAt(main.pl, t) < 0;
     }
 
     /* ---------- 7. segment errors: retry → step down → give up ---------- */
@@ -2062,7 +2391,7 @@
     }
     function segmentFailureMessage(err, seg) {
       if (isFetchTypeError(err)) return isOffline() ? MSG.offline : MSG.streamCors;
-      var detail = err && (err.name === 'HttpError' || err.name === 'TimeoutError') ? ' ' + err.message + '.' : '';
+      var detail = err && /^(HttpError|TimeoutError|BodyError|TooLargeError)$/.test(err.name) ? ' ' + err.message + '.' : '';
       return 'Couldn\'t load the stream (segment ' + seg.seq + ' failed).' + detail;
     }
 
@@ -2072,6 +2401,7 @@
       alive = false;
       if (tickTimer) clearTimeout(tickTimer);
       if (watchdogTimer) clearInterval(watchdogTimer);
+      if (playlistAc) { try { playlistAc.abort(); } catch (e) { /* ignore */ } }
       [main, audio].forEach(function (l) {
         if (!l) return;
         abortInflight(l);
@@ -2178,9 +2508,9 @@
     vizStop();
   }
   function vizStart() {
-    if (!player.vizOn || !viz.analyser || viz.active || reducedMotion()) return;
+    if (!player.vizOn || !viz.analyser || reducedMotion()) return;
     viz.active = true;
-    vizFrame();
+    if (!viz.raf) vizFrame();
   }
   function vizStop() {
     viz.active = false;
@@ -2199,9 +2529,12 @@
     return viz.color;
   }
   function vizFrame() {
+    viz.raf = 0;
     if (!viz.active) return;
-    viz.raf = requestAnimationFrame(vizFrame);
+    // The canvas is only visible in the open sheet: with it closed or the tab hidden the loop stops instead of spinning
+    // at frame rate doing nothing; openSheet() and visibilitychange start it again through vizStart().
     if (!ui.sheetOpen || (typeof document !== 'undefined' && document.hidden)) return;
+    viz.raf = requestAnimationFrame(vizFrame);
     var c = $('viz');
     if (!c || typeof c.getContext !== 'function') return;
     var g = c.getContext('2d');
@@ -2229,10 +2562,13 @@
   }
   function radioVisible(list) { return E.radioFilter(list || [], radioFilterOpts()); }
   // Try the directory mirrors in order; remember the one that answered for the rest of the session.
-  function radioFetchList(build, cacheKey) {
+  // `limit` is the row count the URL asked for: a mirror that answers with more (or with a megabyte of JSON) is cut to
+  // it before anything is normalised, rendered or cached — a session cache written before this cap is cut on read too.
+  function radioFetchList(build, cacheKey, limit) {
+    limit = limit > 0 ? limit : RADIO_SEARCH_LIMIT;
     if (cacheKey) {
       var cached = sessionGet(cacheKey);
-      if (Array.isArray(cached)) return Promise.resolve(cached);
+      if (Array.isArray(cached)) return Promise.resolve(cached.length > limit ? cached.slice(0, limit) : cached);
     }
     var servers = E.RADIO_SERVERS;
     var attempt = function (i, tries, lastErr) {
@@ -2240,11 +2576,12 @@
         return Promise.reject(new Error(isOffline() ? MSG.offline : 'The radio directory isn\'t reachable right now (tried ' + servers.length + ' mirrors' + (lastErr ? '; last answer: ' + errMsg(lastErr) : '') + ').'));
       }
       var server = servers[i];
-      return fetchTimed(build(server), { timeout: DIRECTORY_TIMEOUT, read: 'json', headers: { Accept: 'application/json' } }).then(function (r) {
+      return fetchTimed(build(server), { timeout: DIRECTORY_TIMEOUT, read: 'json', maxBytes: DIRECTORY_MAX_BYTES, headers: { Accept: 'application/json' } }).then(function (r) {
         if (!Array.isArray(r.json)) throw new Error('unexpected answer from ' + E.urlHost(server));
+        var list = r.json.length > limit ? r.json.slice(0, limit) : r.json;
         radio.server = i;
-        if (cacheKey) sessionSet(cacheKey, r.json);
-        return r.json;
+        if (cacheKey) sessionSet(cacheKey, list);
+        return list;
       }, function (err) {
         log('radio: ' + E.urlHost(server) + ' failed — ' + errMsg(err));
         return attempt(E.radioNextServer(i), tries + 1, err);
@@ -2254,7 +2591,7 @@
   }
   function radioActiveQuery() { return !!(radio.query.trim() || radio.genre || radio.country); }
   function radioSearchParams() {
-    var params = { order: 'votes', reverse: true, limit: 50, hideBroken: true };
+    var params = { order: 'votes', reverse: true, limit: RADIO_SEARCH_LIMIT, hideBroken: true };
     var q = radio.query.trim();
     if (q) {
       var plan = E.radioSearchPlan(q) || { name: q };     // null for a query with no usable tokens
@@ -2273,7 +2610,7 @@
     radio.status = 'Searching…';
     renderRadioStatus();
     var params = radioSearchParams();
-    radioFetchList(function (server) { return E.radioSearchUrl(server, params); }).then(function (list) {
+    radioFetchList(function (server) { return E.radioSearchUrl(server, params); }, null, params.limit).then(function (list) {
       if (seq !== radio.busy) return;
       radio.results = E.radioNormalizeList(list);
       var visible = radioVisible(radio.results);
@@ -2291,7 +2628,7 @@
     if (radio.top[kind] || radio.topStatus[kind] === 'loading') return;
     radio.topStatus[kind] = 'loading';
     renderRadioBrowse();
-    radioFetchList(function (server) { return E.radioTopUrl(server, kind, 30); }, 'top-' + kind).then(function (list) {
+    radioFetchList(function (server) { return E.radioTopUrl(server, kind, RADIO_TOP_LIMIT); }, 'top-' + kind, RADIO_TOP_LIMIT).then(function (list) {
       radio.top[kind] = E.radioNormalizeList(list);
       radio.topStatus[kind] = 'ok';
       renderRadioBrowse();
@@ -2374,22 +2711,21 @@
     if (!el) return;
     var active = radioActiveQuery();
     if (browse) browse.hidden = active;
-    if (!active || !radio.results) { el.innerHTML = ''; return; }
-    el.innerHTML = radioVisible(radio.results).map(function (st) { return rowHTML(toRadioItem(st), { queue: true }); }).join('');
+    fillList(el, function () { return !active || !radio.results ? '' : radioVisible(radio.results).map(function (st) { return rowHTML(toRadioItem(st), { queue: true }); }).join(''); });
   }
   function renderRadioBrowse() {
-    var starter = $('radio-starter');
-    if (starter) starter.innerHTML = radioVisible(E.RADIO_STARTER || []).map(function (st) { return rowHTML(toRadioItem(st), { queue: true }); }).join('');
+    fillList($('radio-starter'), function () { return radioVisible(E.RADIO_STARTER || []).map(function (st) { return rowHTML(toRadioItem(st), { queue: true }); }).join(''); });
     ['votes', 'trend'].forEach(function (kind) {
-      var el = $('radio-top-' + kind);
-      if (!el) return;
       var status = radio.topStatus[kind] || '';
-      if (radio.top[kind]) {
-        var list = radioVisible(radio.top[kind]);
-        el.innerHTML = list.length ? list.map(function (st) { return rowHTML(toRadioItem(st), { queue: true }); }).join('') : '<div class="empty">Nothing to show after filtering.</div>';
-      } else if (status === 'loading') el.innerHTML = '<div class="empty">Loading from the directory…</div>';
-      else if (status.indexOf('error:') === 0) el.innerHTML = '<div class="inline-err">' + esc(status.slice(6)) + ' <button type="button" class="link" data-retry-top="' + kind + '">Try again</button></div>';
-      else el.innerHTML = '';
+      fillList($('radio-top-' + kind), function () {
+        if (radio.top[kind]) {
+          var list = radioVisible(radio.top[kind]);
+          return list.length ? list.map(function (st) { return rowHTML(toRadioItem(st), { queue: true }); }).join('') : '<div class="empty">Nothing to show after filtering.</div>';
+        }
+        if (status === 'loading') return '<div class="empty">Loading from the directory…</div>';
+        if (status.indexOf('error:') === 0) return '<div class="inline-err">' + esc(status.slice(6)) + ' <button type="button" class="link" data-retry-top="' + kind + '">Try again</button></div>';
+        return '';
+      });
     });
   }
 
@@ -2401,11 +2737,32 @@
       var v = JSON.parse(localStorage.getItem(KEY_FEEDS) || '{}');
       pod.feeds = v && typeof v === 'object' && !Array.isArray(v) ? v : {};
     } catch (e) { pod.feeds = {}; }
+    Object.keys(pod.feeds).forEach(function (k) { if (pod.feeds[k] && typeof pod.feeds[k] === 'object') delete pod.feeds[k].staleReason; });   // copies written before staleReason was kept out of the cache
   }
-  // Keep the cache bounded: every subscribed feed plus the most recently fetched others.
-  function saveFeeds() {
+  function subscribedFeeds() {
     var subs = {};
     (lib.subscriptions || []).forEach(function (s) { subs[s.feedUrl] = true; });
+    return subs;
+  }
+  // What goes to storage is a view of pod.feeds, never pod.feeds itself: the open show keeps its full notes in memory
+  // while the stored copy is squeezed — fewer extras, fewer episodes, shorter notes — until it fits.
+  function feedStoreView(level) {
+    var subs = subscribedFeeds(), out = {}, extra = 0;
+    var keys = Object.keys(pod.feeds).sort(function (a, b) { return (pod.feeds[b].fetchedAt || 0) - (pod.feeds[a].fetchedAt || 0); });
+    keys.forEach(function (k) {
+      var entry = pod.feeds[k];
+      if (!subs[k]) { if (extra >= level.extras) return; extra++; }
+      var eps = (entry.episodes || []).slice(0, level.episodes);
+      if (level.notes) eps = eps.map(function (ep) { var c = {}; Object.keys(ep).forEach(function (f) { c[f] = ep[f]; }); c.description = E.truncate(ep.description || '', level.notes); return c; });
+      out[k] = { show: entry.show, episodes: eps, fetchedAt: entry.fetchedAt };
+    });
+    return out;
+  }
+  // Memory keeps every subscribed feed plus the most recently fetched others; storage gets the largest view that fits
+  // the character budget and that the browser accepts. Nothing fitting removes the old copy rather than leaving a
+  // stale one to crowd the library out of the quota.
+  function saveFeeds() {
+    var subs = subscribedFeeds();
     var keys = Object.keys(pod.feeds).sort(function (a, b) { return (pod.feeds[b].fetchedAt || 0) - (pod.feeds[a].fetchedAt || 0); });
     var keep = {}, extra = 0;
     keys.forEach(function (k) {
@@ -2413,13 +2770,14 @@
       else if (extra < FEED_CACHE_CAP) { keep[k] = pod.feeds[k]; extra++; }
     });
     pod.feeds = keep;
-    try { localStorage.setItem(KEY_FEEDS, JSON.stringify(pod.feeds)); } catch (e) {
-      // Quota: drop everything that isn't subscribed and try once more; failing that, the cache lives in memory only.
-      var slim = {};
-      Object.keys(pod.feeds).forEach(function (k) { if (subs[k]) slim[k] = pod.feeds[k]; });
-      pod.feeds = slim;
-      try { localStorage.setItem(KEY_FEEDS, JSON.stringify(pod.feeds)); } catch (e2) { /* in memory only */ }
+    for (var i = 0; i < FEED_STORE_LEVELS.length; i++) {
+      var json = JSON.stringify(feedStoreView(FEED_STORE_LEVELS[i]));
+      if (json === '{}') break;                 // nothing left worth storing
+      if (json.length > FEED_CACHE_CHARS) continue;
+      try { localStorage.setItem(KEY_FEEDS, json); if (i) log('feed cache stored squeezed (level ' + i + ')'); return; } catch (e) { /* quota: squeeze further */ }
     }
+    try { localStorage.removeItem(KEY_FEEDS); } catch (e) { /* ignore */ }
+    log('feed cache kept in memory only');
   }
   function showForFeed(feedUrl) {
     var c = pod.feeds[feedUrl];
@@ -2437,9 +2795,10 @@
   function getFeed(feedUrl, force) {
     var cached = pod.feeds[feedUrl];
     if (cached && !force && now() - (cached.fetchedAt || 0) < FEED_TTL_MS) return Promise.resolve(cached);
-    return fetchTimed(feedUrl, { timeout: FEED_TIMEOUT, read: 'text' }).then(function (r) {
-      var parsed = E.podcastParseFeed(r.text, feedUrl);
-      if (!parsed.ok) throw new Error(parsed.error || 'This URL isn\'t a podcast feed Aerial can read.');
+    // Bytes, not text: the engine honours the feed's own encoding declaration, and the cap stops a runaway download.
+    return fetchTimed(feedUrl, { timeout: FEED_TIMEOUT, read: 'bytes', maxBytes: FEED_MAX_BYTES }).then(function (r) {
+      var parsed = E.podcastParseFeed(r.bytes, feedUrl);
+      if (!parsed.ok) throw new Error(parsed.error ? cleanRemote(parsed.error, 200) : 'This URL isn\'t a podcast feed Aerial can read.');   // the parser's complaint quotes the feed
       var show = {
         title: parsed.title || E.urlHost(feedUrl), author: parsed.author || '', description: E.truncate(parsed.description || '', 4000),
         image: parsed.image || '', link: parsed.link || '', language: parsed.language || '', explicit: !!parsed.explicit, count: parsed.count || parsed.episodes.length
@@ -2448,14 +2807,16 @@
       var episodes = cached && cached.episodes ? E.podcastMergeEpisodes(cached.episodes, fresh) : fresh;
       var entry = { show: show, episodes: episodes.slice(0, FEED_EPISODE_CAP), fetchedAt: now() };
       pod.feeds[feedUrl] = entry;
-      saveFeeds();
       var showItem = toShowItem(show, feedUrl);
-      if (E.isSubscribed(lib, showItem)) commit(E.updateShow(lib, feedUrl, { title: show.title, author: show.author, image: show.image }, now()));
+      if (E.isSubscribed(lib, showItem)) commit(E.updateShow(lib, feedUrl, { title: show.title, author: show.author, image: show.image }, now()));   // library first, cache second
+      saveFeeds();
       log('feed ok ' + feedUrl + ' (' + entry.episodes.length + ' episodes)');
       return entry;
     }, function (err) {
       var msg = isFetchTypeError(err) ? (isOffline() ? MSG.offline : MSG.feedCors) : errMsg(err);
-      if (cached) { log('feed refresh failed, showing the cached copy — ' + msg); cached.staleReason = msg; return cached; }
+      // The reason travels with this answer only: the cached entry stays clean, so a later open within the TTL
+      // (no fetch, nothing failed) shows no banner and the next saveFeeds() doesn't persist it.
+      if (cached) { log('feed refresh failed, showing the cached copy — ' + msg); return Object.assign({}, cached, { staleReason: msg }); }
       throw new Error(msg);
     });
   }
@@ -2501,6 +2862,7 @@
     commit(subscribed ? E.unsubscribe(lib, showItem, now()) : E.subscribe(lib, showItem, now()));
     toast(subscribed ? 'Unsubscribed' : 'Subscribed');
     if (!subscribed && !pod.feeds[showItem.feedUrl]) getFeed(showItem.feedUrl, false).then(renderAll, noop);
+    else saveFeeds();   // subscriptions are what the stored cache keeps first; the show's feed is already in memory
     renderAll();
   }
   function podSearchCountry() {
@@ -2513,14 +2875,14 @@
     var q = pod.query.trim();
     if (!q) { pod.results = null; pod.status = ''; renderPodcasts(); return; }
     var seq = ++pod.busy;
-    var url = E.itunesSearchUrl(q, { limit: 25, country: podSearchCountry() });
+    var url = E.itunesSearchUrl(q, { limit: POD_SEARCH_LIMIT, country: podSearchCountry() });
     if (!url) { pod.results = []; pod.status = 'Type a show name to search.'; renderPodcasts(); return; }
     pod.status = 'Searching…';
     renderPodStatus();
-    fetchTimed(url, { timeout: DIRECTORY_TIMEOUT, read: 'json' }).then(function (r) {
+    fetchTimed(url, { timeout: DIRECTORY_TIMEOUT, read: 'json', maxBytes: DIRECTORY_MAX_BYTES }).then(function (r) {
       if (seq !== pod.busy) return;
       var raw = r.json && Array.isArray(r.json.results) ? r.json.results : [];
-      pod.results = raw.map(E.podcastNormalizeItunes).filter(Boolean);
+      pod.results = raw.slice(0, POD_SEARCH_LIMIT).map(E.podcastNormalizeItunes).filter(Boolean);   // the directory was asked for this many
       pod.status = pod.results.length ? '' : 'No podcasts matched.';
       renderPodcasts();
     }).catch(function (err) {
@@ -2591,23 +2953,27 @@
     var results = $('pod-results'), browse = $('pod-browse');
     var searching = !!pod.query.trim();
     if (browse) browse.hidden = searching;
-    if (results) results.innerHTML = searching && pod.results ? pod.results.map(function (s) {
-      return rowHTML({ type: 'show', feedUrl: s.feedUrl, title: s.title, author: s.author, image: s.image, link: s.link || '' }, { subtitle: [s.author, s.genre, s.episodeCount ? s.episodeCount + ' episodes' : ''].filter(Boolean).join(' · '), ariaLabel: 'Open ' + s.title, progress: false });
-    }).join('') : '';
-    var cont = $('pod-continue');
-    if (cont) {
-      var items = E.continueListening(lib) || [];
-      cont.innerHTML = items.length ? items.slice(0, 10).map(function (it) { return rowHTML(it, { queue: true }); }).join('') : '<div class="empty">Episodes you start show up here.</div>';
-    }
-    var subs = $('pod-subs');
-    if (subs) {
+    fillList(results, function () {
+      return searching && pod.results ? pod.results.map(function (s) {
+        return rowHTML({ type: 'show', feedUrl: s.feedUrl, title: s.title, author: s.author, image: s.image, link: s.link || '' }, { subtitle: [s.author, s.genre, s.episodeCount ? s.episodeCount + ' episodes' : ''].filter(Boolean).join(' · '), ariaLabel: 'Open ' + s.title, progress: false });
+      }).join('') : '';
+    });
+    renderPodContinue();
+    fillList($('pod-subs'), function () {
       var list = lib.subscriptions || [];
-      subs.innerHTML = list.length ? list.map(function (s) { return rowHTML(s, { ariaLabel: 'Open ' + (s.title || s.feedUrl), progress: false }); }).join('') : '<div class="empty">Subscribe to a show to keep it here.</div>';
-    }
-    var feat = $('pod-featured');
-    if (feat) feat.innerHTML = (E.PODCAST_FEATURED || []).map(function (f) {
-      return rowHTML({ type: 'show', feedUrl: f.feedUrl, title: f.title, author: f.author || '', image: f.image || '' }, { ariaLabel: 'Open ' + f.title, progress: false });
-    }).join('');
+      return list.length ? list.map(function (s) { return rowHTML(s, { ariaLabel: 'Open ' + (s.title || s.feedUrl), progress: false }); }).join('') : '<div class="empty">Subscribe to a show to keep it here.</div>';
+    });
+    fillList($('pod-featured'), function () {
+      return (E.PODCAST_FEATURED || []).map(function (f) {
+        return rowHTML({ type: 'show', feedUrl: f.feedUrl, title: f.title, author: f.author || '', image: f.image || '' }, { ariaLabel: 'Open ' + f.title, progress: false });
+      }).join('');
+    });
+  }
+  function renderPodContinue() {
+    fillList($('pod-continue'), function () {
+      var items = E.continueListening(lib) || [];
+      return items.length ? items.slice(0, 10).map(function (it) { return rowHTML(it, { queue: true }); }).join('') : '<div class="empty">Episodes you start show up here.</div>';
+    });
   }
   function renderPodShow() {
     var body = $('pod-show-body');
@@ -2616,29 +2982,31 @@
     var show = pod.show || { title: E.urlHost(feedUrl), author: '', description: '', image: '' };
     var subscribed = E.isSubscribed(lib, toShowItem(show, feedUrl));
     var status = pod.showStatus || '';
-    var h = '<div class="card"><div class="show-head">' +
-      '<div class="cover">' + (safeImgUrl(show.image) ? '<img src="' + esc(safeImgUrl(show.image)) + '" alt="" referrerpolicy="no-referrer" decoding="async">' : esc(initialOf(show.title))) + '</div>' +
-      '<div><h1>' + esc(show.title || 'Untitled show') + '</h1><div class="by">' + esc(show.author || E.urlHost(feedUrl)) + '</div>' +
-      '<div class="row"><button type="button" class="btn small' + (subscribed ? ' ghost' : '') + '" data-show-act="subscribe">' + (subscribed ? '✓ Subscribed' : '＋ Subscribe') + '</button>' +
-      '<button type="button" class="btn ghost small" data-show-act="refresh">Refresh</button></div></div></div>';
-    if (show.description) h += '<div class="show-desc' + (pod.openDesc ? ' open' : '') + '">' + esc(show.description) + '</div>' +
-      '<button type="button" class="link" data-show-act="desc" style="margin-top:6px">' + (pod.openDesc ? 'Show less' : 'Show more') + '</button>';
-    if (status.indexOf('error:') === 0) h += '<div class="inline-err" style="margin-top:12px">' + esc(status.slice(6)) + '</div>';
-    else if (status.indexOf('stale:') === 0) h += '<div class="status" style="margin-top:8px">Showing the saved copy — refresh failed: ' + esc(status.slice(6)) + '</div>';
-    else if (status) h += '<div class="status" style="margin-top:8px">' + esc(status) + '</div>';
-    h += '</div>';
-    var eps = pod.episodes || [];
-    var shown = eps.slice(0, pod.page * EPISODE_PAGE);
-    h += '<h2>Episodes <span class="count">' + eps.length + '</span></h2><div class="list">';
-    h += shown.map(function (ep) {
-      var item = toEpisodeItem(show, feedUrl, ep);
-      var sub = [ep.published ? E.formatDate(ep.published) : '', ep.duration ? E.formatDuration(ep.duration) : '', ep.season ? 'S' + ep.season + (ep.episode ? 'E' + ep.episode : '') : ''].filter(Boolean).join(' · ');
-      return rowHTML(item, { queue: true, subtitle: sub, description: ep.description || '' });
-    }).join('');
-    if (!eps.length && !status) h += '<div class="empty">No playable episodes in this feed.</div>';
-    h += '</div>';
-    if (shown.length < eps.length) h += '<button type="button" class="btn ghost more" data-show-act="more">Load more (' + (eps.length - shown.length) + ' left)</button>';
-    body.innerHTML = h;
+    fillList(body, function () {
+      var h = '<div class="card"><div class="show-head">' +
+        '<div class="cover">' + (safeImgUrl(show.image) ? '<img src="' + esc(safeImgUrl(show.image)) + '" alt="" referrerpolicy="no-referrer" decoding="async">' : esc(initialOf(show.title))) + '</div>' +
+        '<div><h1>' + esc(show.title || 'Untitled show') + '</h1><div class="by">' + esc(show.author || E.urlHost(feedUrl)) + '</div>' +
+        '<div class="row"><button type="button" class="btn small' + (subscribed ? ' ghost' : '') + '" data-show-act="subscribe">' + (subscribed ? '✓ Subscribed' : '＋ Subscribe') + '</button>' +
+        '<button type="button" class="btn ghost small" data-show-act="refresh">Refresh</button></div></div></div>';
+      if (show.description) h += '<div class="show-desc' + (pod.openDesc ? ' open' : '') + '">' + esc(show.description) + '</div>' +
+        '<button type="button" class="link" data-show-act="desc" style="margin-top:6px">' + (pod.openDesc ? 'Show less' : 'Show more') + '</button>';
+      if (status.indexOf('error:') === 0) h += '<div class="inline-err" style="margin-top:12px">' + esc(status.slice(6)) + '</div>';
+      else if (status.indexOf('stale:') === 0) h += '<div class="status" style="margin-top:8px">Showing the saved copy — refresh failed: ' + esc(status.slice(6)) + '</div>';
+      else if (status) h += '<div class="status" style="margin-top:8px">' + esc(status) + '</div>';
+      h += '</div>';
+      var eps = pod.episodes || [];
+      var shown = eps.slice(0, pod.page * EPISODE_PAGE);
+      h += '<h2>Episodes <span class="count">' + eps.length + '</span></h2><div class="list">';
+      h += shown.map(function (ep) {
+        var item = toEpisodeItem(show, feedUrl, ep);
+        var sub = [ep.published ? E.formatDate(ep.published) : '', ep.duration ? E.formatDuration(ep.duration) : '', ep.season ? 'S' + ep.season + (ep.episode ? 'E' + ep.episode : '') : ''].filter(Boolean).join(' · ');
+        return rowHTML(item, { queue: true, subtitle: sub, description: ep.description || '' });
+      }).join('');
+      if (!eps.length && !status) h += '<div class="empty">No playable episodes in this feed.</div>';
+      h += '</div>';
+      if (shown.length < eps.length) h += '<button type="button" class="btn ghost more" data-show-act="more">Load more (' + (eps.length - shown.length) + ' left)</button>';
+      return h;
+    });
   }
 
   /* =====================================================================
@@ -2661,15 +3029,10 @@
     return true;
   }
   function renderTv() {
-    var samples = $('tv-samples');
-    if (samples) samples.innerHTML = SAMPLE_STREAMS.map(function (s) {
-      return rowHTML(toVideoItem(s.url, s.title, s.note), { queue: true, subtitle: s.note + ' · ' + E.urlHost(s.url) });
-    }).join('');
-    var recents = $('tv-recents');
-    if (recents) {
-      var list = (lib.recents || []).filter(function (r) { return r.type === 'video'; }).slice(0, 20);
-      recents.innerHTML = list.length ? list.map(function (it) { return rowHTML(it, { queue: true }); }).join('') : '<div class="empty">Videos you play show up here.</div>';
-    }
+    fillList($('tv-samples'), function () {
+      return SAMPLE_STREAMS.map(function (s) { return rowHTML(toVideoItem(s.url, s.title, s.note), { queue: true, subtitle: s.note + ' · ' + E.urlHost(s.url) }); }).join('');
+    });
+    renderRecents();
   }
 
   /* =====================================================================
@@ -2696,43 +3059,60 @@
     if (!el) return;
     var favs = lib.favourites || [];
     if (count) count.textContent = favs.length ? String(favs.length) : '';
-    if (!favs.length) { el.innerHTML = '<div class="empty">Tap ♡ on a station, episode, show or video to keep it here.</div>'; return; }
+    if (!favs.length) { fillList(el, function () { return '<div class="empty">Tap ♡ on a station, episode, show or video to keep it here.</div>'; }); return; }
     var groups = [
       ['Radio', favs.filter(function (f) { return f.type === 'radio'; })],
       ['Podcasts', favs.filter(function (f) { return f.type === 'podcast' || f.type === 'show'; })],
       ['Videos', favs.filter(function (f) { return f.type === 'video'; })]
     ];
-    el.innerHTML = groups.filter(function (g) { return g[1].length; }).map(function (g) {
-      return '<div class="label" style="margin-top:10px">' + g[0] + '</div><div class="list">' + g[1].map(function (it) {
-        return rowHTML(it, { queue: it.type !== 'show', ariaLabel: it.type === 'show' ? 'Open ' + itemTitle(it) : undefined, progress: it.type !== 'show' });
-      }).join('') + '</div>';
-    }).join('');
+    fillList(el, function () {
+      return groups.filter(function (g) { return g[1].length; }).map(function (g) {
+        return '<div class="label" style="margin-top:10px">' + g[0] + '</div><div class="list">' + g[1].map(function (it) {
+          return rowHTML(it, { queue: it.type !== 'show', ariaLabel: it.type === 'show' ? 'Open ' + itemTitle(it) : undefined, progress: it.type !== 'show' });
+        }).join('') + '</div>';
+      }).join('');
+    });
   }
   function renderLibLists() {
-    var cont = $('lib-continue');
-    if (cont) {
-      var items = E.continueListening(lib) || [];
-      cont.innerHTML = items.length ? items.map(function (it) { return rowHTML(it, { queue: true }); }).join('') : '<div class="empty">Nothing in progress.</div>';
-    }
-    var rec = $('lib-recents');
-    if (rec) {
-      var list = (lib.recents || []).slice(0, 30);
-      rec.innerHTML = list.length ? list.map(function (it) { return rowHTML(it, { queue: true }); }).join('') : '<div class="empty">Nothing played yet.</div>';
-    }
-    var subs = $('lib-subs');
-    if (subs) {
+    renderLibContinue();
+    renderRecents();
+    fillList($('lib-subs'), function () {
       var s = lib.subscriptions || [];
-      subs.innerHTML = s.length ? s.map(function (it) { return rowHTML(it, { ariaLabel: 'Open ' + itemTitle(it), progress: false }); }).join('') : '<div class="empty">No subscriptions yet.</div>';
-    }
+      return s.length ? s.map(function (it) { return rowHTML(it, { ariaLabel: 'Open ' + itemTitle(it), progress: false }); }).join('') : '<div class="empty">No subscriptions yet.</div>';
+    });
+  }
+  function renderLibContinue() {
+    fillList($('lib-continue'), function () {
+      var items = E.continueListening(lib) || [];
+      return items.length ? items.map(function (it) { return rowHTML(it, { queue: true }); }).join('') : '<div class="empty">Nothing in progress.</div>';
+    });
+  }
+  // The sections that follow resume positions (Podcasts and Library ▸ Continue listening); cheap enough for every pause.
+  function renderContinueLists() {
+    renderLibContinue();
+    if (!pod.showUrl) renderPodContinue();
+  }
+  // Recents live in two places (TV ▸ Recent videos, Library ▸ Recents); both are rebuilt when a play is recorded.
+  function renderRecents() {
+    fillList($('tv-recents'), function () {
+      var list = (lib.recents || []).filter(function (r) { return r.type === 'video'; }).slice(0, 20);
+      return list.length ? list.map(function (it) { return rowHTML(it, { queue: true }); }).join('') : '<div class="empty">Videos you play show up here.</div>';
+    });
+    fillList($('lib-recents'), function () {
+      var all = (lib.recents || []).slice(0, 30);
+      return all.length ? all.map(function (it) { return rowHTML(it, { queue: true }); }).join('') : '<div class="empty">Nothing played yet.</div>';
+    });
   }
   function renderQueue() {
     var el = $('lib-queue'), count = $('lib-queue-count');
     if (!el) return;
     var q = lib.queue || [];
     if (count) count.textContent = q.length ? String(q.length) : '';
-    el.innerHTML = q.length
-      ? q.map(function (it) { return rowHTML(it, { remove: true, reorder: true }); }).join('') + '<button type="button" class="btn ghost small more" data-queue-act="clear">Clear queue</button>'
-      : '<div class="empty">Add items with ⊕ to line them up.</div>';
+    fillList(el, function () {
+      return q.length
+        ? q.map(function (it) { return rowHTML(it, { remove: true, reorder: true }); }).join('') + '<button type="button" class="btn ghost small more" data-queue-act="clear">Clear queue</button>'
+        : '<div class="empty">Add items with ⊕ to line them up.</div>';
+    });
     var next = $('c-next');
     if (next) next.disabled = !q.length;
   }
@@ -2774,12 +3154,20 @@
     if (!row) return;
     var value = row.type === 'toggle' ? !settings()[key] : key === 'maxHeight' ? parseInt(raw, 10) : str(raw);
     commit(E.setSetting(lib, key, value, now()));
-    if (settings()[key] !== value) toast('That setting wasn\'t accepted.');     // the engine validates type and range
+    if (settings()[key] !== value) { toast('That setting wasn\'t accepted.'); renderSettings(); return; }     // the engine validates type and range
     if (key === 'theme') applyTheme();
     if (key === 'dataSaver' || key === 'maxHeight') { if (player.hls) player.hls.setCaps({ dataSaver: !!settings().dataSaver, maxHeight: settings().maxHeight }); }
     if (key === 'httpsOnly') renderRadio();
     if (key === 'visualiser' && !settings().visualiser) { vizStop(); player.vizOn = false; player.vizNote = ''; renderPlayerChrome(); }
-    renderSettings();
+    syncSettingControl(key, row);
+  }
+  // Patch the control that was just used instead of rebuilding the card, which would drop keyboard focus from it.
+  function syncSettingControl(key, row) {
+    var el = $('lib-settings'), control = null;
+    try { control = el && typeof el.querySelector === 'function' ? el.querySelector('[data-setting="' + key + '"]') : null; } catch (e) { control = null; }
+    if (!control) { renderSettings(); return; }
+    if (row.type === 'toggle') { var on = row.invert ? !settings()[key] : !!settings()[key]; control.setAttribute('aria-checked', on ? 'true' : 'false'); }
+    else control.value = String(settings()[key]);
   }
   function exportLibrary() {
     var out = E.libraryExport(lib);
@@ -2813,7 +3201,11 @@
       btns[i].classList.toggle('on', on);
       if (on) btns[i].setAttribute('aria-current', 'page'); else btns[i].removeAttribute('aria-current');
     }
-    saveUi();
+    // Lists are rebuilt only where something changed, so a tab entered later catches up here (resume positions,
+    // recents, queue); a show page keeps its DOM state and is left alone.
+    if (name === 'library') renderLibrary();
+    else if (name === 'podcasts' && !pod.showUrl) renderPodHome();
+    else if (name === 'tv') renderTv();
     updateStageMode();
     try { window.scrollTo(0, 0); } catch (e) { /* ignore */ }
   }
@@ -2827,35 +3219,76 @@
   }
 
   /* ---------- sheet ---------- */
+  // The sheet is modal: the page behind it is inert for keyboard and assistive tech, Tab wraps inside it, and focus
+  // returns to where it came from on close.
+  function focusEl(el) { if (el && typeof el.focus === 'function') { try { el.focus(); } catch (e) { /* ignore */ } } }
+  function setBehindSheetInert(on) {
+    ['app', 'mini', 'tabbar'].forEach(function (id) {
+      var el = $(id);
+      if (!el) return;
+      try { el.inert = on; } catch (e) { /* no inert support: aria-hidden still applies */ }
+      try { if (on) el.setAttribute('aria-hidden', 'true'); else el.removeAttribute('aria-hidden'); } catch (e) { /* ignore */ }
+    });
+  }
+  var SHEET_FOCUSABLE = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
+  function sheetFocusables() {
+    var s = $('sheet'), out = [], all = null;
+    try { all = s && typeof s.querySelectorAll === 'function' ? s.querySelectorAll(SHEET_FOCUSABLE) : null; } catch (e) { all = null; }
+    var n = all && typeof all.length === 'number' ? all.length : 0;
+    for (var i = 0; i < n; i++) {
+      var el = all[i];
+      if (el.hidden || (typeof el.closest === 'function' && el.closest('[hidden]'))) continue;
+      out.push(el);
+    }
+    return out;
+  }
+  function onSheetKeyDown(ev) {
+    if (!ui.sheetOpen || !ev || ev.key !== 'Tab') return;
+    var f = sheetFocusables();
+    if (!f.length) return;
+    var s = $('sheet'), active = document.activeElement || null;
+    var inside = !!(active && s && typeof s.contains === 'function' && s.contains(active));
+    if (ev.shiftKey ? (active === f[0] || !inside) : (active === f[f.length - 1] || !inside)) { ev.preventDefault(); focusEl(ev.shiftKey ? f[f.length - 1] : f[0]); }
+  }
   function openSheet() {
     if (!player.item) return;
     ui.sheetOpen = true;
+    ui.sheetReturnFocus = document.activeElement || null;
     var s = $('sheet');
     if (s) { s.classList.add('open'); s.setAttribute('aria-hidden', 'false'); }
     document.body.classList.add('sheet-open');
+    setBehindSheetInert(true);
     renderPlayerChrome();
     renderTime();
     if (player.vizOn && player.status === 'playing') vizStart();
-    var c = $('sheet-close');
-    if (c && typeof c.focus === 'function') { try { c.focus(); } catch (e) { /* ignore */ } }
+    focusEl($('sheet-close'));
   }
   function closeSheet() {
+    var wasOpen = ui.sheetOpen;
     ui.sheetOpen = false;
     var s = $('sheet');
     if (s) { s.classList.remove('open'); s.setAttribute('aria-hidden', 'true'); }
     document.body.classList.remove('sheet-open');
+    setBehindSheetInert(false);
     closeMenu();
     updateStageMode();
+    if (wasOpen) {
+      var back = ui.sheetReturnFocus;
+      ui.sheetReturnFocus = null;
+      focusEl(back && (typeof document.contains !== 'function' || document.contains(back)) ? back : $('mini-open'));
+    }
   }
   function artInner(it) {
     var src = safeImgUrl(itemImage(it));
     return src ? '<img src="' + esc(src) + '" alt="" referrerpolicy="no-referrer" decoding="async">' : esc(initialOf(itemTitle(it)));
   }
+  // Codec strings come from the playlist: a handful, each cut short, is all a line of chrome should carry.
+  function codecLine(codecs, sep) { return (codecs || []).slice(0, 4).map(function (c) { return E.truncate(str(c), 24); }).join(sep); }
   function streamInfoLine(info) {
     var parts = [], strat = player.strategy;
     parts.push(strat === 'mse-hls' ? 'Built-in HLS' : strat === 'native-hls' ? 'Native HLS' : strat === 'direct' ? 'Direct' : '');
     if (info) {
-      if (info.codecs && info.codecs.length) parts.push(info.codecs.join(' / '));
+      if (info.codecs && info.codecs.length) parts.push(codecLine(info.codecs, ' / '));
       if (info.bandwidth) parts.push(E.formatBitrate(info.bandwidth));
       if (info.resolution && info.resolution.width) parts.push(info.resolution.width + '×' + info.resolution.height);
       if (info.alternateAudio) parts.push('alt audio');
@@ -2892,14 +3325,20 @@
     if (mp) { mp.textContent = playing ? '⏸' : '▶'; mp.setAttribute('aria-label', playing ? 'Pause' : 'Play'); }
     var sheet = $('sheet');
     if (sheet) { sheet.classList.toggle('is-video', isVideoPlayback()); sheet.classList.toggle('wide', isVideoPlayback()); }
-    setText('sheet-kicker', st === 'loading' ? 'Loading' : st === 'error' ? 'Problem' : st === 'paused' ? 'Paused' : st === 'idle' ? 'Finished' : player.buffering ? 'Buffering' : 'Now playing');
+    var kicker = $('sheet-kicker');
+    if (kicker) {
+      if (playing && !player.buffering && it.type === 'radio') kicker.innerHTML = '<span class="onair" aria-hidden="true"></span>On air';   // a station is live by nature; no Live pill or "Go live" for it
+      else kicker.textContent = st === 'loading' ? 'Loading' : st === 'error' ? 'Problem' : st === 'paused' ? 'Paused' : st === 'idle' ? 'Finished' : player.buffering ? 'Buffering' : 'Now playing';
+    }
     setText('sheet-title', title);
     setText('sheet-sub', sub);
     var media = $('sheet-media');
     if (media) media.classList.toggle('ring', playing && !player.vizOn);
     setText('viz-note', player.vizNote || '');
     var live = isLive(), seekable = isSeekable() && !live;
-    setHidden('live-row', !live);
+    // The Live pill and "Go live" need a live edge to seek to: the built-in HLS controller knows it and native HLS
+    // exposes it through seekable; an Icecast/Shoutcast stream has neither (duration Infinity, seekable empty).
+    setHidden('live-row', !(player.hls ? live : live && hasSeekableRange()));
     setHidden('seek-row', !seekable);
     var cp = $('c-play');
     if (cp) { cp.textContent = playing ? '⏸' : '▶'; cp.setAttribute('aria-label', playing ? 'Pause' : 'Play'); }
@@ -3021,7 +3460,7 @@
     for (var i = info.variants.length - 1; i >= 0; i--) {
       (function (idx) {
         var v = info.variants[idx];
-        items.push({ label: E.hlsVariantLabel(v), hint: v.codecs && v.codecs.length ? v.codecs.join(', ') : '', on: info.manual && idx === info.variantIdx, pick: function () { if (player.hls) player.hls.setQuality(idx); } });
+        items.push({ label: E.hlsVariantLabel(v), hint: v.codecs && v.codecs.length ? codecLine(v.codecs, ', ') : '', on: info.manual && idx === info.variantIdx, pick: function () { if (player.hls) player.hls.setQuality(idx); } });
       })(i);
     }
     openMenu($('c-quality'), 'Quality', items);
@@ -3157,9 +3596,11 @@
     });
     on('menu', 'click', onMenuClick);
     on('scrim', 'click', closeMenu);
+    on('sheet', 'keydown', onSheetKeyDown);
 
     // document & window
     document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('visibilitychange', function () { if (!document.hidden && ui.sheetOpen && player.status === 'playing') vizStart(); });
     window.addEventListener('resize', positionStage);
     window.addEventListener('scroll', positionStage, { passive: true, capture: true });   // capture: the sheet scrolls on its own
     on('sheet', 'transitionend', positionStage);                                            // the stage follows the sheet once it has slid in
@@ -3180,10 +3621,25 @@
     } catch (e) { /* layout still follows resize/scroll events */ }
   }
   // #play=<url>[&title=…][&type=…] opens what was shared: a show's feed, a station, or a video/audio link (TV tab); #tab=<name> just switches tabs.
-  function onHashChange() {
+  // A deep link is acted on when the page loads with one and when the user navigates this top-level window to one
+  // (address bar, a link, back/forward) — never while Aerial is framed: a page that frames it can rewrite the frame's
+  // fragment at will and would otherwise drive playback, segment fetches and the recents it records without a gesture
+  // (frame-ancestors can't be set from HTML; this is the in-page half of that guard). A hashchange that reaches a hidden
+  // document isn't the user either (an opener steering a background window). Once read, the link is cleared from the
+  // URL so a reload or a later fragment change can't replay it.
+  function isFramed() {
+    try { return typeof window !== 'undefined' && window.top != null && window.top !== window; } catch (e) { return true; }
+  }
+  function consumeHash() {
+    try { if (typeof history !== 'undefined' && typeof history.replaceState === 'function') history.replaceState(null, '', pageBase()); } catch (e) { /* the fragment stays; it is inert once read */ }
+  }
+  function onHashChange(ev) {
     var hash = typeof location !== 'undefined' ? str(location.hash) : '';
     var share = E.parseShareHash(hash);
     if (share && share.url) {
+      if (isFramed()) { log('deep link ignored: Aerial is framed by another page'); return false; }
+      if (ev && document.hidden === true) { log('deep link ignored: the page is hidden'); return false; }
+      consumeHash();
       if (share.type === 'show') { openShow(share.url, share.title ? { title: share.title, author: '', image: '', description: '' } : null); return true; }
       setTvMessage('');
       showTab('tv');
@@ -3247,16 +3703,13 @@
     if (!engineReady()) { fatal(MSG.engine); exposeHooks(); return; }
     loadLibrary();
     loadFeeds();
-    var savedUi = loadUi();
     applyTheme();
     bindStatic();
     bindVideo(video);
     bindMediaSession();
     renderAll();
     setInterval(clockTick, 1000);                     // sleep timer, live latency, stage position — for the page's lifetime
-    var startTab = settings().startTab || 'radio';
-    if (TABS.indexOf(startTab) < 0) startTab = TABS.indexOf(savedUi.tab) >= 0 ? savedUi.tab : 'radio';
-    showTab(startTab);
+    showTab(settings().startTab || 'radio');          // the engine-validated "Start on" setting decides the first tab
     radioLoadTop('votes');
     radioLoadTop('trend');
     onHashChange();

@@ -150,6 +150,15 @@ test('libraryCompactItem: never cuts a surrogate pair in half, strips control ch
   assert.equal(E.libraryCompactItem(F({ type: 'radio', id: 'x', name: 'tab\tand\r\nnewline' })).name, 'tab and newline');
   assert.doesNotThrow(() => encodeURIComponent(c.name));
 });
+test('libraryCompactItem: bidi overrides, zero-width space, word joiner and BOM vanish from text; ZWJ/ZWNJ survive', () => {
+  const c = E.libraryCompactItem(F({ type: 'radio', id: 'x', name: 'ok\u202egnp.exe', title: 'a\u200b\u2060\ufeffb \u2066c\u2069 \u202ad\u202c', author: '👨\u200d👩\u200d👧 می\u200cخواهم' }));
+  assert.equal(c.name, 'okgnp.exe', 'a right-to-left override cannot disguise an extension');
+  assert.equal(c.title, 'ab c d', 'invisible characters vanish rather than becoming spaces');
+  assert.equal(c.author, '👨\u200d👩\u200d👧 می\u200cخواهم', 'emoji joiners and Persian ZWNJ are spelling, not spoofing');
+  deepEq(E.parseShareHash('#play=https://h/x&title=ok%E2%80%AEgnp.exe'), { url: 'https://h/x', title: 'okgnp.exe', type: null }, 'share-link titles go through the same text()');
+  const meta = E.libraryMediaMetadata ? E.libraryMediaMetadata(F({ type: 'video', url: 'https://h/x', title: 'ok\u202egnp.exe' })) : null;
+  if (meta) assert.equal(meta.title, 'okgnp.exe');
+});
 test('libraryCompactItem: key(compact(x)) === key(x) for every fixture; junk → null', () => {
   [STATION, STATION_HLS, SHOW, VIDEO, F(EP(1)), F(EP(2, { feedUrl: undefined })), F(EP(3, { id: '' }))].forEach((x) => {
     assert.equal(E.libraryItemKey(E.libraryCompactItem(x)), E.libraryItemKey(x));

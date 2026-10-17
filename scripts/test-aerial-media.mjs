@@ -31,6 +31,13 @@
  *       remux must have the same sample table (every dts, duration, cts, size,
  *       flag and byte) as the remux of the unsegmented (b).
  *   (d) audio-only AAC.
+ *   (e) two independent encodes (the second with its own 90 kHz clock starting
+ *       at 100 s and a different length) joined by an EXT-X-DISCONTINUITY in a
+ *       playlist: what index.html does there (flushTs → fresh tsCreateState →
+ *       a new hlsTimestampOffset so the restarted clock lands at seg.start) is
+ *       emulated, and the remux must play straight through: dts monotonic
+ *       across the join, the second part starting exactly at the first
+ *       segment's playlist duration, packet counts and sizes of both sources.
  *
  * Sample sizes are checked against ffmpeg's own TS→MP4 remux of the same
  * source (-c copy, AUDs filtered out): AVCC lengths replace start codes of
@@ -123,31 +130,47 @@ function tracksOf(r) {
 }
 const samplesOf = (r, t) => { const src = t.type === 'video' ? r.video : r.audio; return src && src.samples ? src.samples : []; };
 // Demux the segments in order (state threaded), flush, then mux: init + one moof/mdat per segment per track.
-function remux(segments, outFile) {
+// `info[i]` = {discontinuity, start} from the playlist (hlsParse); a segment flagged discontinuity is handled the way
+// index.html's processTs handles it: the old state is flushed (its last access unit lands in the previous
+// segment's fragment, under the old offset), a fresh state demuxes the new segment, and a new timestamp offset
+// puts the restarted 90 kHz clock at the segment's playlist start.
+function remux(segments, outFile, info) {
+  const segs = segments.map((bytes, i) => ({ bytes, discontinuity: i > 0 && !!(info && info[i] && info[i].discontinuity), start: info && info[i] ? info[i].start : 0 }));
   let state = E.tsCreateState();
   const results = [], errors = [];
-  for (const bytes of segments) {
-    const r = E.tsDemux(bytes, state);
+  // The flush completes the last access unit of a timeline, so its samples belong to that timeline's last fragment.
+  const drain = () => {
+    const fin = E.tsFlush(state);
+    errors.push(...fin.errors);
+    const last = results[results.length - 1];
+    for (const k of ['video', 'audio']) if (fin[k] && fin[k].samples.length) {
+      if (last[k]) last[k].samples.push(...fin[k].samples); else last[k] = fin[k];
+    }
+  };
+  for (const seg of segs) {
+    if (seg.discontinuity) { drain(); state = E.tsCreateState(); }
+    const r = E.tsDemux(seg.bytes, state);
     state = r.state; results.push(r); errors.push(...r.errors);
   }
-  // The flush completes the last access unit of the last segment, so its samples belong to that segment's fragment.
-  const fin = E.tsFlush(state);
-  errors.push(...fin.errors);
-  const last = results[results.length - 1];
-  for (const k of ['video', 'audio']) if (fin[k] && fin[k].samples.length) {
-    if (last[k]) last[k].samples.push(...fin[k].samples); else last[k] = fin[k];
-  }
+  drain();
   const tracks = tracksOf(results[0]);
   assert.ok(tracks.length, 'the first segment yields at least one track');
   const init = E.mp4InitSegment(tracks);
   assert.ok(init, 'init segment built');
-  // Every TS timestamp is a 90 kHz tick; the SourceBuffer offset is computed from the earliest dts of the first segment.
-  const firstDts = Math.min(...tracks.map((t) => samplesOf(results[0], t)).filter((s) => s.length).map((s) => s[0].dts));
-  const shift = E.hlsTimestampOffset({ segmentStart: 0, firstDts, timescale: TS_CLOCK }); // seconds, negative
-  assert.equal(shift, -firstDts / TS_CLOCK);
-  let seq = 0;
-  const parts = [init], frags = [];
+  // Every TS timestamp is a 90 kHz tick; the SourceBuffer offset of a timeline is computed from the earliest dts of
+  // its first segment (index.html takes the video's first dts, which differs from the earliest by the a/v skew at most).
+  const earliest = (r) => Math.min(...tracks.map((t) => samplesOf(r, t)).filter((s) => s.length).map((s) => s[0].dts));
+  const firstDts = earliest(results[0]);
+  const shift0 = E.hlsTimestampOffset({ segmentStart: 0, firstDts, timescale: TS_CLOCK }); // seconds, negative
+  assert.equal(shift0, -firstDts / TS_CLOCK);
+  let seq = 0, shift = shift0;
+  const parts = [init], frags = [], timelines = [{ segIndex: 0, firstDts, shift: shift0 }];
   results.forEach((r, segIndex) => {
+    if (segIndex > 0 && segs[segIndex].discontinuity) {
+      const first = earliest(r);
+      shift = E.hlsTimestampOffset({ segmentStart: segs[segIndex].start, firstDts: first, timescale: TS_CLOCK });
+      timelines.push({ segIndex, firstDts: first, shift });
+    }
     for (const t of tracks) {
       const samples = samplesOf(r, t);
       if (!samples.length) continue;
@@ -160,7 +183,7 @@ function remux(segments, outFile) {
   });
   const remuxed = E.concatBytes(parts);
   writeFileSync(outFile, Buffer.from(remuxed.buffer, remuxed.byteOffset, remuxed.byteLength));
-  return { results, errors, tracks, init, firstDts, frags, remuxed, out: outFile, video: tracks.find((t) => t.type === 'video') || null, audio: tracks.find((t) => t.type === 'audio') || null };
+  return { results, errors, tracks, init, firstDts, timelines, frags, remuxed, out: outFile, video: tracks.find((t) => t.type === 'video') || null, audio: tracks.find((t) => t.type === 'audio') || null };
 }
 // Per-track sample table of a remuxed file, read back with the engine's parser: dts from tfdt + durations,
 // every trun field, and the sample bytes from the mdat.
@@ -209,6 +232,23 @@ function fixture(name) {
   } else if (name === 'audio') {
     ffmpeg([...A, '-t', String(SECONDS), ...AAC, '-f', 'mpegts', src]);
     f = { src, segments: [bytesOf(src)] };
+  } else if (name === 'disc') {
+    // (e) two independent encodes: different picture and tone, the second 3 s long with its 90 kHz clock starting
+    // at 100 s; a hand-written playlist joins them with EXT-X-DISCONTINUITY. The first EXTINF is the real span of
+    // the first file (its audio outlasts its video by the AAC padding), so the second timeline starts after it.
+    const src2 = join(DIR, name + '-2.ts'), playlist = join(DIR, name + '.m3u8');
+    ffmpeg([...V, ...A, '-t', String(SECONDS), ...X264('baseline', 0), ...AAC, '-f', 'mpegts', src]);
+    ffmpeg(['-f', 'lavfi', '-i', `testsrc=size=320x180:rate=${FPS}`, '-f', 'lavfi', '-i', 'sine=frequency=880:sample_rate=48000', '-t', '3', ...X264('baseline', 0), ...AAC, '-output_ts_offset', '100', '-f', 'mpegts', src2]);
+    const span = (file) => { const all = [...packetsOf(file, 'v:0'), ...packetsOf(file, 'a:0')]; return (Math.max(...all.map((p) => p.pts + p.duration)) - Math.min(...all.map((p) => p.dts))) / TS_CLOCK; };
+    const d0 = Math.ceil(span(src) * 1000) / 1000, d1 = Math.ceil(span(src2) * 1000) / 1000;
+    writeFileSync(playlist, `#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:5\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:${d0.toFixed(3)},\n${name}.ts\n#EXT-X-DISCONTINUITY\n#EXTINF:${d1.toFixed(3)},\n${name}-2.ts\n#EXT-X-ENDLIST\n`);
+    const pl = E.hlsParse(readFileSync(playlist, 'utf8'), playlist);
+    deepEq(pl.segments.map((s) => [s.uri, s.discontinuity, s.start]), [[name + '.ts', false, 0], [name + '-2.ts', true, d0]], 'the playlist parses as two segments with a discontinuity at the second');
+    f = { src, src2, segments: [bytesOf(src), bytesOf(src2)], info: pl.segments.map((s) => ({ discontinuity: s.discontinuity, start: s.start })), starts: [0, d0], durations: [d0, d1] };
+    f.srcV2 = packetsOf(src2, 'v:0'); f.srcA2 = packetsOf(src2, 'a:0');
+    f.ref2 = join(DIR, name + '-2-ffmpeg.mp4');
+    ffmpeg(['-i', src2, '-c', 'copy', '-bsf:v', 'filter_units=remove_types=9', '-f', 'mp4', f.ref2]);
+    f.refV2 = packetsOf(f.ref2, 'v:0'); f.refA2 = packetsOf(f.ref2, 'a:0');
   } else throw new Error('unknown fixture ' + name);
   const streams = streamsOf(f.src);
   f.srcVideo = streams.find((s) => s.codec_type === 'video') || null;
@@ -220,7 +260,7 @@ function fixture(name) {
   ffmpeg(['-i', f.src, '-c', 'copy', ...(f.srcVideo ? ['-bsf:v', 'filter_units=remove_types=9'] : []), '-f', 'mp4', f.ref]);
   f.refV = f.srcVideo ? packetsOf(f.ref, 'v:0') : [];
   f.refA = packetsOf(f.ref, 'a:0');
-  Object.assign(f, remux(f.segments, out));
+  Object.assign(f, remux(f.segments, out, f.info));
   return (built[name] = f);
 }
 
@@ -376,6 +416,62 @@ test('(c) hls segments: the segmented remux has the same sample table as the uns
   assert.ok(seg.frags.length > whole.frags.length);
   // ffprobe sees the same packets too (an independent reading of the two files).
   for (const spec of ['v:0', 'a:0']) deepEq(packetsOf(seg.out, spec), packetsOf(whole.out, spec), 'ffprobe packets ' + spec);
+});
+
+/* ---------- (e): a discontinuity — fresh demux state, new offset, one continuous output timeline ---------- */
+test('(e) discontinuity: a fresh state per timeline, the old one drained into its own fragment, one init (same codecs), a second offset at the playlist start of segment 1', () => {
+  const f = fixture('disc');
+  deepEq(f.errors, []);
+  assert.equal(f.timelines.length, 2, 'two timelines');
+  deepEq(f.timelines.map((t) => t.segIndex), [0, 1]);
+  assert.ok(f.timelines[1].firstDts > 99 * TS_CLOCK && f.timelines[1].firstDts < 102 * TS_CLOCK, 'the second encode really starts its clock near 100 s: ' + f.timelines[1].firstDts);
+  assert.equal(f.timelines[1].shift, f.starts[1] - f.timelines[1].firstDts / TS_CLOCK, 'new offset = seg.start − first dts, as hlsTimestampOffset defines it');
+  assert.equal(f.frags.length, 4, 'one moof per segment per track');
+  // Every access unit of each source lands in its own segment's fragment: the first timeline's last unit only comes
+  // out of tsFlush, which index.html runs before abandoning the state (and this harness merges into fragment 0).
+  deepEq(f.frags.filter((x) => x.trackId === f.video.id).map((x) => x.count), [f.srcV.length, f.srcV2.length], 'video samples per fragment = source packets');
+  deepEq(f.frags.filter((x) => x.trackId === f.audio.id).map((x) => x.count), [f.srcA.length, f.srcA2.length], 'audio frames per fragment = source packets');
+  // The second timeline starts where the playlist says: its earliest sample sits at seg.start, the other track within a frame.
+  const start1 = Math.round(f.starts[1] * TS_CLOCK);
+  const seg1 = f.frags.filter((x) => x.segIndex === 1), in90k = (x) => Math.round(x.bmdt * TS_CLOCK / f.tracks.find((t) => t.id === x.trackId).timescale);
+  assert.ok(Math.abs(Math.min(...seg1.map(in90k)) - start1) <= 1, `earliest tfdt of segment 1 = ${Math.min(...seg1.map(in90k))} vs playlist start ${start1}`);
+  assert.ok(seg1.every((x) => Math.abs(in90k(x) - start1) <= FRAME), 'both tracks start within a frame of the playlist start');
+  const seg0 = f.frags.filter((x) => x.segIndex === 0);
+  assert.ok(seg0.some((x) => x.bmdt === 0), 'the first timeline starts at 0');
+  for (const t of f.tracks) assert.ok(isSorted(f.frags.filter((x) => x.trackId === t.id).map((x) => x.bmdt)), `track ${t.id} tfdt increases across the discontinuity`);
+  deepEq(E.mp4CodecsFromInit(f.init), [f.video.codec, 'mp4a.40.2']);
+});
+
+test('(e) discontinuity: ffmpeg decodes the joined remux end to end without a single error', () => {
+  const f = fixture('disc');
+  const r = spawnSync('ffmpeg', ['-v', 'error', '-nostdin', '-i', f.out, '-f', 'null', '-'], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal((r.stderr || '').trim(), '');
+});
+
+test('(e) discontinuity: ffprobe sees one monotonic timeline — counts, keyframes and sizes of both sources, part 2 starting at the playlist start, pts lists = each source shifted by its own offset', () => {
+  const f = fixture('disc');
+  const v = packetsOf(f.out, 'v:0'), a = packetsOf(f.out, 'a:0');
+  assert.equal(v.length, f.srcV.length + f.srcV2.length, 'video packets = both sources');
+  assert.equal(a.length, f.srcA.length + f.srcA2.length, 'audio packets = both sources');
+  assert.equal(v.filter((p) => p.key).length, f.srcV.filter((p) => p.key).length + f.srcV2.filter((p) => p.key).length, 'keyframes = both sources');
+  assert.ok(isSorted(v.map((p) => p.dts)), 'video dts strictly increasing across the join');
+  assert.ok(isSorted(a.map((p) => p.dts)), 'audio dts strictly increasing across the join');
+  assert.ok(v.every((p) => p.duration === FRAME) && v.every((p) => p.pts === p.dts), 'every frame 1/25 s, no B-frames');
+  const n = f.srcV.length, start1 = Math.round(f.starts[1] * TS_CLOCK), shift1 = Math.round(f.timelines[1].shift * TS_CLOCK);
+  assert.ok(v[n].key, 'part 2 opens on its IDR');
+  assert.ok(Math.abs(v[n].dts - start1) <= FRAME, `part 2's first video dts ${v[n].dts} within a frame of the playlist start ${start1}`);
+  assert.ok(v[n].dts >= v[n - 1].dts + FRAME, 'no overlap with the last frame of part 1');
+  assert.ok(v[n - 1].pts + FRAME <= Math.round(f.starts[1] * TS_CLOCK) + 1, 'part 1 ends by its EXTINF');
+  deepEq(v.slice(0, n).map((p) => p.pts), f.srcV.map((p) => p.pts - f.firstDts), 'part 1 video pts = source 1 shifted to 0');
+  deepEq(v.slice(n).map((p) => p.pts), f.srcV2.map((p) => p.pts + shift1), 'part 2 video pts = source 2 shifted onto the playlist timeline');
+  const m = f.srcA.length, a1 = f.frags.find((x) => x.segIndex === 1 && x.trackId === f.audio.id).bmdt;
+  deepEq(a.slice(0, m).map((p) => p.pts), f.srcA.map((p) => Math.round((p.pts - f.firstDts) * 48000 / TS_CLOCK)), 'part 1 audio pts (48 kHz)');
+  deepEq(a.slice(m).map((p) => p.pts), f.srcA2.map((p, i) => a1 + i * AAC_FRAME), 'part 2 audio pts: its tfdt then 1024-sample steps');
+  assert.ok(a[m].dts > a[m - 1].dts, 'part 2 audio starts after part 1 ended');
+  deepEq(v.map((p) => p.size), [...f.refV, ...f.refV2].map((p) => p.size), 'video sample sizes = ffmpeg\'s own remux of each source');
+  deepEq(a.map((p) => p.size), [...f.refA, ...f.refA2].map((p) => p.size), 'audio sample sizes = ffmpeg\'s own remux of each source');
+  // Dropping the flush, keeping the old state, or anchoring the new offset at 0 instead of seg.start would each break one of the above.
 });
 
 /* ---- run ---- */

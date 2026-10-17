@@ -24,18 +24,20 @@ function loadEngine() {
 // vm-sandbox values carry the sandbox's prototypes; compare cross-realm by shape.
 const deepEq = (a, b, m) => __assert.equal(JSON.stringify(a), JSON.stringify(b), m);
 function runner(name) {
-  const tests = [];
+  const tests = [], skipped = [];
   const test = (n, f) => tests.push([n, f]);
+  // A case that cannot run here (no ffmpeg, an encoder missing) is announced and counted apart: never a ✓.
+  const skip = (what, why) => { skipped.push(what); console.log(`  [skip] ${name}: ${what} — ${why}`); };
   const run = () => {
     let passed = 0, failed = 0;
     for (const [n, f] of tests) {
       try { f(); passed++; console.log(`  ✓ ${n}`); }
       catch (e) { failed++; console.log(`  ✗ ${n}\n      ${e && e.stack ? e.stack.split('\n').slice(0, 4).join('\n      ') : e}`); }
     }
-    console.log(`\n${name}: ${passed} passed, ${failed} failed`);
+    console.log(`\n${name}: ${passed} passed, ${failed} failed${skipped.length ? `, ${skipped.length} skipped` : ''}`);
     process.exit(failed ? 1 : 0);
   };
-  return { test, run, assert: __assert };
+  return { test, run, skip, assert: __assert };
 }
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
@@ -43,7 +45,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const E = loadEngine();
-const { test, run, assert } = runner('mp4');
+const { test, run, skip, assert } = runner('mp4');
 const NOW = Date.UTC(2026, 9, 16, 12, 0, 0);
 
 /* ---------- helpers (independent of the engine's writers) ---------- */
@@ -357,6 +359,29 @@ test('parse: a 5000-deep nest of container headers is cut off by the depth cap i
   assert.equal(depth, 12);
   assert.equal(b.data.length, 8 * (n - 13), 'the box below the cap is a leaf holding the rest');
   assert.equal(r.truncated, false);
+  // The same cap must hold for sample-entry recursion: stsd → mp4a entry → children: stsd → mp4a → … (52 bytes a
+  // level, ~1 MB for 20 000 levels) used to recurse past the container cap until the stack died.
+  const level = (count) => {
+    let inner = new Uint8Array(0);
+    for (let i = 0; i < count; i++) { const body = new Uint8Array(28); body[7] = 1; inner = E.mp4FullBox('stsd', 0, 0, [0, 0, 0, 1], E.mp4Box('mp4a', body, inner)); }
+    return inner;
+  };
+  const bomb = level(20000);
+  assert.ok(bomb.length > 1000000);
+  const init = E.mp4Box('moov', E.mp4Box('trak', E.mp4Box('mdia', E.mp4Box('minf', E.mp4Box('stbl', bomb)))));
+  const parsed = E.mp4ParseBoxes(init);
+  assert.equal(parsed.truncated, false);
+  let stsd = E.mp4FindBox(parsed, 'stsd'), levels = 0;
+  while (stsd && stsd.entries && stsd.entries[0].children.length) { levels++; stsd = stsd.entries[0].children[0]; }
+  assert.ok(levels >= 5 && levels <= 12, 'entry recursion stops at the cap: ' + levels);
+  assert.equal(stsd.truncated, true, 'the stsd at the cap says it did not descend');
+  deepEq(E.mp4CodecsFromInit(init), ['mp4a.40.2']);
+  deepEq(E.mp4TracksFromInit(init).map((t) => [t.type, t.codec]), [['audio', 'mp4a.40.2']]);
+  assert.equal(E.mp4Tfdt(init), null); assert.equal(E.mp4Sidx(init), null);
+  // and through the QuickTime 'wave' path, which parses the atom's children with its own parseRange call
+  const v1body = new Uint8Array(44); v1body[7] = 1; E.writeU16be(v1body, 8, 1);
+  const qt = E.mp4Box('moov', E.mp4Box('trak', E.mp4Box('mdia', E.mp4Box('minf', E.mp4Box('stbl', E.mp4FullBox('stsd', 0, 0, [0, 0, 0, 1], E.mp4Box('mp4a', v1body, E.mp4Box('wave', bomb))))))));
+  deepEq(E.mp4CodecsFromInit(qt), ['mp4a.40.2']);
 });
 test('parse: ISO meta (FullBox) and QuickTime meta both descend into their children', () => {
   const iso = E.mp4ParseBoxes(E.mp4FullBox('meta', 0, 0, E.mp4FullBox('hdlr', 0, 0, new Uint8Array(4), E.bytesOfText('mdir'), new Uint8Array(12), [0])));
@@ -514,19 +539,18 @@ test('aacConfigBytes: table of known configs and junk defaults', () => {
 });
 
 /* ===================== real file via ffmpeg/ffprobe ===================== */
-let fixture; // undefined = not built yet, null = tools missing
-function notice(msg) { console.log('      (notice: ' + msg + ')'); }
+// Built once, up front: the seven real-file cases are only registered when it exists, so a missing or
+// non-encoding ffmpeg prints one [skip] line and never shows up as seven ✓ no-ops.
+const onPath = (cmd) => { const r = spawnSync(cmd, ['-version'], { encoding: 'utf8' }); return !r.error && r.status === 0; };
 function realFixture() {
-  if (fixture !== undefined) return fixture;
-  const probe = spawnSync('ffmpeg', ['-version'], { encoding: 'utf8' });
-  if (probe.error || probe.status !== 0) { notice('ffmpeg not found — real-file cases skipped'); return (fixture = null); }
+  if (!onPath('ffmpeg') || !onPath('ffprobe')) { skip('7 real-file round-trip cases', 'ffmpeg/ffprobe not on PATH'); return null; }
   const dir = mkdtempSync(join(tmpdir(), 'aerial-mp4-'));
   process.on('exit', () => rmSync(dir, { recursive: true, force: true }));
   const src = join(dir, 'real.mp4');
   const enc = spawnSync('ffmpeg', ['-y', '-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=25', '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000',
     '-t', '2', '-c:v', 'libx264', '-profile:v', 'high', '-pix_fmt', 'yuv420p', '-g', '25', '-bf', '2', '-c:a', 'aac', '-b:a', '64k',
     '-movflags', 'frag_keyframe+empty_moov+default_base_moof+separate_moof', '-frag_duration', '1000000', '-f', 'mp4', src], { encoding: 'utf8' });
-  if (enc.status !== 0) { notice('ffmpeg could not encode the reference (' + (enc.stderr || '').trim() + ') — real-file cases skipped'); return (fixture = null); }
+  if (enc.status !== 0) { skip('7 real-file round-trip cases', 'ffmpeg could not encode the reference (' + String(enc.stderr || '').trim().split('\n')[0] + ')'); return null; }
   const bytes = new Uint8Array(readFileSync(src));
   const boxes = E.mp4ParseBoxes(bytes);
   const moofs = boxes.filter((b) => b.type === 'moof');
@@ -563,7 +587,12 @@ function realFixture() {
   const remuxed = E.concatBytes([myInit, ...segments]);
   const out = join(dir, 'remuxed.mp4');
   writeFileSync(out, Buffer.from(remuxed.buffer, remuxed.byteOffset, remuxed.byteLength));
-  return (fixture = { src, out, bytes, boxes, init, tracks, entries, muxTracks, fragments, myInit, segments, remuxed });
+  // Expected packet counts come from the source itself: 25 fps × 2 s = 50 video frames is a hard fact, but the
+  // AAC frame count depends on the encoder's priming/padding (94 content frames + 1 here) and would turn the
+  // suite red on an ffmpeg whose AAC delay differs while the round trip is still byte-exact.
+  const srcPackets = ffprobe(src, ['-show_packets']).packets;
+  const srcCounts = { 1: srcPackets.filter((p) => p.stream_index === 0).length, 2: srcPackets.filter((p) => p.stream_index === 1).length };
+  return { src, out, bytes, boxes, init, tracks, entries, muxTracks, fragments, myInit, segments, remuxed, srcPackets, srcCounts };
 }
 function ffprobe(file, args) {
   const r = spawnSync('ffprobe', ['-v', 'error', ...args, '-of', 'json', file], { encoding: 'utf8', maxBuffer: 64 << 20 });
@@ -571,17 +600,22 @@ function ffprobe(file, args) {
   return JSON.parse(r.stdout);
 }
 const packetShape = (p) => ({ pts: p.pts, dts: p.dts, duration: p.duration, size: p.size, flags: p.flags });
+const fixture = realFixture(); // null = [skip] already printed; nothing below is registered then
+if (fixture) {
+const f = fixture;
 test('ffmpeg: the source parses as expected (2 tracks, ffmpeg trun/tfhd layout, all fragments)', () => {
-  const f = realFixture(); if (!f) return;
   assert.equal(f.boxes.truncated, false);
-  deepEq(f.boxes.map((b) => b.type).filter((t, i, a) => a.indexOf(t) === i), ['ftyp', 'moov', 'moof', 'mdat', 'mfra']);
+  const types = f.boxes.map((b) => b.type).filter((t, i, a) => a.indexOf(t) === i);
+  deepEq(types.filter((t) => t !== 'mfra'), ['ftyp', 'moov', 'moof', 'mdat'], 'a trailing mfra is optional: ' + types.join(','));
   deepEq(f.tracks.map((t) => [t.id, t.type, t.timescale, t.codec, t.width, t.height, t.sampleRate, t.channels]), [[1, 'video', 12800, 'avc1.64000c', 320, 180, 0, 0], [2, 'audio', 48000, 'mp4a.40.2', 0, 0, 48000, 1]]);
   deepEq([f.entries[0].avcC.sps.length, f.entries[0].avcC.pps.length, f.entries[0].avcC.chromaFormat, f.entries[0].avcC.bitDepthLuma, f.entries[0].avcC.lengthSizeMinusOne], [1, 1, 1, 8, 3]);
   deepEq([f.entries[1].esds.objectTypeIndication, f.entries[1].esds.audioObjectType, f.entries[1].esds.samplingFrequencyIndex, f.entries[1].esds.channelConfiguration], [0x40, 2, 3, 1]);
   assert.ok(f.entries[1].esds.avgBitrate > 0);
   const counts = {};
   for (const fr of f.fragments) counts[fr.trackId] = (counts[fr.trackId] || 0) + fr.samples.length;
-  deepEq(counts, { 1: 50, 2: 95 });
+  assert.equal(f.srcCounts[1], 50, '25 fps × 2 s');
+  assert.ok(f.srcCounts[2] >= 94 && f.srcCounts[2] <= 97, '2 s of 48 kHz AAC is 94 frames plus the encoder\'s priming/padding: ' + f.srcCounts[2]);
+  deepEq(counts, f.srcCounts, 'every source packet became a sample');
   assert.ok(f.fragments.every((fr) => fr.samples.every((s) => s.data.length === s.size && s.size > 0 && s.duration > 0)));
   assert.ok(f.fragments.some((fr) => fr.samples.some((s) => s.cts > 0)), 'B-frames give composition offsets');
   assert.equal(E.mp4Tfdt(f.bytes), 0);
@@ -593,7 +627,6 @@ test('ffmpeg: the source parses as expected (2 tracks, ffmpeg trun/tfhd layout, 
   }
 });
 test('ffmpeg: codec strings of the re-muxed init equal the source (and a round trip of the init parses identically)', () => {
-  const f = realFixture(); if (!f) return;
   deepEq(E.mp4CodecsFromInit(f.myInit), E.mp4CodecsFromInit(f.init));
   deepEq(E.mp4CodecsFromInit(f.myInit), ['avc1.64000c', 'mp4a.40.2']);
   deepEq(E.mp4TracksFromInit(f.myInit), E.mp4TracksFromInit(f.init));
@@ -609,7 +642,6 @@ test('ffmpeg: codec strings of the re-muxed init equal the source (and a round t
   assert.equal(myEsds.decoderSpecificInfo.length, 2);
 });
 test('ffmpeg: round trip — parsing the re-muxed segments reproduces the sample table fed in', () => {
-  const f = realFixture(); if (!f) return;
   const boxes = E.mp4ParseBoxes(f.remuxed);
   assert.equal(boxes.truncated, false);
   const moofs = boxes.filter((b) => b.type === 'moof');
@@ -625,7 +657,6 @@ test('ffmpeg: round trip — parsing the re-muxed segments reproduces the sample
   bytesEq(E.concatBytes([f.myInit, ...f.fragments.map((fr) => E.mp4MediaSegment(f.muxTracks.find((t) => t.id === fr.trackId), fr.samples, { sequenceNumber: fr.seq, baseMediaDecodeTime: fr.bmdt }))]), f.remuxed, 'deterministic');
 });
 test('ffmpeg: ffprobe -show_streams on the re-mux: h264 High 320x180 + aac 48000 Hz, same channels and time bases as the source', () => {
-  const f = realFixture(); if (!f) return;
   const mine = ffprobe(f.out, ['-show_streams']).streams, src = ffprobe(f.src, ['-show_streams']).streams;
   assert.equal(mine.length, 2);
   deepEq([mine[0].codec_name, mine[0].profile, mine[0].width, mine[0].height, mine[0].codec_type, mine[0].time_base], ['h264', 'High', 320, 180, 'video', src[0].time_base]);
@@ -634,28 +665,26 @@ test('ffmpeg: ffprobe -show_streams on the re-mux: h264 High 320x180 + aac 48000
   deepEq([mine[0].tags.handler_name, mine[1].tags.handler_name, mine[0].tags.language], ['VideoHandler', 'SoundHandler', 'und']);
 });
 test('ffmpeg: ffprobe -show_packets: packet count, pts, dts, duration, size and key flags per stream equal the source', () => {
-  const f = realFixture(); if (!f) return;
-  const mine = ffprobe(f.out, ['-show_packets']).packets, src = ffprobe(f.src, ['-show_packets']).packets;
+  const mine = ffprobe(f.out, ['-show_packets']).packets, src = f.srcPackets;
   for (const idx of [0, 1]) {
     const a = mine.filter((p) => p.stream_index === idx).map(packetShape), b = src.filter((p) => p.stream_index === idx).map(packetShape);
-    assert.equal(a.length, idx === 0 ? 50 : 95);
+    assert.equal(a.length, f.srcCounts[idx + 1]);
     deepEq(a, b, 'stream ' + idx);
   }
 });
 test('ffmpeg: ffprobe -count_frames: decoded frame and packet counts equal the source', () => {
-  const f = realFixture(); if (!f) return;
   const shape = (s) => s.streams.map((x) => [x.codec_type, x.nb_read_frames, x.nb_read_packets]);
   const args = ['-count_frames', '-count_packets', '-show_entries', 'stream=codec_type,nb_read_frames,nb_read_packets'];
   const mine = shape(ffprobe(f.out, args));
   deepEq(mine, shape(ffprobe(f.src, args)));
-  deepEq(mine, [['video', '50', '50'], ['audio', '95', '95']]);
+  deepEq(mine, [['video', '50', '50'], ['audio', String(f.srcCounts[2]), String(f.srcCounts[2])]]);
 });
 test('ffmpeg: "ffmpeg -v error -i remuxed.mp4 -f null -" decodes end to end without a single error', () => {
-  const f = realFixture(); if (!f) return;
   const r = spawnSync('ffmpeg', ['-v', 'error', '-nostdin', '-i', f.out, '-f', 'null', '-'], { encoding: 'utf8' });
   assert.equal(r.status, 0);
   assert.equal((r.stderr || '').trim(), '');
   assert.equal((r.stdout || '').trim(), '');
 });
+} // fixture
 
 run();

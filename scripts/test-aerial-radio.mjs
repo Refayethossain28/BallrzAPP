@@ -299,6 +299,24 @@ test('radioNormalizeStation: numbers-as-strings, junk numbers, negative counts, 
   assert.equal(st2.bitrate, 64);
   assert.equal(st2.codec, 'AAC+');
 });
+test('radioNormalizeStation: bidi overrides, zero-width space, word joiner, BOM and controls are stripped from text; ZWJ/ZWNJ survive', () => {
+  const raw = (name, extra) => Object.assign({ stationuuid: 'u', url: 'https://h/s', name: name }, extra || {});
+  const st = E.radioNormalizeStation(raw('SomaFM\u202e detaredom\u2066\u200b\ufeff', { country: 'A\u0000B\u2069\u2060', tags: 'ja\u202azz, rock', codec: 'M\u200bP3', state: 'tab\tand\r\nnewline' }));
+  assert.equal(st.name, 'SomaFM detaredom');
+  assert.equal(st.country, 'AB');
+  assert.equal(st.tags.join(','), 'jazz,rock');
+  assert.equal(st.codec, 'MP3');
+  assert.equal(st.state, 'tab and newline', 'whitespace controls become one space');
+  for (const ch of ['\u202a', '\u202b', '\u202c', '\u202d', '\u202e', '\u2066', '\u2067', '\u2068', '\u2069', '\u200b', '\u2060', '\ufeff', '\u0000', '\u001f', '\u007f', '\u009f']) {
+    assert.equal(E.radioNormalizeStation(raw('a' + ch + 'b')).name, 'ab', 'U+' + ch.charCodeAt(0).toString(16));
+  }
+  const kept = 'ZWJ 👨\u200d👩\u200d👧 ZWNJ می\u200cخواهم LRM \u200e RLM \u200f é 中';
+  assert.equal(E.radioNormalizeStation(raw(kept)).name, kept, 'emoji joiners, Persian ZWNJ, bidi marks and plain Unicode are not touched');
+  // an invisible character no longer makes a lookalike that dodges dedupe
+  const d = E.radioDedupe([{ name: 'Soma\u200bFM', url: 'https://h/a', votes: 1 }, { name: 'SomaFM', url: 'https://h/b', votes: 5 }]);
+  assert.equal(d.length, 1);
+  assert.equal(d[0].votes, 5);
+});
 test('radioNormalizeStation: nested junk in every field never throws and degrades to defaults', () => {
   const st = E.radioNormalizeStation({ stationuuid: 'a', url: 'https://a.org/s', name: {}, tags: { a: 1 }, country: [], countrycode: null, language: 7, codec: [], bitrate: {}, votes: [], hls: 'yes', lastcheckok: 'ok', geo_lat: 'north', geo_long: {}, homepage: 5, favicon: ['x'] });
   assert.equal(st.name, 'a.org');
