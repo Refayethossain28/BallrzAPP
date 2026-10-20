@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- No Referer on anything the page requests (playlists, streams, logos): a provider never learns where Tuner runs. -->
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="object-src 'none'; base-uri 'none'">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#121010">
+<meta name="description" content="Tuner — an IPTV player for the playlists you already have: M3U links, Xtream Codes logins or playlist files. Live TV, movies and series with favourites, resume, search and nothing pre-loaded.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Tuner">
+<title>Tuner — IPTV player for your playlists</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: a one-screen app shell. Slim top bar, a player that docks under it while something plays,
+   a scrolling stage for the lists, and bottom tabs on phones (a horizontal tab strip under the bar from 900px).
+   Dark-first: warm near-black ground (TV in a dark room), brass accent, red reserved for "live". */
+:root{
+  --bg:#121010; --bg-2:#1a1716; --bg-3:#221e1c; --bg-4:#2d2724;
+  --line:#2d2724; --line-2:#3c3430;
+  --fg:#f2ece3; --fg-2:#a69d92; --fg-3:#746a62;
+  --accent:#e0b25a; --accent-2:#f2cf80; --accent-ink:#1b1508; --accent-dim:rgba(224,178,90,.14);
+  --live:#e5484d; --ok:#3fb67a; --danger:#e5484d;
+  --overlay:rgba(0,0,0,.6);
+  --shadow:0 12px 32px rgba(0,0,0,.45);
+  --display:"Barlow Semi Condensed","Arial Narrow",Arial,sans-serif;
+  --body:"Manrope",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --r:10px; --r-lg:16px; --tabs-h:60px;
+  color-scheme:dark;
+}
+@media (prefers-color-scheme:light){
+  :root:not([data-theme="dark"]){
+    --bg:#f5f0e7; --bg-2:#fffdf8; --bg-3:#ece5d8; --bg-4:#e0d7c7;
+    --line:#dfd6c7; --line-2:#c9bfae;
+    --fg:#1d1915; --fg-2:#665d54; --fg-3:#958b80;
+    --accent:#9a6d14; --accent-2:#7c560d; --accent-ink:#fff8e6; --accent-dim:rgba(154,109,20,.12);
+    --live:#c8323a; --ok:#2b8f5c; --danger:#c8323a;
+    --overlay:rgba(40,30,15,.5);
+    --shadow:0 12px 32px rgba(60,40,10,.14);
+    color-scheme:light;
+  }
+}
+:root[data-theme="light"]{
+  --bg:#f5f0e7; --bg-2:#fffdf8; --bg-3:#ece5d8; --bg-4:#e0d7c7;
+  --line:#dfd6c7; --line-2:#c9bfae;
+  --fg:#1d1915; --fg-2:#665d54; --fg-3:#958b80;
+  --accent:#9a6d14; --accent-2:#7c560d; --accent-ink:#fff8e6; --accent-dim:rgba(154,109,20,.12);
+  --live:#c8323a; --ok:#2b8f5c; --danger:#c8323a;
+  --overlay:rgba(40,30,15,.5);
+  --shadow:0 12px 32px rgba(60,40,10,.14);
+  color-scheme:light;
+}
+
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 var(--body);display:flex;flex-direction:column;overflow:hidden;-webkit-text-size-adjust:100%}
+button,input,select,textarea{font:inherit;color:inherit}
+button{background:none;border:0;padding:0;cursor:pointer;-webkit-tap-highlight-color:transparent}
+img{max-width:100%;display:block}
+[hidden]{display:none!important}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+h1,h2,h3{text-wrap:balance}
+svg.i{width:22px;height:22px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* top bar */
+.top{order:0;flex:none;display:flex;align-items:center;gap:6px;height:52px;box-sizing:content-box;background:var(--bg-2);border-bottom:1px solid var(--line);padding-top:env(safe-area-inset-top,0px);padding-left:max(10px,env(safe-area-inset-left,0px));padding-right:max(10px,env(safe-area-inset-right,0px))}
+.brand{display:flex;align-items:center;gap:7px;padding:0 4px;font-family:var(--display);font-weight:700;font-size:21px;letter-spacing:.04em;text-transform:uppercase;color:var(--fg)}
+.brand svg.i{color:var(--accent);width:24px;height:24px}
+.pl-switch{margin-left:auto;max-width:46%;display:flex;align-items:center;gap:4px;padding:6px 8px 6px 12px;border:1px solid var(--line-2);border-radius:999px;background:var(--bg-3);font-weight:600;font-size:13px;color:var(--fg)}
+.pl-switch span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.pl-switch svg.i{width:18px;height:18px;color:var(--fg-2)}
+.icon-btn{width:40px;height:40px;flex:none;display:grid;place-items:center;border-radius:10px;color:var(--fg-2)}
+.icon-btn:hover{background:var(--bg-3);color:var(--fg)}
+.icon-btn.on{color:var(--accent)}
+.icon-btn.on svg.i{fill:currentColor}
+
+/* player */
+.player{order:2;flex:none;background:#000;display:flex;flex-direction:column}
+.stage{position:relative;width:100%;max-width:1100px;margin:0 auto;aspect-ratio:16/9;max-height:56vh;background:#000}
+.stage:fullscreen{max-width:none;max-height:none;height:100%;aspect-ratio:auto}
+.stage video{width:100%;height:100%;object-fit:contain;background:#000;display:block}
+.overlay{position:absolute;inset:0;z-index:3;display:flex;align-items:center;justify-content:center;padding:18px;text-align:center;background:rgba(0,0,0,.78);color:#f2ece3}
+.overlay b{display:block;font-family:var(--display);font-size:20px;margin-bottom:6px}
+.overlay p{margin:0 auto 14px;max-width:48ch;font-size:13.5px;line-height:1.5;color:#d6cfc5}
+.overlay .actions{justify-content:center;margin:0}
+.overlay .btn{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.25);color:#fff}
+.pbar{display:flex;flex-wrap:wrap;align-items:center;gap:2px 6px;padding:6px max(10px,env(safe-area-inset-right,0px)) 6px max(10px,env(safe-area-inset-left,0px));background:var(--bg-2);border-bottom:1px solid var(--line)}
+.pbar .meta{flex:1 1 220px;min-width:0;padding:4px 4px}
+.pbar .title{font-family:var(--display);font-weight:600;font-size:18px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pbar .sub{font-size:12px;color:var(--fg-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;gap:8px;align-items:center;margin-top:2px}
+.pbar .sub span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pctl{display:flex;gap:0;flex:none}
+.pctl .icon-btn{width:38px;height:38px}
+.stat{font-variant-numeric:tabular-nums;color:var(--fg-3)}
+.badge{flex:none;font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:2px 6px;border-radius:4px;background:var(--bg-4);color:var(--fg-2)}
+.badge.live{background:var(--live);color:#fff}
+.badge.ok{background:var(--accent-dim);color:var(--accent)}
+.onair{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--live);vertical-align:middle;margin-right:2px;animation:pulse 1.8s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(229,72,77,.55)}70%{box-shadow:0 0 0 7px rgba(229,72,77,0)}100%{box-shadow:0 0 0 0 rgba(229,72,77,0)}}
+
+/* stage */
+main{order:3;flex:1;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;padding-block:14px 28px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1100px;margin:0 auto}
+.page-h{font-family:var(--display);font-size:28px;line-height:1.05;margin:4px 0 14px;font-weight:700}
+.section{margin:0 0 22px}
+.sec-h{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:0 0 10px}
+.sec-h h2{margin:0;font-family:var(--display);font-weight:700;font-size:15px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-2)}
+.link{color:var(--accent);font-weight:700;font-size:13px}
+.help{font-size:12.5px;color:var(--fg-3);line-height:1.5;margin:0}
+.searchbar{display:flex;align-items:center;gap:10px;width:100%;padding:12px 14px;border-radius:12px;background:var(--bg-2);border:1px solid var(--line-2);color:var(--fg-3);margin:0 0 16px;text-align:left;font-weight:500}
+.searchbar svg.i{color:var(--fg-2)}
+.note{padding:10px 12px;border-radius:var(--r);background:var(--accent-dim);color:var(--fg);font-size:13px;line-height:1.5;margin:0 0 14px}
+.note.err{background:rgba(229,72,77,.12);border:1px solid rgba(229,72,77,.4)}
+.note .link{margin-left:4px}
+.empty{padding:28px 18px;text-align:center;color:var(--fg-2);border:1px dashed var(--line-2);border-radius:var(--r-lg)}
+.empty h3{margin:0 0 6px;font-family:var(--display);font-size:20px;color:var(--fg)}
+.empty p{margin:0;font-size:13.5px}
+.loading{padding:60px 0;text-align:center;color:var(--fg-2)}
+.spinner{width:28px;height:28px;border:3px solid var(--line-2);border-top-color:var(--accent);border-radius:50%;margin:0 auto 12px;animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-line{padding:16px 0;color:var(--fg-2);font-size:13.5px}
+
+/* tiles */
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:0 0 22px}
+.tile{padding:14px 12px;border-radius:var(--r-lg);background:var(--bg-2);border:1px solid var(--line);text-align:left;display:flex;flex-direction:column;gap:3px;min-width:0}
+.tile:hover{border-color:var(--line-2)}
+.tile .k{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-2);font-weight:700}
+.tile .v{font-family:var(--display);font-weight:700;font-size:30px;line-height:1;font-variant-numeric:tabular-nums}
+.tile .s{font-size:11.5px;color:var(--fg-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* chips */
+.chips{display:flex;gap:8px;overflow-x:auto;padding:2px 0 10px;margin:0 0 6px;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chips.wrap-chips{flex-wrap:wrap;overflow:visible}
+.chip{flex:none;padding:7px 12px;border-radius:999px;border:1px solid var(--line-2);background:var(--bg-2);font-size:13px;font-weight:600;color:var(--fg-2);white-space:nowrap;max-width:260px;overflow:hidden;text-overflow:ellipsis}
+.chip.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.chip .n{opacity:.7;font-weight:500;margin-left:5px;font-variant-numeric:tabular-nums}
+
+/* rows */
+.rows{display:flex;flex-direction:column;gap:4px}
+.row{display:grid;grid-template-columns:40px 56px minmax(0,1fr) auto;align-items:center;gap:10px;padding:7px 8px 7px 4px;border-radius:var(--r);background:var(--bg-2);border:1px solid transparent;cursor:pointer}
+.row:hover{border-color:var(--line-2)}
+.row.now{border-color:var(--accent);background:var(--accent-dim)}
+.row .num{font-family:var(--display);font-weight:600;font-size:15px;color:var(--fg-3);font-variant-numeric:tabular-nums;text-align:right}
+.logo{width:56px;height:40px;border-radius:6px;background:var(--bg-4);position:relative;overflow:hidden}
+.logo img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;padding:3px;z-index:1}
+.logo img.broken,.poster img.broken{display:none}
+.logo span{position:absolute;inset:0;display:grid;place-items:center;font-family:var(--display);font-weight:700;font-size:13px;letter-spacing:.04em;color:var(--fg-3)}
+.row .name{min-width:0}
+.row .name b{display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .name small{display:block;color:var(--fg-3);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fav{width:36px;height:36px;flex:none;display:grid;place-items:center;color:var(--fg-3);border-radius:8px}
+.fav svg.i{width:20px;height:20px}
+.fav.on{color:var(--accent)}
+.fav.on svg.i{fill:currentColor}
+.playmark{color:var(--fg-3);display:grid;place-items:center;width:36px}
+.prog{height:3px;border-radius:2px;background:var(--bg-4);overflow:hidden;margin-top:6px;max-width:220px}
+.prog i{display:block;height:100%;background:var(--accent)}
+.prog.abs{position:absolute;left:0;right:0;bottom:0;margin:0;border-radius:0;max-width:none;z-index:2;background:rgba(0,0,0,.45)}
+
+/* posters */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:12px}
+@media (min-width:600px){.grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}}
+.hrow{display:flex;gap:12px;overflow-x:auto;padding:2px 0 8px;scrollbar-width:thin}
+.hrow>.card{flex:none;width:156px}
+.card{display:flex;flex-direction:column;gap:6px;min-width:0;cursor:pointer;text-align:left}
+.poster{position:relative;aspect-ratio:2/3;max-width:100%;border-radius:8px;background:var(--bg-3);overflow:hidden;border:1px solid transparent}
+.poster.wide{aspect-ratio:16/9}
+.poster.small{width:110px;flex:none}
+.card.now .poster{border-color:var(--accent)}
+.poster img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1}
+.poster.wide img{object-fit:contain;padding:8px;background:var(--bg-4)}
+.poster span{position:absolute;inset:0;display:grid;place-items:center;padding:10px;text-align:center;font-family:var(--display);font-weight:700;font-size:15px;color:var(--fg-3);line-height:1.15}
+.poster .fav{position:absolute;top:5px;right:5px;z-index:2;width:30px;height:30px;border-radius:8px;background:rgba(0,0,0,.5);color:#fff}
+.poster .fav.on{color:var(--accent-2)}
+.card .t{font-size:13px;font-weight:600;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card .s{font-size:11.5px;color:var(--fg-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* series page */
+.show-h{display:flex;gap:14px;margin:0 0 16px}
+.show-meta{min-width:0;flex:1}
+.show-meta h1{font-family:var(--display);font-size:26px;line-height:1.05;margin:2px 0 6px;font-weight:700}
+.show-meta .s{color:var(--fg-2);font-size:13px}
+.show-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.btn.on{border-color:var(--accent);color:var(--accent)}
+.btn.on svg.i{fill:currentColor}
+
+/* forms */
+.form{display:flex;flex-direction:column;gap:12px;max-width:560px}
+.field{display:flex;flex-direction:column;gap:5px}
+.field label{font-size:12.5px;font-weight:700;color:var(--fg-2)}
+.input{width:100%;padding:11px 12px;border-radius:var(--r);border:1px solid var(--line-2);background:var(--bg-2);color:var(--fg);min-width:0}
+.input:focus{border-color:var(--accent);outline:none}
+textarea.input{min-height:150px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.45;resize:vertical}
+input[type="file"].input{padding:9px 12px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:11px 16px;border-radius:var(--r);font-weight:700;background:var(--bg-3);border:1px solid var(--line-2);color:var(--fg);text-decoration:none;line-height:1.2}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.danger{color:var(--danger);border-color:var(--danger)}
+.btn.sm{padding:7px 10px;font-size:13px}
+.btn:disabled{opacity:.6;cursor:default}
+.seg{display:flex;gap:4px;padding:4px;border-radius:12px;background:var(--bg-3);max-width:560px;margin:0 0 14px}
+.seg button{flex:1;padding:8px 6px;border-radius:8px;font-size:13px;font-weight:700;color:var(--fg-2);min-width:0;white-space:nowrap}
+.seg button.on{background:var(--bg-2);color:var(--fg);box-shadow:0 1px 3px rgba(0,0,0,.25)}
+.seg.small{margin:0;flex:none}
+.seg.small button{padding:6px 10px;font-size:12.5px}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+
+/* settings */
+.setting{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.setting .l{min-width:0}
+.setting .l b{display:block;font-weight:600}
+.setting .l small{color:var(--fg-3);font-size:12px;line-height:1.4}
+.switch{width:46px;height:28px;border-radius:999px;background:var(--bg-4);position:relative;flex:none;border:1px solid var(--line-2)}
+.switch::after{content:"";position:absolute;top:2px;left:2px;width:22px;height:22px;border-radius:50%;background:var(--fg-2);transition:transform .15s}
+.switch.on{background:var(--accent);border-color:var(--accent)}
+.switch.on::after{transform:translateX(18px);background:var(--accent-ink)}
+.pl-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--r);background:var(--bg-2);border:1px solid var(--line)}
+.pl-row.on{border-color:var(--accent)}
+.pl-main{flex:1;min-width:0}
+.pl-main b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pl-main small{display:block;color:var(--fg-3);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pl-actions{display:flex;gap:2px;align-items:center;flex:none}
+.hero{text-align:center;padding:26px 0 10px}
+.hero svg.i{width:48px;height:48px;color:var(--accent);margin:0 auto 10px}
+.hero h1{font-family:var(--display);font-size:32px;line-height:1.05;margin:0 0 8px}
+.hero p{margin:0 auto 20px;max-width:46ch;color:var(--fg-2)}
+
+/* tabs */
+.tabs{order:4;flex:none;display:flex;background:var(--bg-2);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px);padding-left:max(8px,env(safe-area-inset-left,0px));padding-right:max(8px,env(safe-area-inset-right,0px))}
+.tabs button{flex:1;height:var(--tabs-h);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:11px;font-weight:700;color:var(--fg-2);letter-spacing:.02em}
+.tabs button.on{color:var(--accent)}
+@media (min-width:900px){
+  .tabs{order:1;border-top:0;border-bottom:1px solid var(--line);justify-content:center;gap:4px;padding-bottom:0}
+  .tabs button{flex:0 0 auto;flex-direction:row;height:44px;padding:0 16px;font-size:13px;gap:8px;border-radius:8px}
+  .tabs button svg.i{width:18px;height:18px}
+}
+
+/* sheet & toast */
+.sheet{position:fixed;inset:0;z-index:50;display:flex;align-items:flex-end;justify-content:center;background:var(--overlay)}
+.sheet .panel{width:100%;max-width:560px;max-height:80vh;overflow:auto;background:var(--bg-2);border-radius:18px 18px 0 0;padding:14px max(16px,env(safe-area-inset-right,0px)) calc(16px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));box-shadow:var(--shadow)}
+@media (min-width:700px){.sheet{align-items:center}.sheet .panel{border-radius:18px}}
+.sheet h3{margin:4px 0 10px;font-family:var(--display);font-size:20px}
+.list-item{display:flex;align-items:center;gap:10px;width:100%;padding:11px 10px;border-radius:var(--r);text-align:left;color:var(--fg)}
+.list-item:hover{background:var(--bg-3)}
+.list-item.on{background:var(--accent-dim)}
+.list-item .li-main{flex:1;min-width:0}
+.list-item b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.list-item small{display:block;color:var(--fg-3);font-size:12px}
+.list-item svg.i{color:var(--accent)}
+.toast{position:fixed;left:50%;bottom:calc(var(--tabs-h) + 14px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:60;background:var(--fg);color:var(--bg);padding:10px 14px;border-radius:10px;font-size:13px;font-weight:700;box-shadow:var(--shadow);max-width:90vw;text-align:center}
+@media (min-width:900px){.toast{bottom:24px}}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <button class="icon-btn" id="backBtn" data-act="back" aria-label="Back" hidden></button>
+  <div class="brand" id="brand"></div>
+  <button class="pl-switch" id="plSwitch" data-act="pl-sheet" aria-label="Switch playlist"><span id="plName">No playlist</span></button>
+  <button class="icon-btn" id="searchBtn" data-act="go" data-view="search" aria-label="Search"></button>
+</header>
+
+<section class="player" id="player" hidden>
+  <div class="stage" id="stage">
+    <video id="video" controls playsinline preload="auto" x-webkit-airplay="allow"></video>
+    <div class="overlay" id="pOverlay" hidden>
+      <div>
+        <b id="pErrTitle">Can't play this stream</b>
+        <p id="pErrMsg"></p>
+        <div class="actions">
+          <button class="btn sm" data-pact="retry">Try again</button>
+          <button class="btn sm" data-pact="copy">Copy link</button>
+          <a class="btn sm" id="pVlcOv" href="#">Open in VLC</a>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="pbar">
+    <div class="meta">
+      <div class="title" id="pTitle"></div>
+      <div class="sub"><span class="badge" id="pBadge"></span><span id="pGroup"></span><span class="stat" id="pStat"></span></div>
+    </div>
+    <div class="pctl">
+      <button class="icon-btn" id="pPrev" data-pact="prev" aria-label="Previous"></button>
+      <button class="icon-btn" id="pNext" data-pact="next" aria-label="Next"></button>
+      <button class="icon-btn" id="pFav" data-pact="fav" aria-label="Favourite"></button>
+      <button class="icon-btn" id="pFit" data-pact="fit" aria-label="Picture fit"></button>
+      <button class="icon-btn" id="pPip" data-pact="pip" aria-label="Picture in picture" hidden></button>
+      <button class="icon-btn" id="pFull" data-pact="full" aria-label="Fullscreen"></button>
+      <button class="icon-btn" id="pCopy" data-pact="copy" aria-label="Copy stream link"></button>
+      <a class="icon-btn" id="pVlc" href="#" aria-label="Open in VLC"></a>
+      <button class="icon-btn" id="pClose" data-pact="close" aria-label="Close player"></button>
+    </div>
+  </div>
+</section>
+
+<main id="main"></main>
+
+<nav class="tabs" id="tabs" aria-label="Sections"></nav>
+
+<div class="sheet" id="sheet" hidden><div class="panel"></div></div>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<!-- hls.js (Apache-2.0) gives Chrome, Edge and Firefox an HLS player over Media Source Extensions; Safari and
+     Android Chrome play .m3u8 natively and never load it into the pipeline. Pinned release from cdnjs. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.20/hls.min.js"></script>
+<script src="engine.js"></script>
+<script>
+'use strict';
+(function(){
+const E=TunerEngine;
+
+/* ---------- icons ---------- */
+const I={
+  home:'<path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-7h-6v7H4a1 1 0 0 1-1-1z"/>',
+  live:'<rect x="2" y="7" width="20" height="13" rx="2"/><path d="M8 3l4 4 4-4"/>',
+  film:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 3v18M17 3v18M3 8h4M3 16h4M17 8h4M17 16h4M3 12h18"/>',
+  series:'<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M7 4h10M10 11l5 2.5-5 2.5z"/>',
+  more:'<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>',
+  search:'<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
+  back:'<path d="M15 5l-7 7 7 7"/>',
+  close:'<path d="M6 6l12 12M18 6L6 18"/>',
+  star:'<path d="M12 3l2.8 5.9 6.4.8-4.7 4.5 1.2 6.4L12 17.5 6.3 20.6l1.2-6.4L2.8 9.7l6.4-.8z"/>',
+  prev:'<path d="M15 5l-7 7 7 7M7 5v14"/>',
+  next:'<path d="M9 5l7 7-7 7M17 5v14"/>',
+  full:'<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+  pip:'<rect x="2" y="4" width="20" height="16" rx="2"/><rect x="11" y="11" width="8" height="6" rx="1"/>',
+  fit:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9l-2 3 2 3M17 9l2 3-2 3"/>',
+  down:'<path d="M6 9l6 6 6-6"/>',
+  play:'<path d="M7 5l12 7-12 7z"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>',
+  refresh:'<path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/>',
+  trash:'<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+  copy:'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/>',
+  ext:'<path d="M14 4h6v6M20 4l-9 9M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/>',
+  check:'<path d="M5 12l5 5 9-10"/>',
+  dial:'<circle cx="12" cy="12" r="8"/><path d="M12 12l4-5"/><circle cx="12" cy="12" r="1.2"/>'
+};
+const ic=(n,cls)=>'<svg class="i'+(cls?' '+cls:'')+'" viewBox="0 0 24 24" aria-hidden="true">'+I[n]+'</svg>';
+
+/* ---------- storage (per device; the engine never touches it) ---------- */
+const K='tuner.v1.';
+const mem={};
+const store={
+  get(k,d){ if(k in mem) return mem[k]; try{ const v=localStorage.getItem(K+k); return v==null?d:JSON.parse(v); }catch(e){ return d; } },
+  set(k,v){ mem[k]=v; try{ localStorage.setItem(K+k,JSON.stringify(v)); return true; }catch(e){ return false; } },
+  del(k){ delete mem[k]; try{ localStorage.removeItem(K+k); }catch(e){} }
+};
+
+/* ---------- state ---------- */
+const firstRun=store.get('playlists',null)===null;
+const S={
+  playlists:store.get('playlists',[]),
+  active:store.get('active',null),
+  favs:store.get('favs',{}),
+  recent:store.get('recent',[]),
+  settings:Object.assign({hideAdult:true,autoplayNext:true,wakeLock:true,theme:'system',fit:'contain'},store.get('settings',{})),
+  items:[],idx:E.buildIndex([],{}),
+  view:'home',params:{},stack:[],loading:null,loadError:null,q:'',addMethod:'url',confirmDel:null,
+  now:null,ctx:null,ctxList:null
+};
+const SECURE=location.protocol==='https:';
+const IOS=/iPad|iPhone|iPod/.test(String(navigator.userAgent))||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+
+/* ---------- helpers ---------- */
+const $=s=>document.querySelector(s);
+const esc=E.escapeHtml;
+function activePl(){ return S.playlists.find(p=>p.id===S.active)||null; }
+function favSet(){ return new Set(S.favs[S.active]||[]); }
+function isFav(id){ return favSet().has(id); }
+function typeLabel(p){ return {m3u:'M3U link',xtream:'Xtream Codes',file:'Imported file',demo:'Demo'}[p.type]||p.type; }
+function errMessage(e){ return (e&&e.message)?e.message:'Something went wrong.'; }
+class AppError extends Error{ constructor(code,msg){ super(msg); this.code=code; } }
+let toastT=null;
+function toast(msg){ const t=$('#toast'); t.textContent=msg; t.hidden=false; clearTimeout(toastT); toastT=setTimeout(()=>{ t.hidden=true; },2400); }
+function saveSettings(){ store.set('settings',S.settings); }
+function applyTheme(){ const r=document.documentElement; if(S.settings.theme==='system') r.removeAttribute('data-theme'); else r.setAttribute('data-theme',S.settings.theme); }
+
+/* ---------- network ---------- */
+async function fetchText(url){
+  if(E.isMixedContent(url,SECURE)) throw new AppError('mixed',E.netHint(url,SECURE));
+  let res;
+  try{ res=await fetch(url,{mode:'cors',cache:'no-store'}); }
+  catch(e){ throw new AppError('network','The browser couldn’t reach that address. Either the server is offline, or it doesn’t allow browser apps to read it (CORS). Open the link in a browser tab, save the file, then add it here with “File or paste”.'); }
+  if(!res.ok) throw new AppError('http','The server answered '+res.status+(res.statusText?' '+res.statusText:'')+'. Check the address and your login details.');
+  return await res.text();
+}
+async function fetchJSON(url){
+  const t=await fetchText(url);
+  try{ return JSON.parse(t); }catch(e){ throw new AppError('parse','The server answered with something that isn’t playlist data. Check the server address (usually http://host:port, often with :8080).'); }
+}
+const readFile=f=>new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result||'')); r.onerror=()=>rej(new AppError('file','Could not read that file.')); r.readAsText(f); });
+
+/* ---------- Xtream Codes (network half; the mapping lives in the engine) ---------- */
+async function xtreamLoad(src,progress){
+  const base=E.normalizeServer(src.server);
+  const api=(action,extra)=>fetchJSON(E.xtreamApiUrl(base,src.username,src.password,action,extra));
+  progress&&progress('Signing in…');
+  E.xtreamAuthCheck(await api(''));
+  progress&&progress('Loading channels, movies and series…');
+  const safe=p=>p.then(r=>Array.isArray(r)?r:[]).catch(()=>[]);
+  const [liveCategories,liveStreams,vodCategories,vodStreams,seriesCategories,series]=await Promise.all([
+    safe(api('get_live_categories')),safe(api('get_live_streams')),safe(api('get_vod_categories')),
+    safe(api('get_vod_streams')),safe(api('get_series_categories')),safe(api('get_series'))]);
+  const items=E.xtreamItems(base,src.username,src.password,{liveCategories,liveStreams,vodCategories,vodStreams,seriesCategories,series});
+  if(!items.length) throw new AppError('empty','Signed in, but the account has no channels, movies or series.');
+  return items;
+}
+async function xtreamEpisodes(pl,s){
+  const base=E.normalizeServer(pl.source.server);
+  const info=await fetchJSON(E.xtreamApiUrl(base,pl.source.username,pl.source.password,'get_series_info','&series_id='+encodeURIComponent(s.x)));
+  return E.xtreamEpisodes(base,pl.source.username,pl.source.password,s,info);
+}
+
+/* ---------- playlists ---------- */
+function makePlaylist(o){ return {id:'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),name:o.name,type:o.type,source:o.source||null,addedAt:Date.now(),counts:{},updatedAt:null}; }
+function persistMeta(){ store.set('playlists',S.playlists); }
+function savePlaylistItems(pl,items){ pl.counts=E.countKinds(items); pl.updatedAt=Date.now(); const ok=store.set('items.'+pl.id,items); pl.unsaved=!ok; return ok; }
+async function fetchPlaylistItems(pl,progress){
+  if(pl.type==='m3u') return E.parseM3U(await fetchText(pl.source.url));
+  if(pl.type==='xtream') return xtreamLoad(pl.source,progress);
+  throw new AppError('nosource','This playlist was imported from a file, so it can’t be refreshed. Add it again from the file.');
+}
+function buildIndex(){ S.idx=E.buildIndex(S.items,{hideAdult:S.settings.hideAdult}); }
+async function loadActive(){
+  const pl=activePl(); S.items=[]; S.loadError=null;
+  if(!pl){ buildIndex(); return; }
+  let items=store.get('items.'+pl.id,null);
+  if(!items){
+    if(pl.source){
+      S.loading='Loading '+pl.name+'…'; render();
+      try{ items=await fetchPlaylistItems(pl,msg=>{ S.loading=msg; render(); }); savePlaylistItems(pl,items); persistMeta(); }
+      catch(e){ S.loadError=errMessage(e); items=[]; }
+      S.loading=null;
+    }else{ S.loadError='The saved copy of this playlist is missing on this device. Add it again from the file.'; items=[]; }
+  }
+  S.items=items||[]; buildIndex();
+}
+function usePlaylist(id){ if(!S.playlists.find(p=>p.id===id)) return; S.active=id; store.set('active',id); closeSheet(); S.stack=[]; S.view='home'; S.params={}; render(); loadActive().then(render); }
+async function refreshPlaylist(id){
+  const pl=S.playlists.find(p=>p.id===id); if(!pl) return;
+  if(!pl.source){ toast('Imported playlists can’t be refreshed'); return; }
+  toast('Refreshing '+pl.name+'…');
+  try{ const items=await fetchPlaylistItems(pl); savePlaylistItems(pl,items); persistMeta(); if(pl.id===S.active){ S.items=items; S.loadError=null; buildIndex(); } toast('Updated · '+items.length+' items'); render(); }
+  catch(e){ if(pl.id===S.active){ S.loadError=errMessage(e); render(); } else toast('Couldn’t refresh '+pl.name); }
+}
+function deletePlaylist(id){
+  const i=S.playlists.findIndex(p=>p.id===id); if(i<0) return;
+  const name=S.playlists[i].name; S.playlists.splice(i,1); store.del('items.'+id); delete S.favs[id]; store.set('favs',S.favs);
+  S.recent=S.recent.filter(r=>r.pid!==id); store.set('recent',S.recent); S.confirmDel=null; persistMeta();
+  if(S.active===id){ if(S.now) stopMedia(true); S.active=S.playlists.length?S.playlists[0].id:null; store.set('active',S.active); loadActive().then(render); }
+  toast('Deleted '+name); render();
+}
+
+/* ---------- recents & favourites ---------- */
+function touchRecent(it,pos,dur){ S.recent=E.touchRecent(S.recent,S.active,it,pos,dur,Date.now()); store.set('recent',S.recent); }
+function findItem(id){ if(S.idx.byId[id]) return S.idx.byId[id]; const r=S.recent.find(x=>x.pid===S.active&&x.id===id&&x.it); return r?r.it:null; }
+function toggleFav(id){
+  const r=E.toggleFav(S.favs[S.active]||[],id); S.favs[S.active]=r.list; store.set('favs',S.favs); const on=r.on;
+  document.querySelectorAll('[data-fav]').forEach(b=>{ if(b.dataset.fav!==id) return; b.classList.toggle('on',on); b.setAttribute('aria-pressed',String(on)); const sp=b.querySelector('span'); if(sp) sp.textContent=on?'Favourited':'Favourite'; });
+  updateFavUI(); toast(on?'Added to favourites':'Removed from favourites');
+  if(S.params.cat==='fav'||S.view==='home') render({keepScroll:true});
+}
+
+/* ---------- navigation & rendering ---------- */
+let lastView=null;
+function go(view,params,opts){
+  params=params||{}; opts=opts||{};
+  if(opts.root){ S.stack=[]; }
+  else if(view!==S.view||JSON.stringify(params)!==JSON.stringify(S.params)){ S.stack.push({view:S.view,params:S.params,scroll:$('#main').scrollTop}); if(S.stack.length>30) S.stack.shift(); }
+  S.view=view; S.params=params; render();
+}
+function back(){ const s=S.stack.pop(); if(!s) return; S.view=s.view; S.params=s.params; render(); $('#main').scrollTop=s.scroll||0; }
+function rootOf(v){ return {home:'home',live:'live',movies:'movies',series:'series',show:'series',more:'more',add:'more',playlists:'more',search:'home'}[v]||'home'; }
+const TABS=[['home','Home','home'],['live','Live','live'],['movies','Movies','film'],['series','Series','series'],['more','More','more']];
+
+function render(opts){
+  opts=opts||{};
+  const main=$('#main');
+  const prevScroll=main.scrollTop;
+  $('#backBtn').hidden=S.stack.length===0;
+  const pl=activePl(); $('#plName').textContent=pl?pl.name:'No playlist';
+  document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===rootOf(S.view)));
+  chunks.clear();
+  let h='';
+  if(S.loading) h='<div class="loading"><div class="spinner"></div><p>'+esc(S.loading)+'</p></div>';
+  else switch(S.view){
+    case 'home': h=viewHome(); break;
+    case 'live': h=viewLive(); break;
+    case 'movies': h=viewMovies(); break;
+    case 'series': h=viewSeries(); break;
+    case 'show': h=viewShow(); break;
+    case 'search': h=viewSearch(); break;
+    case 'more': h=viewMore(); break;
+    case 'add': h='<h1 class="page-h">Add a playlist</h1>'+viewAdd(); break;
+    case 'playlists': h=viewPlaylists(); break;
+    default: h=viewHome();
+  }
+  main.innerHTML='<div class="wrap">'+h+'</div>';
+  mountChunks();
+  const sameView=lastView===S.view;
+  main.scrollTop=(opts.keepScroll&&sameView)?prevScroll:(sameView&&!opts.top?prevScroll:0);
+  if(S.view==='search'&&!sameView){ const q=$('#q'); if(q) q.focus(); }
+  lastView=S.view;
+}
+
+/* chunked lists: render 120 rows at a time as the viewer scrolls */
+const chunks=new Map(); let io=null;
+function chunkList(id,cls,arr){ chunks.set(id,{arr,i:0}); return '<div class="'+cls+'" id="'+id+'"></div><div class="sentinel" data-for="'+id+'" style="height:1px"></div>'; }
+function fill(id){ const st=chunks.get(id); const el=document.getElementById(id); if(!st||!el) return; const end=Math.min(st.arr.length,st.i+120); if(st.i>=end) return; el.insertAdjacentHTML('beforeend',st.arr.slice(st.i,end).join('')); st.i=end; highlightNow(); if(st.i>=st.arr.length){ const s=document.querySelector('.sentinel[data-for="'+id+'"]'); if(s){ if(io&&io.unobserve) io.unobserve(s); s.remove(); } } }
+function mountChunks(){
+  if(io) io.disconnect();
+  if(!chunks.size) return;
+  io=new IntersectionObserver(es=>es.forEach(e=>{ if(e.isIntersecting) fill(e.target.dataset.for); }),{root:$('#main'),rootMargin:'800px'});
+  for(const [id] of chunks){ fill(id); const s=document.querySelector('.sentinel[data-for="'+id+'"]'); if(s) io.observe(s); }
+}
+
+/* ---------- view pieces ---------- */
+function section(title,body,more){ return '<section class="section"><div class="sec-h"><h2>'+esc(title)+'</h2>'+(more||'')+'</div>'+body+'</section>'; }
+function emptyState(t,p){ return '<div class="empty"><h3>'+esc(t)+'</h3><p>'+p+'</p></div>'; }
+function chip(id,label,n,cur){ return '<button class="chip'+(cur===id?' on':'')+'" data-act="cat" data-cat="'+esc(id)+'">'+esc(label)+'<span class="n">'+n+'</span></button>'; }
+function img(l){ return l?'<img src="'+esc(l)+'" alt="" loading="lazy" referrerpolicy="no-referrer">':''; }
+function logoHtml(it){ return '<div class="logo">'+img(it.l)+'<span>'+esc(E.initials(it.n))+'</span></div>'; }
+function favBtn(id){ const on=isFav(id); return '<button class="fav'+(on?' on':'')+'" data-act="fav" data-id="'+esc(id)+'" data-fav="'+esc(id)+'" aria-label="'+(on?'Remove from':'Add to')+' favourites" aria-pressed="'+on+'">'+ic('star')+'</button>'; }
+function liveRow(it){ return '<div class="row" data-act="play" data-id="'+esc(it.id)+'" tabindex="0" role="button"><span class="num">'+(it.num||'')+'</span>'+logoHtml(it)+'<div class="name"><b>'+esc(it.n)+'</b><small>'+esc(it.g)+'</small></div>'+favBtn(it.id)+'</div>'; }
+function movieCard(it){ return '<div class="card" data-act="play" data-id="'+esc(it.id)+'" tabindex="0" role="button"><div class="poster">'+img(it.l)+'<span>'+esc(it.n)+'</span>'+favBtn(it.id)+'</div><div class="t">'+esc(it.n)+'</div><div class="s">'+esc(it.g)+(it.r?' · ★ '+esc(it.r):'')+'</div></div>'; }
+function seriesCard(s){ const n=s.eps?s.eps.length+' episode'+(s.eps.length===1?'':'s'):s.g; return '<div class="card" data-act="show" data-key="'+esc(s.key)+'" tabindex="0" role="button"><div class="poster">'+img(s.logo)+'<span>'+esc(s.title)+'</span>'+favBtn(s.key)+'</div><div class="t">'+esc(s.title)+'</div><div class="s">'+esc(n)+'</div></div>'; }
+function wideCard(it){ return '<div class="card" data-act="play" data-id="'+esc(it.id)+'" tabindex="0" role="button"><div class="poster wide">'+img(it.l)+'<span>'+esc(E.initials(it.n))+'</span>'+(it.k==='ep'?'':favBtn(it.id))+'</div><div class="t">'+esc(it.n)+'</div><div class="s">'+(it.k==='live'?'<i class="onair"></i> ':'')+esc(it.g)+'</div></div>'; }
+function contCard(r){
+  const it=r.it; const pct=E.progressPct(r.pos,r.dur); const left=E.minutesLeft(r.pos,r.dur);
+  const title=it.k==='ep'?(it.st||it.n):it.n;
+  const sub=it.k==='ep'?E.epLabel(it)+(left?' · '+left+' min left':''):(left?left+' min left':it.g);
+  return '<div class="card" data-act="play" data-id="'+esc(it.id)+'" tabindex="0" role="button"><div class="poster wide">'+img(it.l)+'<span>'+esc(E.initials(title))+'</span>'+(pct?'<div class="prog abs"><i style="width:'+pct+'%"></i></div>':'')+'</div><div class="t">'+esc(title)+'</div><div class="s">'+esc(sub)+'</div></div>';
+}
+function epRow(e){
+  const r=S.recent.find(x=>x.pid===S.active&&x.id===e.id); const pct=r?E.progressPct(r.pos,r.dur):0;
+  return '<div class="row" data-act="play" data-id="'+esc(e.id)+'" tabindex="0" role="button"><span class="num">E'+(e.ep||'–')+'</span>'+logoHtml({l:e.l,n:e.et||e.n})+'<div class="name"><b>'+esc(e.et||e.n)+'</b><small>'+esc(E.epLabel(e))+(e.d?' · '+esc(e.d):'')+'</small>'+(pct?'<div class="prog"><i style="width:'+pct+'%"></i></div>':'')+'</div><span class="playmark">'+ic('play')+'</span></div>';
+}
+function toggle(key,label,help){ const on=!!S.settings[key]; return '<div class="setting"><div class="l"><b>'+esc(label)+'</b><small>'+esc(help)+'</small></div><button class="switch'+(on?' on':'')+'" role="switch" aria-checked="'+on+'" aria-label="'+esc(label)+'" data-act="toggle" data-key="'+key+'"></button></div>'; }
+function plural(n,one,many){ return n+' '+(n===1?one:many); }
+
+/* ---------- views ---------- */
+function viewHome(){
+  const pl=activePl(); const X=S.idx;
+  if(!pl) return '<div class="hero">'+ic('dial')+'<h1>Your channels, your way</h1><p>Tuner plays the playlists you already have — an M3U link, an Xtream Codes login, or a file. It comes with no channels of its own.</p></div>'+viewAdd();
+  const fav=favSet();
+  const favItems=[...X.live,...X.movie].filter(i=>fav.has(i.id)).slice(0,12);
+  const favSeries=X.series.filter(s=>fav.has(s.key)).slice(0,8);
+  const cont=E.continueWatching(S.recent,S.active,12);
+  const recentLive=E.recentLive(S.recent,S.active,10);
+  let h='<button class="searchbar" data-act="go" data-view="search">'+ic('search')+'<span>Search channels, movies, series</span></button>';
+  if(S.loadError) h+='<div class="note err">'+esc(S.loadError)+(pl.source?' <button class="link" data-act="refresh-pl" data-id="'+esc(pl.id)+'">Try again</button>':'')+'</div>';
+  if(pl.type==='demo') h+='<div class="note">This is a demo playlist of public test streams so you can try the player. <button class="link" data-act="go" data-view="add">Add your own playlist</button></div>';
+  if(pl.unsaved) h+='<div class="note">This playlist is too large to keep on this device, so it will reload from its source next time you open the app.</div>';
+  h+='<div class="tiles">'
+    +'<button class="tile" data-act="tab" data-tab="live"><span class="k">Live TV</span><span class="v">'+X.live.length+'</span><span class="s">'+plural(X.groups.live.length,'category','categories')+'</span></button>'
+    +'<button class="tile" data-act="tab" data-tab="movies"><span class="k">Movies</span><span class="v">'+X.movie.length+'</span><span class="s">'+plural(X.groups.movie.length,'category','categories')+'</span></button>'
+    +'<button class="tile" data-act="tab" data-tab="series"><span class="k">Series</span><span class="v">'+X.series.length+'</span><span class="s">'+plural(X.groups.series.length,'category','categories')+'</span></button>'
+    +'</div>';
+  if(cont.length) h+=section('Continue watching','<div class="hrow">'+cont.map(contCard).join('')+'</div>');
+  if(favItems.length||favSeries.length) h+=section('Favourites','<div class="hrow">'+favItems.map(wideCard).join('')+favSeries.map(seriesCard).join('')+'</div>');
+  if(recentLive.length) h+=section('Recently watched','<div class="hrow">'+recentLive.map(r=>wideCard(r.it)).join('')+'</div>');
+  if(X.groups.live.length) h+=section('Live categories','<div class="chips wrap-chips">'+X.groups.live.slice(0,18).map(([g,n])=>'<button class="chip" data-act="cat-go" data-tab="live" data-cat="'+esc(g)+'">'+esc(g)+'<span class="n">'+n+'</span></button>').join('')+(X.groups.live.length>18?'<button class="chip" data-act="tab" data-tab="live">All '+X.groups.live.length+' →</button>':'')+'</div>');
+  if(!X.live.length&&!X.movie.length&&!X.series.length&&!S.loadError) h+=emptyState('Nothing here yet','This playlist has no content, or everything in it is hidden by the adult filter (More → Playback).');
+  return h;
+}
+function viewLive(){
+  const cat=S.params.cat||'all'; const fav=favSet(); const X=S.idx;
+  let list=X.live; if(cat==='fav') list=list.filter(i=>fav.has(i.id)); else if(cat!=='all') list=list.filter(i=>i.g===cat);
+  S.ctxList={kind:'live',ids:list.map(i=>i.id)};
+  let h='<div class="chips">'+chip('all','All',X.live.length,cat)+chip('fav','Favourites',X.live.filter(i=>fav.has(i.id)).length,cat)+X.groups.live.map(([g,n])=>chip(g,g,n,cat)).join('')+'</div>';
+  if(!X.live.length) h+=emptyState('No live channels','This playlist has no live channels. Add another playlist from the More tab.');
+  else if(!list.length) h+=emptyState('Nothing here',cat==='fav'?'Tap the star on a channel to add it to favourites.':'This category is empty.');
+  else h+=chunkList('liveList','rows',list.map(liveRow));
+  return h;
+}
+function viewMovies(){
+  const cat=S.params.cat||'all'; const fav=favSet(); const X=S.idx;
+  let list=X.movie; if(cat==='fav') list=list.filter(i=>fav.has(i.id)); else if(cat!=='all') list=list.filter(i=>i.g===cat);
+  S.ctxList={kind:'movie',ids:list.map(i=>i.id)};
+  let h='<div class="chips">'+chip('all','All',X.movie.length,cat)+chip('fav','Favourites',X.movie.filter(i=>fav.has(i.id)).length,cat)+X.groups.movie.map(([g,n])=>chip(g,g,n,cat)).join('')+'</div>';
+  if(!X.movie.length) h+=emptyState('No movies','This playlist has no movies. Movies are entries whose link points at a video file, or whose category says Movies, Films or VOD.');
+  else if(!list.length) h+=emptyState('Nothing here',cat==='fav'?'Tap the star on a movie to add it to favourites.':'This category is empty.');
+  else h+=chunkList('movieGrid','grid',list.map(movieCard));
+  return h;
+}
+function viewSeries(){
+  const cat=S.params.cat||'all'; const fav=favSet(); const X=S.idx;
+  let list=X.series; if(cat==='fav') list=list.filter(s=>fav.has(s.key)); else if(cat!=='all') list=list.filter(s=>s.g===cat);
+  let h='<div class="chips">'+chip('all','All',X.series.length,cat)+chip('fav','Favourites',X.series.filter(s=>fav.has(s.key)).length,cat)+X.groups.series.map(([g,n])=>chip(g,g,n,cat)).join('')+'</div>';
+  if(!X.series.length) h+=emptyState('No series','Series are recognised from names like “Show name S01E02”, or from an Xtream Codes account.');
+  else if(!list.length) h+=emptyState('Nothing here',cat==='fav'?'Open a series and tap Favourite to keep it here.':'This category is empty.');
+  else h+=chunkList('seriesGrid','grid',list.map(seriesCard));
+  return h;
+}
+function viewShow(){
+  const s=S.idx.seriesByKey[S.params.key]; if(!s) return emptyState('Series not found','It may belong to another playlist.');
+  const fav=isFav(s.key);
+  let h='<div class="show-h"><div class="poster small">'+img(s.logo)+'<span>'+esc(E.initials(s.title))+'</span></div><div class="show-meta"><h1>'+esc(s.title)+'</h1><div class="s">'+esc(s.g)+(s.eps?' · '+plural(s.eps.length,'episode','episodes'):'')+'</div><div class="show-actions">'
+    +(s.eps&&s.eps.length?'<button class="btn primary" data-act="play" data-id="'+esc(s.eps[0].id)+'">'+ic('play')+' Play '+esc(E.epLabel(s.eps[0]))+'</button>':'')
+    +'<button class="btn'+(fav?' on':'')+'" data-act="fav" data-id="'+esc(s.key)+'" data-fav="'+esc(s.key)+'" aria-pressed="'+fav+'">'+ic('star')+'<span>'+(fav?'Favourited':'Favourite')+'</span></button></div></div></div>';
+  if(s.eps===null){
+    if(!s.loading&&!s.err){ s.loading=true; loadEpisodes(s); }
+    h+=s.err?'<div class="note err">'+esc(s.err)+' <button class="link" data-act="retry-eps" data-key="'+esc(s.key)+'">Try again</button></div>':'<div class="loading-line">Loading episodes…</div>';
+    return h;
+  }
+  if(!s.eps.length) return h+emptyState('No episodes','The provider returned no episodes for this series.');
+  const seasons=E.seasonsOf(s);
+  let se=S.params.season; if(!seasons.includes(se)) se=seasons[0];
+  const eps=s.eps.filter(e=>e.se===se);
+  S.ctxList={kind:'ep',ids:s.eps.map(e=>e.id)};
+  if(seasons.length>1) h+='<div class="chips">'+seasons.map(x=>'<button class="chip'+(x===se?' on':'')+'" data-act="season" data-season="'+x+'">Season '+x+'</button>').join('')+'</div>';
+  h+='<div class="rows">'+eps.map(epRow).join('')+'</div>';
+  return h;
+}
+async function loadEpisodes(s){
+  const pl=activePl();
+  try{ if(!pl||pl.type!=='xtream') throw new AppError('nosource','Episodes can only be loaded from an Xtream Codes account.'); s.eps=await xtreamEpisodes(pl,s); s.eps.forEach(e=>{ S.idx.byId[e.id]=e; }); }
+  catch(e){ s.err=errMessage(e); }
+  s.loading=false;
+  if(S.view==='show'&&S.params.key===s.key) render({keepScroll:true});
+}
+function viewSearch(){ return '<div class="field"><input id="q" class="input" type="search" placeholder="Search channels, movies, series" value="'+esc(S.q)+'" autocomplete="off" autocapitalize="off" spellcheck="false"></div><div id="searchResults" style="margin-top:14px">'+searchResults()+'</div>'; }
+function searchResults(){
+  if(E.slug(S.q).length<2) return '<p class="help">Type at least two letters.</p>';
+  const r=E.search(S.idx,S.q,80);
+  S.ctxList={kind:'live',ids:r.live.map(i=>i.id)};
+  if(!r.live.length&&!r.movie.length&&!r.series.length) return emptyState('No results','Try a shorter word, or check which playlist is active.');
+  let h='';
+  if(r.live.length) h+=section('Live · '+r.live.length,'<div class="rows">'+r.live.map(liveRow).join('')+'</div>');
+  if(r.movie.length) h+=section('Movies · '+r.movie.length,'<div class="grid">'+r.movie.map(movieCard).join('')+'</div>');
+  if(r.series.length) h+=section('Series · '+r.series.length,'<div class="grid">'+r.series.map(seriesCard).join('')+'</div>');
+  return h;
+}
+function plRow(p){
+  const active=p.id===S.active; const c=p.counts||{}; const conf=S.confirmDel===p.id;
+  return '<div class="pl-row'+(active?' on':'')+'"><div class="pl-main"><b>'+esc(p.name)+'</b><small>'+esc(typeLabel(p))+' · '+(c.live||0)+' live · '+(c.movie||0)+' movies · '+(c.series||0)+' series'+(p.updatedAt?' · updated '+esc(E.ago(p.updatedAt,Date.now())):'')+'</small></div><div class="pl-actions">'
+    +(active?'<span class="badge ok">Active</span>':'<button class="btn sm" data-act="use-pl" data-id="'+esc(p.id)+'">Use</button>')
+    +(p.source?'<button class="icon-btn" data-act="refresh-pl" data-id="'+esc(p.id)+'" aria-label="Refresh">'+ic('refresh')+'</button>':'')
+    +(conf?'<button class="btn sm danger" data-act="del-pl-yes" data-id="'+esc(p.id)+'">Delete?</button>':'<button class="icon-btn" data-act="del-pl" data-id="'+esc(p.id)+'" aria-label="Delete">'+ic('trash')+'</button>')
+    +'</div></div>';
+}
+function viewPlaylists(){
+  return '<h1 class="page-h">Playlists</h1>'+(S.playlists.length?'<div class="rows">'+S.playlists.map(plRow).join('')+'</div>':emptyState('No playlists','Add one below.'))+'<div class="actions"><button class="btn primary" data-act="go" data-view="add">'+ic('plus')+' Add playlist</button></div>';
+}
+function viewMore(){
+  const st=S.settings;
+  const fitBtn=f=>'<button class="'+(st.fit===f?'on':'')+'" data-act="set-fit" data-value="'+f+'">'+E.fitLabel(f)+'</button>';
+  const themeBtn=t=>'<button class="'+(st.theme===t?'on':'')+'" data-act="set-theme" data-value="'+t+'">'+t[0].toUpperCase()+t.slice(1)+'</button>';
+  return '<h1 class="page-h">More</h1>'
+    +section('Playlists',(S.playlists.length?'<div class="rows">'+S.playlists.map(plRow).join('')+'</div>':'')+'<div class="actions"><button class="btn primary" data-act="go" data-view="add">'+ic('plus')+' Add playlist</button></div>')
+    +section('Playback',toggle('autoplayNext','Autoplay next episode','When an episode ends, start the next one in the series.')+toggle('wakeLock','Keep screen awake while playing','Stops the phone sleeping mid-programme (where the browser allows it).')+toggle('hideAdult','Hide adult categories','Hides groups named XXX, Adult or 18+.')
+      +'<div class="setting"><div class="l"><b>Default picture fit</b><small>How video fills the player.</small></div><div class="seg small">'+E.FIT_MODES.map(fitBtn).join('')+'</div></div>')
+    +section('Appearance','<div class="setting"><div class="l"><b>Theme</b><small>System follows your phone.</small></div><div class="seg small">'+['system','dark','light'].map(themeBtn).join('')+'</div></div>')
+    +section('Library','<div class="actions"><button class="btn" data-act="clear-recent">Clear watch history</button><button class="btn" data-act="clear-favs">Clear favourites</button></div>')
+    +section('About','<p class="help">Tuner is a player only. It plays playlists and streams you add and comes with no channels. Live TV plays through HLS (.m3u8). Raw .ts streams and some .mkv or .avi files won’t play in a browser — use the VLC button in the player for those. If your provider only gives plain http:// links, a page served over https can’t load them; save this page as a file and open it directly, or ask the provider for https. Everything you add stays on this device.</p>');
+}
+function viewAdd(){
+  const m=S.addMethod;
+  const seg='<div class="seg">'+[['url','M3U link'],['xtream','Xtream Codes'],['file','File or paste']].map(([k,l])=>'<button class="'+(m===k?'on':'')+'" data-act="method" data-method="'+k+'" type="button">'+l+'</button>').join('')+'</div>';
+  let f='';
+  if(m==='url') f='<div class="field"><label for="f-name">Name (optional)</label><input id="f-name" class="input" name="name" placeholder="My provider" autocomplete="off"></div><div class="field"><label for="f-url">Playlist link (.m3u / .m3u8)</label><input id="f-url" class="input" name="url" type="url" inputmode="url" required placeholder="https://example.com/playlist.m3u" autocomplete="off" autocapitalize="off"></div><p class="help">The link must allow browser access. If it doesn’t load, open it in a browser tab, save the file, and use “File or paste”.</p>';
+  else if(m==='xtream') f='<div class="field"><label for="f-xname">Name (optional)</label><input id="f-xname" class="input" name="name" placeholder="My provider" autocomplete="off"></div><div class="field"><label for="f-server">Server address</label><input id="f-server" class="input" name="server" required placeholder="http://host:8080" inputmode="url" autocomplete="off" autocapitalize="off"></div><div class="field"><label for="f-user">Username</label><input id="f-user" class="input" name="username" autocomplete="username" autocapitalize="off"></div><div class="field"><label for="f-pass">Password</label><input id="f-pass" class="input" name="password" type="password" autocomplete="current-password"></div><p class="help">You can also paste your full M3U link into the server field — the username and password are read from it. Live, movies and series are loaded from the panel.</p>';
+  else f='<div class="field"><label for="f-fname">Name (optional)</label><input id="f-fname" class="input" name="name" placeholder="My playlist" autocomplete="off"></div><div class="field"><label for="f-file">Playlist file</label><input id="f-file" class="input" name="file" type="file" accept=".m3u,.m3u8,.txt,text/plain,audio/x-mpegurl,application/x-mpegurl,application/vnd.apple.mpegurl"></div><div class="field"><label for="f-text">…or paste the playlist text</label><textarea id="f-text" class="input" name="text" placeholder="#EXTM3U&#10;#EXTINF:-1 tvg-logo=&quot;https://…/logo.png&quot; group-title=&quot;News&quot;,Channel name&#10;https://…/stream.m3u8"></textarea></div>';
+  return seg+'<form class="form" id="addForm" data-method="'+m+'" novalidate>'+f+'<div class="note err" id="addErr" hidden></div><div class="actions"><button class="btn primary" type="submit" id="addBtn">Add playlist</button></div></form>';
+}
+async function onAddSubmit(form){
+  const m=form.dataset.method; const fd=new FormData(form);
+  const btn=form.querySelector('#addBtn'), err=form.querySelector('#addErr');
+  const busy=msg=>{ btn.disabled=true; btn.textContent=msg; };
+  err.hidden=true; busy('Loading…');
+  try{
+    const name=String(fd.get('name')||'').trim(); let pl, items;
+    if(m==='url'){
+      const url=String(fd.get('url')||'').trim(); if(!url) throw new AppError('input','Enter the playlist link.');
+      pl=makePlaylist({name:name||E.hostOf(url),type:'m3u',source:{url}}); items=E.parseM3U(await fetchText(url));
+    }else if(m==='xtream'){
+      let server=String(fd.get('server')||'').trim(), username=String(fd.get('username')||'').trim(), password=String(fd.get('password')||'');
+      const auto=E.xtreamFromText(server); if(auto){ server=auto.server; username=username||auto.username; password=password||auto.password; }
+      if(!server||!username||!password) throw new AppError('input','Fill in the server, username and password.');
+      const src={server:E.normalizeServer(server),username,password};
+      pl=makePlaylist({name:name||E.hostOf(src.server),type:'xtream',source:src}); items=await xtreamLoad(src,busy);
+    }else{
+      const file=fd.get('file'); let text=String(fd.get('text')||'');
+      if(file&&file.size) text=await readFile(file);
+      if(!text.trim()) throw new AppError('input','Choose a file or paste the playlist text.');
+      pl=makePlaylist({name:name||(file&&file.name?file.name.replace(/\.[^.]+$/,''):'Imported playlist'),type:'file'}); items=E.parseM3U(text);
+    }
+    if(!items.length) throw new AppError('empty','No channels found in that playlist. It should start with #EXTM3U and have #EXTINF lines followed by stream links.');
+    S.playlists.push(pl); savePlaylistItems(pl,items); persistMeta(); S.active=pl.id; store.set('active',pl.id);
+    toast('Added '+pl.name+' · '+items.length+' items');
+    S.stack=[]; S.view='home'; S.params={}; await loadActive(); render({top:true});
+  }catch(e){
+    err.textContent=errMessage(e); err.hidden=false; btn.disabled=false; btn.textContent='Add playlist';
+  }
+}
+
+/* ---------- sheet ---------- */
+function openSheet(html){ const s=$('#sheet'); s.querySelector('.panel').innerHTML=html; s.hidden=false; }
+function closeSheet(){ $('#sheet').hidden=true; }
+function openPlSheet(){
+  openSheet('<h3>Playlists</h3>'+(S.playlists.length?S.playlists.map(p=>'<button class="list-item'+(p.id===S.active?' on':'')+'" data-act="use-pl" data-id="'+esc(p.id)+'"><span class="li-main"><b>'+esc(p.name)+'</b><small>'+esc(typeLabel(p))+' · '+((p.counts&&p.counts.live)||0)+' live · '+((p.counts&&p.counts.movie)||0)+' movies · '+((p.counts&&p.counts.series)||0)+' series</small></span>'+(p.id===S.active?ic('check'):'')+'</button>').join(''):'<p class="help">No playlists yet.</p>')
+    +'<div class="actions"><button class="btn" data-act="go" data-view="playlists">Manage</button><button class="btn primary" data-act="go" data-view="add">'+ic('plus')+' Add playlist</button></div>');
+}
+
+/* ---------- player ---------- */
+const P={el:$('#player'),video:$('#video'),stage:$('#stage'),hls:null,recovered:false,lastSave:0,level:null,fit:null,wl:null};
+function ctxFor(it){
+  if(S.ctxList&&S.ctxList.ids.includes(it.id)) return {kind:S.ctxList.kind,ids:S.ctxList.ids.slice()};
+  if(it.k==='ep'){ const s=S.idx.seriesByKey[it.sk]; if(s&&s.eps) return {kind:'ep',ids:s.eps.map(e=>e.id)}; }
+  return null;
+}
+function playItem(it,ctx){
+  if(!it||!it.u) return;
+  P.el.hidden=false; S.now=it; S.ctx=ctx||null;
+  $('#pTitle').textContent=it.k==='ep'?((it.st||it.n)+' · '+E.epLabel(it)):it.n;
+  const b=$('#pBadge'); b.textContent=it.k==='live'?'Live':it.k==='movie'?'Movie':'Episode'; b.className='badge'+(it.k==='live'?' live':'');
+  $('#pGroup').textContent=it.k==='ep'?(it.et||it.n):it.g;
+  $('#pStat').textContent='Connecting…';
+  const has=S.ctx&&S.ctx.ids.length>1; $('#pPrev').hidden=!has; $('#pNext').hidden=!has;
+  const vlc=E.vlcUrl(it.u,IOS); $('#pVlc').href=vlc; $('#pVlcOv').href=vlc;
+  updateFavUI(); hideOverlay();
+  if(S.settings.fit!=='contain'||P.fit) P.video.style.objectFit=P.fit||S.settings.fit;
+  touchRecent(it);
+  loadMedia(it.u,it);
+  highlightNow(); mediaSession(it);
+}
+function loadMedia(url,it){
+  const v=P.video; stopMedia(false);
+  if(E.isMixedContent(url,SECURE)){ fail('Blocked by the browser',E.netHint(url,SECURE)); return; }
+  const isHls=E.isHlsUrl(url,it.k);
+  const native=!!(v.canPlayType('application/vnd.apple.mpegurl')||v.canPlayType('application/x-mpegURL'));
+  P.recovered=false;
+  if(isHls&&!native){
+    if(!(window.Hls&&Hls.isSupported())){ fail('Can’t play HLS here','This browser can’t play HLS streams, and the player library didn’t load. Try Safari or Chrome, or open the link in VLC.'); return; }
+    const hls=new Hls({enableWorker:true,backBufferLength:60,maxBufferLength:30,manifestLoadingTimeOut:20000,levelLoadingTimeOut:20000,fragLoadingTimeOut:30000});
+    P.hls=hls;
+    hls.on(Hls.Events.ERROR,(ev,d)=>{
+      if(!d||!d.fatal) return;
+      const drop=()=>{ try{ hls.destroy(); }catch(e){} if(P.hls===hls) P.hls=null; };
+      if(d.type===Hls.ErrorTypes.NETWORK_ERROR){ fail('Couldn’t load the stream',E.netHint(url,SECURE)); drop(); }
+      else if(d.type===Hls.ErrorTypes.MEDIA_ERROR){ if(!P.recovered){ P.recovered=true; hls.recoverMediaError(); } else { fail('Couldn’t decode the video','The stream loaded, but this browser can’t decode it. Try VLC.'); drop(); } }
+      else { fail('Playback failed',E.netHint(url,SECURE)); drop(); }
+    });
+    hls.on(Hls.Events.LEVEL_SWITCHED,(ev,d)=>{ const l=hls.levels&&hls.levels[d.level]; if(l) P.level=l; updateStat(); });
+    hls.loadSource(url); hls.attachMedia(v);
+  }else{
+    v.src=url;
+  }
+  const p=v.play(); if(p&&p.catch) p.catch(()=>{});
+}
+function stopMedia(hide){
+  if(P.hls){ try{ P.hls.destroy(); }catch(e){} P.hls=null; }
+  P.level=null; const v=P.video; try{ v.pause(); }catch(e){} v.removeAttribute('src'); try{ v.load(); }catch(e){}
+  if(hide){ saveProgress(true); P.el.hidden=true; S.now=null; S.ctx=null; wakeOff(); hideOverlay(); highlightNow(); if(document.fullscreenElement&&document.exitFullscreen) document.exitFullscreen().catch(()=>{}); }
+}
+function fail(title,msg){ $('#pErrTitle').textContent=title; $('#pErrMsg').textContent=msg; $('#pOverlay').hidden=false; $('#pStat').textContent='Stopped'; wakeOff(); }
+function hideOverlay(){ $('#pOverlay').hidden=true; }
+function updateStat(){ const v=P.video; const parts=[]; if(v.videoWidth) parts.push(v.videoWidth+'×'+v.videoHeight); if(P.level&&P.level.bitrate) parts.push((P.level.bitrate/1e6).toFixed(1)+' Mb/s'); if(!parts.length) parts.push(v.paused?'Paused':'Playing'); $('#pStat').textContent=parts.join(' · '); }
+function updateFavUI(){ const b=$('#pFav'); if(!S.now){ b.classList.remove('on'); return; } const on=isFav(E.favTarget(S.now)); b.classList.toggle('on',on); b.setAttribute('aria-pressed',String(on)); }
+function highlightNow(){ document.querySelectorAll('.row.now,.card.now').forEach(el=>el.classList.remove('now')); if(S.now) document.querySelectorAll('[data-act="play"][data-id]').forEach(el=>{ if(el.dataset.id===S.now.id) el.classList.add('now'); }); }
+function saveProgress(force,ended){
+  const it=S.now, v=P.video; if(!it||it.k==='live') return;
+  const now=Date.now(); if(!force&&now-P.lastSave<5000) return; P.lastSave=now;
+  const d=isFinite(v.duration)?v.duration:0; let pos=v.currentTime||0; if(ended) pos=0;
+  touchRecent(it,pos,d);
+}
+function resumeIfNeeded(){
+  const it=S.now, v=P.video; if(!it||it.k==='live') return;
+  const at=E.resumeAt(S.recent.find(x=>x.pid===S.active&&x.id===it.id),v.duration);
+  if(at!=null){ v.currentTime=at; toast('Resumed from '+E.fmtTime(at)); }
+}
+function stepCtx(dir){
+  if(!S.now||!S.ctx) return;
+  const j=E.stepIndex(S.ctx.ids,S.now.id,dir);
+  if(j<0){ toast(dir>0?'End of list':'Start of list'); return; }
+  const it=findItem(S.ctx.ids[j]); if(it) playItem(it,S.ctx);
+}
+async function copyText(t){
+  try{ await navigator.clipboard.writeText(t); toast('Link copied'); }
+  catch(e){ const ta=document.createElement('textarea'); ta.value=t; ta.setAttribute('readonly',''); ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.select(); let ok=false; try{ ok=document.execCommand('copy'); }catch(x){} ta.remove(); toast(ok?'Link copied':'Copy failed — long-press the title to select it'); }
+}
+function fullscreen(){
+  const el=P.stage, v=P.video;
+  if(el.requestFullscreen){ el.requestFullscreen().catch(()=>{ if(v.webkitEnterFullscreen) v.webkitEnterFullscreen(); }); }
+  else if(v.webkitEnterFullscreen){ v.webkitEnterFullscreen(); }
+  else if(el.webkitRequestFullscreen){ el.webkitRequestFullscreen(); }
+}
+function cycleFit(){ P.fit=E.fitNext(P.fit||S.settings.fit); P.video.style.objectFit=P.fit; toast(E.fitLabel(P.fit)); }
+async function wakeOn(){ if(!S.settings.wakeLock||!('wakeLock' in navigator)||P.wl) return; try{ P.wl=await navigator.wakeLock.request('screen'); P.wl.addEventListener('release',()=>{ P.wl=null; }); }catch(e){} }
+function wakeOff(){ try{ if(P.wl) P.wl.release(); }catch(e){} P.wl=null; }
+function mediaSession(it){
+  if(!('mediaSession' in navigator)||typeof MediaMetadata==='undefined') return;
+  try{
+    navigator.mediaSession.metadata=new MediaMetadata({title:it.k==='ep'?(it.et||it.n):it.n,artist:it.k==='ep'?(it.st+' · '+E.epLabel(it)):it.g,album:'Tuner',artwork:it.l?[{src:it.l}]:[]});
+    navigator.mediaSession.setActionHandler('previoustrack',()=>stepCtx(-1));
+    navigator.mediaSession.setActionHandler('nexttrack',()=>stepCtx(1));
+  }catch(e){}
+}
+(function bindPlayer(){
+  const v=P.video;
+  v.addEventListener('error',()=>{
+    if(P.hls) return; const e=v.error; const m=E.mediaErrorMessage(e&&e.code,S.now?S.now.u:'',SECURE);
+    fail(m.title,m.msg);
+  });
+  v.addEventListener('playing',()=>{ hideOverlay(); updateStat(); wakeOn(); });
+  v.addEventListener('waiting',()=>{ $('#pStat').textContent='Buffering…'; });
+  v.addEventListener('pause',()=>{ saveProgress(true); updateStat(); });
+  v.addEventListener('loadedmetadata',()=>{ updateStat(); resumeIfNeeded(); });
+  v.addEventListener('resize',updateStat);
+  v.addEventListener('timeupdate',()=>saveProgress(false));
+  v.addEventListener('ended',()=>{ saveProgress(true,true); if(S.now&&S.now.k==='ep'&&S.settings.autoplayNext) stepCtx(1); });
+  v.addEventListener('enterpictureinpicture',()=>$('#pPip').classList.add('on'));
+  v.addEventListener('leavepictureinpicture',()=>$('#pPip').classList.remove('on'));
+  if(document.pictureInPictureEnabled) $('#pPip').hidden=false;
+  document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible'&&S.now&&!v.paused) wakeOn(); });
+  P.el.addEventListener('click',e=>{
+    const t=e.target.closest('[data-pact]'); if(!t) return;
+    switch(t.dataset.pact){
+      case 'prev': stepCtx(-1); break;
+      case 'next': stepCtx(1); break;
+      case 'fav': if(S.now) toggleFav(E.favTarget(S.now)); break;
+      case 'fit': cycleFit(); break;
+      case 'pip': if(document.pictureInPictureElement) document.exitPictureInPicture().catch(()=>{}); else if(v.requestPictureInPicture) v.requestPictureInPicture().catch(()=>toast('Picture in picture isn’t available here')); break;
+      case 'full': fullscreen(); break;
+      case 'copy': if(S.now) copyText(S.now.u); break;
+      case 'retry': if(S.now){ hideOverlay(); loadMedia(S.now.u,S.now); } break;
+      case 'close': stopMedia(true); break;
+    }
+  });
+})();
+
+/* ---------- global events ---------- */
+document.body.addEventListener('click',e=>{
+  const t=e.target.closest('[data-act]'); if(!t) return;
+  const a=t.dataset.act, d=t.dataset;
+  switch(a){
+    case 'tab': go(d.tab,{},{root:true}); break;
+    case 'go': go(d.view,{}); break;
+    case 'cat-go': go(d.tab,{cat:d.cat},{root:true}); break;
+    case 'cat': S.params=Object.assign({},S.params,{cat:d.cat}); render({top:true}); break;
+    case 'season': S.params=Object.assign({},S.params,{season:Number(d.season)}); render({keepScroll:true}); break;
+    case 'play': { const it=findItem(d.id); if(!it){ toast('That item isn’t in the active playlist'); break; } if(it.k==='series'){ go('show',{key:it.id}); break; } playItem(it,ctxFor(it)); break; }
+    case 'show': go('show',{key:d.key}); break;
+    case 'fav': toggleFav(d.id); break;
+    case 'method': S.addMethod=d.method; render({keepScroll:true}); break;
+    case 'use-pl': usePlaylist(d.id); break;
+    case 'refresh-pl': refreshPlaylist(d.id); break;
+    case 'del-pl': S.confirmDel=d.id; render({keepScroll:true}); break;
+    case 'del-pl-yes': deletePlaylist(d.id); break;
+    case 'toggle': S.settings[d.key]=!S.settings[d.key]; saveSettings(); if(d.key==='hideAdult') buildIndex(); if(d.key==='wakeLock'&&!S.settings.wakeLock) wakeOff(); render({keepScroll:true}); break;
+    case 'set-fit': S.settings.fit=d.value; saveSettings(); P.fit=d.value; P.video.style.objectFit=d.value; render({keepScroll:true}); break;
+    case 'set-theme': S.settings.theme=d.value; saveSettings(); applyTheme(); render({keepScroll:true}); break;
+    case 'clear-recent': S.recent=[]; store.set('recent',S.recent); toast('Watch history cleared'); render({keepScroll:true}); break;
+    case 'clear-favs': S.favs[S.active]=[]; store.set('favs',S.favs); updateFavUI(); toast('Favourites cleared'); render({keepScroll:true}); break;
+    case 'retry-eps': { const s=S.idx.seriesByKey[d.key]; if(s){ s.err=null; s.eps=null; } render({keepScroll:true}); break; }
+    case 'back': back(); break;
+    case 'pl-sheet': openPlSheet(); break;
+  }
+  if(t.closest('#sheet')&&a==='go') closeSheet();
+});
+document.body.addEventListener('keydown',e=>{ if((e.key==='Enter'||e.key===' ')&&e.target.matches&&e.target.matches('[data-act][tabindex]')){ e.preventDefault(); e.target.click(); } if(e.key==='Escape'&&!$('#sheet').hidden) closeSheet(); });
+let qT=null;
+document.body.addEventListener('input',e=>{ if(e.target.id==='q'){ S.q=e.target.value; clearTimeout(qT); qT=setTimeout(()=>{ const r=$('#searchResults'); if(r){ r.innerHTML=searchResults(); highlightNow(); } },140); } });
+document.body.addEventListener('submit',e=>{ if(e.target.id==='addForm'){ e.preventDefault(); onAddSubmit(e.target); } });
+document.body.addEventListener('error',e=>{ const t=e.target; if(t&&t.tagName==='IMG') t.classList.add('broken'); },true);
+$('#sheet').addEventListener('click',e=>{ if(e.target===e.currentTarget) closeSheet(); });
+
+/* ---------- demo playlist (public test streams, so the player can be tried before adding a provider) ---------- */
+const DEMO_M3U=[
+'#EXTM3U',
+'#EXTINF:-1 group-title="Demo live",Akamai test stream (live)',
+'https://cph-p2p-msl.akamaized.net/hls/live/2000341/test/master.m3u8',
+'#EXTINF:-1 group-title="Demo live",Akamai live clock',
+'https://moctobpltc-i.akamaihd.net/hls/live/571329/eight/playlist.m3u8',
+'#EXTINF:-1 group-title="Demo movies",Big Buck Bunny (Blender Foundation)',
+'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
+'#EXTINF:-1 group-title="Demo movies",Sintel (Blender Foundation)',
+'https://bitdash-a.akamaihd.net/content/sintel/hls/playlist.m3u8',
+'#EXTINF:-1 group-title="Demo movies",Tears of Steel (Blender Foundation)',
+'https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8',
+'#EXTINF:-1 group-title="Demo series",Apple HLS samples S01E01 Bip Bop 4:3',
+'https://devstreaming-cdn.apple.com/videos/streaming/examples/bipbop_4x3/bipbop_4x3_variant.m3u8',
+'#EXTINF:-1 group-title="Demo series",Apple HLS samples S01E02 Bip Bop 16:9',
+'https://devstreaming-cdn.apple.com/videos/streaming/examples/bipbop_16x9/bipbop_16x9_variant.m3u8',
+'#EXTINF:-1 group-title="Demo series",Apple HLS samples S02E01 Advanced fMP4',
+'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8',
+'#EXTINF:-1 group-title="Demo series",Apple HLS samples S02E02 Advanced HEVC',
+'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_hevc/master.m3u8'
+].join('\n');
+
+/* ---------- boot ---------- */
+function boot(){
+  applyTheme();
+  $('#brand').innerHTML=ic('dial')+'<span>Tuner</span>';
+  $('#backBtn').innerHTML=ic('back');
+  $('#plSwitch').insertAdjacentHTML('beforeend',ic('down'));
+  $('#searchBtn').innerHTML=ic('search');
+  $('#tabs').innerHTML=TABS.map(([id,label,icon])=>'<button data-act="tab" data-tab="'+id+'">'+ic(icon)+'<span>'+label+'</span></button>').join('');
+  const pb={pPrev:'prev',pNext:'next',pFav:'star',pFit:'fit',pPip:'pip',pFull:'full',pCopy:'copy',pVlc:'ext',pClose:'close'};
+  Object.keys(pb).forEach(id=>{ $('#'+id).innerHTML=ic(pb[id]); });
+  if(firstRun){
+    const pl=makePlaylist({name:'Demo playlist',type:'demo'});
+    savePlaylistItems(pl,E.parseM3U(DEMO_M3U)); S.playlists.push(pl); persistMeta(); S.active=pl.id; store.set('active',pl.id);
+  }
+  if(!S.active||!S.playlists.find(p=>p.id===S.active)) S.active=S.playlists.length?S.playlists[0].id:null;
+  render();
+  loadActive().then(render);
+  if(location.protocol!=='file:'&&'serviceWorker' in navigator){ try{ navigator.serviceWorker.register('sw.js').catch(()=>{}); }catch(e){} }
+}
+boot();
+
+})();
+</script>
+</body>
+</html>
