@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>DAYTONA USA — Web Arcade Racer</title>
+<style>
+  :root { --neon: #ff3b3b; --blue: #1f6dff; --yellow: #ffd400; }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #05060a;
+    font-family: "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+    color: #fff; overflow: hidden;
+    -webkit-user-select: none; user-select: none;
+  }
+  #wrap {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #game {
+    display: block;
+    width: 100%; height: 100%;
+    image-rendering: optimizeSpeed;
+    background: #000;
+  }
+  /* ---------- HUD ---------- */
+  #hud {
+    position: absolute; inset: 0; pointer-events: none;
+    font-weight: 800; letter-spacing: 1px;
+    text-shadow: 0 2px 0 rgba(0,0,0,.6);
+  }
+  /* Arcade HUD — flat outlined text like the real cabinet, no boxes */
+  #hud .ol { -webkit-text-stroke: 3px #000; paint-order: stroke fill;
+             text-shadow: 3px 3px 0 rgba(0,0,0,.55); }
+  #lapinfo, #timer, #pos { position: absolute; }
+  /* Top-left: LAP x/8 + lap time */
+  #lapinfo { left: 16px; top: 10px; line-height: 1; }
+  #lapinfo .laplabel { font-size: 13px; color:#fff; letter-spacing:2px; }
+  #lapinfo .lap { font-size: 40px; color: #fff; }
+  #lapinfo .lap b { color:#fff; }
+  #lapinfo .ltime { font-size: 18px; color:#fff; margin-top:4px; font-variant-numeric: tabular-nums; }
+  /* Top-centre: big yellow checkpoint timer */
+  #timer { left:50%; top:6px; transform:translateX(-50%); text-align:center; }
+  #timer .timerval { font-size: 56px; color: var(--yellow); line-height:1; }
+  #timer .timerlabel { font-size: 11px; letter-spacing:3px; color:#fff; opacity:.9; }
+  /* Top-right: green POSITION x/40 */
+  #pos { right: 16px; top: 8px; text-align: right; line-height:1; }
+  #pos .poslabel { font-size: 12px; letter-spacing:2px; color:#fff; }
+  #pos .posval { font-size: 50px; color: #2bd451; }
+  /* ---------- Overlays ---------- */
+  #overlay {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center; overflow-y: auto;
+    padding: max(10px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right))
+             max(10px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));
+    background: radial-gradient(ellipse at center, rgba(10,12,30,.75), rgba(0,0,0,.92));
+    z-index: 5;
+  }
+  #overlay.hidden { display: none; }
+  #pauseBtn{position:absolute;left:50%;transform:translateX(-50%);
+    bottom:calc(10px + env(safe-area-inset-bottom));z-index:4;pointer-events:auto;cursor:pointer;
+    font-family:inherit;font-weight:800;font-size:14px;letter-spacing:1px;color:#fff;
+    background:rgba(0,0,0,.5);border:2px solid rgba(255,255,255,.3);border-radius:22px;padding:7px 18px;}
+  #pauseBtn:active{transform:translateX(-50%) translateY(2px);}
+  .title {
+    font-size: 64px; font-weight: 900; letter-spacing: 4px; margin: 0;
+    color: #fff;
+    text-shadow: 0 0 18px var(--blue), 0 0 36px var(--neon), 4px 4px 0 #000;
+    transform: skewX(-8deg);
+  }
+  .title .red { color: var(--neon); }
+  .subtitle { font-size: 16px; opacity: .9; margin: 6px 0 28px; letter-spacing: 3px; }
+  .menu-card {
+    background: rgba(0,0,0,.5); border: 2px solid rgba(255,255,255,.18);
+    border-radius: 14px; padding: 22px 30px; max-width: 560px;
+  }
+  .menu-card h2 { margin: 0 0 10px; font-size: 22px; color: var(--yellow); }
+  .keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px;
+          font-size: 15px; margin: 14px 0 20px; text-align: left; }
+  .keys b { background:#111; border:1px solid #444; border-radius:6px; padding:2px 8px; }
+  .diff { display:flex; gap:10px; justify-content:center; margin-bottom: 18px; }
+  .diff button { flex:1; }
+  button.btn {
+    pointer-events: auto; cursor: pointer;
+    font-family: inherit; font-weight: 800; letter-spacing: 1px;
+    font-size: 18px; color: #fff; padding: 12px 26px;
+    border: none; border-radius: 10px;
+    background: linear-gradient(180deg, var(--neon), #b81f1f);
+    box-shadow: 0 4px 0 #6e0d0d, 0 8px 18px rgba(0,0,0,.5);
+    transition: transform .05s ease;
+  }
+  button.btn:active { transform: translateY(3px); box-shadow: 0 1px 0 #6e0d0d; }
+  button.btn.sel { outline: 3px solid var(--yellow); }
+  button.ghost {
+    background: linear-gradient(180deg, #2a2f45, #1a1d2c);
+    box-shadow: 0 4px 0 #0c0e16;
+  }
+  .flash { animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: .25; } }
+  #countdown {
+    position: absolute; inset: 0; display:flex; align-items:center; justify-content:center;
+    font-size: 160px; font-weight: 900; color: var(--yellow);
+    text-shadow: 0 0 30px var(--neon), 6px 6px 0 #000; pointer-events: none;
+    z-index: 6;
+  }
+  #countdown.hidden { display:none; }
+  #banner {
+    position:absolute; left:50%; top:34%; transform:translate(-50%,-50%) skewX(-8deg);
+    font-size: 72px; font-weight: 900; color: var(--yellow);
+    text-shadow: 0 0 24px var(--neon), 5px 5px 0 #000; z-index: 6; pointer-events:none;
+  }
+  #banner.hidden { display:none; }
+  #touch { position:absolute; inset:0; z-index: 4; display:none; touch-action:none; pointer-events:none; }
+  .tbtn { position:absolute; pointer-events:auto; touch-action:none;
+          display:flex; flex-direction:column; align-items:center; justify-content:center;
+          color:#fff; font-weight:800; letter-spacing:1px;
+          border-radius:20px; border:2px solid rgba(255,255,255,.4);
+          background: rgba(18,22,38,.40); backdrop-filter:blur(3px);
+          box-shadow:0 5px 14px rgba(0,0,0,.4); transition:transform .05s, background .05s;
+          -webkit-user-select:none; user-select:none; }
+  .tbtn:active { transform:scale(.92); background:rgba(255,255,255,.34); }
+  .tbtn .ic { font-size:40px; line-height:1; pointer-events:none; }
+  .tbtn .lbl { font-size:11px; opacity:.85; margin-top:2px; pointer-events:none; }
+  #tleft,#tright { width:94px; height:94px; bottom:calc(22px + env(safe-area-inset-bottom)); }
+  #tleft { left:calc(18px + env(safe-area-inset-left)); }
+  #tright { left:calc(120px + env(safe-area-inset-left)); }
+  #tgas,#tbrake { width:104px; height:104px; bottom:calc(22px + env(safe-area-inset-bottom)); }
+  #tgas { right:calc(18px + env(safe-area-inset-right)); background: rgba(34,170,80,.42); border-color:rgba(140,255,170,.65); }
+  #tbrake { right:calc(132px + env(safe-area-inset-right)); background: rgba(225,60,60,.42); border-color:rgba(255,150,150,.65); }
+  .credit { position:absolute; bottom:10px; left:0; right:0; text-align:center;
+            font-size:11px; opacity:.5; }
+  @media (max-width: 760px) { .title { font-size: 44px; } }
+  /* short / landscape-phone viewports: compress the menu so START always fits.
+     Placed last so it overrides the base rules above (equal specificity). */
+  @media (max-height:520px){
+    #overlay{justify-content:center;}
+    .title{font-size:24px;} .subtitle{margin:1px 0 5px;font-size:10px;}
+    .menu-card{padding:9px 16px;}
+    .menu-card h2{font-size:13px;margin:0 0 6px;}
+    .keys{display:none;}                 /* touch controls on screen — hide key list */
+    .diff{margin-bottom:8px;} .diff button{padding:7px 8px;font-size:13px;}
+    button.btn{font-size:14px;padding:8px 18px;}
+    .credit{font-size:9px;}
+  }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game" width="960" height="600"></canvas>
+
+  <div id="hud">
+    <div id="lapinfo">
+      <div class="laplabel ol">LAP</div>
+      <div class="lap ol"><span id="lapNum">1</span>/<span id="lapTotal">8</span></div>
+      <div class="ltime ol" id="lapTimeVal">0'00"00</div>
+    </div>
+    <div id="timer">
+      <div class="timerval ol" id="timerVal">50</div>
+      <div class="timerlabel ol" id="trackName">THREE-SEVEN SPEEDWAY</div>
+    </div>
+    <div id="pos">
+      <div class="poslabel ol">POSITION</div>
+      <div class="posval ol"><span id="posNum">40</span>/<span id="posTotal">40</span></div>
+    </div>
+  </div>
+
+  <button id="pauseBtn" aria-label="Pause">❚❚ PAUSE</button>
+  <div id="banner" class="hidden"></div>
+  <div id="countdown" class="hidden"></div>
+
+  <div id="overlay">
+    <h1 class="title">DAYTONA <span class="red">USA</span></h1>
+    <div class="subtitle">WEB ARCADE EDITION</div>
+    <div class="menu-card">
+      <h2>SELECT COURSE</h2>
+      <div class="diff">
+        <button class="btn ghost sel" data-diff="0">BEGINNER</button>
+        <button class="btn ghost" data-diff="1">ADVANCED</button>
+        <button class="btn ghost" data-diff="2">EXPERT</button>
+      </div>
+      <div class="keys">
+        <b>↑ / W</b><span>Accelerate</span>
+        <b>↓ / S</b><span>Reverse</span>
+        <b>← → / A D</b><span>Steer</span>
+        <b>SPACE</b><span>Brake / Handbrake</span>
+        <b>M</b><span>Mute music</span>
+        <b>P / ESC</b><span>Pause</span>
+      </div>
+      <button class="btn" id="startBtn">START ENGINE ▶</button>
+    </div>
+    <div class="credit">A homage to SEGA's Daytona USA (1993). Fan-made, non-commercial. •
+      <a href="3d/index.html" style="color:#9fe">Try the 3D polygon version ▶</a></div>
+  </div>
+
+  <div id="touch">
+    <div id="tleft" class="tbtn"><span class="ic">◀</span></div>
+    <div id="tright" class="tbtn"><span class="ic">▶</span></div>
+    <div id="tbrake" class="tbtn"><span class="ic">⊘</span><span class="lbl">BRAKE</span></div>
+    <div id="tgas" class="tbtn"><span class="ic">▲</span><span class="lbl">GAS</span></div>
+  </div>
+</div>
+
+<script>
+  // Cache-bust gameplay code so a reload always gets the latest build.
+  (function(){
+    var v = Date.now();
+    var m = document.createElement('script'); m.src = 'music.js?v=' + v;
+    m.onload = function(){ var g = document.createElement('script'); g.src = 'game.js?v=' + v; document.body.appendChild(g); };
+    m.onerror = m.onload;
+    document.body.appendChild(m);
+  })();
+</script>
+</body>
+</html>
