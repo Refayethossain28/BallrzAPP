@@ -322,6 +322,112 @@ exports.linguaAI = onCall(
 );
 
 /* ===========================================================================
+ * babelAI — hosted Claude proxy for Babel's optional ⚡ AI mode (babel/index.html)
+ *
+ * Babel's offline engine only speaks what it can verify: its 40-phrase book,
+ * numbers, times and dates. This callable covers everything else — free-form
+ * translation of one text into up to 40 requested languages at once — so the
+ * live web link can offer AI mode without the browser ever holding the key.
+ * Structured outputs pin the response to a JSON schema (forced tool_choice is
+ * rejected on this model generation). Same ANTHROPIC_API_KEY secret as
+ * linguaAI; same { ok, result } envelope so the client falls back cleanly.
+ *
+ * Deploy:  firebase functions:secrets:set ANTHROPIC_API_KEY
+ *          firebase deploy --only functions:babelAI
+ * =========================================================================== */
+const BABEL_MODEL = process.env.BABEL_MODEL || 'claude-opus-5-5';
+
+const BABEL_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['from', 'items'],
+  properties: {
+    from: {
+      type: 'string',
+      description: "English name of the language the input appears to be written in (e.g. 'Spanish'); empty string if unclear.",
+    },
+    items: {
+      type: 'array',
+      description: 'One entry per requested target language, in the order requested.',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['code', 'text', 'roman'],
+        properties: {
+          code: { type: 'string', description: 'The target code, exactly as requested.' },
+          text: { type: 'string', description: 'The translation, in the native script of that language.' },
+          roman: { type: 'string', description: 'Romanized pronunciation when the script is not Latin; empty string otherwise.' },
+        },
+      },
+    },
+  },
+};
+
+const BABEL_SYSTEM =
+  "You are the AI mode of Babel, a traveller's phrase translator. Translate the text " +
+  'faithfully into every requested language: natural wording a native speaker would use, ' +
+  'neutral-polite register, native script, no commentary or alternatives. For languages ' +
+  'not written in Latin script, give a romanized pronunciation in roman; otherwise leave ' +
+  'roman as an empty string. Return every requested code exactly as given.';
+
+async function babelCallClaude(p, apiKey) {
+  const lines = p.targets.map((t) => t.code + ': ' + t.name).join('\n');
+  // Scale the output budget to the request: a single-target interpreter call
+  // can't burn the full ceiling, and a legitimate full-wall call still fits.
+  const maxTokens = Math.min(12000, 1200 + 150 * p.targets.length + 5 * p.text.length);
+  const data = await anthropicClient(apiKey).messages.create({
+    model: BABEL_MODEL,
+    max_tokens: maxTokens,
+    system: BABEL_SYSTEM,
+    messages: [{ role: 'user', content: 'Target languages (code: name):\n' + lines + '\n\nText to translate:\n' + p.text }],
+    output_config: { effort: 'low', format: { type: 'json_schema', schema: BABEL_SCHEMA } },
+  });
+  if (data.stop_reason === 'refusal') throw new Error('the model declined to translate this text');
+  if (data.stop_reason === 'max_tokens') {
+    throw new Error('too long to translate into ' + p.targets.length + ' languages at once — shorten the text or pick fewer');
+  }
+  const text = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+  let parsed;
+  try { parsed = JSON.parse(text); }
+  catch (e) { throw new Error('AI returned an unreadable answer — please try again'); }
+  if (!parsed || !Array.isArray(parsed.items) || !parsed.items.length) throw new Error('model returned no translations');
+  return parsed;
+}
+
+exports.babelAI = onCall(
+  { secrets: [ANTHROPIC_API_KEY], region: 'us-central1', timeoutSeconds: 120 },
+  async (request) => {
+    const p = request.data || {};
+    if (typeof p.text !== 'string' || !p.text.replace(/\s+/g, '')) {
+      throw new HttpsError('invalid-argument', 'text required');
+    }
+    if (p.text.length > 1000) throw new HttpsError('invalid-argument', 'Text too long (max 1000 chars).');
+    if (!Array.isArray(p.targets) || !p.targets.length || p.targets.length > 40) {
+      throw new HttpsError('invalid-argument', 'targets must list 1-40 languages');
+    }
+    const targets = p.targets
+      .map((t) => ({ code: String((t && t.code) || '').slice(0, 10), name: String((t && t.name) || '').slice(0, 40) }))
+      .filter((t) => t.code && t.name);
+    if (!targets.length) throw new HttpsError('invalid-argument', 'each target needs a code and a name');
+    // What fits the output budget: long text into many languages can't complete,
+    // so refuse it with the remedy instead of billing a generation that truncates.
+    if (p.text.length * (1 + targets.length) > 9000) {
+      throw new HttpsError('invalid-argument', 'Text too long for this many languages — shorten it or pick fewer.');
+    }
+    const apiKey = ANTHROPIC_API_KEY.value();
+    if (!apiKey) throw new HttpsError('failed-precondition', 'ANTHROPIC_API_KEY not configured.');
+    try {
+      const result = await babelCallClaude({ text: p.text, targets }, apiKey);
+      return { ok: true, result };
+    } catch (err) {
+      logger.error('babelAI', err.message);
+      // Return ok:false (not a thrown error) so the client cleanly falls back.
+      return { ok: false, error: String(err.message || err) };
+    }
+  }
+);
+
+/* ===========================================================================
  * llmLive — hosted Fable 5 proxy for the "ApexAI" app
  *   (llm-from-scratch/web/index.html)
  *
