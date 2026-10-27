@@ -372,16 +372,24 @@ const BABEL_SYSTEM =
 
 async function babelCallClaude(p, apiKey) {
   const lines = p.targets.map((t) => t.code + ': ' + t.name).join('\n');
+  // Scale the output budget to the request: a single-target interpreter call
+  // can't burn the full ceiling, and a legitimate full-wall call still fits.
+  const maxTokens = Math.min(12000, 1200 + 150 * p.targets.length + 5 * p.text.length);
   const data = await anthropicClient(apiKey).messages.create({
     model: BABEL_MODEL,
-    max_tokens: 8000,
+    max_tokens: maxTokens,
     system: BABEL_SYSTEM,
     messages: [{ role: 'user', content: 'Target languages (code: name):\n' + lines + '\n\nText to translate:\n' + p.text }],
     output_config: { effort: 'low', format: { type: 'json_schema', schema: BABEL_SCHEMA } },
   });
   if (data.stop_reason === 'refusal') throw new Error('the model declined to translate this text');
+  if (data.stop_reason === 'max_tokens') {
+    throw new Error('too long to translate into ' + p.targets.length + ' languages at once — shorten the text or pick fewer');
+  }
   const text = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
-  const parsed = JSON.parse(text);
+  let parsed;
+  try { parsed = JSON.parse(text); }
+  catch (e) { throw new Error('AI returned an unreadable answer — please try again'); }
   if (!parsed || !Array.isArray(parsed.items) || !parsed.items.length) throw new Error('model returned no translations');
   return parsed;
 }
@@ -401,6 +409,11 @@ exports.babelAI = onCall(
       .map((t) => ({ code: String((t && t.code) || '').slice(0, 10), name: String((t && t.name) || '').slice(0, 40) }))
       .filter((t) => t.code && t.name);
     if (!targets.length) throw new HttpsError('invalid-argument', 'each target needs a code and a name');
+    // What fits the output budget: long text into many languages can't complete,
+    // so refuse it with the remedy instead of billing a generation that truncates.
+    if (p.text.length * (1 + targets.length) > 9000) {
+      throw new HttpsError('invalid-argument', 'Text too long for this many languages — shorten it or pick fewer.');
+    }
     const apiKey = ANTHROPIC_API_KEY.value();
     if (!apiKey) throw new HttpsError('failed-precondition', 'ANTHROPIC_API_KEY not configured.');
     try {

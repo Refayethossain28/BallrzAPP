@@ -223,7 +223,7 @@
       </div>
       <div class="ai-key" id="ai-key-row">
         <input id="ai-key" type="password" autocomplete="off"
-          placeholder="your own Anthropic API key — optional, stays in this browser">
+          placeholder="your own Anthropic API key — optional; saved in this browser's localStorage, so avoid shared devices">
         <button class="small" id="ai-key-save">save</button>
       </div>
     </div>
@@ -444,9 +444,11 @@
 
   function aiParseMessage(j) {
     if (j && j.stop_reason === 'refusal') throw new Error('the model declined to translate this text');
+    if (j && j.stop_reason === 'max_tokens') throw new Error('too long to translate at once — shorten the text');
     var out = '', i, c = (j && j.content) || [];
     for (i = 0; i < c.length; i++) if (c[i].type === 'text') out += c[i].text;
-    var parsed = JSON.parse(out);
+    var parsed;
+    try { parsed = JSON.parse(out); } catch (e) { throw new Error('AI returned an unreadable answer — please try again'); }
     if (!parsed || !parsed.items || !parsed.items.length) throw new Error('model returned no translations');
     return parsed;
   }
@@ -457,16 +459,19 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ data: { text: text, targets: targets } })
     }).then(function (res) {
-      if (!res.ok) throw new Error('hosted AI unreachable (' + res.status + ')');
-      return res.json();
-    }).then(function (j) {
-      var d = j && j.result;
-      if (!d || d.ok === false) throw new Error((d && d.error) || 'hosted AI gave no result');
-      return d.result;
+      // a non-200 still carries the callable's own message (e.g. "Text too
+      // long…") — surface that, not just the status code
+      return res.json().catch(function () { return null; }).then(function (j) {
+        if (!res.ok) throw new Error((j && j.error && j.error.message) || ('hosted AI unreachable (' + res.status + ')'));
+        var d = j && j.result;
+        if (!d || d.ok === false) throw new Error((d && d.error) || 'hosted AI gave no result');
+        return d.result;
+      });
     });
   }
 
   function aiDirect(text, targets) {
+    var maxTok = Math.min(12000, 1200 + 150 * targets.length + 5 * text.length);
     return fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -476,7 +481,7 @@
         'anthropic-dangerous-direct-browser-access': 'true'
       },
       body: JSON.stringify({
-        model: AI_MODEL, max_tokens: 8000, system: AI_SYSTEM,
+        model: AI_MODEL, max_tokens: maxTok, system: AI_SYSTEM,
         messages: [{ role: 'user', content: aiUser(text, targets) }],
         output_config: { effort: 'low', format: { type: 'json_schema', schema: AI_SCHEMA } }
       })
@@ -490,33 +495,58 @@
 
   var aiCache = {}; // per-session only — never stored
   function aiTranslate(text, targets) {
+    // mirror the server's own limits locally, with the remedy up front
+    if (text.length > 1000) {
+      return Promise.reject(new Error('too long — keep it under 1000 characters'));
+    }
+    if (text.length * (1 + targets.length) > 9000) {
+      return Promise.reject(new Error('too long to translate into ' + targets.length + ' languages at once — shorten the text'));
+    }
     var codes = '', i;
     for (i = 0; i < targets.length; i++) codes += targets[i].code + ',';
     var ck = codes + '|' + text;
     if (aiCache[ck]) return Promise.resolve(aiCache[ck]);
     var run = aiHosted(text, targets);
     if (aiCfg.key) run = run.catch(function () { return aiDirect(text, targets); });
-    return run.then(function (r) { aiCache[ck] = r; return r; });
+    return run.then(function (r) {
+      // the response is untrusted — validate the shape before caching or rendering
+      var items = r && r.items, out = [], j;
+      if (!items || typeof items.length !== 'number') throw new Error('AI returned an unusable answer');
+      for (j = 0; j < items.length; j++) if (items[j] && typeof items[j] === 'object') out.push(items[j]);
+      if (!out.length) throw new Error('AI returned no translations');
+      r.items = out;
+      aiCache[ck] = r;
+      return r;
+    });
   }
 
   /* the AI wall: free-form text, all languages at once, honestly labelled */
-  var aiBusy = false;
-  function askAI(speakFirst) {
-    var q = $('q').value.replace(/^\s+|\s+$/g, '');
-    if (!q || aiBusy) return;
-    if (!aiOn()) { toast('AI mode is off'); return; }
-    aiBusy = true;
-    $('sugg').innerHTML = '<div class="card"><h2>⚡ Asking AI… <span class="n">— translating into all ' +
+  var aiSeq = 0, aiPending = false;
+  function currentQ() { return $('q').value.replace(/^\s+|\s+$/g, ''); }
+  function askingCardHTML() {
+    return '<div class="card"><h2>⚡ Asking AI… <span class="n">— translating into all ' +
       E.LANGS.length + ' languages</span></h2></div>';
+  }
+  function askAI(speakFirst) {
+    var q = currentQ();
+    if (!q) return;
+    if (!aiOn()) { toast('AI mode is off'); return; }
+    var seq = ++aiSeq; // the newest deliberate ask always wins
+    aiPending = true;
+    $('sugg').innerHTML = askingCardHTML();
     var targets = [], i;
     for (i = 0; i < E.LANGS.length; i++) targets.push({ code: E.LANGS[i].code, name: E.LANGS[i].name });
     aiTranslate(q, targets).then(function (r) {
-      aiBusy = false;
-      if ($('q').value.replace(/^\s+|\s+$/g, '') !== q) return; // the input moved on
+      if (seq !== aiSeq) return;      // superseded by a newer ask
+      aiPending = false;
+      if (!aiOn()) return;            // switched off while waiting
+      if (currentQ() !== q) return;   // the input moved on
       renderAIWall(q, r, speakFirst);
     }, function (err) {
-      aiBusy = false;
-      if ($('q').value.replace(/^\s+|\s+$/g, '') !== q) return;
+      if (seq !== aiSeq) return;
+      aiPending = false;
+      if (!aiOn()) return;
+      if (currentQ() !== q) return;
       renderWall(E.translate(q, Date.now()));
       var s = $('sugg');
       s.innerHTML = '<div class="card"><p class="empty">⚡ AI couldn’t answer: ' + esc(String((err && err.message) || err)) +
@@ -533,7 +563,7 @@
       item = byCode[l.code];
       if (!item || !item.text) continue;
       cards.push({ lang: l.code, flag: l.flag, native: l.native, dir: l.dir, voice: l.voice,
-        text: item.text, roman: item.roman || '' });
+        text: item.text, roman: item.roman || '', ai: true });
     }
     if (!cards.length) { toast('AI gave no translations'); return; }
     var ordered = [], j;
@@ -564,10 +594,11 @@
   function renderAIUI() {
     $('ai-toggle').textContent = aiCfg.on ? '⚡ AI mode: on' : '⚡ AI mode: off';
     $('ai-toggle').setAttribute('aria-pressed', aiCfg.on ? 'true' : 'false');
-    $('ai-key-row').className = aiCfg.on ? 'ai-key on' : 'ai-key';
+    // a saved key stays visible (and clearable) even with AI off — no hidden state
+    $('ai-key-row').className = (aiCfg.on || aiCfg.key) ? 'ai-key on' : 'ai-key';
     $('ai-note').textContent = aiCfg.on
       ? 'AI requests go to Claude' + (aiCfg.key ? ' (hosted, or your key)' : '') + ' — everything else stays on this device.'
-      : '';
+      : (aiCfg.key ? 'AI is off. Your saved key is still in this browser — clear the field and save to remove it.' : '');
   }
   $('ai-toggle').addEventListener('click', function () {
     aiCfg.on = !aiCfg.on;
@@ -619,6 +650,7 @@
     if (t.kind === 'none') {
       wall.innerHTML = '';
       lastCards = [];
+      if (aiPending && aiOn()) { sugg.innerHTML = askingCardHTML(); return; } // don't stomp an in-flight ask
       var s = '<div class="card"><h2>🤔 No phrase quite matches <span class="n">— closest in the book:</span></h2><div class="chips">';
       for (var k = 0; k < t.suggestions.length; k++) {
         s += '<span class="chip" data-q="' + esc(t.suggestions[k].en) + '">' + esc(t.suggestions[k].en) + '</span>';
@@ -676,7 +708,8 @@
   function openFocus(i) {
     focusCard = lastCards[i];
     if (!focusCard) return;
-    $('focus-who').textContent = focusCard.flag + ' ' + focusCard.native;
+    $('focus-who').textContent = focusCard.flag + ' ' + focusCard.native +
+      (focusCard.ai ? ' — ⚡ AI translation, unverified' : '');
     $('focus-text').textContent = focusCard.text;
     $('focus-text').setAttribute('dir', focusCard.dir);
     $('focus-rom').textContent = focusCard.roman || '';
@@ -930,6 +963,8 @@
   function aiInterpTurn(entry) {
     var r0 = entry.r, L = langOf(r0.to);
     aiTranslate(r0.heard, [{ code: L.code, name: L.name }]).then(function (res) {
+      // the conversation may have moved on (a chip tap, a new turn, AI switched off)
+      if (!aiOn() || convo[convo.length - 1] !== entry) return;
       var item = res.items && res.items[0];
       if (!item || !item.text) throw new Error('empty');
       entry.r = {
@@ -944,6 +979,7 @@
       }
       updateWho();
     }).catch(function (err) {
+      if (!aiOn() || convo[convo.length - 1] !== entry) return;
       holdStatus = '⚡ AI couldn’t help (' + String((err && err.message) || err) + ') — tap a suggested phrase instead.';
       updateWho();
     });
