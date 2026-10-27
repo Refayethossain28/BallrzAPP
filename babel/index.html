@@ -151,6 +151,18 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: break-word; }
   .bubble .rowb { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
 
+  /* ---------- AI mode ---------- */
+  .ai-row { display: flex; gap: 8px; align-items: center; margin-top: 9px; flex-wrap: wrap; }
+  .ai-row .empty { flex: 1; min-width: 160px; }
+  #ai-toggle[aria-pressed="true"] { border-color: var(--brand); color: var(--brand); }
+  .ai-key { display: none; gap: 6px; margin-top: 6px; }
+  .ai-key.on { display: flex; }
+  .ai-key input { flex: 1; min-width: 0; background: var(--bg2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 10px; padding: 7px 10px; font: inherit; font-size: 13px; }
+  .ai-key input:focus { outline: none; border-color: var(--brand); }
+  .ai-badge { font-size: 10px; color: var(--brand); border: 1px solid rgba(77,225,255,.4);
+    border-radius: 999px; padding: 0 7px; white-space: nowrap; }
+
   /* ---------- focus overlay ---------- */
   #focus { position: fixed; inset: 0; background: #04060d; z-index: 50; display: none;
     flex-direction: column; align-items: center; justify-content: center; text-align: center;
@@ -205,6 +217,15 @@
         <span class="chip" data-q="¿dónde está el baño?">¿dónde está el baño?</span>
         <span class="chip" data-q="2026-05-03">2026-05-03</span>
       </div>
+      <div class="ai-row">
+        <button class="small" id="ai-toggle" aria-pressed="false">⚡ AI mode: off</button>
+        <span class="empty" id="ai-note"></span>
+      </div>
+      <div class="ai-key" id="ai-key-row">
+        <input id="ai-key" type="password" autocomplete="off"
+          placeholder="your own Anthropic API key — optional, stays in this browser">
+        <button class="small" id="ai-key-save">save</button>
+      </div>
     </div>
 
     <div id="daily"></div>
@@ -223,7 +244,9 @@
       reachable from any of them), real-grammar spelling of numbers, clock times and dates
       (French vigesimals, Georgian scores, Chinese 零-insertion, the lakh/crore grouping), and computed romanization
       of Cyrillic, Greek, Hangul, kana and Georgian. No model, no network, no account. Engine unit-tested by
-      <span class="mono">npm run test:babel</span>.
+      <span class="mono">npm run test:babel</span>. The optional <b>⚡ AI mode</b> is the one exception: when
+      it's on, text the phrasebook can't handle is sent to Claude (hosted, or via your own key) and the answer
+      comes back labelled as AI — machine translation that can err. Everything else never leaves the device.
     </footer>
   </section>
 
@@ -247,7 +270,8 @@
       <b>Honest limits:</b> the browser can't identify a language from raw audio, so the interpreter listens
       in the tapped side's language (Auto alternates turns and cross-checks each transcript with Babel's own
       36-language detector). Speech recognition needs a connection on most phones — the Translate tab stays
-      fully offline. Babel only speaks what it can honestly translate: its 40-phrase book, numbers, times and dates.
+      fully offline. Babel speaks its hand-checked 40-phrase book, numbers, times and dates on its own; with
+      <b>⚡ AI mode</b> on (Translate tab), anything else is translated by Claude and labelled AI.
     </footer>
   </section>
 
@@ -373,6 +397,196 @@
     } catch (e2) { toast('Copy failed'); }
   }
 
+  /* ---------- ⚡ AI mode (opt-in; the ONE thing that leaves the device) ----------
+     Order of preference: the hosted babelAI Cloud Function (key stays server-side),
+     then the user's own Anthropic key straight from this browser (official
+     direct-browser-access header, same pattern as Lingua). Everything is guarded so
+     the page keeps working with no network, no deploy and no key — AI is a bonus,
+     never a dependency. All AI output is labelled; the offline engine stays the
+     source of truth for everything it covers. */
+  var LSAI = 'babel.ai.v1';
+  var aiCfg = lsGet(LSAI, null) || {};
+  aiCfg = { on: !!aiCfg.on, key: typeof aiCfg.key === 'string' ? aiCfg.key : '' };
+
+  var AI_FN_URL = 'https://us-central1-apexvip-1b4a9.cloudfunctions.net/babelAI';
+  var AI_MODEL = 'claude-opus-5-5';
+  var AI_SCHEMA = {
+    type: 'object', additionalProperties: false, required: ['from', 'items'],
+    properties: {
+      from: { type: 'string', description: 'English name of the language the input appears to be written in; empty string if unclear.' },
+      items: {
+        type: 'array', description: 'One entry per requested target language, in the order requested.',
+        items: {
+          type: 'object', additionalProperties: false, required: ['code', 'text', 'roman'],
+          properties: {
+            code: { type: 'string', description: 'The target code, exactly as requested.' },
+            text: { type: 'string', description: 'The translation, in the native script of that language.' },
+            roman: { type: 'string', description: 'Romanized pronunciation when the script is not Latin; empty string otherwise.' }
+          }
+        }
+      }
+    }
+  };
+  var AI_SYSTEM =
+    "You are the AI mode of Babel, a traveller's phrase translator. Translate the text " +
+    'faithfully into every requested language: natural wording a native speaker would use, ' +
+    'neutral-polite register, native script, no commentary or alternatives. For languages ' +
+    'not written in Latin script, give a romanized pronunciation in roman; otherwise leave ' +
+    'roman as an empty string. Return every requested code exactly as given.';
+
+  function aiOn() { return aiCfg.on && typeof fetch !== 'undefined'; }
+
+  function aiUser(text, targets) {
+    var lines = '', i;
+    for (i = 0; i < targets.length; i++) lines += targets[i].code + ': ' + targets[i].name + '\n';
+    return 'Target languages (code: name):\n' + lines + '\nText to translate:\n' + text;
+  }
+
+  function aiParseMessage(j) {
+    if (j && j.stop_reason === 'refusal') throw new Error('the model declined to translate this text');
+    var out = '', i, c = (j && j.content) || [];
+    for (i = 0; i < c.length; i++) if (c[i].type === 'text') out += c[i].text;
+    var parsed = JSON.parse(out);
+    if (!parsed || !parsed.items || !parsed.items.length) throw new Error('model returned no translations');
+    return parsed;
+  }
+
+  function aiHosted(text, targets) {
+    return fetch(AI_FN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: { text: text, targets: targets } })
+    }).then(function (res) {
+      if (!res.ok) throw new Error('hosted AI unreachable (' + res.status + ')');
+      return res.json();
+    }).then(function (j) {
+      var d = j && j.result;
+      if (!d || d.ok === false) throw new Error((d && d.error) || 'hosted AI gave no result');
+      return d.result;
+    });
+  }
+
+  function aiDirect(text, targets) {
+    return fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': aiCfg.key,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: AI_MODEL, max_tokens: 8000, system: AI_SYSTEM,
+        messages: [{ role: 'user', content: aiUser(text, targets) }],
+        output_config: { effort: 'low', format: { type: 'json_schema', schema: AI_SCHEMA } }
+      })
+    }).then(function (res) {
+      return res.json().then(function (j) {
+        if (!res.ok) throw new Error((j && j.error && j.error.message) || ('AI request failed (' + res.status + ')'));
+        return aiParseMessage(j);
+      });
+    });
+  }
+
+  var aiCache = {}; // per-session only — never stored
+  function aiTranslate(text, targets) {
+    var codes = '', i;
+    for (i = 0; i < targets.length; i++) codes += targets[i].code + ',';
+    var ck = codes + '|' + text;
+    if (aiCache[ck]) return Promise.resolve(aiCache[ck]);
+    var run = aiHosted(text, targets);
+    if (aiCfg.key) run = run.catch(function () { return aiDirect(text, targets); });
+    return run.then(function (r) { aiCache[ck] = r; return r; });
+  }
+
+  /* the AI wall: free-form text, all languages at once, honestly labelled */
+  var aiBusy = false;
+  function askAI(speakFirst) {
+    var q = $('q').value.replace(/^\s+|\s+$/g, '');
+    if (!q || aiBusy) return;
+    if (!aiOn()) { toast('AI mode is off'); return; }
+    aiBusy = true;
+    $('sugg').innerHTML = '<div class="card"><h2>⚡ Asking AI… <span class="n">— translating into all ' +
+      E.LANGS.length + ' languages</span></h2></div>';
+    var targets = [], i;
+    for (i = 0; i < E.LANGS.length; i++) targets.push({ code: E.LANGS[i].code, name: E.LANGS[i].name });
+    aiTranslate(q, targets).then(function (r) {
+      aiBusy = false;
+      if ($('q').value.replace(/^\s+|\s+$/g, '') !== q) return; // the input moved on
+      renderAIWall(q, r, speakFirst);
+    }, function (err) {
+      aiBusy = false;
+      if ($('q').value.replace(/^\s+|\s+$/g, '') !== q) return;
+      renderWall(E.translate(q, Date.now()));
+      var s = $('sugg');
+      s.innerHTML = '<div class="card"><p class="empty">⚡ AI couldn’t answer: ' + esc(String((err && err.message) || err)) +
+        (aiCfg.key ? '' : ' — if the hosted AI isn’t deployed, paste your own Anthropic key above.') +
+        '</p></div>' + s.innerHTML;
+    });
+  }
+
+  function renderAIWall(q, r, speakFirst) {
+    var cards = [], i, l, item, byCode = {};
+    for (i = 0; i < (r.items || []).length; i++) byCode[r.items[i].code] = r.items[i];
+    for (i = 0; i < E.LANGS.length; i++) {
+      l = E.LANGS[i];
+      item = byCode[l.code];
+      if (!item || !item.text) continue;
+      cards.push({ lang: l.code, flag: l.flag, native: l.native, dir: l.dir, voice: l.voice,
+        text: item.text, roman: item.roman || '' });
+    }
+    if (!cards.length) { toast('AI gave no translations'); return; }
+    var ordered = [], j;
+    for (j = 0; j < cards.length; j++) if (cards[j].lang === pinned) ordered.push(cards[j]);
+    for (j = 0; j < cards.length; j++) if (cards[j].lang !== pinned) ordered.push(cards[j]);
+    lastCards = ordered;
+    lastResult = null; // the vessel/signal punchlines belong to the verified engine only
+    var html = '';
+    for (i = 0; i < ordered.length; i++) {
+      var c = ordered[i];
+      html += '<div class="lang-card' + (c.lang === pinned ? ' pinned' : '') + '" data-i="' + i +
+        '" style="animation-delay:' + Math.min(i * 45, 900) + 'ms">' +
+        '<div class="lang-head"><span>' + c.flag + '</span><span class="who">' + esc(c.native) + '</span>' +
+        '<span class="ai-badge">⚡ AI</span>' +
+        '<button class="small" data-speak="' + i + '" title="speak">🔊</button>' +
+        '<button class="small" data-copy="' + i + '" title="copy">⧉</button></div>' +
+        '<div class="lang-text" dir="' + c.dir + '">' + esc(c.text) + '</div>' +
+        (c.roman ? '<div class="lang-roman">' + esc(c.roman) + '</div>' : '') +
+        '</div>';
+    }
+    $('wall').innerHTML = html;
+    $('sugg').innerHTML = '<div class="card"><p class="empty">⚡ These are AI translations' +
+      (r.from ? ' from ' + esc(r.from) : '') + ' — machine-made and unverified, so they can err. ' +
+      'The phrasebook, numbers, times and dates above them are Babel’s hand-checked, offline answers.</p></div>';
+    if (speakFirst && lastCards[0]) speak(lastCards[0].text, lastCards[0].voice, 1);
+  }
+
+  function renderAIUI() {
+    $('ai-toggle').textContent = aiCfg.on ? '⚡ AI mode: on' : '⚡ AI mode: off';
+    $('ai-toggle').setAttribute('aria-pressed', aiCfg.on ? 'true' : 'false');
+    $('ai-key-row').className = aiCfg.on ? 'ai-key on' : 'ai-key';
+    $('ai-note').textContent = aiCfg.on
+      ? 'AI requests go to Claude' + (aiCfg.key ? ' (hosted, or your key)' : '') + ' — everything else stays on this device.'
+      : '';
+  }
+  $('ai-toggle').addEventListener('click', function () {
+    aiCfg.on = !aiCfg.on;
+    lsSet(LSAI, aiCfg);
+    renderAIUI();
+    toast(aiCfg.on ? 'AI mode on — the wall can now translate anything' : 'AI mode off — fully offline again');
+    runTranslate(false);
+  });
+  $('ai-key-save').addEventListener('click', function () {
+    aiCfg.key = $('ai-key').value.replace(/^\s+|\s+$/g, '');
+    lsSet(LSAI, aiCfg);
+    renderAIUI();
+    toast(aiCfg.key ? 'Key saved — in this browser only' : 'Key cleared');
+  });
+  $('sugg').addEventListener('click', function (ev) {
+    var el = ev.target;
+    if (el && el.id === 'ai-ask') askAI(false);
+  });
+
   /* ---------- the pinned language ---------- */
   var pinSel = $('pin');
   function fillPin() {
@@ -409,7 +623,12 @@
       for (var k = 0; k < t.suggestions.length; k++) {
         s += '<span class="chip" data-q="' + esc(t.suggestions[k].en) + '">' + esc(t.suggestions[k].en) + '</span>';
       }
-      s += '</div><p class="empty" style="margin-top:8px">Babel only claims what it can honestly do: its 40-phrase book, numbers (try 1996), clock times (14:30) and dates (2026-05-03).</p></div>';
+      s += '</div>';
+      if (aiOn()) {
+        s += '<div class="chips" style="margin-top:8px"><span class="chip" id="ai-ask">⚡ Ask AI to translate it</span></div>';
+      }
+      s += '<p class="empty" style="margin-top:8px">Babel only claims what it can honestly do: its 40-phrase book, numbers (try 1996), clock times (14:30) and dates (2026-05-03).' +
+        (aiOn() ? '' : ' Flip on <b>⚡ AI mode</b> above to translate anything beyond that.') + '</p></div>';
       sugg.innerHTML = s;
       return;
     }
@@ -474,7 +693,7 @@
 
   /* ---------- input → detect chip + wall ---------- */
   var debounce = null;
-  function runTranslate(andSpeak) {
+  function runTranslate(andSpeak, deliberate) {
     var q = $('q').value.replace(/^\s+|\s+$/g, '');
     if (!q) { renderDaily(); return; }
     $('daily').textContent = '';
@@ -492,6 +711,11 @@
     }
     var t = E.translate(q, Date.now());
     renderWall(t);
+    if (t.kind === 'none' && deliberate && aiOn()) {
+      // the user explicitly asked (Enter or mic) and the book has no answer — go to AI
+      askAI(andSpeak);
+      return;
+    }
     if (andSpeak && t.kind !== 'none') {
       var first = lastCards[0];
       if (first) speak(first.text, first.voice, 1);
@@ -502,7 +726,11 @@
     debounce = setTimeout(function () { runTranslate(false); }, 160);
   });
   $('q').addEventListener('keydown', function (ev) {
-    if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); runTranslate(true); }
+    if (ev.key === 'Enter' && !ev.shiftKey) {
+      ev.preventDefault();
+      if (debounce) clearTimeout(debounce); // a pending re-render would stomp the AI card
+      runTranslate(true, true);
+    }
   });
 
   document.addEventListener('click', function (ev) {
@@ -565,7 +793,7 @@
         rec.onresult = function (ev2) {
           var text = ev2.results[0][0].transcript;
           $('q').value = text;
-          runTranslate(true); // the tap was the user gesture — answer out loud
+          runTranslate(true, true); // the tap was the user gesture — answer out loud
         };
         rec.onend = function () { listening = false; mic.className = ''; };
         rec.onerror = function () { listening = false; mic.className = ''; toast('Mic unavailable'); };
@@ -636,7 +864,8 @@
     var cls = 'bubble' + (e.side === 'b' ? ' right' : '');
     if (r.ok) {
       return '<div class="' + cls + '">' +
-        '<div class="heard">' + esc(fromLabel(r)) + ' — <bdi>' + esc(r.heardAs || r.heard) + '</bdi></div>' +
+        '<div class="heard">' + esc(fromLabel(r)) + ' — <bdi>' + esc(r.heardAs || r.heard) + '</bdi>' +
+        (r.ai ? ' <span class="ai-badge">⚡ AI</span>' : '') + '</div>' +
         '<div class="said" dir="' + (r.dir === 'rtl' ? 'rtl' : 'ltr') + '" lang="' + esc(r.to) + '">' + esc(r.text) + '</div>' +
         (r.roman ? '<div class="rom">' + esc(r.roman) + '</div>' : '') +
         '<div class="rowb"><button class="small" data-say="' + i + '">🔊 again</button>' +
@@ -676,7 +905,8 @@
     var from = side === 'a' ? interpState.a : interpState.b;
     var to = side === 'a' ? interpState.b : interpState.a;
     var r = E.interpret(transcript, to, from);
-    convo.push({ side: side, r: r });
+    var entry = { side: side, r: r };
+    convo.push(entry);
     if (convo.length > 60) convo = convo.slice(-60);
     // a miss keeps the turn: the same person will want to retry
     if (r.ok) nextSpeaker = side === 'a' ? 'b' : 'a';
@@ -686,10 +916,37 @@
       if (!speak(r.text, r.voice, 1)) {
         holdStatus = 'No ' + langOf(r.to).name + ' voice on this device — the answer is text-only above.';
       }
+    } else if (aiOn()) {
+      holdStatus = '⚡ The book has no match — asking AI…';
+      aiInterpTurn(entry);
     } else {
-      holdStatus = 'No confident match — tap a suggested phrase, or keep to the phrasebook, numbers and times.';
+      holdStatus = 'No confident match — tap a suggested phrase, or flip on ⚡ AI mode in the Translate tab to say anything.';
     }
     updateWho();
+  }
+
+  // AI rescue for a missed turn: translate the raw transcript into the other
+  // side's language, replace the miss bubble, and speak it — always labelled AI.
+  function aiInterpTurn(entry) {
+    var r0 = entry.r, L = langOf(r0.to);
+    aiTranslate(r0.heard, [{ code: L.code, name: L.name }]).then(function (res) {
+      var item = res.items && res.items[0];
+      if (!item || !item.text) throw new Error('empty');
+      entry.r = {
+        ok: true, ai: true, kind: 'ai', from: r0.from, heard: r0.heard, heardAs: r0.heard,
+        text: item.text, roman: item.roman || '', dir: L.dir, voice: L.voice, to: L.code
+      };
+      nextSpeaker = entry.side === 'a' ? 'b' : 'a';
+      renderConvo(); // the entry changed in place — full rebuild
+      holdStatus = '';
+      if (!speak(entry.r.text, entry.r.voice, 1)) {
+        holdStatus = 'No ' + L.name + ' voice on this device — the answer is text-only above.';
+      }
+      updateWho();
+    }).catch(function (err) {
+      holdStatus = '⚡ AI couldn’t help (' + String((err && err.message) || err) + ') — tap a suggested phrase instead.';
+      updateWho();
+    });
   }
 
   function setDuoLocked(locked) {
@@ -936,6 +1193,8 @@
   renderSignals();
   renderVessel();
   initInterp();
+  $('ai-key').value = aiCfg.key;
+  renderAIUI();
   showTab(tab);
 })();
 
