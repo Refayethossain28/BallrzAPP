@@ -6,26 +6,43 @@ autograd engine, the transformer, the optimizer, and the training loop are all
 implemented here, by hand.
 
 It actually trains and generates text. On the included ~4 KB basketball corpus
-it learns English character statistics and word-like structure in about two
-minutes on a CPU.
+it learns English character statistics and word-like structure in under a
+minute on a CPU; on 12 MB of public-domain novels it learns to write period
+prose — the model that ships with the **ApexAI** page below.
+
+Two model generations live in the same code base, switched by one flag:
+
+| | **v1** — GPT-2 style (the original) | **v2** — Llama style (`--arch v2`, the shipped model) |
+|---|---|---|
+| positions | learned embedding table | **rotary** (RoPE), inside attention |
+| normalisation | LayerNorm | **RMSNorm** |
+| feed-forward | GELU, 4× wide | **SwiGLU**, 8/3× wide (same parameter count) |
+| output head | its own V×d matrix | **tied** to the token embedding |
+| biases | yes | no |
+
+Everything previously trained (the niche models, old `model.json` files) is a
+v1 model and still loads and runs unchanged.
 
 ## What's inside
 
 | File | What it is |
 |------|------------|
-| `autograd.py` | A reverse-mode automatic differentiation engine over NumPy arrays. A `Tensor` records the ops performed on it; `.backward()` walks the graph in reverse topological order and fills in gradients. This is the foundation everything else stands on. |
-| `nn.py` | Neural-net building blocks composed from the autograd primitives: `Linear`, `Embedding`, `LayerNorm`, `gelu`, and multi-head `CausalSelfAttention`. |
-| `model.py` | The `GPT` model — token + positional embeddings, a stack of pre-norm transformer blocks, a final layernorm, and a linear head to vocabulary logits. Plus autoregressive `generate()` and checkpointing. |
-| `tokenizer.py` | Two tokenizers: a character-level one, and a from-scratch **byte-pair encoding (BPE)** tokenizer that learns a subword vocabulary. |
-| `fetch_data.py` | Helper to download a larger corpus (tiny Shakespeare) or concatenate a folder of `.txt` files into one. |
-| `optim.py` | The Adam optimizer and gradient-norm clipping, implemented from scratch. |
-| `train.py` | The training loop: batch sampling, forward, backprop, optimizer step, evaluation, checkpointing. |
-| `sample.py` | Load a checkpoint and generate text from a prompt. |
-| `test_autograd.py` | A gradient check: compares backprop's analytic gradients against finite-difference numeric gradients through a real GPT forward pass. |
+| `autograd.py` | A reverse-mode automatic differentiation engine over NumPy arrays. A `Tensor` records the ops performed on it; `.backward()` walks the graph in reverse topological order and fills in gradients. The primitives (`+ * @ sum exp reshape …`) compose into anything; the hot spots of a transformer (`gelu`, `silu`, `layernorm`, `rmsnorm`, `softmax`, `rope`, `cross_entropy`) are **fused ops** with a hand-derived backward each, and `no_grad()` turns graph-building off for evaluation and sampling. |
+| `nn.py` | Neural-net building blocks composed from the autograd primitives: `Linear`, `Embedding`, `LayerNorm`, `RMSNorm`, multi-head `CausalSelfAttention` (optionally rotary), the GELU `MLP` and the `SwiGLU` MLP, and the pre-norm `Block`. |
+| `model.py` | The `GPT` model — embeddings, a stack of transformer blocks, a final norm, and a head (or the tied embedding) to vocabulary logits. `GPTConfig` holds the architecture switches. Plus autoregressive `generate()` and checkpointing. |
+| `tokenizer.py` | Two tokenizers: a character-level one, and a from-scratch **byte-pair encoding (BPE)** tokenizer whose trainer updates pair counts incrementally (2 s for a 2048-token vocabulary on 6.5 MB; the naive recount took minutes). |
+| `fetch_data.py` | Corpus helpers: tiny Shakespeare, Norvig's `big.txt`, the **`classics`** mix the shipped model is trained on, Project Gutenberg boilerplate stripping, folder concatenation. |
+| `optim.py` | **AdamW** (decoupled weight decay on the weight matrices only) and gradient-norm clipping, from scratch. |
+| `train.py` | The training loop: batch sampling, forward, backprop, optimizer step, warmup + cosine LR, evaluation on a fixed held-out set reported in loss *and* **bits per byte**, best-checkpoint saving, full-state resume. |
+| `sample.py` / `chat.py` | Load a checkpoint and generate text from a prompt / interactively. |
+| `test_autograd.py` | Every fused op checked against the same function composed from primitives (identical values and gradients), and a finite-difference gradient check through a real GPT forward pass for **both** architectures. |
+| `test_tokenizer.py` | Round-trip tests, and the incremental BPE trainer checked against the naive reference. |
 | `data/input.txt` | A small sample corpus to train on. |
-| `export_web.py` | Exports a trained checkpoint to JSON weights for the browser. |
-| `web/gpt.js` | A JavaScript port of the forward pass + tokenizers — runs inference client-side. |
+| `export_web.py` | Exports a trained checkpoint to JSON weights for the browser — float32, float16 or **int8** — and can report what the compression costs in held-out loss. |
+| `web/gpt.js` | A JavaScript port of the forward pass + tokenizers with a **KV cache** — runs inference client-side at reading speed. |
 | `web/index.html` | A browser UI: type a prompt, watch the model generate, all in JS. |
+| `tools/make_parity_fixture.py` | Builds the reference fixture (`web/test/parity-fixture.json`) that `scripts/test-llm-logic.mjs` uses to prove the JavaScript port matches the NumPy forward pass. |
+| `tools/eval_model_json.py` | Scores any exported `model.json` on any text in bits per byte — how two models are compared fairly. |
 
 ## How it works
 
@@ -36,9 +53,10 @@ loss). Generation is just sampling from that distribution one token at a time
 and feeding the result back in.
 
 ```
-tokens ──► token embedding + positional embedding
-       ──► N × { causal self-attention ; MLP }   (each with a residual + layernorm)
-       ──► final layernorm
+tokens ──► token embedding (+ positional embedding in v1)
+       ──► N × { causal self-attention (rotary positions in v2) ; MLP }
+                 (each pre-normed, with a residual connection)
+       ──► final norm
        ──► linear head ──► logits over the vocabulary
 ```
 
@@ -46,12 +64,51 @@ The only non-obvious part is **causal self-attention**: each position mixes in
 information from earlier positions (never later ones — that's the "causal"
 mask), weighted by learned query/key similarity. Stacking several of these
 layers lets the model build up increasingly abstract representations of the
-context. See `nn.py:CausalSelfAttention`.
+context. See `nn.py:CausalSelfAttention`. In v2 the query and key vectors are
+*rotated* by an angle proportional to their position (`autograd.rope`), which
+makes the attention score depend on the **distance** between two tokens rather
+than on a learned table of absolute positions.
 
 Because every operation is expressed through the autograd engine, we never
-derive a single gradient by hand — `loss.backward()` does it all. The one place
-we do supply a manual gradient is the fused softmax-cross-entropy in
-`autograd.py`, for numerical stability and speed.
+derive a gradient for the model as a whole — `loss.backward()` does it all.
+A handful of hot operations are written as single fused nodes with a
+hand-written backward (each one is a few lines of calculus, documented in
+`autograd.py`), because composing them from primitives costs ten temporaries
+and — for GELU's `x ** 3` — an 18× slower NumPy power. Every fused derivative
+is checked against the primitive composition and against finite differences in
+`test_autograd.py`, so nothing is taken on faith.
+
+### Why v2 is better, measured
+
+Same corpus (`big.txt`), same tokenizer (BPE-2048), same size (6 layers,
+256-dim, 8 heads, 128-token context), same 300 steps and learning rate, on the
+same CPU:
+
+| recipe | parameters | held-out loss | bits per byte |
+|---|---|---|---|
+| v1 (learned pos · LayerNorm · GELU · own head) | 5.82 M | 3.877 | 2.498 |
+| **v2 (RoPE · RMSNorm · SwiGLU · tied head)** | **5.34 M** | **3.713** | **2.392** |
+
+4 % lower loss with 8 % fewer parameters, before any of the other changes.
+
+### Engine speed
+
+The from-scratch engine is CPU-bound NumPy, so step time decides how big a
+model you can afford. Profiling the original showed only ~20 % of a step in
+matrix multiplies; the rest was the autograd overhead around them. One
+training step of the previously shipped configuration (6L/256d, batch 16 ×
+128 tokens) on this 4-core box:
+
+| change | s/step | tokens/s |
+|---|---|---|
+| original engine | 2.88 | 712 |
+| fused `gelu` (no `x ** 3`), fused norms and softmax, shared-buffer `unbind` | 2.13 | 962 |
+| + scale on q instead of the score map, mask folded into softmax, constants skip grads | **0.85** | **2,407** |
+
+3.4× faster, same maths (the new engine's gradients match the old one's to
+1e-6). Evaluation forwards also no longer keep their graph alive (`no_grad()`):
+before, twelve validation batches of a 10 M-parameter model were enough to
+exhaust 15 GB of RAM.
 
 ## Quick start
 
@@ -67,10 +124,10 @@ Or do it step by step:
 ```bash
 pip install -r requirements.txt
 
-# 1. Verify the autograd engine is correct (numeric gradient check)
+# 1. Verify the autograd engine is correct (fused ops + numeric gradient check, v1 and v2)
 python test_autograd.py
 
-# 2. Train on the sample corpus (~2 min on CPU). Writes ckpt.npz.
+# 2. Train on the sample corpus (~1 min on CPU). Writes ckpt.npz.
 python train.py --steps 2000 --n_layer 4 --n_embd 128
 
 # 3a. Generate once from the trained checkpoint
@@ -79,6 +136,10 @@ python sample.py --prompt "The game" --tokens 400
 # 3b. ...or chat interactively (type a prompt, see the model continue it)
 python chat.py
 ```
+
+Add `--arch v2` to train the Llama-style model instead; everything downstream
+(`sample.py`, `export_web.py`, the browser) reads the architecture from the
+checkpoint.
 
 ## Training on more / your own data
 
@@ -91,8 +152,18 @@ python train.py --data path/to/your.txt --steps 3000 --block_size 128
 
 # Grab a bigger classic corpus (~1 MB)
 python fetch_data.py shakespeare
-python train.py --data data/shakespeare.txt --tokenizer bpe \
+python train.py --data data/shakespeare.txt --arch v2 --tokenizer bpe \
     --steps 5000 --n_layer 6 --n_embd 256 --block_size 128
+
+# Norvig's big.txt (6.5 MB: Sherlock Holmes, War and Peace, ...), Gutenberg licence text stripped
+python fetch_data.py big
+
+# The shipped model's recipe (~12 MB): big.txt + eleven public-domain novels
+# (Austen, Carroll, Chesterton, Melville, ...) from the NLTK Gutenberg archive
+python fetch_data.py classics
+python train.py --data data/classics.txt --corpus_name classics --arch v2 \
+    --tokenizer bpe --vocab_size 2048 --n_layer 8 --n_head 8 --n_embd 320 \
+    --block_size 256 --batch_size 16 --steps 1200 --lr 6e-4 --warmup 100
 
 # Or combine a whole folder of .txt files into one corpus
 python fetch_data.py concat /path/to/texts data/corpus.txt
@@ -109,17 +180,22 @@ python train.py --data data/web.txt --tokenizer bpe --steps 8000
 The "Train browser LLM" workflow accepts a committed corpus path too: build
 `data/web.txt` with the scraper, commit it, and dispatch the workflow with
 `corpus_url = data/web.txt` — the trained model lands in `web/model.json` and
-GitHub Pages serves your internet-fed AI.
+GitHub Pages serves your internet-fed AI. Its defaults are now the shipped
+recipe (`corpus_url = classics`, `arch = v2`, 8L/320d, int8 export).
+
+Training is **resumable**: `train.py` writes `<out>.state.npz` (parameters,
+optimizer moments, step, tokenizer) at every evaluation, so a run that gets
+killed continues from where it was when you launch the same command again.
 
 ### Train on a GPU (the big-model path)
 
 The stack is backend-switchable: `LLM_BACKEND=cupy` swaps NumPy for
 [CuPy](https://cupy.dev) and the identical from-scratch code runs on an NVIDIA
 GPU — 10–30× faster than CPU, which is what makes a **~17M-parameter** model
-(3× the runner-trained one) practical. `train_on_colab.ipynb` is the ready-made
-path: open it in Google Colab, pick a T4, and it scrapes a corpus with Magpie,
-trains 8L/384d/BPE-4096, and exports **fp16** weights (`export_web.py --dtype
-f2`, half the download; `web/gpt.js` decodes either precision). Sampling stays
+practical. `train_on_colab.ipynb` is the ready-made path: open it in Google
+Colab, pick a T4, and it scrapes a corpus with Magpie, trains a v2 8L/384d/BPE-4096
+model, and exports **int8** weights (`export_web.py --dtype q8`, a quarter of
+the float32 download; `web/gpt.js` decodes any precision). Sampling stays
 host-side, checkpoints stay plain `.npz`, and every existing test runs
 unchanged on the default numpy backend.
 
@@ -153,30 +229,42 @@ model must learn everything from single characters and sequences are long.
 frequent adjacent pair (set the size with `--vocab_size`). Tokens become whole
 common words and word-pieces, so the model sees more meaningful units and fewer
 tokens per sentence — this is what real LLMs use, and it noticeably improves
-output quality on anything larger than the toy corpus.
+output quality on anything larger than the toy corpus. The trainer keeps an
+index from each pair to the chunks that contain it and only re-counts those
+chunks after a merge, so a 2048-token vocabulary on the 12 MB classics corpus
+takes about 4 seconds (the naive "recount everything after every merge" loop
+took minutes, and dominated short training runs).
 
 ### Useful flags (`train.py`)
 
 | Flag | Default | Meaning |
 |------|---------|---------|
+| `--arch` | `v1` | `v1` GPT-2 style, `v2` Llama style (`--pos_emb/--norm/--mlp/--tie_embeddings/--bias` override individually) |
 | `--steps` | 2000 | Training iterations |
 | `--block_size` | 64 | Context length (tokens) |
 | `--n_layer` | 4 | Transformer blocks |
 | `--n_head` | 4 | Attention heads |
 | `--n_embd` | 128 | Embedding / hidden width |
 | `--batch_size` | 16 | Sequences per step |
-| `--lr` | 3e-4 | Adam learning rate |
+| `--lr` | 3e-4 | Peak AdamW learning rate (linear warmup, cosine decay to `--min_lr_ratio`) |
+| `--weight_decay` | 0.1 | Decoupled decay on weight matrices |
+| `--eval_every` / `--val_iters` | 200 / 20 | Evaluate on this many *fixed* held-out batches every N steps |
+| `--corpus_name` | file name | Label stored in the model's `meta` (shown on the page) |
+
+Evaluation prints loss and **bits per byte** (loss ÷ ln 2 ÷ bytes-per-token of
+the held-out split): unlike per-token loss, bpb is comparable between a
+character model and a BPE model, or between two vocab sizes.
 
 ## Run it in a browser
 
 Train in Python, then run inference entirely in JavaScript — no server compute,
 no API. `export_web.py` serializes the trained weights to JSON, and `web/gpt.js`
-is a faithful port of the forward pass (verified to match Python's logits to
-float32 precision).
+is a faithful port of the forward pass.
 
 ```bash
-python train.py --steps 2000          # produces ckpt.npz
-python export_web.py                  # writes web/model.json
+python train.py --arch v2 --steps 2000          # produces ckpt.npz
+python export_web.py --dtype q8                 # writes web/model.json (int8: a quarter of float32)
+python export_web.py --dtype q8 --check_data data/input.txt   # ...and reports what int8 costs in held-out loss
 ```
 
 Then either:
@@ -197,6 +285,33 @@ the output stays varied and keeps its line/speaker structure. The same decoding
 (top-k + top-p + repetition penalty) is implemented in Python too — see
 `sample.py --top_p --repetition_penalty` and `GPT.generate(...)`.
 
+**It is fast now.** The first port recomputed the whole context for every
+token with a cache-hostile weight loop and managed ~1 token/s. `gpt.js` keeps a
+**KV cache** (each new token costs one pass over the weights plus attention
+over the cached keys) and reads every weight matrix sequentially, so the
+previously shipped 5.3 M-parameter model went from 1.1 to **54 tokens/s** in
+the same Node.js V8 engine, and the new 10.6 M-parameter model streams at
+_(measured at the end of the training run)_ tokens/s. When the context window fills, the cache is rebuilt over
+the most recent three quarters of it (positions restart at 0 — a plain forward
+pass over tokens the model has seen in training-shaped windows) and generation
+continues incrementally; `GPT.generate()` in Python follows the same policy.
+
+**Weights are small now.** `--dtype q8` stores int8 values with one float32
+scale per output unit (per column for the linear layers, per row for the
+embedding table, so a rare token's small row isn't crushed by the frequent
+tokens' maxima); the browser dequantises at load, so the arithmetic is still
+float32. `--check_data` shows the cost — for the shipped model it is _(reported with the final model)_
+in held-out loss for a 4× smaller download. `f2` (float16) is also available.
+
+**It is proven to match.** `tools/make_parity_fixture.py` builds tiny seeded
+v1 and v2 models in every precision and records the NumPy logits for several
+token sequences and the Python tokenizers' ids; `node scripts/test-llm-logic.mjs`
+(`npm run test:llm`, part of `npm test`) checks that the JavaScript port
+reproduces them, that stepping through the KV cache equals a fresh pass, and
+that the sampler and tensor decoders behave. CI (`.github/workflows/llm.yml`)
+regenerates the fixture fresh and tests against it, so the two implementations
+cannot drift apart silently.
+
 ### "ApexAI" — the installable PWA
 
 `web/` is a full **installable PWA**: an app manifest, offline service worker,
@@ -205,31 +320,31 @@ network at all — the weights are cached on-device. A trained `web/model.json` 
 committed to the repo so the deployed page works with **zero setup**, and it is
 published to GitHub Pages next to the other prototypes.
 
-The committed model was **trained on the live internet**: Magpie (the repo's
-from-scratch scraper) crawled 58 Wikipedia pages about London and its
-transport — 300k words, robots.txt respected — and the "Train browser LLM"
-workflow trained 1,500 steps (6 layers / 256-dim / BPE-1024, 5.3M parameters)
-on a GitHub runner, entirely with this repo's own autograd.
-
 - **Live:** https://refayethossain28.github.io/BallrzAPP/llm/
 
-To refresh the deployed model after training, re-run `python export_web.py` and
-commit the updated `web/model.json` (regenerate the icons with
+**The committed model** is a v2 (Llama-style) transformer — 8 layers, 320-dim,
+8 heads, 256-token context, BPE-2048, **10.6 M parameters** — trained from
+scratch with this repo's own autograd on the `classics` corpus (12 MB: Sherlock
+Holmes, War and Peace, Austen, Melville, Chesterton, Carroll, …, Gutenberg
+licence text stripped) for 1,200 steps (4.9 M tokens) in _(pending)_
+minutes on a 4-core CPU, and exported as int8 (_(pending)_ MB). Held-out quality:
+**_(pending)_ bits per byte** (loss _(pending)_). The model it replaces (v1,
+5.3 M parameters, trained on GitHub documentation) scores 3.67 bpb on the same
+held-out classics text, 4.08 on tiny Shakespeare and 4.47 on this repo's README;
+the new one scores _(pending)_, _(pending)_ and _(pending)_
+(`python tools/eval_model_json.py web/model.json <texts>` — the texts are not
+in either model's training data except the classics split, which is held out
+from the new model and was never seen by the old one).
+
+To refresh the deployed model after training, re-run `python export_web.py
+--dtype q8` and commit the updated `web/model.json` (regenerate the icons with
 `node scripts/gen-llm-icons.mjs` from the repo root if you change the motif).
 Install it from the browser (Chromium: "Install app"; iOS Safari: Share → Add to
-Home Screen) for a full-screen, offline launch.
-
-The shipped `web/model.json` is a subword (BPE) model trained on the ~1 MB tiny
-Shakespeare corpus, which reads noticeably better than a character model on the
-toy corpus. Rebuild it with:
-
-```bash
-python fetch_data.py shakespeare
-python train.py --data data/shakespeare.txt --tokenizer bpe --vocab_size 512 \
-    --n_layer 5 --n_head 8 --n_embd 160 --block_size 96 --batch_size 12 \
-    --steps 1600 --lr 4e-4 --out ckpt-shakespeare.npz
-python export_web.py --ckpt ckpt-shakespeare.npz --out web/model.json
-```
+Home Screen) for a full-screen, offline launch. The page loads the engine as
+`gpt.js?v=2`, so an installed app whose service worker still holds the old
+engine fetches the new one on its next visit instead of trying to run a
+format-2 model file with format-1 code (`model.json` and the page itself are
+network-first; a newer model reaches returning visitors without a cache bump).
 
 ### Train it on Colab (reliable, free)
 
@@ -240,11 +355,11 @@ completion:
 
 **[▶ Open `train_on_colab.ipynb` in Colab](https://colab.research.google.com/github/Refayethossain28/BallrzAPP/blob/main/llm-from-scratch/train_on_colab.ipynb)**
 
-Runtime → Run all. It clones the repo, downloads a corpus (WikiText-2 by
-default), trains a ~5M-param model, exports `web/model.json`, and downloads it.
-Commit that file to `llm-from-scratch/web/model.json` and the Pages deploy ships
-it. Training is resumable (`train.py` checkpoints full state), so a dropped
-runtime just continues on re-run.
+Runtime → Run all. It clones the repo, builds a corpus, trains a ~17M-param v2
+model, exports `web/model.json`, and downloads it. Commit that file to
+`llm-from-scratch/web/model.json` and the Pages deploy ships it. Training is
+resumable (`train.py` checkpoints full state), so a dropped runtime just
+continues on re-run.
 
 ### ⚡ Live AI — put your model next to real Fable 5
 
@@ -275,18 +390,20 @@ abusable — set an Anthropic spend limit) are in [`DEPLOY.md`](./DEPLOY.md).
 
 ## What to expect
 
-This is an educational implementation: pure NumPy on CPU, a ~1 MB corpus, a ~1.7M
-parameter model. With BPE it produces text with real words, Shakespearean cadence
-and line structure — but it won't be *coherent*, and it is not an assistant. That
-gap is not a bug to fix here: a frontier model like Fable 5 has on the order of
-hundreds of billions of parameters trained on trillions of tokens — five to six
-orders of magnitude more data, parameters and compute. No CPU-trained,
-browser-shippable model gets close. If you want that level of quality in this app,
-that's exactly what the **⚡ Live AI (Fable 5)** toggle is for. The point of the
-from-scratch model is that every mechanism a real LLM uses is here and visible,
-with nothing hidden behind a framework — and it's genuinely yours.
+This is an educational implementation: pure NumPy on CPU, a 12 MB corpus, a
+~10 M parameter model. It writes fluent-looking nineteenth-century prose —
+sentences that scan, dialogue that opens and closes, names that recur — but it
+does not *know* anything, it will contradict itself within a paragraph, and it
+is not an assistant. That gap is not a bug to fix here: a frontier model like
+Fable 5 has on the order of hundreds of billions of parameters trained on
+trillions of tokens — four to five orders of magnitude more data, parameters
+and compute. No CPU-trained, browser-shippable model gets close. If you want
+that level of quality in this app, that's exactly what the **⚡ Live AI
+(Fable 5)** toggle is for. The point of the from-scratch model is that every
+mechanism a real LLM uses is here and visible, with nothing hidden behind a
+framework — and it's genuinely yours.
 
 To scale the from-scratch model up, the levers are the same ones the big labs
 pull: more data, a bigger model (`--n_layer`, `--n_embd`), a longer context
 (`--block_size`), more steps — and eventually swapping NumPy for a GPU array
-library.
+library (`LLM_BACKEND=cupy`).
