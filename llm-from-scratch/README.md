@@ -291,7 +291,7 @@ token with a cache-hostile weight loop and managed ~1 token/s. `gpt.js` keeps a
 over the cached keys) and reads every weight matrix sequentially, so the
 previously shipped 5.3 M-parameter model went from 1.1 to **54 tokens/s** in
 the same Node.js V8 engine, and the new 10.6 M-parameter model streams at
-_(measured at the end of the training run)_ tokens/s. When the context window fills, the cache is rebuilt over
+about 50 tokens/s there (52 measured on this 4-core box; phones are slower). When the context window fills, the cache is rebuilt over
 the most recent three quarters of it (positions restart at 0 — a plain forward
 pass over tokens the model has seen in training-shaped windows) and generation
 continues incrementally; `GPT.generate()` in Python follows the same policy.
@@ -300,8 +300,9 @@ continues incrementally; `GPT.generate()` in Python follows the same policy.
 scale per output unit (per column for the linear layers, per row for the
 embedding table, so a rare token's small row isn't crushed by the frequent
 tokens' maxima); the browser dequantises at load, so the arithmetic is still
-float32. `--check_data` shows the cost — for the shipped model it is _(reported with the final model)_
-in held-out loss for a 4× smaller download. `f2` (float16) is also available.
+float32. `--check_data` shows the cost — for the shipped model it is nil (1.7639
+bits per byte before and after, to four decimals) for a 4× smaller download.
+`f2` (float16) is also available.
 
 **It is proven to match.** `tools/make_parity_fixture.py` builds tiny seeded
 v1 and v2 models in every precision and records the NumPy logits for several
@@ -326,15 +327,23 @@ published to GitHub Pages next to the other prototypes.
 8 heads, 256-token context, BPE-2048, **10.6 M parameters** — trained from
 scratch with this repo's own autograd on the `classics` corpus (12 MB: Sherlock
 Holmes, War and Peace, Austen, Melville, Chesterton, Carroll, …, Gutenberg
-licence text stripped) for 1,200 steps (4.9 M tokens) in _(pending)_
-minutes on a 4-core CPU, and exported as int8 (_(pending)_ MB). Held-out quality:
-**_(pending)_ bits per byte** (loss _(pending)_). The model it replaces (v1,
-5.3 M parameters, trained on GitHub documentation) scores 3.67 bpb on the same
-held-out classics text, 4.08 on tiny Shakespeare and 4.47 on this repo's README;
-the new one scores _(pending)_, _(pending)_ and _(pending)_
-(`python tools/eval_model_json.py web/model.json <texts>` — the texts are not
-in either model's training data except the classics split, which is held out
-from the new model and was never seen by the old one).
+licence text stripped) for 1,200 steps (4.9 M tokens, one epoch) in 101
+minutes on a 4-core CPU, and exported as int8 (14.3 MB — half the size of the
+previous model's file at twice the parameters). `python tools/model_card.py`
+prints these facts from the file's own `meta`.
+
+Held-out quality in bits per byte (lower is better; `tools/eval_model_json.py`):
+
+| text | previous model (v1, 5.3 M, GitHub docs) | **this model (v2, 10.6 M, classics)** |
+|---|---|---|
+| classics — the 10 % of slices held out from training (full pass, 557 k tokens) | 3.64 | **1.75** |
+| tiny Shakespeare — in neither model's training data | 3.99 | **2.73** |
+| this repository's README — in neither model's training data | 3.97 | **3.80** |
+
+The classics row is the new model's home ground (held out, but the same books)
+and foreign to the old one; the other two rows are foreign to both. The
+training log's windowed estimate was 1.76 bpb (loss 2.64); the int8 export
+moves it by less than 0.001.
 
 To refresh the deployed model after training, re-run `python export_web.py
 --dtype q8` and commit the updated `web/model.json` (regenerate the icons with

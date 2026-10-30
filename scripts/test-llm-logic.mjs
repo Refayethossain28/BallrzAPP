@@ -209,6 +209,20 @@ for (const v of FIX.variants.filter((x) => x.dtype === 'f4')) {
     assert.equal(maxAbsDiff(lg, expected), 0);
   });
 }
+test('the shipped web/model.json is what the page and README say it is', () => {
+  const spec = JSON.parse(readFileSync(join(LLM, 'web', 'model.json'), 'utf8'));
+  assert.equal(spec.format, 2);
+  assert.equal(spec.config.pos_emb, 'rope'); assert.equal(spec.config.norm, 'rmsnorm'); assert.equal(spec.config.mlp, 'swiglu');
+  assert.equal(spec.config.tie_embeddings, true); assert.equal(spec.config.block_size, 256); assert.equal(spec.config.vocab_size, 2048);
+  assert.equal(spec.weights_dtype, 'q8'); assert.equal(spec.meta.corpus, 'classics'); assert.equal(spec.meta.arch, 'v2');
+  const n = Object.values(spec.weights).reduce((s, w) => s + w.shape.reduce((a, b) => a * b, 1), 0);
+  assert.ok(n > 10e6 && n < 11e6, `${n} parameters ("about ten million")`);
+  assert.ok(spec.meta.val_bpb > 1 && spec.meta.val_bpb < 2.5, `val_bpb ${spec.meta.val_bpb}`);
+  const m = new G.Model(spec);
+  assert.equal(m.posEmb, 'rope'); assert.equal(m.tied, true);
+  const out = m.generate('It was a', 8, { topK: 5, rng: seeded(2) });
+  assert.ok(out.length > 0);
+});
 test('the page uses the one sampler in gpt.js (no second copy to drift)', () => {
   const html = readFileSync(join(LLM, 'web', 'index.html'), 'utf8');
   assert.ok(!/function sampleFrom\s*\(/.test(html));
