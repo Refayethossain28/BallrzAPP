@@ -26,14 +26,27 @@ jobs:
         with:
           python-version: "3.11"
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Gradient check (autograd correctness)
+      - name: Gradient check (primitives, fused ops, v1 + v2 architectures)
         run: python test_autograd.py
 
-      - name: Tokenizer tests (char + bpe round-trip)
+      - name: Tokenizer tests (char + bpe round-trip, incremental == reference trainer)
         run: python test_tokenizer.py
+
+      # The browser engine must reproduce the NumPy forward pass exactly: build
+      # a fresh reference fixture here and run the JS test against it, then
+      # against the committed copy (which must stay in sync with the generator).
+      - name: Python <-> JavaScript parity (web/gpt.js vs model.py)
+        run: |
+          python tools/make_parity_fixture.py --out /tmp/parity-fixture.json
+          LLM_FIXTURE=/tmp/parity-fixture.json node ../scripts/test-llm-logic.mjs
+          node ../scripts/test-llm-logic.mjs
 
       - name: Smoke test — train a tiny model end to end
         run: |
@@ -47,15 +60,28 @@ jobs:
             --batch_size 8 \
             --out ci_ckpt.npz
 
-      - name: Smoke test — generate from the checkpoint
-        run: python sample.py --ckpt ci_ckpt.npz --prompt "The game" --tokens 80 --seed 0
+      - name: Smoke test — generate from the checkpoint (past the context window, with top-p)
+        run: python sample.py --ckpt ci_ckpt.npz --prompt "The game" --tokens 80 --seed 0 --top_p 0.9
 
-      - name: Smoke test — train + generate with the bpe tokenizer
+      - name: Smoke test — a killed run resumes from its state file
+        run: |
+          python train.py --steps 40 --eval_every 10 --n_layer 2 --n_head 2 --n_embd 32 \
+            --block_size 32 --batch_size 8 --out ci_ckpt.npz | tee resume.log
+          grep -q "resumed at step 30" resume.log
+
+      - name: Smoke test — train + generate a v2 (Llama-style) model with the bpe tokenizer
         run: |
           python train.py \
-            --tokenizer bpe --vocab_size 120 \
+            --arch v2 --tokenizer bpe --vocab_size 120 \
             --steps 20 --eval_every 10 \
             --n_layer 2 --n_head 2 --n_embd 32 \
             --block_size 16 --batch_size 8 \
             --out ci_bpe.npz
           python sample.py --ckpt ci_bpe.npz --prompt "The game" --tokens 40 --seed 0
+
+      - name: Smoke test — export for the browser (f4, q8 with a quality check, standalone page)
+        run: |
+          python export_web.py --ckpt ci_ckpt.npz --out /tmp/ci_model_f4.json
+          python export_web.py --ckpt ci_bpe.npz --out /tmp/ci_model_q8.json --dtype q8 --check_data data/input.txt
+          python export_web.py --ckpt ci_bpe.npz --out /tmp/ci_model_inline.json --inline
+          test -s web/llm.html

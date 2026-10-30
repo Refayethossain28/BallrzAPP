@@ -12,33 +12,39 @@ on:
   workflow_dispatch:
     inputs:
       corpus_url:
-        description: "Plain-text corpus: a URL, or a repo path like data/web.txt (ignored when seed_urls is set)"
-        default: "https://raw.githubusercontent.com/dscape/spell/master/test/resources/big.txt"
+        description: "Plain-text corpus: a URL, a repo path like data/web.txt, or 'classics' (the shipped model's recipe: fetch_data.py classics). Ignored when seed_urls is set"
+        default: "classics"
       seed_urls:
         description: "SCRAPE the corpus from the live internet instead: space-separated seed URLs (Magpie crawls same-host links, robots.txt respected)"
         default: ""
       scrape_pages:
         description: "Page budget for the scrape (when seed_urls is set)"
         default: "60"
+      arch:
+        description: "v1 = GPT-2 style (learned positions, LayerNorm, GELU); v2 = Llama style (RoPE, RMSNorm, SwiGLU, tied embeddings)"
+        default: "v2"
       tokenizer:
         description: "char | bpe"
         default: "bpe"
       vocab_size:
-        default: "1024"
+        default: "2048"
       n_layer:
-        default: "6"
+        default: "8"
       n_head:
         default: "8"
       n_embd:
-        default: "256"
+        default: "320"
       block_size:
-        default: "128"
+        default: "256"
       batch_size:
         default: "16"
       steps:
-        default: "3000"
+        default: "1200"
       lr:
-        default: "3e-4"
+        default: "6e-4"
+      dtype:
+        description: "Exported weight precision: f4 (float32) | f2 (float16, half) | q8 (int8 per column, a quarter)"
+        default: "q8"
       eval_every:
         description: "Steps between val-loss evaluations (each costs ~30 s; raise for long runs)"
         default: "200"
@@ -84,6 +90,10 @@ jobs:
             node ../scripts/build-web-corpus.mjs ${{ inputs.seed_urls }} \
               --pages "${{ inputs.scrape_pages }}" \
               --out llm-from-scratch/data/corpus.txt
+          elif [ "${{ inputs.corpus_url }}" = "classics" ]; then
+            # the shipped model's diet: big.txt + eleven public-domain novels,
+            # Gutenberg boilerplate stripped (see fetch_data.py)
+            python fetch_data.py classics data/corpus.txt
           elif [ -f "${{ inputs.corpus_url }}" ]; then
             # a committed corpus file (e.g. data/web.txt from build-web-corpus.mjs)
             cp "${{ inputs.corpus_url }}" data/corpus.txt
@@ -105,6 +115,8 @@ jobs:
         run: |
           python train.py \
             --data data/corpus.txt \
+            --corpus_name "${{ inputs.seed_urls && 'web scrape' || inputs.corpus_url }}" \
+            --arch "${{ inputs.arch }}" \
             --tokenizer "${{ inputs.tokenizer }}" \
             --vocab_size "${{ inputs.vocab_size }}" \
             --n_layer "${{ inputs.n_layer }}" \
@@ -120,7 +132,7 @@ jobs:
 
       - name: Export to web/${{ inputs.out_model }}
         working-directory: llm-from-scratch
-        run: python export_web.py --ckpt ckpt.npz --out "web/${{ inputs.out_model }}"
+        run: python export_web.py --ckpt ckpt.npz --out "web/${{ inputs.out_model }}" --dtype "${{ inputs.dtype }}" --check_data data/corpus.txt
 
       # Safety net: the trained weights survive even if the commit/push can't
       # land (branch protection, a race, a non-fast-forward). Download from the
@@ -137,8 +149,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           SIZE=$(wc -c < "llm-from-scratch/web/${{ inputs.out_model }}")
-          MSG1="Train browser LLM on runner (${{ inputs.n_layer }}L/${{ inputs.n_embd }}d, ${{ inputs.steps }} steps) [skip ci]"
-          MSG2="Corpus: ${{ inputs.corpus_url }}${{ inputs.seed_urls }}; tokenizer ${{ inputs.tokenizer }} vocab ${{ inputs.vocab_size }}; ${{ inputs.out_model }} ${SIZE} bytes."
+          MSG1="Train browser LLM on runner (${{ inputs.arch }} ${{ inputs.n_layer }}L/${{ inputs.n_embd }}d, ${{ inputs.steps }} steps) [skip ci]"
+          MSG2="Corpus: ${{ inputs.corpus_url }}${{ inputs.seed_urls }}; tokenizer ${{ inputs.tokenizer }} vocab ${{ inputs.vocab_size }}; ${{ inputs.dtype }} weights; ${{ inputs.out_model }} ${SIZE} bytes."
           cp "llm-from-scratch/web/${{ inputs.out_model }}" /tmp/model.json
           # Training took ~hours; the branch may have moved on. Rebase our single
           # weights change onto the current tip and retry, so a non-fast-forward

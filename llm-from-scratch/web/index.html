@@ -120,10 +120,11 @@
     </header>
     <div class="sub">
       Every mechanism a real large language model uses is here and nothing is hidden behind a framework:
-      a hand-written <b>autograd engine</b>, a <b>transformer</b> with causal self-attention, an <b>Adam</b>
-      trainer — all in pure NumPy. It was trained offline, its weights baked into this page, and the
-      forward pass re-implemented in JavaScript. <b>No server, no API, no cloud</b> — every token below is
-      generated on your device.
+      a hand-written <b>autograd engine</b>, a <b>Llama-style transformer</b> (causal self-attention with
+      rotary positions, RMSNorm, SwiGLU), an <b>AdamW</b> trainer — all in pure NumPy. It was trained
+      offline on public-domain classics, its weights baked into this page, and the forward pass
+      re-implemented in JavaScript with a KV cache so it streams at reading speed. <b>No server, no API,
+      no cloud</b> — every token below is generated on your device.
     </div>
 
     <div class="badges" id="badges"></div>
@@ -182,8 +183,10 @@
     </div>
 
     <footer>
-      <b>Two engines.</b> The default is your hand-built GPT — trained from scratch, running with no
-      network, genuinely yours (small, so it reads more like a stylistic echo than a smart assistant).
+      <b>Two engines.</b> The default is your hand-built GPT — trained from scratch on public-domain
+      classics (Conan Doyle, Austen, Melville, Chesterton, Tolstoy…), running with no network, genuinely
+      yours. It is small — about ten million parameters, not hundreds of billions — so it writes
+      plausible period prose rather than facts, and it is not an assistant.
       Flip on <b>⚡ Live AI</b> to route the same prompt to real frontier <b>Fable&nbsp;5</b> and compare.
       Flip on <b>💬 Chat</b> to talk in turns instead of continuing text: with Live AI on it's a genuine
       Fable&nbsp;5 assistant; with it off, your tiny model gamely plays the part — the honest picture of
@@ -196,9 +199,13 @@
   </div>
 
   <!--INLINE_MODEL-->
-  <script src="gpt.js"></script>
+  <script src="gpt.js?v=2"></script>
   <script>
     const $ = (id) => document.getElementById(id);
+    // Yield to the browser between slices of work WITHOUT setTimeout's 4 ms
+    // clamp (which would cost a fifth of each ~15 ms token on the big model).
+    const defer = (fn) => { const ch = new MessageChannel(); ch.port1.onmessage = () => fn(); ch.port2.postMessage(0); };
+    const SLICE_MS = 12;    // generate for this long, then let the page paint
     const statusEl = $("status"), outEl = $("out"), goBtn = $("go"), stopBtn = $("stop");
     let model = null, running = false, cancel = false;
 
@@ -227,19 +234,39 @@
     // can fall back to whatever is already loaded.
     async function loadModel(file) {
       const spec = await loadSpec(file);
+      // A model file newer than this engine (an installed PWA that kept an old
+      // gpt.js in its cache) can't be run: reload once to pick up the new engine.
+      if ((spec.format || 1) > (GPTLib.FORMAT || 1)) {
+        if (!sessionStorage.getItem("apexai-engine-reload")) {
+          sessionStorage.setItem("apexai-engine-reload", "1");
+          statusEl.textContent = "Updating the on-device engine…";
+          location.reload();
+          await new Promise(() => {});
+        }
+        throw new Error("this model needs a newer engine — please reload the page");
+      }
+      sessionStorage.removeItem("apexai-engine-reload");
       model = new GPTLib.Model(spec);
       loadedModelFile = file || "model.json";
-      const c = spec.config;
+      const c = spec.config, m = spec.meta || {};
       const nParams = Object.values(spec.weights)
         .reduce((s, w) => s + w.shape.reduce((a, b) => a * b, 1), 0);
+      const params = nParams >= 1e6 ? `${(nParams / 1e6).toFixed(1)}M` : `${(nParams / 1000).toFixed(0)}K`;
+      const arch = c.pos_emb === "rope" ? "v2 · RoPE · RMSNorm · SwiGLU" : "v1 · GPT-2 style";
+      const esc = (x) => String(x).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
       $("badges").innerHTML =
-        badge(`${(nParams / 1000).toFixed(0)}K <b>parameters</b>`) +
+        badge(`${params} <b>parameters</b>`) +
+        badge(arch) +
         badge(`${c.n_layer} <b>layers</b>`) +
         badge(`${c.n_embd}-dim`) +
         badge(`${c.n_head} heads`) +
         badge(`vocab ${c.vocab_size}`) +
         badge(`ctx ${c.block_size}`) +
         badge(`${spec.tokenizer.type} tokenizer`) +
+        (spec.weights_dtype === "q8" ? badge(`int8 weights`) : "") +
+        (m.corpus ? badge(`trained on <b>${esc(m.corpus)}</b>`) : "") +
+        (m.tokens_seen ? badge(`${(m.tokens_seen / 1e6).toFixed(1)}M tokens · ${Number(m.steps).toLocaleString()} steps`) : "") +
+        (m.val_bpb ? badge(`${Number(m.val_bpb).toFixed(2)} <b>bits/byte</b> held-out`) : "") +
         badge(`100% <b>on-device</b>`);
       return spec;
     }
@@ -247,7 +274,7 @@
     (async function init() {
       try {
         await loadModel("model.json");
-        statusEl.innerHTML = "Ready — the model is loaded and runs entirely in this tab.";
+        statusEl.innerHTML = "Ready — the model is loaded and runs entirely in this tab (KV-cached: each token costs one pass, not a re-read of the whole context).";
         goBtn.disabled = false;
       } catch (e) {
         statusEl.textContent = "Error: " + e.message;
@@ -469,18 +496,21 @@
         let ids = model.tokenizer.encode(transcript);
         let text = "", n = 0;
         function step() {
-          if (cancel || n >= maxTok) return resolve(trimTurn(text));
-          const logits = model.logitsForLast(ids);
-          const next = sampleFrom(logits, opts, ids.slice(-64));
-          ids.push(next);
-          text += model.tokenizer.decode([next]);
-          // Stop as soon as the model tries to open the next turn.
-          if (/\n\s*(User|Assistant)\s*:/.test(text)) return resolve(trimTurn(text));
+          const slice = performance.now();
+          while (!cancel && n < maxTok && performance.now() - slice < SLICE_MS) {
+            const logits = model.logitsForLast(ids);
+            const next = sampleFrom(logits, opts, ids.slice(-64));
+            ids.push(next);
+            text += model.tokenizer.decode([next]);
+            n++;
+            // Stop as soon as the model tries to open the next turn.
+            if (/\n\s*(User|Assistant)\s*:/.test(text)) return resolve(trimTurn(text));
+          }
           bubble.textContent = trimTurn(text);
           bubble.appendChild(cursor);
           chatLog.scrollTop = chatLog.scrollHeight;
-          n++;
-          setTimeout(step, 0);
+          if (cancel || n >= maxTok) return resolve(trimTurn(text));
+          defer(step);
         }
         step();
       });
@@ -531,21 +561,22 @@
       let n = 0;
       const t0 = performance.now();
       function step() {
-        if (cancel) {
-          const dt = (performance.now() - t0) / 1000;
-          return finish(cursor, `Stopped — ${n} tokens in ${dt.toFixed(1)}s.`);
+        const slice = performance.now();
+        let piece = "";
+        while (!cancel && n < nTokens && performance.now() - slice < SLICE_MS) {
+          const logits = model.logitsForLast(ids);
+          // Penalize repetition over a recent window so the small model stops looping.
+          const next = sampleFrom(logits, opts, ids.slice(-64));
+          ids.push(next);
+          piece += model.tokenizer.decode([next]);
+          n++;
         }
-        if (n >= nTokens) {
-          const dt = (performance.now() - t0) / 1000;
-          return finish(cursor, `Done — ${nTokens} tokens in ${dt.toFixed(1)}s (${(nTokens / dt).toFixed(0)} tok/s).`);
-        }
-        const logits = model.logitsForLast(ids);
-        // Penalize repetition over a recent window so the small model stops looping.
-        const next = sampleFrom(logits, opts, ids.slice(-64));
-        ids.push(next);
-        genSpan.textContent += model.tokenizer.decode([next]);
-        n++;
-        setTimeout(step, 0);
+        genSpan.textContent += piece;
+        const dt = (performance.now() - t0) / 1000;
+        if (cancel) return finish(cursor, `Stopped — ${n} tokens in ${dt.toFixed(1)}s (${(n / dt).toFixed(0)} tok/s).`);
+        if (n >= nTokens) return finish(cursor, `Done — ${nTokens} tokens in ${dt.toFixed(1)}s (${(nTokens / dt).toFixed(0)} tok/s, on-device).`);
+        statusEl.textContent = `Generating on-device… ${n} tokens, ${(n / dt).toFixed(0)} tok/s`;
+        defer(step);
       }
       step();
     }
@@ -686,13 +717,16 @@
         if (ids.length === 0) ids = [model.tokenizer.stoi["\n"] || 0];
         let out = "", n = 0;
         (function step() {
-          if (cancel || n >= maxTokens) return resolve(out);
-          const next = sampleFrom(model.logitsForLast(ids), opts, ids.slice(-64));
-          ids.push(next);
-          out += model.tokenizer.decode([next]);
-          n++;
+          const slice = performance.now();
+          while (!cancel && n < maxTokens && performance.now() - slice < SLICE_MS) {
+            const next = sampleFrom(model.logitsForLast(ids), opts, ids.slice(-64));
+            ids.push(next);
+            out += model.tokenizer.decode([next]);
+            n++;
+          }
           if (onTick) onTick(out);
-          setTimeout(step, 0);
+          if (cancel || n >= maxTokens) return resolve(out);
+          defer(step);
         })();
       });
     }
@@ -758,40 +792,11 @@
         .finally(() => { setRunning(false); });
     }
 
-    // Nucleus (top-p) + top-k sampling with a repetition penalty, mirrored from
-    // gpt.js so the incremental UI loop and GPTLib.generate() agree. `ctx` is the
-    // recent token window whose logits get penalized to break repetition loops.
-    function sampleFrom(logits, opts, ctx) {
-      opts = opts || {};
-      const temperature = Math.max(opts.temperature == null ? 0.8 : opts.temperature, 1e-6);
-      const topK = opts.topK == null ? 0 : opts.topK;
-      const topP = opts.topP == null ? 1 : opts.topP;
-      const rp = opts.repetitionPenalty == null ? 1 : opts.repetitionPenalty;
-      const n = logits.length;
-      const z = new Float64Array(n);
-      for (let i = 0; i < n; i++) z[i] = logits[i];
-      if (rp !== 1 && ctx && ctx.length) {
-        const seen = ctx instanceof Set ? ctx : new Set(ctx);
-        seen.forEach((id) => { if (id >= 0 && id < n) z[id] = z[id] > 0 ? z[id] / rp : z[id] * rp; });
-      }
-      for (let i = 0; i < n; i++) z[i] /= temperature;
-      const order = Array.from({ length: n }, (_, i) => i).sort((a, b) => z[b] - z[a]);
-      const k = (topK && topK > 0) ? Math.min(topK, n) : n;
-      const maxv = z[order[0]];
-      const probs = new Float64Array(k);
-      let sum = 0;
-      for (let j = 0; j < k; j++) { const p = Math.exp(z[order[j]] - maxv); probs[j] = p; sum += p; }
-      for (let j = 0; j < k; j++) probs[j] /= sum;
-      let cutoff = k;
-      if (topP < 1) {
-        let cum = 0;
-        for (let j = 0; j < k; j++) { cum += probs[j]; if (cum >= topP) { cutoff = j + 1; break; } }
-      }
-      let s2 = 0; for (let j = 0; j < cutoff; j++) s2 += probs[j];
-      let r = Math.random() * s2;
-      for (let j = 0; j < cutoff; j++) { r -= probs[j]; if (r <= 0) return order[j]; }
-      return order[cutoff - 1];
-    }
+    // Nucleus (top-p) + top-k sampling with a repetition penalty — the one
+    // implementation in gpt.js (unit-tested), so the incremental UI loop and
+    // GPTLib.generate() can never drift apart. `ctx` is the recent token window
+    // whose logits get penalized to break repetition loops.
+    const sampleFrom = (logits, opts, ctx) => GPTLib.sample(logits, opts, ctx);
 
     // Install-to-home-screen (Chromium). Safari uses Share → Add to Home Screen.
     let deferredPrompt = null;
@@ -807,6 +812,8 @@
     });
 
     // Register the offline service worker (not on file://, and not when inlined).
+    // (sw.js is network-first for model.json, so a retrained model reaches
+    // returning visitors without a cache bump.)
     if ("serviceWorker" in navigator && location.protocol.startsWith("http") &&
         !document.getElementById("inline-model")) {
       window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
