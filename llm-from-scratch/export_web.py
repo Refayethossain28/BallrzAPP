@@ -180,12 +180,13 @@ def build_spec(ckpt_path: str, dtype: str = "f4") -> dict:
 
 def check_quality(ckpt_path: str, spec: dict, data_path: str, batches=20, batch_size=16, seed=1):
     """Held-out loss (last 10% of `data_path`) with exact vs. exported weights."""
-    model, tok, _, _ = load_checkpoint(ckpt_path)
+    model, tok, meta, _ = load_checkpoint(ckpt_path)
     with open(data_path, encoding="utf-8") as f:
         text = f.read()
     from train import split_train_val
     data = np.array(tok.encode(text), dtype=np.int64)
-    val = split_train_val(data, "chunked")[1]          # train.py's default held-out slices
+    # the slices THIS checkpoint held out (checkpoints from before `meta` held out the tail)
+    val = split_train_val(data, meta.get("val_split", "contiguous"))[1]
     bytes_per_token = len(tok.decode(val).encode("utf-8")) / max(1, len(val))
     T = model.config.block_size
     rng = np.random.default_rng(seed)

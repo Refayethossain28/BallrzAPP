@@ -110,8 +110,7 @@ def build_variant(arch, dtype, seed, legacy=False):
     # Teacher-forced sequence through TWO window overflows: the logits Python
     # produces at every step under GPT.crop_window — the browser's KV cache
     # must reproduce each one (this is what pins the overflow policy).
-    stepwise = None
-    if dtype == "f4" and not legacy:
+    if True:
         ids = tok.encode(SAMPLE_TEXT)[: 2 * cfg.block_size + 3]
         window, step_logits = [], []
         with no_grad():

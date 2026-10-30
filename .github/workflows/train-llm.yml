@@ -1,12 +1,16 @@
 name: Train browser LLM (from scratch)
 
-# Trains the "My Own AI Model" GPT on a GitHub-hosted runner — which runs a job
-# to completion (unlike an ephemeral dev container) — then commits the exported
+# Trains the "ApexAI" GPT on a GitHub-hosted runner — which runs a job to
+# completion (unlike an ephemeral dev container) — then commits the exported
 # web/model.json back to the branch it ran on. Dispatch it, wait for it to
 # finish, then merge the branch so GitHub Pages deploys the new model.
 #
 # Run: Actions → "Train browser LLM (from scratch)" → Run workflow → pick branch
-#      and (optionally) tune the size/steps inputs.
+#      and (optionally) tune the size/steps inputs. The defaults are the recipe
+#      of the shipped model (v2, 8L/320d, classics corpus, int8 export).
+#
+# Every input reaches the shell through `env:` (never interpolated into the
+# script text), so a quote or `;` in a URL cannot become a command.
 
 on:
   workflow_dispatch:
@@ -22,9 +26,12 @@ on:
         default: "60"
       arch:
         description: "v1 = GPT-2 style (learned positions, LayerNorm, GELU); v2 = Llama style (RoPE, RMSNorm, SwiGLU, tied embeddings)"
+        type: choice
+        options: [v2, v1]
         default: "v2"
       tokenizer:
-        description: "char | bpe"
+        type: choice
+        options: [bpe, char]
         default: "bpe"
       vocab_size:
         default: "2048"
@@ -44,16 +51,19 @@ on:
         default: "6e-4"
       dtype:
         description: "Exported weight precision: f4 (float32) | f2 (float16, half) | q8 (int8 per column, a quarter)"
+        type: choice
+        options: [q8, f2, f4]
         default: "q8"
       eval_every:
-        description: "Steps between val-loss evaluations (each costs ~30 s; raise for long runs)"
-        default: "200"
+        description: "Steps between val-loss evaluations (each costs ~20 s; raise for long runs)"
+        default: "100"
       out_model:
         description: "Model filename to write under llm-from-scratch/web/ (use model-names.json etc. for niche models; the page can load any of them)"
         default: "model.json"
       clean_wikitext:
         description: "Strip WikiText markup (<unk>, @,@, spaced punctuation)"
-        default: "false"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -61,6 +71,25 @@ permissions:
 concurrency:
   group: train-llm-${{ github.ref }}
   cancel-in-progress: false
+
+env:
+  CORPUS_URL: ${{ inputs.corpus_url }}
+  SEED_URLS: ${{ inputs.seed_urls }}
+  SCRAPE_PAGES: ${{ inputs.scrape_pages }}
+  ARCH: ${{ inputs.arch }}
+  TOKENIZER: ${{ inputs.tokenizer }}
+  VOCAB_SIZE: ${{ inputs.vocab_size }}
+  N_LAYER: ${{ inputs.n_layer }}
+  N_HEAD: ${{ inputs.n_head }}
+  N_EMBD: ${{ inputs.n_embd }}
+  BLOCK_SIZE: ${{ inputs.block_size }}
+  BATCH_SIZE: ${{ inputs.batch_size }}
+  STEPS: ${{ inputs.steps }}
+  LR: ${{ inputs.lr }}
+  DTYPE: ${{ inputs.dtype }}
+  EVAL_EVERY: ${{ inputs.eval_every }}
+  OUT_MODEL: ${{ inputs.out_model }}
+  CLEAN_WIKITEXT: ${{ inputs.clean_wikitext }}
 
 jobs:
   train:
@@ -77,30 +106,37 @@ jobs:
         with:
           python-version: "3.11"
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Install deps
         run: pip install numpy
 
       - name: Fetch corpus
         working-directory: llm-from-scratch
+        shell: bash
         run: |
+          set -euo pipefail
           mkdir -p data
-          if [ -n "${{ inputs.seed_urls }}" ]; then
+          if [ -n "$SEED_URLS" ]; then
             # scrape the corpus from the live internet with Magpie (robots.txt
             # respected, MagpieBot UA, one page a second)
-            node ../scripts/build-web-corpus.mjs ${{ inputs.seed_urls }} \
-              --pages "${{ inputs.scrape_pages }}" \
+            read -r -a seeds <<< "$SEED_URLS"
+            node ../scripts/build-web-corpus.mjs "${seeds[@]}" \
+              --pages "$SCRAPE_PAGES" \
               --out llm-from-scratch/data/corpus.txt
-          elif [ "${{ inputs.corpus_url }}" = "classics" ]; then
+          elif [ "$CORPUS_URL" = "classics" ]; then
             # the shipped model's diet: big.txt + eleven public-domain novels,
             # Gutenberg boilerplate stripped (see fetch_data.py)
             python fetch_data.py classics data/corpus.txt
-          elif [ -f "${{ inputs.corpus_url }}" ]; then
+          elif [ -f "$CORPUS_URL" ]; then
             # a committed corpus file (e.g. data/web.txt from build-web-corpus.mjs)
-            cp "${{ inputs.corpus_url }}" data/corpus.txt
+            cp "$CORPUS_URL" data/corpus.txt
           else
-            curl -fsSL "${{ inputs.corpus_url }}" -o data/corpus.txt
+            curl -fsSL "$CORPUS_URL" -o data/corpus.txt
           fi
-          if [ "${{ inputs.clean_wikitext }}" = "true" ]; then
+          if [ "$CLEAN_WIKITEXT" = "true" ]; then
             echo "cleaning WikiText markup…"
             sed -i \
               -e 's/@,@//g; s/ @\.@ /./g; s/ @-@ /-/g' \
@@ -112,29 +148,50 @@ jobs:
 
       - name: Train
         working-directory: llm-from-scratch
+        shell: bash
         run: |
+          set -euo pipefail
+          if [ -n "$SEED_URLS" ]; then CORPUS_NAME="web scrape"; else CORPUS_NAME="$CORPUS_URL"; fi
           python train.py \
             --data data/corpus.txt \
-            --corpus_name "${{ inputs.seed_urls && 'web scrape' || inputs.corpus_url }}" \
-            --arch "${{ inputs.arch }}" \
-            --tokenizer "${{ inputs.tokenizer }}" \
-            --vocab_size "${{ inputs.vocab_size }}" \
-            --n_layer "${{ inputs.n_layer }}" \
-            --n_head "${{ inputs.n_head }}" \
-            --n_embd "${{ inputs.n_embd }}" \
-            --block_size "${{ inputs.block_size }}" \
-            --batch_size "${{ inputs.batch_size }}" \
-            --steps "${{ inputs.steps }}" \
-            --lr "${{ inputs.lr }}" \
-            --min_lr_ratio 0.05 \
-            --eval_every "${{ inputs.eval_every }}" \
+            --corpus_name "$CORPUS_NAME" \
+            --arch "$ARCH" \
+            --tokenizer "$TOKENIZER" \
+            --vocab_size "$VOCAB_SIZE" \
+            --n_layer "$N_LAYER" \
+            --n_head "$N_HEAD" \
+            --n_embd "$N_EMBD" \
+            --block_size "$BLOCK_SIZE" \
+            --batch_size "$BATCH_SIZE" \
+            --steps "$STEPS" \
+            --lr "$LR" \
+            --min_lr_ratio 0.1 \
+            --eval_every "$EVAL_EVERY" \
             --out ckpt.npz
+
+      # Safety net #1: the checkpoint itself (hours of compute) survives even if
+      # export or the push below fails — download it from the run's Artifacts
+      # and export locally.
+      - name: Upload checkpoint artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ckpt
+          path: |
+            llm-from-scratch/ckpt.npz
+            llm-from-scratch/ckpt.npz.state.npz
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Export to web/${{ inputs.out_model }}
         working-directory: llm-from-scratch
-        run: python export_web.py --ckpt ckpt.npz --out "web/${{ inputs.out_model }}" --dtype "${{ inputs.dtype }}" --check_data data/corpus.txt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python export_web.py --ckpt ckpt.npz --out "web/$OUT_MODEL" --dtype "$DTYPE" --check_data data/corpus.txt | tee export.log
+          { echo "### ApexAI model"; echo; python tools/model_card.py "web/$OUT_MODEL"; echo; echo '```'; cat export.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
-      # Safety net: the trained weights survive even if the commit/push can't
+      # Safety net #2: the trained weights survive even if the commit/push can't
       # land (branch protection, a race, a non-fast-forward). Download from the
       # run's Artifacts and drop into llm-from-scratch/web/ by hand if needed.
       - name: Upload model.json artifact
@@ -145,23 +202,27 @@ jobs:
           retention-days: 14
 
       - name: Commit the trained model to the branch
+        shell: bash
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          SIZE=$(wc -c < "llm-from-scratch/web/${{ inputs.out_model }}")
-          MSG1="Train browser LLM on runner (${{ inputs.arch }} ${{ inputs.n_layer }}L/${{ inputs.n_embd }}d, ${{ inputs.steps }} steps) [skip ci]"
-          MSG2="Corpus: ${{ inputs.corpus_url }}${{ inputs.seed_urls }}; tokenizer ${{ inputs.tokenizer }} vocab ${{ inputs.vocab_size }}; ${{ inputs.dtype }} weights; ${{ inputs.out_model }} ${SIZE} bytes."
-          cp "llm-from-scratch/web/${{ inputs.out_model }}" /tmp/model.json
+          SIZE=$(wc -c < "llm-from-scratch/web/$OUT_MODEL")
+          MSG1="Train browser LLM on runner ($ARCH ${N_LAYER}L/${N_EMBD}d, $STEPS steps) [skip ci]"
+          MSG2="Corpus: ${SEED_URLS:-$CORPUS_URL}; tokenizer $TOKENIZER vocab $VOCAB_SIZE; $DTYPE weights; $OUT_MODEL $SIZE bytes."
+          cp "llm-from-scratch/web/$OUT_MODEL" /tmp/model.json
           # Training took ~hours; the branch may have moved on. Rebase our single
           # weights change onto the current tip and retry, so a non-fast-forward
           # never throws away the run. (model.json is a generated blob — "ours".)
           for i in 1 2 3 4 5; do
-            git fetch origin "${{ github.ref_name }}"
-            git reset --hard "origin/${{ github.ref_name }}"
-            cp /tmp/model.json "llm-from-scratch/web/${{ inputs.out_model }}"
-            git add "llm-from-scratch/web/${{ inputs.out_model }}"
+            git fetch origin "$REF_NAME"
+            git reset --hard "origin/$REF_NAME"
+            cp /tmp/model.json "llm-from-scratch/web/$OUT_MODEL"
+            git add "llm-from-scratch/web/$OUT_MODEL"
             if git diff --cached --quiet; then echo "model.json unchanged — nothing to commit"; break; fi
             git commit -m "$MSG1" -m "$MSG2"
-            if git push origin HEAD:"${{ github.ref_name }}"; then echo "pushed"; break; fi
+            if git push origin HEAD:"$REF_NAME"; then echo "pushed"; break; fi
             echo "push $i failed (branch advanced?) — retrying"; sleep 5
           done

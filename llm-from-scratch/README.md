@@ -191,7 +191,7 @@ killed continues from where it was when you launch the same command again.
 
 The stack is backend-switchable: `LLM_BACKEND=cupy` swaps NumPy for
 [CuPy](https://cupy.dev) and the identical from-scratch code runs on an NVIDIA
-GPU — 10–30× faster than CPU, which is what makes a **~17M-parameter** model
+GPU — 10–30× faster than CPU, which is what makes a **~15.7M-parameter** model
 practical. `train_on_colab.ipynb` is the ready-made path: open it in Google
 Colab, pick a T4, and it scrapes a corpus with Magpie, trains a v2 8L/384d/BPE-4096
 model, and exports **int8** weights (`export_web.py --dtype q8`, a quarter of
@@ -355,7 +355,7 @@ completion:
 
 **[▶ Open `train_on_colab.ipynb` in Colab](https://colab.research.google.com/github/Refayethossain28/BallrzAPP/blob/main/llm-from-scratch/train_on_colab.ipynb)**
 
-Runtime → Run all. It clones the repo, builds a corpus, trains a ~17M-param v2
+Runtime → Run all. It clones the repo, builds a corpus, trains a ~15.7M-param v2
 model, exports `web/model.json`, and downloads it. Commit that file to
 `llm-from-scratch/web/model.json` and the Pages deploy ships it. Training is
 resumable (`train.py` checkpoints full state), so a dropped runtime just

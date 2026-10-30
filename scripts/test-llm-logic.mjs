@@ -98,13 +98,12 @@ for (const v of FIX.variants) {
       if (c.beyond_block) worstBeyond = Math.max(worstBeyond, d); else worst = Math.max(worst, d);
     }
     assert.ok(worst < 2e-4, `within-window max abs diff ${worst}`);
-    // Beyond the window a rotary model slides instead of recomputing from
-    // position 0; the scores are the same up to float32 rounding of the
-    // rotation tables. Learned positions crop exactly like Python.
-    const tol = m.posEmb === 'rope' ? 5e-3 : 2e-4;
-    assert.ok(worstBeyond < tol, `beyond-window max abs diff ${worstBeyond} (tol ${tol})`);
+    // A cold prompt longer than the window is cropped to the last block_size
+    // tokens with positions from 0 — exactly model.py's crop — for both
+    // learned and rotary positions, so the same tolerance applies.
+    assert.ok(worstBeyond < 2e-4, `beyond-window max abs diff ${worstBeyond}`);
   });
-  test(`KV cache [${label}]: stepping one token at a time equals a fresh full pass`, () => {
+  test(`KV cache [${label}]: two instances stepping the same ids agree bit for bit (determinism; parity is the teacher-forced test)`, () => {
     const a = new G.Model(v.spec), b = new G.Model(v.spec);
     const ids = v.sample_ids.slice(0, v.spec.config.block_size);
     let inc = null;

@@ -66,8 +66,10 @@ jobs:
       - name: Smoke test — a killed run resumes from its state file
         run: |
           python train.py --steps 40 --eval_every 10 --n_layer 2 --n_head 2 --n_embd 32 \
-            --block_size 32 --batch_size 8 --out ci_ckpt.npz | tee resume.log
+            --block_size 32 --batch_size 8 --out ci_ckpt.npz > resume.log 2>&1 || { cat resume.log; exit 1; }
+          cat resume.log
           grep -q "resumed at step 30" resume.log
+          grep -q "saved best checkpoint" resume.log
 
       - name: Smoke test — train + generate a v2 (Llama-style) model with the bpe tokenizer
         run: |

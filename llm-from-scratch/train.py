@@ -28,6 +28,19 @@ from tokenizer import BPETokenizer, CharTokenizer, load_tokenizer
 LN2 = math.log(2.0)
 
 
+def atomic_savez(path, **arrays):
+    """np.savez to a temp file, then rename over `path`: a run killed mid-write
+    (the state file is ~130 MB and rewritten every eval) keeps the previous
+    good checkpoint instead of a truncated one that fails to load."""
+    final = path if path.endswith(".npz") else path + ".npz"   # numpy would add it
+    tmp = final + ".tmp"
+    with open(tmp, "wb") as f:                                 # a file object: no suffix games
+        hnp.savez(f, **arrays)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, final)
+
+
 def get_batch(data, block_size, batch_size, rng):
     """Sample a batch of (context, next-token) pairs from the token stream."""
     ix = rng.integers(0, len(data) - block_size - 1, size=batch_size)
@@ -244,7 +257,7 @@ def main():
         }
 
     def save(step, val, elapsed):
-        hnp.savez(
+        atomic_savez(
             args.out,
             params=hnp.array([to_numpy(a) for a in model.state()], dtype=object),
             config=hnp.array([config.to_dict()], dtype=object),
@@ -254,7 +267,7 @@ def main():
 
     def save_state(step, best, elapsed):
         # Full training state for resume: params + Adam moments + counters.
-        hnp.savez(
+        atomic_savez(
             state_path,
             params=hnp.array([to_numpy(a) for a in model.state()], dtype=object),
             opt_m=hnp.array([to_numpy(a) for a in opt.m], dtype=object),
@@ -271,6 +284,7 @@ def main():
     # Keep the BEST-val checkpoint, not merely the last one, so a late-training
     # wobble can never ship a worse model than we already had.
     best_val = best_val_resumed
+    bad_steps = 0
     t0 = time.time()
     t_last, step_last = t0, start_step
     if start_step >= args.steps:
@@ -282,8 +296,19 @@ def main():
 
         opt.zero_grad()
         loss.backward()
-        clip_grad_norm(model.parameters(), args.grad_clip)
-        opt.step()
+        gnorm = clip_grad_norm(model.parameters(), args.grad_clip)
+        if math.isfinite(gnorm) and math.isfinite(float(loss.data)):
+            opt.step()
+            bad_steps = 0
+        else:
+            # A NaN/inf gradient would poison the weights and Adam's moments
+            # for good (the clip passes NaN through: NaN > max_norm is False).
+            bad_steps += 1
+            print(f"step {step}: non-finite loss/grad (loss {float(loss.data)}, grad norm {gnorm}); "
+                  f"update skipped ({bad_steps} in a row)", flush=True)
+            if bad_steps >= 10:
+                print("aborting after 10 consecutive non-finite steps; the best checkpoint so far is kept", flush=True)
+                break
 
         if step % args.eval_every == 0 or step == 1 or step == args.steps:
             val = estimate_loss(model, val_batches)
