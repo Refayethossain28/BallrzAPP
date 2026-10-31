@@ -466,6 +466,19 @@ body.light .back-btn{background:rgba(0,0,0,.06);border-color:rgba(0,0,0,.08)}
 body.light .section-label{color:rgba(140,100,20,.5)}
 .desk-date{color:var(--gold)}
 body.light .desk-date{color:rgba(140,100,20,.75)}
+/* Splash: the crest engraves itself — one orchestrated arrival, each stroke
+   cut in sequence (outer ring, bezel ticks, inner ring, then the A). */
+.crest-draw path,.crest-draw circle{stroke-dasharray:1;stroke-dashoffset:1;animation:crestDraw 1.1s ease forwards}
+.crest-draw circle:nth-of-type(1){animation-delay:.15s}
+.crest-draw circle:nth-of-type(2){animation-delay:.4s}
+.crest-draw path:nth-of-type(1){animation-delay:.55s;animation-duration:1.5s}
+.crest-draw circle:nth-of-type(3){animation-delay:.85s}
+.crest-draw path:nth-of-type(2){animation-delay:1.25s}
+.crest-draw path:nth-of-type(3){animation-delay:1.55s}
+@keyframes crestDraw{to{stroke-dashoffset:0}}
+@media (prefers-reduced-motion:reduce){
+  .crest-draw path,.crest-draw circle{animation:none;stroke-dasharray:none;stroke-dashoffset:0}
+}
 .err{
   background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.15);
   color:#f87171;padding:12px 16px;border-radius:var(--r-md);
@@ -995,12 +1008,12 @@ function apexMark(size=64,color='var(--gold)'){
     ticks+=`M${(50+r1*Math.sin(a)).toFixed(2)} ${(50-r1*Math.cos(a)).toFixed(2)}L${(50+r2*Math.sin(a)).toFixed(2)} ${(50-r2*Math.cos(a)).toFixed(2)}`;
   }
   return `<svg width="${size}" height="${size}" viewBox="0 0 100 100" fill="none" stroke="${color}" style="flex-shrink:0">
-    <circle cx="50" cy="50" r="49" stroke-width="1"/>
-    <circle cx="50" cy="50" r="46.2" stroke-width=".5" opacity=".65"/>
-    <path d="${ticks}" stroke-width=".7" opacity=".8"/>
-    <circle cx="50" cy="50" r="37.5" stroke-width=".5" opacity=".5"/>
-    <path d="M50 28L36.5 67M50 28L63.5 67M41.8 52.6h16.4" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M50 33.5L39.5 64M50 33.5L60.5 64" stroke-width=".7" opacity=".7" stroke-linecap="round"/>
+    <circle cx="50" cy="50" r="49" stroke-width="1" pathLength="1"/>
+    <circle cx="50" cy="50" r="46.2" stroke-width=".5" opacity=".65" pathLength="1"/>
+    <path d="${ticks}" stroke-width=".7" opacity=".8" pathLength="1"/>
+    <circle cx="50" cy="50" r="37.5" stroke-width=".5" opacity=".5" pathLength="1"/>
+    <path d="M50 28L36.5 67M50 28L63.5 67M41.8 52.6h16.4" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" pathLength="1"/>
+    <path d="M50 33.5L39.5 64M50 33.5L60.5 64" stroke-width=".7" opacity=".7" stroke-linecap="round" pathLength="1"/>
     <path d="M30 82.5h40M33.5 86h33" stroke-width=".5" opacity="0"/>
   </svg>`;
 }
@@ -1113,6 +1126,16 @@ function tripTMinus(t){
     if(h<48)return `In ${h}h ${m%60?(m%60)+'m':''}`.trim();
     return `In ${Math.round(h/24)} days`;
   }catch(e){return''}
+}
+
+// A hairline engraved rule with a lozenge at centre — the stationery
+// divider, used where a section break needs no words.
+function ornament(){
+  return `<div aria-hidden="true" style="display:flex;align-items:center;justify-content:center;gap:12px;margin:24px 0 16px">
+    <div style="height:1px;width:96px;background:linear-gradient(to right,transparent,var(--gold-2))"></div>
+    <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="var(--gold)" stroke-width="1" style="opacity:.8"><path d="M5 1L9 5L5 9L1 5Z"/></svg>
+    <div style="height:1px;width:96px;background:linear-gradient(to left,transparent,var(--gold-2))"></div>
+  </div>`;
 }
 
 // ── Native push (iOS shell) ────────────────────────────────────────────────
@@ -2939,16 +2962,16 @@ splash: () => `
   <video autoplay muted loop playsinline style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0" src="splash-advert.mp4"></video>
   <div style="position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,.45) 0%,rgba(0,0,0,.25) 40%,rgba(0,0,0,.65) 100%);z-index:1;pointer-events:none"></div>
   <div style="position:absolute;top:calc(env(safe-area-inset-top) + 16px);right:20px;z-index:10">
-    <button onclick="state.guideStep=0;go('guide')" style="background:rgba(0,0,0,.4);border:1px solid rgba(200,169,126,.4);border-radius:20px;padding:7px 14px;color:var(--gold);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;letter-spacing:.5px;backdrop-filter:blur(8px)">▶ App Tour</button>
+    <button onclick="state.guideStep=0;go('guide')" style="background:rgba(0,0,0,.4);border:1px solid rgba(200,169,126,.4);border-radius:20px;padding:7px 14px;color:var(--gold);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;letter-spacing:.5px;backdrop-filter:blur(8px)">App tour</button>
   </div>
   <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 40px;position:relative;z-index:2">
     <div style="text-align:center">
-      <div style="display:flex;justify-content:center;margin-bottom:26px;animation:scaleIn 1.4s .3s var(--ease-spring) both">${apexMark(72,'rgba(212,175,110,.92)')}</div>
-      <div style="position:relative;display:inline-block;margin-bottom:20px;animation:logoReveal 5.5s .4s both ease-out">
+      <div class="crest-draw" style="display:flex;justify-content:center;margin-bottom:26px">${apexMark(72,'rgba(212,175,110,.92)')}</div>
+      <div style="position:relative;display:inline-block;margin-bottom:20px;animation:fadeUp .9s 1.7s both ease">
         <div class="diamond-text" style="font-family:var(--font-serif);font-size:64px;font-weight:300;letter-spacing:4px;line-height:1">ApexVIP</div>
       </div>
-      <div style="font-size:11px;font-weight:400;color:rgba(255,255,255,.7);text-transform:uppercase;letter-spacing:6px;animation:subtitleReveal 1.4s 1.2s both ease-out;margin-bottom:10px">Luxury Concierge Services</div>
-      <div style="font-size:11px;color:rgba(255,255,255,.45);letter-spacing:3px;animation:fadeIn 1s 2.2s both ease">London · Dubai · Global</div>
+      <div style="font-size:11px;font-weight:400;color:rgba(255,255,255,.7);text-transform:uppercase;letter-spacing:6px;animation:subtitleReveal 1.4s 2.1s both ease-out;margin-bottom:10px">Luxury Concierge Services</div>
+      <div style="font-size:11px;color:rgba(255,255,255,.45);letter-spacing:3px;animation:fadeIn 1s 2.5s both ease">London · Dubai · Global</div>
     </div>
   </div>
   <div style="padding:0 28px max(48px,calc(env(safe-area-inset-bottom) + 28px));display:flex;flex-direction:column;gap:10px;position:relative;z-index:2;animation:slideUp .7s 2s both cubic-bezier(0.16,1,0.3,1)">
@@ -3069,7 +3092,7 @@ home: () => {
       <div style="position:relative;display:inline-block">
         <div class="diamond-text" style="font-size:10px;letter-spacing:3px;font-weight:600;text-transform:uppercase;animation:diamondShimmer 6s linear infinite">ApexVIP</div>
       </div>
-      <div style="font-size:18px;font-weight:700;margin-top:3px">${name?`${greeting}, ${name}`:greeting}</div>
+      <div class="serif" style="font-family:var(--font-serif);font-size:30px;font-weight:500;letter-spacing:.3px;line-height:1.1;margin-top:6px">${name?`${greeting}, ${name}`:greeting}</div>
       <div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap">
         ${(state.apexBalance>0||TRIPS.some(t=>t.status==='completed'))?`<button onclick="go('profile')" style="display:inline-flex;align-items:center;gap:6px;background:${apexTierColor(apexTier(state.apexBalance))}18;border:1px solid ${apexTierColor(apexTier(state.apexBalance))}44;border-radius:20px;padding:4px 11px;cursor:pointer">
           <span style="font-size:12px;color:${apexTierColor(apexTier(state.apexBalance))}">◈</span>
@@ -3144,7 +3167,7 @@ ${upcoming.length ? `
       ${t.flight ? flightStatusCard(t.flight) : ''}`).join('')}` : ''}
 
       <!-- The ledger: services as ruled lines on the desk, not tiles -->
-      <div class="section-label" style="margin:22px 0 4px">Services</div>
+      ${ornament()}
       <div>
         ${[
           {t:'Chauffeur',s:'Airport · hourly · daily',i:'car',a:"go('chauffeur')",img:'vehicles/s-class.jpg'},
@@ -4149,10 +4172,10 @@ payment: () => {
 <div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;align-items:center;padding:0 26px;animation:scaleIn .4s ease">
   <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center">
     <div style="text-align:center;padding:32px 22px 24px">
-      <div class="check-anim" style="width:72px;height:72px;border-radius:50%;background:linear-gradient(135deg,rgba(34,197,94,.12),rgba(34,197,94,.04));border:1px solid rgba(34,197,94,.2);display:flex;align-items:center;justify-content:center;margin:0 auto 20px">
+      <div class="check-anim" style="width:72px;height:72px;border-radius:50%;background:rgba(212,175,110,.08);border:1px solid rgba(212,175,110,.25);display:flex;align-items:center;justify-content:center;margin:0 auto 20px">
         <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
-          <circle cx="12" cy="12" r="10" stroke="rgba(34,197,94,.3)" stroke-width="1" stroke-dasharray="130" stroke-dashoffset="130" style="animation:checkCircle .6s .1s var(--ease-spring) forwards"/>
-          <path d="M7 12.5l3.5 3.5 6.5-7" stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="60" stroke-dashoffset="60" style="animation:checkDraw .5s .4s var(--ease-spring) forwards"/>
+          <circle cx="12" cy="12" r="10" stroke="rgba(212,175,110,.35)" stroke-width="1" stroke-dasharray="130" stroke-dashoffset="130" style="animation:checkCircle .6s .1s var(--ease-spring) forwards"/>
+          <path d="M7 12.5l3.5 3.5 6.5-7" stroke="#D4AF6E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="60" stroke-dashoffset="60" style="animation:checkDraw .5s .4s var(--ease-spring) forwards"/>
         </svg>
       </div>
       <div style="font-family:var(--font-serif);font-size:36px;font-weight:300;letter-spacing:1px;margin-bottom:8px;animation:fadeUp .5s .3s var(--ease-spring) both">Booking Confirmed</div>
@@ -4783,7 +4806,7 @@ profile: () => {
         <span style="font-size:10px;color:var(--fg-4)">◈ 50 APEX / rating</span>
       </div>
     </div>
-    <button onclick="go('apex-benefits')" style="width:100%;margin-top:10px;margin-bottom:16px;padding:9px 16px;background:${apexTierColor(apexTier(state.apexBalance))}18;border:1px solid ${apexTierColor(apexTier(state.apexBalance))}44;border-radius:20px;font-size:12px;font-weight:700;color:${apexTierColor(apexTier(state.apexBalance))};cursor:pointer;letter-spacing:.5px;font-family:inherit">VIEW TIER BENEFITS & REWARDS →</button>
+    <button onclick="go('apex-benefits')" style="width:100%;margin-top:10px;margin-bottom:16px;padding:9px 16px;background:${apexTierColor(apexTier(state.apexBalance))}18;border:1px solid ${apexTierColor(apexTier(state.apexBalance))}44;border-radius:20px;font-size:12px;font-weight:700;color:${apexTierColor(apexTier(state.apexBalance))};cursor:pointer;letter-spacing:.5px;font-family:inherit">View tier benefits & rewards</button>
 
     <div style="background:rgba(34,197,94,.05);border:1px solid rgba(34,197,94,.14);border-radius:16px;padding:16px 18px;margin-bottom:16px;display:flex;align-items:center;gap:14px">
       <div style="display:flex;color:#22c55e">${lineIcon('leaf',26)}</div>
