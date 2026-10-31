@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>ApexVIP — Invoice Generator</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&display=swap">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  :root{
+    --bg:#0b0906; --fg:#f5f0e8; --fg-3:rgba(245,240,232,.55); --fg-4:rgba(245,240,232,.34);
+    --gold:#D4AF6E; --gold-b:#b08830; --surface:rgba(245,240,232,.05); --border:rgba(245,240,232,.12);
+    --ink:#17130d; --p-gold:#9a7634; --p-gold-pale:#c9ab72; --p-muted:#6f675c; --p-hair:#d9cdb7;
+  }
+  body{background:var(--bg);color:var(--fg);font-family:-apple-system,"Segoe UI",system-ui,sans-serif}
+  .serif{font-family:"Cormorant Garamond",Georgia,serif}
+
+  /* ── Editor chrome (screen only) ── */
+  .app{display:flex;min-height:100vh}
+  .panel{width:380px;flex-shrink:0;padding:26px 22px 60px;border-right:1px solid var(--border);overflow-y:auto;height:100vh;position:sticky;top:0}
+  .panel h1{font-family:"Cormorant Garamond",Georgia,serif;font-weight:500;font-size:26px;letter-spacing:.5px}
+  .panel .sub{font-size:11px;letter-spacing:2.5px;color:var(--gold);font-weight:600;margin:4px 0 22px}
+  label{display:block;font-size:10px;letter-spacing:2px;color:var(--gold);font-weight:700;margin:16px 0 6px;text-transform:uppercase}
+  input,textarea{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:10px;color:var(--fg);font-size:14px;padding:10px 12px;font-family:inherit;outline:none}
+  input:focus,textarea:focus{border-color:var(--gold)}
+  .row3{display:grid;grid-template-columns:96px 1fr 84px 26px;gap:6px;margin-bottom:6px;align-items:center}
+  .row3 input{padding:9px 10px;font-size:13px}
+  .del{background:none;border:none;color:var(--fg-4);font-size:16px;cursor:pointer;padding:4px}
+  .del:hover{color:#ef4444}
+  .btn{display:block;width:100%;margin-top:12px;padding:13px;border-radius:12px;border:1px solid var(--border);background:var(--surface);color:var(--fg);font-size:14px;font-weight:600;font-family:inherit;cursor:pointer}
+  .btn.gold{background:var(--gold);border-color:var(--gold-b);color:#0c0a06;font-weight:700}
+  .hint{font-size:11px;color:var(--fg-4);margin-top:10px;line-height:1.6}
+  .preview-wrap{flex:1;display:flex;justify-content:center;padding:34px 20px;background:#141009;overflow-y:auto}
+  @media(max-width:900px){.app{flex-direction:column}.panel{width:100%;height:auto;position:static;border-right:none;border-bottom:1px solid var(--border)}}
+
+  /* ── The sheet (shared screen/print) ── */
+  .sheet{background:#fff;color:var(--ink);width:210mm;min-height:297mm;position:relative;padding:18mm 18mm 16mm;box-shadow:0 20px 70px rgba(0,0,0,.5);flex-shrink:0;transform-origin:top center}
+  .sheet .guil{position:absolute;top:-6mm;right:-14mm;width:120mm;opacity:.5;pointer-events:none}
+  .s-head{display:flex;justify-content:space-between;align-items:flex-start;position:relative}
+  .s-mark{display:flex;align-items:center;gap:14px}
+  .s-word{font-size:34px;font-weight:500;letter-spacing:2px;line-height:1}
+  .s-strap{font-size:8.5px;letter-spacing:3.4px;color:var(--p-gold);font-weight:600;margin-top:5px;text-transform:uppercase}
+  .s-rule{height:1px;background:var(--p-hair);margin:10mm 0 0}
+  .s-rule.g{background:var(--p-gold-pale);height:1.4px;margin:1.2mm 0 0}
+  .s-meta{display:flex;justify-content:space-between;align-items:flex-end;margin-top:9mm}
+  .s-label{font-size:8.5px;letter-spacing:2.6px;color:var(--p-gold);font-weight:700;margin-bottom:2.2mm;text-transform:uppercase}
+  .s-title{font-size:30px;font-weight:500;letter-spacing:4px;text-align:right}
+  .s-invmeta{font-size:10.5px;color:var(--p-muted);text-align:right;margin-top:2mm;line-height:1.75}
+  .s-invmeta b{color:var(--ink);font-weight:600}
+  .sheet table{width:100%;border-collapse:collapse;margin-top:9mm}
+  .sheet thead th{font-size:8.5px;letter-spacing:2.2px;color:var(--p-gold);font-weight:700;text-align:left;padding:0 0 3mm;border-bottom:1.2px solid var(--p-gold-pale)}
+  .sheet thead th:last-child,.sheet td.amt{text-align:right}
+  .sheet tbody td{padding:4.4mm 0;border-bottom:1px solid var(--p-hair);font-size:11.5px;vertical-align:top}
+  .sheet td.date{width:30mm;color:var(--p-muted);font-variant-numeric:tabular-nums}
+  .sheet td.amt{width:30mm;font-variant-numeric:tabular-nums}
+  .s-totalrow{display:flex;justify-content:flex-end;margin-top:7mm}
+  .s-total{font-size:30px;font-weight:500;margin-top:1.5mm;font-variant-numeric:tabular-nums}
+  .s-due{font-size:10px;color:var(--p-muted);margin-top:1.5mm}
+  .s-foot{position:absolute;left:18mm;right:18mm;bottom:14mm}
+  .s-footrule{height:1px;background:var(--p-hair);margin-bottom:4mm}
+  .s-footrow{display:flex;justify-content:space-between;font-size:9.5px;color:var(--p-muted);line-height:1.7}
+  .s-footrow b{color:var(--ink);font-weight:600}
+
+  @media print{
+    @page{size:A4;margin:0}
+    body{background:#fff}
+    .panel,.preview-wrap{all:unset}
+    .app{display:block}
+    .panel{display:none}
+    .sheet{box-shadow:none;width:auto;min-height:0}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="panel">
+    <h1>Invoice Generator</h1>
+    <div class="sub">APEXVIP · LETTERHEAD</div>
+
+    <label>Invoice number</label>
+    <input id="f-no" oninput="draw()"/>
+    <label>Invoice date</label>
+    <input id="f-date" oninput="draw()"/>
+    <label>Bill to</label>
+    <input id="f-billto" placeholder="Client name" oninput="draw()"/>
+
+    <label>Line items — date · service · £</label>
+    <div id="items"></div>
+    <button class="btn" onclick="addRow()">+ Add line</button>
+
+    <label>Terms line (under total)</label>
+    <input id="f-terms" oninput="draw()"/>
+    <label>Footer · left</label>
+    <textarea id="f-footl" rows="2" oninput="draw()"></textarea>
+    <label>Footer · right</label>
+    <textarea id="f-footr" rows="2" oninput="draw()"></textarea>
+
+    <button class="btn gold" onclick="window.print()">Print / Save as PDF</button>
+    <button class="btn" onclick="resetAll()">New invoice</button>
+    <div class="hint">Everything you type is saved on this device. In the print dialog choose “Save as PDF”, A4, default margins — the letterhead is the page.</div>
+  </div>
+
+  <div class="preview-wrap"><div class="sheet" id="sheet"></div></div>
+</div>
+
+<script>
+// ── Brand graphics, computed not hand-drawn ────────────────────────────────
+function crest(size){
+  let t='';
+  for(let i=0;i<60;i++){
+    const a=i*6*Math.PI/180,r1=46,r2=i%5===0?42:44.5;
+    t+='M'+(50+r1*Math.sin(a)).toFixed(2)+' '+(50-r1*Math.cos(a)).toFixed(2)
+      +'L'+(50+r2*Math.sin(a)).toFixed(2)+' '+(50-r2*Math.cos(a)).toFixed(2);
+  }
+  return '<svg width="'+size+'" height="'+size+'" viewBox="0 0 100 100" fill="none" stroke="#9a7634">'
+    +'<circle cx="50" cy="50" r="49" stroke-width="1"/>'
+    +'<circle cx="50" cy="50" r="46.2" stroke-width=".5" opacity=".65"/>'
+    +'<path d="'+t+'" stroke-width=".7" opacity=".8"/>'
+    +'<circle cx="50" cy="50" r="37.5" stroke-width=".5" opacity=".5"/>'
+    +'<path d="M50 28L36.5 67M50 28L63.5 67M41.8 52.6h16.4" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>'
+    +'<path d="M50 33.5L39.5 64M50 33.5L60.5 64" stroke-width=".7" opacity=".7" stroke-linecap="round"/></svg>';
+}
+function guilloche(){
+  let paths='';
+  for(let k=0;k<10;k++){
+    let d='';const R=30+k*6;
+    for(let i=0;i<=200;i++){
+      const th=i/200*2*Math.PI;
+      const r=R+11*Math.sin(7*th+k*.7)+4*Math.sin(13*th-k*1.3);
+      d+=(i?'L':'M')+(180+r*Math.cos(th)*1.75).toFixed(1)+' '+(95+r*Math.sin(th)*.8).toFixed(1);
+    }
+    paths+='<path d="'+d+'Z"/>';
+  }
+  return '<svg class="guil" viewBox="0 0 360 190" fill="none" stroke="#efe6d2" stroke-width=".5">'+paths+'</svg>';
+}
+
+// ── State ──────────────────────────────────────────────────────────────────
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const gbp=n=>'£'+(Number(n)||0).toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2});
+let items=[];
+
+function defaults(){
+  const d=new Date();
+  const pad=n=>String(n).padStart(2,'0');
+  return {
+    no:'AV-'+d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate()),
+    date:d.toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'}),
+    billto:'', terms:'Due on receipt · payment by bank transfer',
+    footl:'ApexVIP · Luxury concierge services\napexvip.uk',
+    footr:'Thank you for travelling with ApexVIP.\nWe look forward to welcoming you again.',
+  };
+}
+function load(){
+  let s=null;
+  try{s=JSON.parse(localStorage.getItem('apex_invoice')||'null');}catch(e){}
+  const d=s||defaults();
+  for(const k of ['no','date','billto','terms','footl','footr'])
+    document.getElementById('f-'+k).value=d[k]??defaults()[k];
+  items=(s&&Array.isArray(s.items)&&s.items.length)?s.items:[{date:'',svc:'',amt:''}];
+  renderRows();draw();
+}
+function save(){
+  const d=read();
+  try{localStorage.setItem('apex_invoice',JSON.stringify(d));}catch(e){}
+}
+function read(){
+  const g=id=>document.getElementById(id).value;
+  return {no:g('f-no'),date:g('f-date'),billto:g('f-billto'),terms:g('f-terms'),
+          footl:g('f-footl'),footr:g('f-footr'),items};
+}
+function resetAll(){
+  if(!confirm('Start a new invoice? The current one is cleared.'))return;
+  try{localStorage.removeItem('apex_invoice');}catch(e){}
+  items=[{date:'',svc:'',amt:''}];load();
+}
+
+// ── Line-item rows ─────────────────────────────────────────────────────────
+function renderRows(){
+  document.getElementById('items').innerHTML=items.map((it,i)=>`
+    <div class="row3">
+      <input value="${esc(it.date)}" placeholder="14 Aug" oninput="items[${i}].date=this.value;draw()"/>
+      <input value="${esc(it.svc)}" placeholder="Service" oninput="items[${i}].svc=this.value;draw()"/>
+      <input value="${esc(it.amt)}" placeholder="0.00" inputmode="decimal" oninput="items[${i}].amt=this.value;draw()"/>
+      <button class="del" onclick="items.splice(${i},1);renderRows();draw()" title="Remove">✕</button>
+    </div>`).join('');
+}
+function addRow(){items.push({date:'',svc:'',amt:''});renderRows();draw();
+  const rows=document.querySelectorAll('#items .row3');const last=rows[rows.length-1];
+  if(last)last.querySelector('input').focus();
+}
+
+// ── The sheet ──────────────────────────────────────────────────────────────
+function draw(){
+  const d=read();
+  const total=items.reduce((s,it)=>s+(parseFloat(String(it.amt).replace(/[£,\s]/g,''))||0),0);
+  const rows=items.filter(it=>it.date||it.svc||it.amt).map(it=>`
+      <tr><td class="date">${esc(it.date)}</td><td>${esc(it.svc)}</td>
+      <td class="amt">${gbp(parseFloat(String(it.amt).replace(/[£,\s]/g,''))||0)}</td></tr>`).join('');
+  const fl=esc(d.footl).replace(/\n/g,'<br/>'), fr=esc(d.footr).replace(/\n/g,'<br/>');
+  document.getElementById('sheet').innerHTML=`
+    ${guilloche()}
+    <div class="s-head">
+      <div class="s-mark">${crest(64)}
+        <div><div class="serif s-word">ApexVIP</div>
+        <div class="s-strap">Luxury Concierge Services</div></div>
+      </div>
+      <div style="text-align:right;padding-top:4px">
+        <div class="serif s-title">INVOICE</div>
+        <div class="s-invmeta">Invoice No <b>${esc(d.no)}</b><br/>Invoice date <b>${esc(d.date)}</b></div>
+      </div>
+    </div>
+    <div class="s-rule"></div><div class="s-rule g"></div>
+    <div class="s-meta">
+      <div><div class="s-label">Bill to</div>
+        <div class="serif" style="font-size:17px;font-weight:600">${esc(d.billto)||'&nbsp;'}</div></div>
+      <div style="text-align:right"><div class="s-label">Amount due</div>
+        <div class="serif" style="font-size:24px;font-weight:500;font-variant-numeric:tabular-nums">${gbp(total)}</div></div>
+    </div>
+    <table><thead><tr><th>DATE</th><th>SERVICE</th><th>AMOUNT</th></tr></thead>
+      <tbody>${rows||'<tr><td colspan="3" style="color:var(--p-muted)">Add line items on the left…</td></tr>'}</tbody></table>
+    <div class="s-totalrow"><div style="text-align:right">
+      <div class="s-label" style="margin-bottom:0">Total</div>
+      <div class="serif s-total">${gbp(total)}</div>
+      <div class="s-due">${esc(d.terms)}</div>
+    </div></div>
+    <div class="s-foot"><div class="s-footrule"></div>
+      <div class="s-footrow"><div><b>${fl.split('<br/>')[0]||''}</b>${fl.includes('<br/>')?'<br/>'+fl.split('<br/>').slice(1).join('<br/>'):''}</div>
+      <div style="text-align:right">${fr}</div></div></div>`;
+  save();
+}
+load();
+</script>
+</body>
+</html>
