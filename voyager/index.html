@@ -604,6 +604,9 @@ try { S = Voyager.restore(localStorage.getItem(STORE_KEY) || ''); }
 catch (e) { S = Voyager.createBrowser(); }
 
 var loadTimer = 0;           // embed-refusal watchdog
+var wakeTimer = 0;           // sleeping-proxy wake loop
+var wakeAttempts = 0;
+var proxyHealth = 'unknown'; // 'ok' | 'waking' | 'down' | 'none' | 'unknown'
 var pageTrackers = {};       // url → tracker count for pages loaded this session
 var progressTimer = 0;
 var suggestIndex = -1;
@@ -806,8 +809,70 @@ function loadFrame(url) {
   showVeil('loading', url);
   frame.setAttribute('src', src);
   clearTimeout(loadTimer);
-  loadTimer = setTimeout(function () { showVeil('blocked', url); }, 9000);
+  loadTimer = setTimeout(function () { frameStalled(url); }, 9000);
 }
+
+/* ---- the sleeping-proxy problem, solved honestly ----
+ * Free proxy hosting (Render & friends) spins down after ~15 quiet minutes
+ * and takes up to a minute to wake. A 9-second watchdog used to misread that
+ * as "this site won't be framed" — the whole browser looked broken once a
+ * day. Now a stalled load PINGS the proxy: asleep → say so, keep pinging,
+ * and reload automatically the moment it wakes. */
+
+function proxyPingUrl() {
+  var base = proxyBaseNow();
+  if (!base) return '';
+  return base.replace(/[?#].*$/, '').replace(/\/proxy\/?$/, '') + '/__voyager/ping';
+}
+
+/** One ping with a timeout. Resolves true (alive), false (dead/slow). */
+function pingProxy(timeoutMs) {
+  var ping = proxyPingUrl();
+  if (!ping) return Promise.resolve(false);
+  var ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  var t = setTimeout(function () { if (ctl) ctl.abort(); }, timeoutMs || 6000);
+  return fetch(ping, { cache: 'no-store', signal: ctl ? ctl.signal : undefined })
+    .then(function (r) { clearTimeout(t); return !!(r && r.ok); })
+    .catch(function () { clearTimeout(t); return false; });
+}
+
+/** The watchdog fired. Decide: sleeping proxy (wake it), dead proxy, or a page that truly refuses. */
+function frameStalled(url) {
+  var viaProxy = proxyBaseNow() && /^https?:/i.test(String(url)) && !Voyager.videoEmbedUrl(url);
+  if (!viaProxy) { showVeil('blocked', url); return; }
+  showVeil('waking', url);
+  wakeAttempts = 0;
+  wakeStep(url);
+}
+
+function wakeStep(url) {
+  if (url !== currentUrl()) { stopWakeLoop(); return; }   // user moved on
+  wakeAttempts++;
+  pingProxy(6000).then(function (alive) {
+    if (url !== currentUrl()) { stopWakeLoop(); return; }
+    if (alive) {
+      proxyHealth = 'ok';
+      if (wakeAttempts === 1) {
+        // The proxy answered on the FIRST try — it was never asleep. The page
+        // is slow or genuinely refuses; give it one short grace, then be honest.
+        wakeTimer = setTimeout(function () {
+          if (url === currentUrl() && $('veil').className.indexOf('on') !== -1) showVeil('blocked', url);
+        }, 7000);
+        return;
+      }
+      toast('🛰️ Proxy awake — loading');
+      currentFrameSrc = '';
+      loadFrame(url);
+      return;
+    }
+    proxyHealth = wakeAttempts >= 14 ? 'down' : 'waking';
+    if (String(currentUrl()) === 'voyager://start') renderInternal('start');
+    if (wakeAttempts >= 14) { showVeil('blocked', url); return; }   // ~80s — stop pretending
+    wakeTimer = setTimeout(function () { wakeStep(url); }, 5000);
+  });
+}
+
+function stopWakeLoop() { clearTimeout(wakeTimer); wakeTimer = 0; }
 
 function applyZoom(tab) {
   var z = (tab && tab.zoom || 100) / 100;
@@ -826,6 +891,13 @@ function showVeil(mode, url) {
     $('veilTitle').textContent = 'Loading ' + (Voyager.hostOf(url) || 'page') + '…';
     $('veilText').textContent = '';
     $('veilActions').innerHTML = '';
+  } else if (mode === 'waking') {
+    $('veilSpin').style.display = '';
+    $('veilTitle').textContent = '🛰️ Waking the full browser…';
+    $('veilText').innerHTML = 'Free proxy hosting goes to sleep after ~15 quiet minutes and takes <b>up to a minute</b> to wake. Voyager is pinging it and will load the page the moment it answers — no need to do anything.';
+    var saved = Voyager.inMemory(S, url)
+      ? '<button class="btn primary" data-readmem="' + esc(url) + '">📖 Read your saved copy meanwhile</button>' : '';
+    $('veilActions').innerHTML = saved + '<button class="btn" data-act="external">Open in full tab ↗</button>';
   } else if (mode === 'onion') {
     $('veilSpin').style.display = 'none';
     $('veilTitle').textContent = '🧅 A Tor hidden service';
@@ -840,6 +912,8 @@ function showVeil(mode, url) {
     var proxyOn = !!proxyBaseNow();
     if (Voyager.isOnion(url)) {
       $('veilText').innerHTML = 'The gateway reached the hidden service but it refuses to render inside another page (X-Frame-Options), or the gateway is down. Try opening it in a full tab, or use the Tor Browser.';
+    } else if (proxyOn && proxyHealth === 'down') {
+      $('veilText').innerHTML = 'Your full-browser proxy <b>isn’t answering at all</b> (pinged for over a minute). Either the free service is still crawling awake, or it has been suspended or deleted by its host. Check the URL in <b>Settings</b> — or redeploy in two minutes with <b>voyager/DEPLOY.md</b>.';
     } else if (proxyOn) {
       $('veilText').innerHTML = 'Even through the proxy this page won’t render inside a frame — usually a heavy app, DRM video, or a login. Open it in a full tab instead.';
     } else {
@@ -853,12 +927,14 @@ function showVeil(mode, url) {
     $('veilActions').innerHTML =
       savedCopy +
       '<button class="btn' + (savedCopy ? '' : ' primary') + '" data-act="external">Open in full tab ↗</button>' +
+      (proxyOn && proxyHealth === 'down' ? '<button class="btn" data-act="retryproxy">🛰️ Try the proxy again</button>' : '') +
       '<button class="btn" data-act="dismissveil">Wait anyway</button>';
     stopProgress(false);
   }
 }
 function hideVeil() {
   clearTimeout(loadTimer);
+  stopWakeLoop();
   $('veil').className = 'veil';
 }
 
@@ -1256,6 +1332,21 @@ function startPage() {
     '<p>' + (ghost ? 'Nothing you do here is remembered.' : 'Search or type an address. The web is that way ↑') + '</p>' +
     '<div class="startsearch" data-act="focusurl">🔍&nbsp; Search ' + esc(engineName()) + ' or type a URL</div>' +
     '</div>';
+  // Proxy truth, up front: a sleeping/dead/missing proxy is why "nothing
+  // opens" — say it on the start page instead of letting pages fail silently.
+  if (!ghost) {
+    var remoteProxy = (S.settings.proxy || '').trim().toLowerCase();
+    var hasProxy = !!proxyBaseNow();
+    if (hasProxy && proxyHealth === 'waking') {
+      h += '<div class="panel" style="border-color:rgba(245,192,74,.5)"><b style="font-size:14px">🛰️ Waking the full browser…</b><p class="tiny" style="margin:4px 0 0">Free hosting sleeps after ~15 quiet minutes. Voyager is pinging it — pages will load the moment it answers.</p></div>';
+    } else if (hasProxy && proxyHealth === 'down') {
+      h += '<div class="panel" style="border-color:rgba(255,107,122,.5)"><b style="font-size:14px">🛰️ Full browser unreachable</b><p class="tiny" style="margin:4px 0 0">Your proxy isn’t answering — big sites won’t open until it does. It may still be waking, or the free service may have been suspended by its host.</p>' +
+        '<button class="btn block" data-act="retryproxy" style="margin-top:10px">Ping it again</button></div>';
+    } else if (!hasProxy && remoteProxy !== 'off') {
+      h += '<div class="panel"><b style="font-size:14px">🛰️ Basic mode</b><p class="tiny" style="margin:4px 0 0">Without the full-browser proxy, big sites (YouTube, Google, most logins) refuse to open — only sites that allow framing work. Set the proxy once and everything opens.</p>' +
+        '<button class="btn block" data-act="settings" style="margin-top:10px">Connect the full browser</button></div>';
+    }
+  }
   // Web memory — the differentiator, front and centre once there's anything to search.
   if (S.memory.length && !ghost) {
     h += '<div class="startsearch" data-act="memory" style="margin-top:12px;color:var(--purple)">🧠&nbsp; Search the ' + S.memory.length + ' page' + (S.memory.length === 1 ? '' : 's') + ' you’ve read</div>';
@@ -1798,6 +1889,21 @@ function runAct(act) {
   else if (act === 'handoff') openHandoff();
   else if (act === 'handoffclose') $('handoff').className = 'handoff';
   else if (act === 'pip') popVideoOut();
+  else if (act === 'retryproxy') {
+    toast('🛰️ Pinging the proxy…');
+    pingProxy(8000).then(function (alive) {
+      proxyHealth = alive ? 'ok' : 'down';
+      if (alive) {
+        toast('🛰️ Full browser ready');
+        var u = currentUrl();
+        if (String(u).indexOf('voyager://') !== 0) { currentFrameSrc = ''; loadFrame(u); }
+        else if (String(u) === 'voyager://start') renderInternal('start');
+      } else {
+        toast('Still nothing — check the URL in Settings');
+        if (String(currentUrl()) === 'voyager://start') renderInternal('start');
+      }
+    });
+  }
   else if (act === 'follow') {
     var fUrl = currentUrl();
     if (String(fUrl).indexOf('voyager://') === 0) { toast('Open a website first'); return; }
@@ -2033,6 +2139,7 @@ window.addEventListener('message', function (e) {
       if (d.title) commit(Voyager.setTitle(S, S.activeId, d.title));
       hideVeil();
       stopProgress(false);
+      proxyHealth = 'ok';               // only proxied pages carry the shim — a real proof of life
       // The receipt: the shim counted the page's tracker requests server-side.
       var trk = Math.floor(Number(d.trackers) || 0);
       if (trk > 0) {
@@ -2449,6 +2556,33 @@ showUrl(currentUrl(), Voyager.activeTab(S));
       })
       .catch(function () {});
   } catch (e) {}
+})();
+
+/* Warm-up: if a REMOTE proxy is configured, ping it the moment the app opens —
+ * the ping itself wakes a sleeping free-tier service, so it's usually alive by
+ * the time the first address is typed. Keep nudging until it answers (~60s). */
+(function warmProxy() {
+  var p = (S.settings.proxy || '').trim();
+  if (!p || p.toLowerCase() === 'off') return;
+  var tries = 0;
+  function nudge() {
+    if (proxyHealth === 'ok') return;                // something else already proved it alive
+    tries++;
+    pingProxy(8000).then(function (alive) {
+      if (!alive && proxyHealth === 'ok') return;    // a stale failure never outranks fresh proof
+      var wasWaking = proxyHealth === 'waking' || proxyHealth === 'down';
+      proxyHealth = alive ? 'ok' : (tries >= 7 ? 'down' : 'waking');
+      if (alive) {
+        if (wasWaking) toast('🛰️ Full browser ready');
+        refreshFeeds(true);
+        if (String(currentUrl()) === 'voyager://start') renderInternal('start');
+        return;
+      }
+      if (String(currentUrl()) === 'voyager://start') renderInternal('start');
+      if (tries < 7) setTimeout(nudge, 10000);
+    });
+  }
+  nudge();
 })();
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
