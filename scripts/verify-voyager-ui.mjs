@@ -51,6 +51,12 @@ const server = http.createServer((req, res) => {
   const u = new URL(req.url, 'http://x');
   const servePage = (res2, target) => {
     res2.writeHead(200, { 'content-type': 'text/html' });
+    if (String(target).includes('emptyapp')) {
+      // an app shell that "loads" but paints nothing — the YouTube-homepage case
+      return res2.end(`<!doctype html><meta charset=utf8><title>Shell</title>
+        <body><div id="app"></div>
+        <script>parent.postMessage({voyager:'loaded', url:${JSON.stringify(target)}, title:'Shell', trackers:0}, '*');</script>`);
+    }
     res2.end(`<!doctype html><meta charset=utf8><title>Mock page</title>
       <body><h1>Mock page</h1><p>Entanglement links distant nodes for testing.</p>
       <script>parent.postMessage({voyager:'loaded', url:${JSON.stringify(target)}, title:'Mock page', trackers:0}, '*');</script>`);
@@ -151,6 +157,16 @@ const errors = [];
   await page.waitForTimeout(200);
   check('⌘F finds and counts matches', (await page.textContent('#findCount')).includes('/'));
   await page.keyboard.press('Escape');
+
+  /* ════ scenario 3b: an app shell that loads EMPTY → the honest blank bar ════ */
+  await page.evaluate(() => { navTo('http://www.youtube.com/emptyapp'); });
+  await page.waitForFunction(() => document.getElementById('blankbar').className.includes('on'), null, { timeout: 8000 });
+  check('empty app shell raises the honest blank bar', true);
+  check('blank bar knows YouTube videos still play', (await page.textContent('#blankMsg')).includes('videos'));
+  await page.evaluate(() => { navTo('http://site.test/article2'); });
+  await page.waitForTimeout(2200);
+  check('a real page never triggers the blank bar', await page.evaluate(() =>
+    !document.getElementById('blankbar').className.includes('on')));
 
   /* ════ scenario 4: proxy dies for good → honest "unreachable", retry works ════ */
   await page.waitForTimeout(11000);                            // let the boot warm-up chain end (it stops once alive)

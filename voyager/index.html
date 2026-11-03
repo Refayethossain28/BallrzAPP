@@ -546,6 +546,11 @@
     <button class="btn primary" data-act="viewchanges">See what changed</button>
     <button class="navbtn" data-act="dismisschanges" style="width:28px;height:28px;font-size:13px" aria-label="Dismiss">✕</button>
   </div>
+  <div class="changebar" id="blankbar" style="border-color:rgba(91,123,255,.55);max-width:min(96%,620px)">
+    <span class="msg" id="blankMsg"></span>
+    <button class="btn primary" data-act="external">Full tab ↗</button>
+    <button class="navbtn" data-act="dismissblank" style="width:28px;height:28px;font-size:13px" aria-label="Dismiss">✕</button>
+  </div>
   <div class="veil" id="veil">
     <div class="spin" id="veilSpin"></div>
     <h3 id="veilTitle">Loading…</h3>
@@ -1208,6 +1213,34 @@ function showChangeBanner() {
   $('changebar').className = 'changebar on';
 }
 function hideChangeBanner() { $('changebar').className = 'changebar'; }
+
+/* ---- the blank-app detector ----
+ * Some sites (YouTube's homepage, most app-like SPAs) "load" through the
+ * proxy but their JavaScript shell refuses to boot in a rewritten page — the
+ * user sees a silent white screen. Through the proxy the document is ours to
+ * inspect, so after a load settles we check whether anything actually painted
+ * and, if not, say so honestly with the ways out. */
+var blankWarnedUrl = '';
+function hideBlankBar() { $('blankbar').className = 'changebar'; }
+function checkBlankApp(url) {
+  if (!proxyBaseNow() || !/^https?:/i.test(String(url))) return;
+  setTimeout(function () {
+    if (url !== currentUrl()) return;
+    var d = liveDoc();
+    if (!d || !d.body) return;
+    var text = '';
+    try { text = String(d.body.innerText || '').replace(/\s+/g, ' ').trim(); } catch (e) { return; }
+    var media = d.querySelector('video, iframe, canvas');
+    if (text.length >= 40 || media) { hideBlankBar(); return; }
+    if (url === blankWarnedUrl) return;                       // nag once per page
+    blankWarnedUrl = url;
+    var host = Voyager.siteOf(url);
+    var isTube = /(^|\.)youtube\.com$/.test(host) || host === 'youtu.be';
+    $('blankMsg').innerHTML = '🫥 <b>This app loaded empty</b> — its JavaScript shell won’t boot through the proxy.' +
+      (isTube ? ' YouTube <b>videos</b> do play: open any watch or youtu.be link.' : '');
+    $('blankbar').className = 'changebar on';
+  }, 1500);
+}
 function changesPage() {
   var d = diffState;
   if (!d) return '<div class="reader"><div class="rempty"><h1>What changed</h1><p class="muted">When a page you’ve read comes back different, Voyager shows the edits here. Nothing to show right now.</p></div></div>';
@@ -1585,6 +1618,7 @@ function go(input) {
 function navTo(url) {
   hideSuggest();
   hideChangeBanner();
+  hideBlankBar();
   closeFind();
   $('urlInput').blur();
   commit(Voyager.navigate(S, S.activeId, url, { ts: Date.now() }));
@@ -1874,6 +1908,7 @@ function runAct(act) {
   }
   else if (act === 'viewchanges') { hideChangeBanner(); navTo('voyager://changes'); }
   else if (act === 'dismisschanges') hideChangeBanner();
+  else if (act === 'dismissblank') hideBlankBar();
   else if (act === 'savehighlight') {
     if (!pendingSelection) return;
     var hUrl = /^https?:/i.test(pendingSelectionUrl) ? pendingSelectionUrl : (readerState && readerState.url);
@@ -2094,6 +2129,7 @@ $('frame').addEventListener('load', function () {
   maybeCapture(currentUrl());
   hookLivePage();                                    // annotations on the live page
   inkLivePage();
+  checkBlankApp(currentUrl());
 });
 $('frame').addEventListener('error', function () {
   showVeil('blocked', currentUrl());
@@ -2150,6 +2186,7 @@ window.addEventListener('message', function (e) {
       maybeCapture(url);
       hookLivePage();
       inkLivePage();
+      checkBlankApp(url);
     }
   }
 });
