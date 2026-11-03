@@ -3,7 +3,7 @@
  * the cached shell when offline) and static assets are cache-first for speed —
  * the browser itself opens even with no connection; only the web needs a
  * network. Bump CACHE to force a clean reinstall. */
-const CACHE = 'voyager-v14'; // v14: live-page annotations, PiP, QR hand-off
+const CACHE = 'voyager-v15'; // v15: sleeping-proxy wake loop, proxy status card, boot warm-up
 const ASSETS = ['./', './index.html', './engine.js', './qr.js', './manifest.json',
                 './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png'];
 
