@@ -285,10 +285,12 @@ const server = http.createServer(async (req, res) => {
       return send(res, 403, { 'content-type': 'text/html; charset=utf-8' },
         errorPage('Locked', 'This proxy needs its key. In Voyager → Settings, add “?key=YOURKEY” to the proxy URL (matching PROXY_KEY on the server).'));
     }
-    const target = parsed.searchParams.get('url');
-    if (!target) return send(res, 400, { 'content-type': 'text/plain' }, 'missing url');
+    // A GET form folded onto the bare /proxy path submits its fields alongside
+    // url= — fold them back into the target's own query (url/key/block stay ours).
+    const folded = Proxy.mergeFormQuery([...parsed.searchParams]);
+    if (!folded) return send(res, 400, { 'content-type': 'text/plain' }, 'missing url');
     const blockOn = TRACKER_BLOCK && parsed.searchParams.get('block') !== '0';
-    return handleProxy(target, req, res, blockOn);
+    return handleProxy(folded.merged, req, res, blockOn);
   }
   if (pathname === '/reader') {
     // Reader extraction: fetch a page and return clean {title,text,html,words}.

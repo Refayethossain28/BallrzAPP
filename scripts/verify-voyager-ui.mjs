@@ -39,6 +39,19 @@ try { localStorage.setItem('visited','1'); document.cookie = 'visited=1; path=/'
 el.textContent += (localStorage.getItem('visited')==='1' && /visited=1/.test(document.cookie)) ? ' (writes ok)' : ' (writes broken)';
 </script></body></html>`;
 
+const HOSTILE_RAW = `<html><head><title>Hostile</title></head><body>
+<h1>Hostile SPA page with plenty of visible prose so the blank detector stays quiet here.</h1>
+<div id="box"></div>
+<form id="sf" action="/find"><input name="q" id="q"></form>
+<script>
+// the SPA pattern that used to defeat the shim: swallow events, no preventDefault
+document.getElementById('box').addEventListener('click', function (e) { e.stopPropagation(); });
+document.getElementById('sf').addEventListener('submit', function (e) { e.stopPropagation(); });
+// and a link inserted AFTER load — the server rewriter never saw it
+var a = document.createElement('a'); a.id = 'dyn'; a.textContent = 'next'; a.href = '/dyn/page2';
+document.getElementById('box').appendChild(a);
+</script></body></html>`;
+
 function loadPlaywright() {
   const candidates = ['playwright', 'playwright-core',
     path.join(ROOT, 'apexvip-web', 'node_modules', 'playwright'),
@@ -66,9 +79,10 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'applica
 const state = { proxyAwake: true, servePing: true };
 const hung = [];
 
-const server = http.createServer((req, res) => {
-  const u = new URL(req.url, 'http://x');
-  const servePage = (res2, target) => {
+// Module scope: the wake-up splice (test code) serves held requests with this
+// too — inside the handler it was out of scope there, the ReferenceError was
+// swallowed, and the held frame request hung forever (a 50/50 flake at wake).
+const servePage = (res2, target) => {
     res2.writeHead(200, { 'content-type': 'text/html' });
     if (String(target).includes('emptyapp')) {
       // an app shell that "loads" but paints nothing — the YouTube-homepage case
@@ -79,7 +93,11 @@ const server = http.createServer((req, res) => {
     res2.end(`<!doctype html><meta charset=utf8><title>Mock page</title>
       <body><h1>Mock page</h1><p>Entanglement links distant nodes for testing.</p>
       <script>parent.postMessage({voyager:'loaded', url:${JSON.stringify(target)}, title:'Mock page', trackers:0}, '*');</script>`);
-  };
+};
+
+const server = http.createServer((req, res) => {
+  const u = new URL(req.url, 'http://x');
+  if (process.env.VGR_DEBUG) console.log('[mock]', u.pathname, state.proxyAwake ? 'awake' : 'ASLEEP', u.searchParams.get('url') || '');
   if (u.pathname === '/__voyager/ping') {
     if (!state.servePing) { res.writeHead(404); return res.end('nf'); }
     if (!state.proxyAwake) { hung.push({ res, u }); return; }   // asleep: hang, like a cold instance
@@ -88,7 +106,31 @@ const server = http.createServer((req, res) => {
   }
   if (u.pathname === '/proxy') {
     if (!state.proxyAwake) { hung.push({ res, u }); return; }
-    const target = u.searchParams.get('url') || 'http://site.test/';
+    // fold GET-form fields into the target, exactly like the real server
+    const folded = Proxy.mergeFormQuery([...u.searchParams]);
+    const target = (folded && folded.merged) || 'http://site.test/';
+    if (target.includes('hostile.test/find')) {
+      // echo where the form actually landed, query and all
+      res.writeHead(200, { 'content-type': 'text/html' });
+      return res.end(`<!doctype html><meta charset=utf8><title>Found</title>
+        <body><h1>FOUND</h1><p id="echo">${target}</p>
+        <p>Plenty of result prose so the blank detector stays quiet on this page too.</p>
+        <script>parent.postMessage({voyager:'loaded', url:${JSON.stringify(target)}, title:'Found', trackers:0}, '*');</script>`);
+    }
+    if (target.includes('hostile.test')) {
+      // the REAL rewrite pipeline, so the shim's default-action backstop is live
+      res.writeHead(200, { 'content-type': 'text/html' });
+      return res.end(Proxy.rewriteHtml(HOSTILE_RAW, target, '/proxy'));
+    }
+    if (target.includes('slowspa.test')) {
+      // fires 'load' with an EMPTY shell and hydrates 2.5s later — the SPA way
+      res.writeHead(200, { 'content-type': 'text/html' });
+      return res.end(`<!doctype html><meta charset=utf8><title>SlowSPA</title>
+        <body><div id="app"></div>
+        <script>parent.postMessage({voyager:'loaded', url:${JSON.stringify(target)}, title:'SlowSPA', trackers:0}, '*');
+        setTimeout(function () { document.getElementById('app').innerHTML =
+          '<h1>Hydrated now</h1><p>Plenty of text appears after a slow client-side boot, well past any single early sample.</p>'; }, 2500);</script>`);
+    }
     if (target.includes('nested.test')) {
       // a path that serves Voyager ITSELF into the frame (sw fallback / self-link)
       res.writeHead(200, { 'content-type': 'text/html' });
@@ -274,6 +316,103 @@ const errors = [];
     localStorage.getItem('voyager.session.v1') !== null));
   check('the sweep announces itself', await page.evaluate(() =>
     document.getElementById('toast').textContent.includes('stranger')));
+
+  /* ════ scenario 3d: hostile SPA — a page that SWALLOWS events (stopPropagation,
+     no preventDefault) still cannot escape the proxy: the attributes themselves
+     are safe, so default actions land proxied with their queries intact ════ */
+  await page.evaluate(() => { navTo('http://hostile.test/'); });
+  await page.waitForFunction(() => {
+    try { return !!document.getElementById('frame').contentDocument.getElementById('dyn'); }
+    catch (e) { return false; }
+  }, null, { timeout: 8000 });
+  let hframe = await (await page.$('#frame')).contentFrame();
+  await hframe.click('#dyn');
+  await page.waitForFunction(() => Voyager.tabUrl(Voyager.activeTab(S)) === 'http://hostile.test/dyn/page2', null, { timeout: 8000 });
+  check('a dynamic link whose click the page swallows STILL lands proxied', true);
+  check('…and the 👻 ghost promise holds (the frame rides the proxy)', await page.evaluate(() =>
+    String(document.getElementById('frame').contentWindow.location.href).includes('/proxy?url=')));
+  await page.evaluate(() => { navTo('http://hostile.test/'); });
+  await page.waitForFunction(() => {
+    try { return !!document.getElementById('frame').contentDocument.getElementById('q'); }
+    catch (e) { return false; }
+  }, null, { timeout: 8000 });
+  hframe = await (await page.$('#frame')).contentFrame();
+  await hframe.fill('#q', 'cats');
+  await hframe.evaluate(() => document.getElementById('sf').requestSubmit());
+  await page.waitForFunction(() => {
+    try { return (document.getElementById('frame').contentDocument.body.textContent || '').includes('FOUND'); }
+    catch (e) { return false; }
+  }, null, { timeout: 8000 });
+  check('a GET form whose submit the page swallows reaches its target WITH the query', await page.evaluate(() =>
+    document.getElementById('frame').contentDocument.getElementById('echo').textContent.includes('/find?q=cats')));
+
+  /* ════ scenario 3e: a slow-hydrating SPA never gets the false "loaded empty" bar ════ */
+  await page.evaluate(() => { navTo('http://slowspa.test/'); });
+  await page.waitForTimeout(3300);                             // past the old single 1.5s sample AND the 2.5s hydration
+  check('a slow-hydrating SPA never sees the "loaded empty" banner', await page.evaluate(() =>
+    !document.getElementById('blankbar').className.includes('on')));
+  await page.waitForTimeout(3000);                             // past the second (warning) sample too
+  check('…even after the second look', await page.evaluate(() =>
+    !document.getElementById('blankbar').className.includes('on')));
+
+  /* ════ scenario 3f: recursion in the SPLIT pane dissolves the split —
+     the main tab, mid-read elsewhere, is never hijacked ════ */
+  await page.evaluate(() => { navTo('http://site.test/mainread'); });
+  await page.waitForTimeout(600);
+  await page.evaluate(() => {
+    var reading = S.activeId;
+    commit(Voyager.newTab(S, { url: 'http://nested.test/', ts: Date.now() }));
+    var partner = S.activeId;
+    commit(Voyager.activateTab(S, reading));
+    commit(Voyager.setSplit(S, partner));
+  });
+  await page.waitForFunction(() => !Voyager.splitTab(S), null, { timeout: 8000 });
+  check('nested Voyager in the SPLIT pane dissolves the split', true);
+  check('…without hijacking the main tab', await page.evaluate(() =>
+    Voyager.tabUrl(Voyager.activeTab(S)) === 'http://site.test/mainread'));
+  check('…and says why', await page.evaluate(() =>
+    document.getElementById('toast').textContent.includes('closed the split')));
+
+  /* ════ scenario 3g: 🧹 with a split open — both panes reload, nothing is hijacked ════ */
+  await page.evaluate(() => {
+    var reading = S.activeId;
+    commit(Voyager.newTab(S, { url: 'http://site.test/pane2', ts: Date.now() }));
+    var partner = S.activeId;
+    commit(Voyager.activateTab(S, reading));
+    commit(Voyager.setSplit(S, partner));
+  });
+  await page.waitForTimeout(800);
+  await page.evaluate(() => { doForgetSites(); });
+  await page.waitForTimeout(900);
+  check('🧹 with a split open: panes reload, nothing is hijacked', await page.evaluate(() => {
+    var sp = Voyager.splitTab(S);
+    var src = document.getElementById('frame2').getAttribute('src') || '';
+    return Voyager.tabUrl(Voyager.activeTab(S)) === 'http://site.test/mainread' &&
+      !!sp && src.includes('/proxy?url=') &&
+      document.getElementById('toast').textContent.includes('stranger');
+  }));
+  await page.evaluate(() => { commit(Voyager.setSplit(S, null)); });
+
+  /* ════ scenario 3h: stalls are diagnosed by HOW the page loads — only a load
+     that rides the proxy may be blamed on the proxy ════ */
+  check('stalled .onion / same-origin loads are never blamed on the proxy', await page.evaluate(() => {
+    var seen = ''; var orig = showVeil;
+    showVeil = function (m) { seen = m; };
+    var out;
+    try {
+      frameStalled('http://abcdefghijklmnop.onion/');
+      var onion = seen; seen = '';
+      frameStalled(location.origin + '/sibling/');
+      var sib = seen; seen = '';
+      frameStalled('http://plain.test/never-current');          // proxied → waking (wakeStep bails: not current)
+      out = onion + '|' + sib + '|' + seen;
+    } finally { showVeil = orig; }
+    return out === 'blocked|blocked|waking';
+  }));
+  check('a finished load retires the wake-loop generation (stale pings stand down)', await page.evaluate(() => {
+    var g = wakeGen; stopWakeLoop(); return wakeGen === g + 1;
+  }));
+  await page.evaluate(() => { hideVeil(); navTo('voyager://start'); });
 
   /* ════ scenario 4: proxy dies for good → honest "unreachable", retry works ════ */
   await page.waitForTimeout(11000);                            // let the boot warm-up chain end (it stops once alive)
