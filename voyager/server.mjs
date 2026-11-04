@@ -234,6 +234,29 @@ async function handleFeeds(target, res) {
   }
 }
 
+/* Whole-web search for Seeker: fetch DuckDuckGo's no-JS results server-side
+ * (the proxy makes the query — the user's device never talks to DDG) and
+ * return clean JSON. Tries the html endpoint, falls back to lite. */
+async function handleWebSearch(q, res) {
+  const cors = { 'content-type': 'application/json', 'access-control-allow-origin': '*' };
+  q = String(q == null ? '' : q).trim();
+  if (!q) return send(res, 400, cors, JSON.stringify({ error: 'missing q' }));
+  const endpoints = [
+    'https://html.duckduckgo.com/html/?q=' + encodeURIComponent(q),
+    'https://lite.duckduckgo.com/lite/?q=' + encodeURIComponent(q),
+  ];
+  for (const ep of endpoints) {
+    try {
+      const r = await fetch(ep, { headers: Object.assign({}, BROWSER_HEADERS), redirect: 'follow' });
+      if (!r.ok) continue;
+      const html = await r.text();
+      const results = Proxy.parseWebResults(html);
+      if (results.length) return send(res, 200, cors, JSON.stringify({ q, results }));
+    } catch (e) {}
+  }
+  send(res, 502, cors, JSON.stringify({ error: 'web search upstream unavailable', results: [] }));
+}
+
 function readBody(req) {
   return new Promise((resolve) => {
     const chunks = [];
@@ -274,6 +297,13 @@ const server = http.createServer(async (req, res) => {
       return send(res, 403, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }, JSON.stringify({ error: 'locked' }));
     }
     return handleReader(parsed.searchParams.get('url'), res);
+  }
+  if (pathname === '/websearch') {
+    // Whole-web results for Seeker. CORS-open and key-gated like /proxy.
+    if (PROXY_KEY && parsed.searchParams.get('key') !== PROXY_KEY) {
+      return send(res, 403, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }, JSON.stringify({ error: 'locked' }));
+    }
+    return handleWebSearch(parsed.searchParams.get('q'), res);
   }
   if (pathname === '/feeds') {
     // Feed discovery + parse (for Follow). CORS-open and key-gated like /proxy.

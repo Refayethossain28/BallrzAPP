@@ -199,6 +199,37 @@ test('the shim defers to the page: bubble-phase listeners, defaultPrevented hono
   assert.ok(/addEventListener\("click",function\(e\)\{if\(e\.defaultPrevented/.test(out));
 });
 
+test('parseWebResults reads both DDG no-JS formats, unwraps redirects, skips junk', () => {
+  const htmlFmt = '<div class="result">' +
+    '<a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fpage&amp;rut=abc">Example <b>Page</b></a>' +
+    '<a class="result__snippet" href="#">The snippet &amp; more text here.</a></div>' +
+    '<div class="result"><a class="result__a" href="https://duckduckgo.com/promo">Ad for DDG itself</a></div>' +
+    '<div class="result"><a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fpage">Dupe of first</a></div>' +
+    '<div class="result"><a class="result__a" href="https://other.site/x">Other Site</a></div>';
+  const r = P.parseWebResults(htmlFmt);
+  assert.equal(r.length, 2);                                          // self-link and dupe dropped
+  assert.equal(r[0].url, 'https://example.com/page');                 // uddg unwrapped
+  assert.equal(r[0].title, 'Example Page');                           // tags stripped, entities decoded
+  assert.equal(r[0].snippet, 'The snippet & more text here.');
+  assert.equal(r[1].url, 'https://other.site/x');
+
+  const liteFmt = '<table><tr><td><a rel="nofollow" href="https://lite.example/result">Lite Result</a></td></tr>' +
+    '<tr><td class="result-snippet">A lite snippet.</td></tr></table>';
+  const l = P.parseWebResults(liteFmt);
+  assert.equal(l[0].url, 'https://lite.example/result');
+  assert.equal(l[0].snippet, 'A lite snippet.');
+  assert.equal(P.parseWebResults('<p>no results markup at all</p>').length, 0);
+});
+
+test('👻 amnesia: the shim replaces storage and cookies with per-visit decoys, before page code', () => {
+  const out = P.rewriteHtml('<html><head></head><body></body></html>', 'https://example.com/', '/proxy');
+  assert.ok(out.includes('Object.defineProperty(window,"localStorage"'));
+  assert.ok(out.includes('Object.defineProperty(window,"sessionStorage"'));
+  assert.ok(out.includes('Object.defineProperty(document,"cookie"'));
+  // the decoys must be installed BEFORE the fetch/XHR rewrites (i.e. before any page script could run)
+  assert.ok(out.indexOf('Object.defineProperty(window,"localStorage"') < out.indexOf('window.fetch'));
+});
+
 test('originAllowed gates a deployed proxy to its app origins', () => {
   const allow = ['https://refayethossain28.github.io'];
   assert.equal(P.originAllowed('https://refayethossain28.github.io', allow), true);
