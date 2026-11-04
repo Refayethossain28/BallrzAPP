@@ -256,6 +256,25 @@ const errors = [];
   check('a real page never triggers the blank bar', await page.evaluate(() =>
     !document.getElementById('blankbar').className.includes('on')));
 
+  /* ════ scenario 3c: 🧹 clear site data — one button and websites meet a
+     stranger: cookies evicted, session storage dropped, Voyager's own kept ════ */
+  await page.evaluate(() => {
+    document.cookie = 'tracker=42; path=/';
+    document.cookie = 'sid=deadbeef';
+    sessionStorage.setItem('spy', '1');
+    navTo('voyager://settings');
+  });
+  await page.waitForSelector('[data-act="forgetsites"]', { timeout: 5000 });
+  await page.click('[data-act="forgetsites"]');
+  await page.waitForTimeout(300);
+  check('🧹 every cookie is gone', await page.evaluate(() =>
+    !/tracker=42/.test(document.cookie) && !/sid=deadbeef/.test(document.cookie)));
+  check('session storage is empty', await page.evaluate(() => sessionStorage.length === 0));
+  check('Voyager\'s own tabs/history/settings survive the sweep', await page.evaluate(() =>
+    localStorage.getItem('voyager.session.v1') !== null));
+  check('the sweep announces itself', await page.evaluate(() =>
+    document.getElementById('toast').textContent.includes('stranger')));
+
   /* ════ scenario 4: proxy dies for good → honest "unreachable", retry works ════ */
   await page.waitForTimeout(11000);                            // let the boot warm-up chain end (it stops once alive)
   state.proxyAwake = false;

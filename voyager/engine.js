@@ -1118,6 +1118,39 @@
   }
 
   /**
+   * 🧹 Forget-me-everywhere: given document.cookie's string and the current
+   * hostname, return every assignment needed to expire each cookie. A cookie
+   * read gives names and values but hides the path/domain it was set with, so
+   * eviction must cover every scope a site's script could have used: the root
+   * path and the default path, bare and against each registrable domain level.
+   * Pure — the skin applies the strings to document.cookie.
+   */
+  function cookieEvictions(cookieStr, hostname) {
+    var EPOCH = '; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+    var host = String(hostname || '').replace(/^\.+/, '');
+    var scopes = [''];
+    if (host) {
+      var labels = host.split('.');
+      if (labels.length === 1) scopes.push('; domain=' + host);
+      for (var d = 0; d <= labels.length - 2; d++) scopes.push('; domain=' + labels.slice(d).join('.'));
+    }
+    var out = [];
+    var seen = {};
+    var parts = String(cookieStr || '').split(';');
+    for (var i = 0; i < parts.length; i++) {
+      var eq = parts[i].indexOf('=');
+      var name = (eq === -1 ? parts[i] : parts[i].slice(0, eq)).trim();
+      if (!name || Object.prototype.hasOwnProperty.call(seen, name)) continue;
+      seen[name] = true;
+      for (var s = 0; s < scopes.length; s++) {
+        out.push(name + '=' + EPOCH + '; path=/' + scopes[s]);
+        out.push(name + '=' + EPOCH + scopes[s]);
+      }
+    }
+    return out;
+  }
+
+  /**
    * The tracker receipt: tally how many tracker requests a site's pages have
    * carried (the proxy counts them per page; this remembers). Lives in the
    * same per-site map, shown on voyager://site.
@@ -1759,6 +1792,7 @@
     siteSetting: siteSetting,
     setSiteSetting: setSiteSetting,
     clearSiteSettings: clearSiteSettings,
+    cookieEvictions: cookieEvictions,
     swipeAction: swipeAction,
     frecency: frecency,
     topSites: topSites,
