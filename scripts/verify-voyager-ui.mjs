@@ -20,6 +20,25 @@ import { createRequire } from 'node:module';
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(path.join(ROOT, 'package.json'));
 
+const Proxy = (() => {        // repo is type:module — load the UMD via a vm sandbox, like the unit tests
+  const vm = require('node:vm');
+  const sb = { module: { exports: {} } }; sb.self = sb;
+  vm.createContext(sb);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'voyager', 'proxy.js'), 'utf8'), sb, { filename: 'voyager/proxy.js' });
+  return sb.module.exports;
+})();
+
+const STEALTH_RAW = `<html><head><title>Stealth</title></head><body>
+<h1>Stealth test page with plenty of visible text so the blank detector stays quiet.</h1>
+<div id="status"></div>
+<script>
+var seen = (function(){ try { return localStorage.getItem('visited') || (/visited=1/.test(document.cookie) ? '1' : ''); } catch(e){ return 'ERR'; } })();
+var el = document.getElementById('status');
+el.textContent = seen ? 'RECOGNISED' : 'FIRST VISIT';
+try { localStorage.setItem('visited','1'); document.cookie = 'visited=1; path=/'; } catch(e){}
+el.textContent += (localStorage.getItem('visited')==='1' && /visited=1/.test(document.cookie)) ? ' (writes ok)' : ' (writes broken)';
+</script></body></html>`;
+
 function loadPlaywright() {
   const candidates = ['playwright', 'playwright-core',
     path.join(ROOT, 'apexvip-web', 'node_modules', 'playwright'),
@@ -69,7 +88,13 @@ const server = http.createServer((req, res) => {
   }
   if (u.pathname === '/proxy') {
     if (!state.proxyAwake) { hung.push({ res, u }); return; }
-    return servePage(res, u.searchParams.get('url') || 'http://site.test/');
+    const target = u.searchParams.get('url') || 'http://site.test/';
+    if (target.includes('stealth.test')) {
+      // the REAL rewrite pipeline, so the shim's amnesia decoys are present
+      res.writeHead(200, { 'content-type': 'text/html' });
+      return res.end(Proxy.rewriteHtml(STEALTH_RAW, target, '/proxy'));
+    }
+    return servePage(res, target);
   }
   if (u.pathname === '/reader') {
     res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
@@ -165,6 +190,27 @@ const errors = [];
   await page.waitForTimeout(200);
   check('⌘F finds and counts matches', (await page.textContent('#findCount')).includes('/'));
   await page.keyboard.press('Escape');
+
+  /* ════ scenario 3s: 👻 amnesia — a site that plants recognition data meets
+     fresh decoys on every visit, and never touches the app's real storage ════ */
+  await page.evaluate(() => { navTo('http://stealth.test/'); });
+  await page.waitForFunction(() => {
+    try { const s = document.getElementById('frame').contentDocument.getElementById('status'); return s && s.textContent.length > 0; }
+    catch (e) { return false; }
+  }, null, { timeout: 8000 });
+  check('stealth page: first visit reads clean, in-page writes still work', await page.evaluate(() =>
+    document.getElementById('frame').contentDocument.getElementById('status').textContent === 'FIRST VISIT (writes ok)'));
+  await page.evaluate(() => { navTo('http://site.test/elsewhere'); });
+  await page.waitForTimeout(500);
+  await page.evaluate(() => { navTo('http://stealth.test/'); });
+  await page.waitForFunction(() => {
+    try { const s = document.getElementById('frame').contentDocument.getElementById('status'); return s && s.textContent.length > 0; }
+    catch (e) { return false; }
+  }, null, { timeout: 8000 });
+  check('👻 return visit is indistinguishable from the first', await page.evaluate(() =>
+    document.getElementById('frame').contentDocument.getElementById('status').textContent === 'FIRST VISIT (writes ok)'));
+  check('the decoys kept the site out of the app\'s REAL storage', await page.evaluate(() =>
+    localStorage.getItem('visited') === null && !/visited=1/.test(document.cookie)));
 
   /* ════ scenario 3a: a SAME-ORIGIN sibling app frames natively — never proxied,
      and its in-page search works untouched (the Seeker regression) ════ */

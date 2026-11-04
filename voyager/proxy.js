@@ -112,6 +112,22 @@
     var trackers = Math.floor(Number(opts && opts.trackers) || 0);
     var body = [
       '(function(){',
+      // ── 👻 amnesia: every visit looks like the first ──
+      // All proxied pages share the proxy's origin, so a site's JS could stash
+      // recognition data in localStorage / document.cookie and find it on the
+      // next visit — or worse, another SITE could read it. Replace both with
+      // ephemeral in-memory decoys before any page script runs: writes work,
+      // nothing survives the page, nothing crosses sites.
+      'try{var mkStore=function(){var m={};var s={getItem:function(k){return Object.prototype.hasOwnProperty.call(m,k)?m[k]:null;},',
+      'setItem:function(k,v){m[String(k)]=String(v);},removeItem:function(k){delete m[String(k)];},clear:function(){m={};},',
+      'key:function(i){return Object.keys(m)[i]||null;}};',
+      'try{Object.defineProperty(s,"length",{get:function(){return Object.keys(m).length;}});}catch(e){}return s;};',
+      'try{Object.defineProperty(window,"localStorage",{value:mkStore(),configurable:true});}catch(e){}',
+      'try{Object.defineProperty(window,"sessionStorage",{value:mkStore(),configurable:true});}catch(e){}',
+      'var JAR="";try{Object.defineProperty(document,"cookie",{configurable:true,',
+      'get:function(){return JAR;},set:function(v){var p=String(v).split(";")[0];if(!p)return;',
+      'var k=p.split("=")[0].replace(/^\\s+/,"");var rest=JAR?JAR.split("; ").filter(function(c){return c.split("=")[0]!==k;}):[];',
+      'rest.push(p);JAR=rest.join("; ");}});}catch(e){}}catch(e){}',
       'var B=' + JSON.stringify(proxyPath) + ',PAGE=' + JSON.stringify(pageUrl) + ',TRK=' + trackers + ';',
       'var SEP=B.indexOf("?")===-1?"?":"&";',   // key-locked proxies pass B="/proxy?key=…"
       'function abs(u){try{return new URL(u,PAGE).href;}catch(e){return null;}}',
@@ -370,6 +386,53 @@
     return { title: rssTitle, items: items };
   }
 
+  /* ── whole-web search: parse DuckDuckGo's no-JS result pages (for Seeker) ──
+   * The server fetches html.duckduckgo.com/html/ (or lite.duckduckgo.com) and
+   * this pure function turns the markup into {title,url,snippet} rows. Links
+   * arrive as //duckduckgo.com/l/?uddg=<encoded> redirects — unwrap them.
+   * Defensive on purpose: markup drifts, so match loosely and skip junk. */
+
+  function unwrapDdg(href) {
+    var h = String(href == null ? '' : href);
+    if (h.indexOf('//') === 0) h = 'https:' + h;
+    var m = /[?&]uddg=([^&]+)/.exec(h);
+    if (m) { try { h = decodeURIComponent(m[1]); } catch (e) {} }
+    if (!/^https?:\/\//i.test(h)) return null;
+    if (/duckduckgo\.com/i.test(h.split(/[/?#]/)[2] || '')) return null;   // ads/self links
+    return h;
+  }
+
+  function parseWebResults(html) {
+    var s = String(html == null ? '' : html);
+    var out = [], seen = {}, m;
+    // format 1: html.duckduckgo.com — <a class="result__a" href="…">Title</a> … <a class="result__snippet">…</a>
+    var re = /<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+    while ((m = re.exec(s)) && out.length < 10) {
+      var url = unwrapDdg(decodeEntities(m[1]));
+      if (!url || seen[url]) continue;
+      var title = decodeEntities(m[2].replace(/<[^>]+>/g, '')).trim();
+      if (!title) continue;
+      var after = s.slice(re.lastIndex, re.lastIndex + 2000);
+      var sn = /class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/(?:a|td|div|span)>/i.exec(after);
+      seen[url] = 1;
+      out.push({ title: title, url: url, snippet: sn ? decodeEntities(sn[1].replace(/<[^>]+>/g, '')).trim().slice(0, 240) : '' });
+    }
+    if (out.length) return out;
+    // format 2: lite.duckduckgo.com — <a rel="nofollow" href="…">Title</a> with snippets in result-snippet cells
+    var lre = /<a[^>]*rel="nofollow"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+    while ((m = lre.exec(s)) && out.length < 10) {
+      var lu = unwrapDdg(decodeEntities(m[1]));
+      if (!lu || seen[lu]) continue;
+      var lt = decodeEntities(m[2].replace(/<[^>]+>/g, '')).trim();
+      if (!lt) continue;
+      var lafter = s.slice(lre.lastIndex, lre.lastIndex + 1200);
+      var lsn = /class="[^"]*result-snippet[^"]*"[^>]*>([\s\S]*?)<\/td>/i.exec(lafter);
+      seen[lu] = 1;
+      out.push({ title: lt, url: lu, snippet: lsn ? decodeEntities(lsn[1].replace(/<[^>]+>/g, '')).trim().slice(0, 240) : '' });
+    }
+    return out;
+  }
+
   /* ── ad / tracker blocking: a curated host blocklist ── */
   var TRACKERS = [
     'doubleclick.net', 'googlesyndication.com', 'googletagmanager.com', 'googletagservices.com',
@@ -463,6 +526,8 @@
     countTrackers: countTrackers,
     discoverFeeds: discoverFeeds,
     parseFeed: parseFeed,
+    parseWebResults: parseWebResults,
+    unwrapDdg: unwrapDdg,
     TRACKERS: TRACKERS,
     stripTags: stripTags,
     extractReadable: extractReadable,
