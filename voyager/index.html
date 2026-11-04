@@ -620,6 +620,7 @@ catch (e) { S = Voyager.createBrowser(); }
 var loadTimer = 0;           // embed-refusal watchdog
 var wakeTimer = 0;           // sleeping-proxy wake loop
 var wakeAttempts = 0;
+var wakeGen = 0;             // bumped by stopWakeLoop so in-flight pings stand down
 var proxyHealth = 'unknown'; // 'ok' | 'waking' | 'down' | 'none' | 'unknown'
 var pageTrackers = {};       // url → tracker count for pages loaded this session
 var progressTimer = 0;
@@ -852,7 +853,10 @@ function pingProxy(timeoutMs) {
 
 /** The watchdog fired. Decide: sleeping proxy (wake it), dead proxy, or a page that truly refuses. */
 function frameStalled(url) {
-  var viaProxy = proxyBaseNow() && /^https?:/i.test(String(url)) && !Voyager.videoEmbedUrl(url);
+  // Mirror resolveFrameSrc: .onion gateways, same-origin siblings and video
+  // embeds load WITHOUT the proxy — a stall there is theirs, not the proxy's.
+  var base = proxyBaseNow();
+  var viaProxy = !!base && String(Voyager.resolveFrameSrc(url, frameOpts())).indexOf(String(base)) === 0;
   if (!viaProxy) { showVeil('blocked', url); return; }
   showVeil('waking', url);
   wakeAttempts = 0;
@@ -861,16 +865,19 @@ function frameStalled(url) {
 
 function wakeStep(url) {
   if (url !== currentUrl()) { stopWakeLoop(); return; }   // user moved on
+  var gen = wakeGen;
   wakeAttempts++;
   pingProxy(6000).then(function (alive) {
-    if (url !== currentUrl()) { stopWakeLoop(); return; }
+    // A load that finished meanwhile called stopWakeLoop (new generation) —
+    // this ping is stale and must NOT reload the page the user is reading.
+    if (gen !== wakeGen || url !== currentUrl()) return;
     if (alive) {
       proxyHealth = 'ok';
       if (wakeAttempts === 1) {
         // The proxy answered on the FIRST try — it was never asleep. The page
         // is slow or genuinely refuses; give it one short grace, then be honest.
         wakeTimer = setTimeout(function () {
-          if (url === currentUrl() && $('veil').className.indexOf('on') !== -1) showVeil('blocked', url);
+          if (gen === wakeGen && url === currentUrl() && $('veil').className.indexOf('on') !== -1) showVeil('blocked', url);
         }, 7000);
         return;
       }
@@ -880,13 +887,12 @@ function wakeStep(url) {
       return;
     }
     proxyHealth = wakeAttempts >= 14 ? 'down' : 'waking';
-    if (String(currentUrl()) === 'voyager://start') renderInternal('start');
     if (wakeAttempts >= 14) { showVeil('blocked', url); return; }   // ~80s — stop pretending
     wakeTimer = setTimeout(function () { wakeStep(url); }, 5000);
   });
 }
 
-function stopWakeLoop() { clearTimeout(wakeTimer); wakeTimer = 0; }
+function stopWakeLoop() { clearTimeout(wakeTimer); wakeTimer = 0; wakeGen++; }
 
 function applyZoom(tab) {
   var z = (tab && tab.zoom || 100) / 100;
@@ -1230,25 +1236,39 @@ function hideChangeBanner() { $('changebar').className = 'changebar'; }
  * inspect, so after a load settles we check whether anything actually painted
  * and, if not, say so honestly with the ways out. */
 var blankWarnedUrl = '';
-function hideBlankBar() { $('blankbar').className = 'changebar'; }
+var blankGen = 0;            // bumped on navigation/dismiss so pending samples stand down
+function hideBlankBar() { $('blankbar').className = 'changebar'; blankGen++; }
 function checkBlankApp(url) {
   if (!proxyBaseNow() || !/^https?:/i.test(String(url))) return;
-  setTimeout(function () {
-    if (url !== currentUrl()) return;
-    var d = liveDoc();
-    if (!d || !d.body) return;
-    var text = '';
-    try { text = String(d.body.innerText || '').replace(/\s+/g, ' ').trim(); } catch (e) { return; }
-    var media = d.querySelector('video, iframe, canvas');
-    if (text.length >= 40 || media) { hideBlankBar(); return; }
-    if (url === blankWarnedUrl) return;                       // nag once per page
-    blankWarnedUrl = url;
-    var host = Voyager.siteOf(url);
-    var isTube = /(^|\.)youtube\.com$/.test(host) || host === 'youtu.be';
-    $('blankMsg').innerHTML = '🫥 <b>This app loaded empty</b> — its JavaScript shell won’t boot through the proxy.' +
-      (isTube ? ' YouTube <b>videos</b> do play: open any watch or youtu.be link.' : '');
-    $('blankbar').className = 'changebar on';
-  }, 1500);
+  var gen = ++blankGen;
+  // Sample THREE times: SPAs often fire 'load' with an empty shell and paint
+  // later. Only the second blank sighting warns (no false alarm on a slow
+  // hydration), and the third keeps watching so a late paint clears the bar.
+  var delays = [1500, 4000, 9000];
+  function sample(i) {
+    setTimeout(function () {
+      if (gen !== blankGen || url !== currentUrl()) return;
+      var d = liveDoc();
+      if (!d || !d.body) return;
+      var text = '';
+      try { text = String(d.body.innerText || '').replace(/\s+/g, ' ').trim(); } catch (e) { return; }
+      var media = d.querySelector('video, iframe, canvas');
+      if (text.length >= 40 || media) {
+        if ($('blankbar').className.indexOf('on') !== -1) hideBlankBar();
+        return;                                               // it painted — done
+      }
+      if (i >= 1 && url !== blankWarnedUrl) {                 // nag once per page
+        blankWarnedUrl = url;
+        var host = Voyager.siteOf(url);
+        var isTube = /(^|\.)youtube\.com$/.test(host) || host === 'youtu.be';
+        $('blankMsg').innerHTML = '🫥 <b>This app loaded empty</b> — its JavaScript shell won’t boot through the proxy.' +
+          (isTube ? ' YouTube <b>videos</b> do play: open any watch or youtu.be link.' : '');
+        $('blankbar').className = 'changebar on';
+      }
+      if (i + 1 < delays.length) sample(i + 1);
+    }, delays[i]);
+  }
+  sample(0);
 }
 function changesPage() {
   var d = diffState;
@@ -1668,7 +1688,9 @@ function doForgetSites() {
   var f2 = $('frame2');
   if (f2) {
     var s2 = f2.getAttribute('src');
-    if (s2) { f2.setAttribute('src', ''); f2.setAttribute('src', s2); }
+    // removeAttribute, never src="" — an empty src resolves to Voyager's own
+    // URL and the self-frame guard would read that as recursion.
+    if (s2) { f2.removeAttribute('src'); f2.setAttribute('src', s2); }
   }
   toast('🧹 Done — websites now meet you as a stranger');
 }
@@ -2184,6 +2206,15 @@ window.addEventListener('message', function (e) {
   if (!d || !d.voyager) return;
   // A nested copy of Voyager bowed out of the frame — don't recurse, come home.
   if (d.voyager === 'self-frame') {
+    var selfSplit = false;
+    try { selfSplit = !!(e.source && $('frame2').contentWindow === e.source); } catch (err2) {}
+    if (selfSplit) {
+      // the SPLIT pane hit Voyager's own address — dissolve the split and
+      // leave the main tab (which may be mid-read elsewhere) alone
+      commit(Voyager.setSplit(S, null));
+      toast('🧭 That link opens Voyager itself — closed the split');
+      return;
+    }
     hideVeil();
     stopProgress(true);
     navTo('voyager://start');

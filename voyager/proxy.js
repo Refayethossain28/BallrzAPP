@@ -124,10 +124,17 @@
       'try{Object.defineProperty(s,"length",{get:function(){return Object.keys(m).length;}});}catch(e){}return s;};',
       'try{Object.defineProperty(window,"localStorage",{value:mkStore(),configurable:true});}catch(e){}',
       'try{Object.defineProperty(window,"sessionStorage",{value:mkStore(),configurable:true});}catch(e){}',
+      // The decoy jar honors DELETION too: a write with Max-Age<=0 or a past
+      // expires is how sites log out and dismiss consent banners — storing it
+      // as a phantom value would make the cookie unkillable.
       'var JAR="";try{Object.defineProperty(document,"cookie",{configurable:true,',
-      'get:function(){return JAR;},set:function(v){var p=String(v).split(";")[0];if(!p)return;',
-      'var k=p.split("=")[0].replace(/^\\s+/,"");var rest=JAR?JAR.split("; ").filter(function(c){return c.split("=")[0]!==k;}):[];',
-      'rest.push(p);JAR=rest.join("; ");}});}catch(e){}}catch(e){}',
+      'get:function(){return JAR;},set:function(v){var all=String(v).split(";");var p=all[0];if(!p)return;',
+      'var k=p.split("=")[0].replace(/^\\s+/,"");if(!k)return;var dead=false;',
+      'for(var i=1;i<all.length;i++){var m;',
+      'if((m=/^\\s*max-age\\s*=\\s*(-?\\d+)/i.exec(all[i]))){if(+m[1]<=0)dead=true;}',
+      'else if((m=/^\\s*expires\\s*=\\s*(.+)/i.exec(all[i]))){var ts=Date.parse(m[1]);if(!isNaN(ts)&&ts<=Date.now())dead=true;}}',
+      'var rest=JAR?JAR.split("; ").filter(function(c){return c.split("=")[0]!==k;}):[];',
+      'if(!dead)rest.push(p);JAR=rest.join("; ");}});}catch(e){}}catch(e){}',
       'var B=' + JSON.stringify(proxyPath) + ',PAGE=' + JSON.stringify(pageUrl) + ',TRK=' + trackers + ';',
       'var SEP=B.indexOf("?")===-1?"?":"&";',   // key-locked proxies pass B="/proxy?key=…"
       'function abs(u){try{return new URL(u,PAGE).href;}catch(e){return null;}}',
@@ -156,8 +163,42 @@
       // own default navigation.
       'document.addEventListener("submit",function(e){var f=e.target;if(e.defaultPrevented||!f||f.tagName!=="FORM")return;',
       'if((f.getAttribute("method")||"get").toLowerCase()!=="get")return;e.preventDefault();',
-      'var act=real(f.getAttribute("action")||PAGE);var qs="";try{qs=new URLSearchParams(new FormData(f)).toString();}catch(x){}',
-      'var tgt=act+(act.indexOf("?")>=0?"&":"?")+qs;parent.postMessage({voyager:"navigate",url:tgt},"*");location.href=P(tgt);},false);',
+      // fixForm may have folded the real target into a hidden field — prefer it,
+      // and leave the proxy's own fields out of the query we build.
+      'var uin=f.querySelector("input[data-vgr][name=url]");var act=uin?uin.value:real(f.getAttribute("action")||PAGE);',
+      'var sp=[];for(var fi=0;fi<f.elements.length;fi++){var el=f.elements[fi];',
+      'if(!el.name||el.disabled||el.getAttribute("data-vgr"))continue;var ty=(el.type||"").toLowerCase();',
+      'if(ty==="submit"||ty==="button"||ty==="file"||((ty==="checkbox"||ty==="radio")&&!el.checked))continue;',
+      'sp.push(encodeURIComponent(el.name)+"="+encodeURIComponent(el.value));}var qs=sp.join("&");',
+      'var tgt=qs?act+(act.indexOf("?")>=0?"&":"?")+qs:act;parent.postMessage({voyager:"navigate",url:tgt},"*");location.href=P(tgt);},false);',
+      // ── the default-action backstop ──
+      // The listeners above run in BUBBLE phase so pages keep their own events
+      // (that is the contract that lets in-frame apps work). The cost: a page
+      // that stopPropagation()s without preventDefault() bypasses them and the
+      // browser's DEFAULT action fires. So the attributes themselves must be
+      // safe: rewrite href/action on everything the page inserts or changes —
+      // the same contract the server already applies to static markup — and
+      // fold GET-form targets into hidden fields on the bare proxy path, since
+      // a default GET submit REPLACES the action's query string wholesale.
+      'var BQ=B.split("?"),BPATH=BQ[0],BEXTRA=BQ[1]?BQ[1].split("&"):[];',
+      'function fixA(a){var h=a.getAttribute("href");if(h==null)return;var p2=P(h);if(p2!==h)a.setAttribute("href",p2);}',
+      'function fixForm(f){try{if((f.getAttribute("method")||"get").toLowerCase()!=="get")return;',
+      'var cur=f.getAttribute("action");if(cur===BPATH&&f.querySelector("input[data-vgr][name=url]"))return;',
+      'var act=real(cur||PAGE);if(!/^https?:/i.test(act))return;f.setAttribute("action",BPATH);',
+      'var need=BEXTRA.concat(["url="+encodeURIComponent(act)]);',
+      'for(var ni=0;ni<need.length;ni++){var kv=need[ni].split("="),n=decodeURIComponent(kv[0]),val=decodeURIComponent(kv.slice(1).join("="));',
+      'var inp=f.querySelector("input[data-vgr][name=\\""+n+"\\"]");',
+      'if(!inp){inp=document.createElement("input");inp.type="hidden";inp.name=n;inp.setAttribute("data-vgr","1");f.appendChild(inp);}',
+      'inp.value=val;}}catch(e){}}',
+      'function sweep(n){try{if(n.tagName==="A")fixA(n);else if(n.tagName==="FORM")fixForm(n);',
+      'if(n.querySelectorAll){var as=n.querySelectorAll("a[href]");for(var si=0;si<as.length;si++)fixA(as[si]);',
+      'var fs=n.querySelectorAll("form");for(var sj=0;sj<fs.length;sj++)fixForm(fs[sj]);}}catch(e){}}',
+      'function watch(){sweep(document.documentElement);',
+      'try{new MutationObserver(function(ms){for(var mi=0;mi<ms.length;mi++){var m=ms[mi];',
+      'if(m.type==="attributes"){sweep(m.target);continue;}',
+      'for(var mj=0;mj<m.addedNodes.length;mj++){var mn=m.addedNodes[mj];if(mn&&mn.nodeType===1)sweep(mn);}}})',
+      '.observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:["href","action"]});}catch(e){}}',
+      'if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",watch);else watch();',
       // report where we landed (redirects included) so the chrome can catch up
       'function announce(){try{parent.postMessage({voyager:"loaded",url:PAGE,title:document.title,trackers:TRK},"*");}catch(e){}}',
       'if(document.readyState==="complete")announce();window.addEventListener("load",announce);',
@@ -202,6 +243,30 @@
     if (/<head[^>]*>/i.test(html)) return html.replace(/<head[^>]*>/i, function (m) { return m + shim; });
     if (/<html[^>]*>/i.test(html)) return html.replace(/<html[^>]*>/i, function (m) { return m + shim; });
     return shim + html;
+  }
+
+  /**
+   * A GET form folded onto the bare proxy path submits its fields ALONGSIDE
+   * the url param — fold them back into the target's own query. The LAST url
+   * param is the proxy's (the shim appends its hidden field last, so a site's
+   * own field named "url" rides through as data); key/block stay the proxy's.
+   * Takes ordered [name, value] pairs; returns null when no url is present.
+   */
+  function mergeFormQuery(pairs) {
+    pairs = pairs || [];
+    var urlIdx = -1;
+    for (var i = 0; i < pairs.length; i++) if (pairs[i][0] === 'url') urlIdx = i;
+    if (urlIdx === -1) return null;
+    var target = String(pairs[urlIdx][1] || '');
+    var extras = [];
+    for (var j = 0; j < pairs.length; j++) {
+      if (j === urlIdx) continue;
+      var k = pairs[j][0];
+      if (k === 'key' || k === 'block') continue;
+      extras.push(encodeURIComponent(k) + '=' + encodeURIComponent(pairs[j][1]));
+    }
+    var merged = extras.length ? target + (target.indexOf('?') >= 0 ? '&' : '?') + extras.join('&') : target;
+    return { target: target, merged: merged };
   }
 
   /* ── response headers: keep content-type, drop everything that fights framing ── */
@@ -518,6 +583,7 @@
     rewriteSrcset: rewriteSrcset,
     effectiveBase: effectiveBase,
     clientShim: clientShim,
+    mergeFormQuery: mergeFormQuery,
     rewriteHtml: rewriteHtml,
     isDroppedHeader: isDroppedHeader,
     isBlockedHost: isBlockedHost,

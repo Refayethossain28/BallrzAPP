@@ -230,6 +230,51 @@ test('👻 amnesia: the shim replaces storage and cookies with per-visit decoys,
   assert.ok(out.indexOf('Object.defineProperty(window,"localStorage"') < out.indexOf('window.fetch'));
 });
 
+test('👻 the decoy cookie jar honors deletion — logouts and consent banners work', () => {
+  const shim = P.clientShim('https://example.com/', '/proxy', {});
+  const body = shim.slice('<script>'.length, shim.lastIndexOf('<'));
+  function XHR() {}
+  XHR.prototype.open = function () {};
+  const doc = { addEventListener() {}, readyState: 'loading', title: '' };
+  const sb = {
+    document: doc, parent: { postMessage() {} }, location: {},
+    addEventListener() {}, XMLHttpRequest: XHR, MutationObserver: function () { this.observe = () => {}; },
+  };
+  sb.window = sb; sb.self = sb; sb.globalThis = sb;
+  vm.createContext(sb);
+  vm.runInContext(body, sb);
+  doc.cookie = 'sid=abc; path=/';
+  doc.cookie = 'theme=dark';
+  assert.equal(doc.cookie, 'sid=abc; theme=dark');
+  doc.cookie = 'sid=xyz';                                               // overwrite replaces
+  assert.equal(doc.cookie, 'theme=dark; sid=xyz');
+  doc.cookie = 'sid=; expires=Thu, 01 Jan 1970 00:00:00 GMT';           // the logout idiom
+  assert.equal(doc.cookie, 'theme=dark');
+  doc.cookie = 'theme=; Max-Age=0';                                     // the consent-banner idiom
+  assert.equal(doc.cookie, '');
+  doc.cookie = 'keep=1; expires=Fri, 01 Jan 2100 00:00:00 GMT';         // a future expiry STAYS
+  assert.equal(doc.cookie, 'keep=1');
+});
+
+test('mergeFormQuery folds GET-form fields into the target; last url wins; key/block stay the proxy\'s', () => {
+  assert.equal(P.mergeFormQuery([['q', 'x']]), null);                   // no url → the old 400 path
+  const m = P.mergeFormQuery([['key', 'sek'], ['q', 'space cats'], ['url', 'https://s.t/search']]);
+  assert.equal(m.merged, 'https://s.t/search?q=space%20cats');          // key dropped, field folded
+  assert.equal(P.mergeFormQuery([['url', 'https://a.b/']]).merged, 'https://a.b/');   // plain nav untouched
+  assert.equal(P.mergeFormQuery([['url', 'https://a.b/?x=1'], ['y', '2']]).merged, 'https://a.b/?x=1&y=2');
+  const two = P.mergeFormQuery([['url', 'https://data.example/'], ['url', 'https://real.t/s'], ['block', '0']]);
+  assert.equal(two.target, 'https://real.t/s');                         // the shim's field rides LAST
+  assert.ok(two.merged.includes('url=https%3A%2F%2Fdata.example%2F')); // a site's own url field is data
+});
+
+test('the default-action backstop: inserted links and GET forms are made safe at the attribute level', () => {
+  const out = P.rewriteHtml('<html><head></head><body></body></html>', 'https://example.com/', '/proxy?key=k');
+  assert.ok(out.includes('MutationObserver'), 'dynamic markup is watched');
+  assert.ok(out.includes('attributeFilter:["href","action"]'), 'href/action changes are re-proxied');
+  assert.ok(out.includes('data-vgr'), 'folded hidden fields are marked as the proxy\'s own');
+  assert.ok(out.includes('f.setAttribute("action",BPATH)'), 'GET forms submit to the bare proxy path');
+});
+
 test('originAllowed gates a deployed proxy to its app origins', () => {
   const allow = ['https://refayethossain28.github.io'];
   assert.equal(P.originAllowed('https://refayethossain28.github.io', allow), true);
@@ -253,6 +298,9 @@ async function integration() {
     if (req.url === '/') {
       res.writeHead(200, { 'content-type': 'text/html', 'x-frame-options': 'DENY', 'content-security-policy': "frame-ancestors 'none'" });
       res.end('<html><head><title>Secret HQ</title></head><body><h1>hi</h1><a href="/page2">next</a><img src="pic.png"></body></html>');
+    } else if (req.url.startsWith('/search')) {
+      res.writeHead(200, { 'content-type': 'text/html' });
+      res.end('<title>Echo</title>GOT ' + req.url);
     } else {
       res.writeHead(200, { 'content-type': 'text/html' });
       res.end('<title>Page 2</title>ok');
@@ -299,6 +347,10 @@ async function integration() {
     // …unless the page opted out with block=0
     const allowed = await fetch(`http://127.0.0.1:${proxyPort}/proxy?block=0&url=${encodeURIComponent(`http://127.0.0.1:${originPort}/`)}`);
     assert.equal(allowed.status, 200, 'block=0 lets requests through');
+
+    // a GET form folded onto the bare /proxy path: its fields ride back into the target's query
+    const formHit = await (await fetch(`http://127.0.0.1:${proxyPort}/proxy?url=${encodeURIComponent(`http://127.0.0.1:${originPort}/search`)}&q=cats&lang=en`)).text();
+    assert.ok(formHit.includes('GOT /search?q=cats&lang=en'), 'form fields merged into the target query');
 
     // reader endpoint returns clean extracted JSON (the web-memory source)
     const reader = await (await fetch(`http://127.0.0.1:${proxyPort}/reader?url=${encodeURIComponent(`http://127.0.0.1:${originPort}/`)}`)).json();
