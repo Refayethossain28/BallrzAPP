@@ -1075,6 +1075,29 @@ test('swipeAction: decisive horizontal swipes map to back/forward, everything el
   assert.equal(V.swipeAction(0, 200), null);                   // vertical scroll is sacred
 });
 
+test('cookieEvictions: every cookie expired across every scope a site could have set', () => {
+  const out = V.cookieEvictions('sid=abc123; _ga=GA1.2.9; theme=dark', 'www.apexvip.uk');
+  // 3 names × 2 paths × 3 scopes (bare, www.apexvip.uk, apexvip.uk) = 18 assignments
+  assert.equal(out.length, 18);
+  for (const line of out) {
+    assert.ok(line.includes('expires=Thu, 01 Jan 1970'));       // all expired
+    assert.ok(/^(sid|_ga|theme)=; /.test(line));                // value blanked
+  }
+  assert.ok(out.some((l) => l === 'sid=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'));
+  assert.ok(out.some((l) => l.endsWith('path=/; domain=apexvip.uk')));   // parent domain covered
+  assert.ok(!out.some((l) => l.includes('domain=uk')));                  // never the bare TLD
+});
+
+test('cookieEvictions: junk-safe — empty jar, values with =, dupes, localhost', () => {
+  assert.equal(V.cookieEvictions('', 'apexvip.uk').length, 0);
+  assert.equal(V.cookieEvictions(null, null).length, 0);
+  const eq = V.cookieEvictions('tok=a=b=c', 'localhost');       // = inside the value
+  assert.ok(eq.every((l) => l.startsWith('tok=; ')));
+  assert.ok(eq.some((l) => l.includes('domain=localhost')));
+  const dup = V.cookieEvictions('a=1; a=2', '');                // same name twice → once
+  assert.equal(dup.length, 2);                                  // 1 name × 2 paths × 1 scope
+});
+
 /* ---- run ---- */
 for (const [name, fn] of tests) {
   try { fn(); passed++; console.log(`  ✓ ${name}`); }

@@ -596,6 +596,15 @@
 <script src="qr.js"></script>
 <script>
 'use strict';
+/* A browser must never recurse: if this copy of Voyager finds itself INSIDE
+ * a frame (a same-origin link opened in the viewport, or a service worker
+ * fallback serving the shell into the frame), it bows out — blank itself,
+ * tell the parent, and stop before booting a browser-in-a-browser. */
+if (window.top && window.top !== window.self) {
+  try { parent.postMessage({ voyager: 'self-frame' }, '*'); } catch (e) {}
+  document.documentElement.style.visibility = 'hidden';
+  throw new Error('voyager-in-voyager: bowing out of the frame');
+}
 /* Voyager UI — a skin over voyager/engine.js. All decisions (what a typed
  * string means, what closing a tab focuses, what lands in history) live in
  * the engine; this file only paints state and forwards events. */
@@ -1509,6 +1518,8 @@ function settingsPage() {
     '<div class="toggle"><div><b style="font-size:14.5px">Block ads &amp; trackers</b><p class="tiny" style="margin:2px 0 0">Drops known ad/tracker requests at the proxy, so pages load lighter and quieter. Needs the full-browser proxy on.</p></div>' +
     '<button class="switch" id="trackerSwitch" aria-pressed="' + (S.settings.blockTrackers !== false) + '" aria-label="Block trackers"><i></i></button></div>' +
     '<div style="margin-top:14px"><b style="font-size:14.5px">👻 Ghost toward websites</b><p class="tiny" style="margin:2px 0 0">Always on through the proxy: sites see your <b>server’s</b> address, never this device’s; real cookies are stripped; and scripts get decoy cookies &amp; storage that vanish when you leave — so a site can’t tell a return visit from a first one. Honest limits: direct loads without the proxy don’t have this, logins need recognition so they won’t stick, and deep fingerprinting is beyond any proxy’s reach.</p></div>' +
+    '<div style="margin-top:14px"><b style="font-size:14.5px">🧹 Clear site data</b><p class="tiny" style="margin:2px 0 0">Wipes everything a website could use to recognise this browser: every cookie, this tab’s session storage, and the live pages themselves (they reload fresh, dropping anything held in memory). Your own tabs, history, bookmarks and settings stay — this clears <i>their</i> trace of you, not yours of them. Honest limit: a site loaded <b>directly</b> (without the proxy) keeps its data inside your device’s web engine, which only your device’s own settings can clear.</p>' +
+    '<button class="btn danger block" data-act="forgetsites">🧹 Make websites forget me</button></div>' +
     '</div>' +
     '<h2 class="sect">🛰️ Full browser (proxy)</h2><div class="panel">' +
     '<div class="field"><label>Proxy server URL</label>' +
@@ -1635,6 +1646,31 @@ function openExternal() {
   // whoever has the Tor Browser as their default.
   if (Voyager.isOnion(url) && S.settings.torGateway) url = Voyager.torGatewayUrl(url, S.settings.torGateway);
   window.open(url, '_blank', 'noopener');
+}
+
+/* 🧹 Make websites forget me: evict every cookie (across the scopes a site
+ * could have set them with), drop this tab's session storage, and reload the
+ * live frames so anything a page held in memory dies with it. Voyager's own
+ * data — tabs, history, bookmarks, memory, settings — is deliberately kept:
+ * this clears the sites' trace of the user, not the user's trace of the sites. */
+function doForgetSites() {
+  var evictions = Voyager.cookieEvictions(document.cookie, location.hostname);
+  for (var i = 0; i < evictions.length; i++) {
+    try { document.cookie = evictions[i]; } catch (e) {}
+  }
+  try { sessionStorage.clear(); } catch (e) {}
+  // Reload whatever the frames hold — a fresh document gets fresh (empty) decoys.
+  var u = currentUrl();
+  if (String(u).indexOf('voyager://') !== 0) {
+    currentFrameSrc = '';
+    loadFrame(u);
+  }
+  var f2 = $('frame2');
+  if (f2) {
+    var s2 = f2.getAttribute('src');
+    if (s2) { f2.setAttribute('src', ''); f2.setAttribute('src', s2); }
+  }
+  toast('🧹 Done — websites now meet you as a stranger');
 }
 
 function doWipe() {
@@ -2005,6 +2041,7 @@ function runAct(act) {
     } catch (e) { toast('Export failed'); }
   }
   else if (act === 'importall') { var fi = $('importFile'); if (fi) fi.click(); }
+  else if (act === 'forgetsites') doForgetSites();
   else if (act === 'clearmemory') {
     if (!confirm('Forget every page Voyager has remembered on this device?')) return;
     commit(Voyager.clearMemory(S));
@@ -2145,6 +2182,14 @@ window.addEventListener('message', function (e) {
   if (e.origin !== location.origin && e.origin !== proxyOrigin()) return;
   var d = e.data;
   if (!d || !d.voyager) return;
+  // A nested copy of Voyager bowed out of the frame — don't recurse, come home.
+  if (d.voyager === 'self-frame') {
+    hideVeil();
+    stopProgress(true);
+    navTo('voyager://start');
+    toast('🧭 That link opens Voyager itself — you’re already here');
+    return;
+  }
   var url = d.url;
   if (d.voyager === 'open' && url && /^https?:/i.test(url)) {
     commit(Voyager.newTab(S, { url: url, ts: Date.now() }));
