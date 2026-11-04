@@ -89,6 +89,11 @@ const server = http.createServer((req, res) => {
   if (u.pathname === '/proxy') {
     if (!state.proxyAwake) { hung.push({ res, u }); return; }
     const target = u.searchParams.get('url') || 'http://site.test/';
+    if (target.includes('nested.test')) {
+      // a path that serves Voyager ITSELF into the frame (sw fallback / self-link)
+      res.writeHead(200, { 'content-type': 'text/html' });
+      return res.end(fs.readFileSync(path.join(ROOT, 'voyager', 'index.html'), 'utf8'));
+    }
     if (target.includes('stealth.test')) {
       // the REAL rewrite pipeline, so the shim's amnesia decoys are present
       res.writeHead(200, { 'content-type': 'text/html' });
@@ -145,7 +150,11 @@ const errors = [];
   state.servePing = true;
   state.proxyAwake = false;
   const page = await browser.newPage();
-  page.on('pageerror', (e) => errors.push('S2 ' + e.message));
+  page.on('pageerror', (e) => {
+    // the self-frame guard halts a nested copy by throwing on purpose — that
+    // deliberate bow-out is the fix working, not a defect
+    if (!String(e.message).includes('voyager-in-voyager')) errors.push('S2 ' + e.message);
+  });
   await page.goto(base, { waitUntil: 'domcontentloaded' });
   await page.evaluate((b) => {
     localStorage.clear();
@@ -190,6 +199,14 @@ const errors = [];
   await page.waitForTimeout(200);
   check('⌘F finds and counts matches', (await page.textContent('#findCount')).includes('/'));
   await page.keyboard.press('Escape');
+
+  /* ════ scenario 3r: a browser must never recurse — Voyager served into its
+     own frame bows out and the outer browser comes home with a toast ════ */
+  await page.evaluate(() => { navTo('http://nested.test/'); });
+  await page.waitForFunction(() => Voyager.tabUrl(Voyager.activeTab(S)) === 'voyager://start', null, { timeout: 8000 });
+  check('nested Voyager bows out and the outer browser comes home', true);
+  check('the escape explains itself', await page.evaluate(() =>
+    document.getElementById('toast').textContent.includes('already here')));
 
   /* ════ scenario 3s: 👻 amnesia — a site that plants recognition data meets
      fresh decoys on every visit, and never touches the app's real storage ════ */

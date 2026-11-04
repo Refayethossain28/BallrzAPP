@@ -596,6 +596,15 @@
 <script src="qr.js"></script>
 <script>
 'use strict';
+/* A browser must never recurse: if this copy of Voyager finds itself INSIDE
+ * a frame (a same-origin link opened in the viewport, or a service worker
+ * fallback serving the shell into the frame), it bows out — blank itself,
+ * tell the parent, and stop before booting a browser-in-a-browser. */
+if (window.top !== window.self) {
+  try { parent.postMessage({ voyager: 'self-frame' }, '*'); } catch (e) {}
+  document.documentElement.style.visibility = 'hidden';
+  throw new Error('voyager-in-voyager: bowing out of the frame');
+}
 /* Voyager UI — a skin over voyager/engine.js. All decisions (what a typed
  * string means, what closing a tab focuses, what lands in history) live in
  * the engine; this file only paints state and forwards events. */
@@ -2145,6 +2154,14 @@ window.addEventListener('message', function (e) {
   if (e.origin !== location.origin && e.origin !== proxyOrigin()) return;
   var d = e.data;
   if (!d || !d.voyager) return;
+  // A nested copy of Voyager bowed out of the frame — don't recurse, come home.
+  if (d.voyager === 'self-frame') {
+    hideVeil();
+    stopProgress(true);
+    navTo('voyager://start');
+    toast('🧭 That link opens Voyager itself — you’re already here');
+    return;
+  }
   var url = d.url;
   if (d.voyager === 'open' && url && /^https?:/i.test(url)) {
     commit(Voyager.newTab(S, { url: url, ts: Date.now() }));
