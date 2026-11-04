@@ -600,7 +600,7 @@
  * a frame (a same-origin link opened in the viewport, or a service worker
  * fallback serving the shell into the frame), it bows out — blank itself,
  * tell the parent, and stop before booting a browser-in-a-browser. */
-if (window.top !== window.self) {
+if (window.top && window.top !== window.self) {
   try { parent.postMessage({ voyager: 'self-frame' }, '*'); } catch (e) {}
   document.documentElement.style.visibility = 'hidden';
   throw new Error('voyager-in-voyager: bowing out of the frame');
