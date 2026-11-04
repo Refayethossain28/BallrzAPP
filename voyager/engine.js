@@ -316,6 +316,10 @@
     var embed = videoEmbedUrl(s);
     if (embed) return embed;
     if (isOnion(s)) return torGatewayUrl(s, opts.torGateway);
+    // Our own origin never needs the proxy: sibling apps (Seeker, the hub…)
+    // frame fine natively, and proxying them wrecks their own URL handling
+    // (a page reading location.search would find /proxy?url=… instead).
+    if (opts.selfOrigin && (s === opts.selfOrigin || s.indexOf(String(opts.selfOrigin).replace(/\/+$/, '') + '/') === 0)) return s;
     if (opts.proxyBase && /^https?:\/\//i.test(s)) return proxyUrl(s, opts.proxyBase);
     return s;
   }

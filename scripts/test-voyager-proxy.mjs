@@ -189,6 +189,16 @@ test('parseFeed reads RSS 2.0 and Atom: titles, links, dates, CDATA, entities', 
   assert.ok(a.items[0].ts > 0);
 });
 
+test('the shim defers to the page: bubble-phase listeners, defaultPrevented honored', () => {
+  const out = P.rewriteHtml('<html><head></head><body></body></html>', 'https://example.com/', '/proxy');
+  // both interceptors run AFTER the page's own handlers (bubble phase)…
+  assert.equal((out.match(/\},false\);/g) || []).length >= 2, true);
+  assert.equal(out.includes('},true);'), false);
+  // …and a submit the app already handled in-page is left alone
+  assert.ok(/addEventListener\("submit",function\(e\)\{var f=e\.target;if\(e\.defaultPrevented/.test(out));
+  assert.ok(/addEventListener\("click",function\(e\)\{if\(e\.defaultPrevented/.test(out));
+});
+
 test('originAllowed gates a deployed proxy to its app origins', () => {
   const allow = ['https://refayethossain28.github.io'];
   assert.equal(P.originAllowed('https://refayethossain28.github.io', allow), true);

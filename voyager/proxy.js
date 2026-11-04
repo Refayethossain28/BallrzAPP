@@ -124,19 +124,24 @@
       // fetch / XHR keep flowing through the proxy
       'var of=window.fetch;if(of)window.fetch=function(i,init){try{if(typeof i==="string")i=P(i);else if(i&&i.url)i=new Request(P(i.url),i);}catch(e){}return of.call(this,i,init);};',
       'var xo=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){try{u=P(u);}catch(e){}return xo.apply(this,[m,u].concat([].slice.call(arguments,2)));};',
-      // link clicks: proxy the target, and tell the chrome where we went
+      // link clicks: proxy the target, and tell the chrome where we went.
+      // BUBBLE phase, after the page's own handlers — a click the app already
+      // handled (defaultPrevented) is its business, not ours.
       'document.addEventListener("click",function(e){if(e.defaultPrevented||e.button)return;',
       'var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(!a)return;',
       'var h=a.getAttribute("href");if(!h||/^(#|javascript:|mailto:|tel:)/i.test(h))return;',
       // links are already server-rewritten to /proxy?url=…; real() decodes back to the true target
       'var t=real(h);if(!t||!/^https?:/i.test(t))return;e.preventDefault();',
       'if(a.target==="_blank"){parent.postMessage({voyager:"open",url:t},"*");return;}',
-      'parent.postMessage({voyager:"navigate",url:t},"*");location.href=P(t);},true);',
-      // GET forms (site search boxes): build the query, then navigate proxied
-      'document.addEventListener("submit",function(e){var f=e.target;if(!f||f.tagName!=="FORM")return;',
+      'parent.postMessage({voyager:"navigate",url:t},"*");location.href=P(t);},false);',
+      // GET forms (site search boxes): build the query, then navigate proxied.
+      // BUBBLE phase and defaultPrevented-aware: an app that runs its search
+      // in-page (Seeker does) keeps its submit — we only rewrite the browser's
+      // own default navigation.
+      'document.addEventListener("submit",function(e){var f=e.target;if(e.defaultPrevented||!f||f.tagName!=="FORM")return;',
       'if((f.getAttribute("method")||"get").toLowerCase()!=="get")return;e.preventDefault();',
       'var act=real(f.getAttribute("action")||PAGE);var qs="";try{qs=new URLSearchParams(new FormData(f)).toString();}catch(x){}',
-      'var tgt=act+(act.indexOf("?")>=0?"&":"?")+qs;parent.postMessage({voyager:"navigate",url:tgt},"*");location.href=P(tgt);},true);',
+      'var tgt=act+(act.indexOf("?")>=0?"&":"?")+qs;parent.postMessage({voyager:"navigate",url:tgt},"*");location.href=P(tgt);},false);',
       // report where we landed (redirects included) so the chrome can catch up
       'function announce(){try{parent.postMessage({voyager:"loaded",url:PAGE,title:document.title,trackers:TRK},"*");}catch(e){}}',
       'if(document.readyState==="complete")announce();window.addEventListener("load",announce);',

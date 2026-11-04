@@ -77,6 +77,14 @@ const server = http.createServer((req, res) => {
       text: 'Entanglement links distant nodes for testing.\n\nSecond paragraph of prose.', html: '', words: 12, images: [] }));
   }
   if (u.pathname === '/feeds') { res.writeHead(404); return res.end('nf'); }
+  if (u.pathname === '/sibling/') {
+    // a same-origin sibling app (Seeker-like): handles its own search submit in-page
+    res.writeHead(200, { 'content-type': 'text/html' });
+    return res.end(`<!doctype html><meta charset=utf8><title>Sibling</title>
+      <body><h1>Sibling app</h1><form id="f"><input id="q" name="q"></form><div id="out">idle</div>
+      <script>document.getElementById('f').addEventListener('submit',function(e){e.preventDefault();
+        document.getElementById('out').textContent='RESULTS for '+document.getElementById('q').value;});</script>`);
+  }
   const p = u.pathname === '/' ? '/index.html' : u.pathname;
   const fp = path.join(ROOT, 'voyager', p);
   if (!fp.startsWith(path.join(ROOT, 'voyager')) || !fs.existsSync(fp)) { res.writeHead(404); return res.end('nf'); }
@@ -157,6 +165,23 @@ const errors = [];
   await page.waitForTimeout(200);
   check('⌘F finds and counts matches', (await page.textContent('#findCount')).includes('/'));
   await page.keyboard.press('Escape');
+
+  /* ════ scenario 3a: a SAME-ORIGIN sibling app frames natively — never proxied,
+     and its in-page search works untouched (the Seeker regression) ════ */
+  await page.evaluate((b) => { navTo(b + '/sibling/'); }, base);
+  await page.waitForTimeout(600);
+  check('same-origin sibling loads DIRECT, not through the proxy', await page.evaluate(() =>
+    document.getElementById('frame').getAttribute('src').indexOf('/proxy?url=') === -1));
+  await page.evaluate(() => {
+    const doc = document.getElementById('frame').contentDocument;
+    doc.getElementById('q').value = 'cats';
+    doc.getElementById('f').dispatchEvent(new doc.defaultView.Event('submit', { bubbles: true, cancelable: true }));
+  });
+  await page.waitForTimeout(300);
+  check('sibling app\'s own search runs in place', await page.evaluate(() =>
+    document.getElementById('frame').contentDocument.getElementById('out').textContent === 'RESULTS for cats'));
+  check('submitting did not hijack the tab elsewhere', await page.evaluate((b) =>
+    Voyager.tabUrl(Voyager.activeTab(S)) === b + '/sibling/', base));
 
   /* ════ scenario 3b: an app shell that loads EMPTY → the honest blank bar ════ */
   await page.evaluate(() => { navTo('http://www.youtube.com/emptyapp'); });

@@ -582,6 +582,16 @@ test('resolveFrameSrc picks video-embed / proxy / gateway / direct correctly', (
   // a proxy set → other clearnet pages route through it
   assert.equal(V.resolveFrameSrc('https://google.com', { proxyBase: B }),
     'http://localhost:8790/proxy?url=' + encodeURIComponent('https://google.com'));
+  // OUR OWN origin never goes through the proxy — sibling apps frame natively
+  // and keep their own location.search semantics (Seeker's ?q= must survive)
+  assert.equal(V.resolveFrameSrc('https://apexvip.uk/seeker/?q=cats', { proxyBase: B, selfOrigin: 'https://apexvip.uk' }),
+    'https://apexvip.uk/seeker/?q=cats');
+  assert.equal(V.resolveFrameSrc('https://apexvip.uk', { proxyBase: B, selfOrigin: 'https://apexvip.uk' }), 'https://apexvip.uk');
+  // …but a LOOKALIKE host is not us, and other origins still proxy
+  assert.equal(V.resolveFrameSrc('https://apexvip.uk.evil.test/x', { proxyBase: B, selfOrigin: 'https://apexvip.uk' }),
+    'http://localhost:8790/proxy?url=' + encodeURIComponent('https://apexvip.uk.evil.test/x'));
+  assert.equal(V.resolveFrameSrc('https://google.com', { proxyBase: B, selfOrigin: 'https://apexvip.uk' }),
+    'http://localhost:8790/proxy?url=' + encodeURIComponent('https://google.com'));
   // no proxy → direct load (plain framing browser)
   assert.equal(V.resolveFrameSrc('https://example.com', {}), 'https://example.com');
   // onion always goes through the Tor gateway, never the (Tor-less) proxy
