@@ -339,6 +339,7 @@
       reading: [],      // read-later queue: {url, title, ts, read}
       memory: [],       // remembered pages: {url, title, text, words, ts}
       shortcuts: [],    // custom start-page tiles: {url, title}
+      selfUrls: [],     // addresses PROVEN to be Voyager itself (the guard fired)
       sites: {},        // per-site overrides, keyed by host: {zoom?, blockTrackers?, remember?}
       highlights: [],   // marker-pen passages: {url, text, ts}
       follows: [],      // followed feeds: {feedUrl, siteUrl, title, items, updatedTs}
@@ -1347,11 +1348,38 @@
   }
 
   /** The start page's grid: your most-frecent sites, one per host. */
+  /**
+   * 🧭 Self-pointing addresses: Voyager can't know every host that serves a
+   * copy of itself, but the self-frame guard PROVES one the moment a framed
+   * copy bows out. Remember those here (normalized, capped) so dead-end tiles
+   * never show in Top Sites — tapping one could only bounce you home.
+   */
+  function normSelfUrl(u) {
+    return String(u == null ? '' : u).replace(/[?#].*$/, '').replace(/\/index\.html$/i, '').replace(/\/+$/, '');
+  }
+  function isSelfUrl(state, url) {
+    var list = state.selfUrls || [];
+    if (!list.length) return false;
+    var n = normSelfUrl(url);
+    for (var i = 0; i < list.length; i++) if (list[i] === n) return true;
+    return false;
+  }
+  function markSelfUrl(state, url) {
+    var n = normSelfUrl(url);
+    if (!/^https?:\/\//i.test(n)) return state;
+    var list = state.selfUrls || [];
+    for (var i = 0; i < list.length; i++) if (list[i] === n) return state;
+    var next = shallow(state);
+    next.selfUrls = list.concat([n]).slice(-20);   // capped: the oldest are forgotten
+    return next;
+  }
+
   function topSites(state, n, nowTs) {
     var ranked = rankedSites(state, nowTs);
     var seen = {};
     var out = [];
     for (var i = 0; i < ranked.length && out.length < (n || 8); i++) {
+      if (isSelfUrl(state, ranked[i].url)) continue;   // a proven Voyager copy is a dead-end tile
       var host = hostOf(ranked[i].url) || ranked[i].url;
       if (seen[host]) continue;
       seen[host] = true;
@@ -1606,6 +1634,7 @@
       reading: state.reading,
       memory: state.memory,
       shortcuts: state.shortcuts,
+      selfUrls: state.selfUrls || [],
       sites: state.sites || {},
       highlights: state.highlights || [],
       follows: state.follows || [],
@@ -1657,6 +1686,7 @@
       reading: Array.isArray(data.reading) ? data.reading : [],
       memory: Array.isArray(data.memory) ? data.memory : [],
       shortcuts: Array.isArray(data.shortcuts) ? data.shortcuts : [],
+      selfUrls: Array.isArray(data.selfUrls) ? data.selfUrls.filter(function (u) { return typeof u === 'string'; }).slice(0, 20) : [],
       sites: (data.sites && typeof data.sites === 'object' && !Array.isArray(data.sites)) ? data.sites : {},
       highlights: Array.isArray(data.highlights) ? data.highlights : [],
       follows: Array.isArray(data.follows) ? data.follows : [],
@@ -1796,6 +1826,8 @@
     swipeAction: swipeAction,
     frecency: frecency,
     topSites: topSites,
+    markSelfUrl: markSelfUrl,
+    isSelfUrl: isSelfUrl,
     suggest: suggest,
     commandSearch: commandSearch,
     COMMANDS: COMMANDS,
