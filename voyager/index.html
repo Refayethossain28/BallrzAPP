@@ -601,7 +601,7 @@
  * fallback serving the shell into the frame), it bows out — blank itself,
  * tell the parent, and stop before booting a browser-in-a-browser. */
 if (window.top && window.top !== window.self) {
-  try { parent.postMessage({ voyager: 'self-frame' }, '*'); } catch (e) {}
+  try { parent.postMessage({ voyager: 'self-frame', href: location.href }, '*'); } catch (e) {}
   document.documentElement.style.visibility = 'hidden';
   throw new Error('voyager-in-voyager: bowing out of the frame');
 }
@@ -621,6 +621,7 @@ var loadTimer = 0;           // embed-refusal watchdog
 var wakeTimer = 0;           // sleeping-proxy wake loop
 var wakeAttempts = 0;
 var wakeGen = 0;             // bumped by stopWakeLoop so in-flight pings stand down
+var selfFrameEscapes = {};   // per-url count of pages escaping their frame into a Voyager copy
 var proxyHealth = 'unknown'; // 'ok' | 'waking' | 'down' | 'none' | 'unknown'
 var pageTrackers = {};       // url → tracker count for pages loaded this session
 var progressTimer = 0;
@@ -2206,18 +2207,49 @@ window.addEventListener('message', function (e) {
   if (!d || !d.voyager) return;
   // A nested copy of Voyager bowed out of the frame — don't recurse, come home.
   if (d.voyager === 'self-frame') {
+    // The nested copy reports where it woke up. Equal to the src we set for
+    // the tab's url means the TAB points at a Voyager copy — a tapped tile or
+    // typed address: mark it and come home. Anything else means the PAGE
+    // escaped its frame into one (a relative redirect landing on the proxy's
+    // root, say): the user wanted that page, so bring the PAGE back instead
+    // of bouncing them home. Old copies without href are read as deliberate.
+    var nestedHref = String(d.href || '');
     var selfSplit = false;
     try { selfSplit = !!(e.source && $('frame2').contentWindow === e.source); } catch (err2) {}
     if (selfSplit) {
-      // the SPLIT pane hit Voyager's own address — dissolve the split and
-      // leave the main tab (which may be mid-read elsewhere) alone
       var stab0 = Voyager.splitTab(S);
-      if (stab0) commit(Voyager.markSelfUrl(S, Voyager.tabUrl(stab0)));   // proven: that address IS Voyager
+      var surl = stab0 ? Voyager.tabUrl(stab0) : '';
+      var sDeliberate = !nestedHref || nestedHref === String(Voyager.resolveFrameSrc(surl, frameOpts()));
+      if (!sDeliberate && stab0) {
+        selfFrameEscapes[surl] = (selfFrameEscapes[surl] || 0) + 1;
+        if (selfFrameEscapes[surl] <= 2) {
+          var f2e = $('frame2');
+          f2e.removeAttribute('src');
+          f2e.setAttribute('src', String(Voyager.resolveFrameSrc(surl, frameOpts())));
+          toast('↩️ The split page tried to leave its frame — brought it back');
+          return;
+        }
+      }
+      if (sDeliberate && stab0) commit(Voyager.markSelfUrl(S, surl));   // proven: that address IS Voyager
       commit(Voyager.setSplit(S, null));
       toast('🧭 That link opens Voyager itself — closed the split');
       return;
     }
-    commit(Voyager.markSelfUrl(S, currentUrl()));   // proven: never show it as a Top Sites tile again
+    var selfCur = currentUrl();
+    var deliberate = !nestedHref || nestedHref === String(Voyager.resolveFrameSrc(selfCur, frameOpts()));
+    if (!deliberate && /^https?:/i.test(selfCur)) {
+      selfFrameEscapes[selfCur] = (selfFrameEscapes[selfCur] || 0) + 1;
+      if (selfFrameEscapes[selfCur] <= 2) {
+        currentFrameSrc = '';
+        loadFrame(selfCur);
+        toast('↩️ The page tried to leave its frame — brought it back');
+        return;
+      }
+      stopProgress(true);                           // it escapes every time — be honest, don't loop
+      showVeil('blocked', selfCur);
+      return;
+    }
+    commit(Voyager.markSelfUrl(S, selfCur));        // proven: never show it as a Top Sites tile again
     hideVeil();
     stopProgress(true);
     navTo('voyager://start');

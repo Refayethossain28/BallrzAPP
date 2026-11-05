@@ -239,6 +239,17 @@
         return attr + '=' + q + r + q;
       });
 
+    // Meta-refresh redirects name their target inside the content attribute —
+    // unrewritten, a relative one escapes the frame onto the proxy's own
+    // origin. Send them back through the proxy like any other link.
+    html = html.replace(/<meta\b[^>]*>/gi, function (tag) {
+      if (!/http-equiv\s*=\s*["']?refresh["']?/i.test(tag)) return tag;
+      return tag.replace(/(url\s*=\s*)(['"]?)([^'">;]+)/i, function (mm, pre, q2, u) {
+        var r2 = rewriteUrl(u, base, proxyPath);
+        return pre + q2 + (r2 == null ? u : r2);
+      });
+    });
+
     var shim = clientShim(base, proxyPath, opts);
     if (/<head[^>]*>/i.test(html)) return html.replace(/<head[^>]*>/i, function (m) { return m + shim; });
     if (/<html[^>]*>/i.test(html)) return html.replace(/<html[^>]*>/i, function (m) { return m + shim; });

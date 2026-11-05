@@ -314,6 +314,24 @@ const server = http.createServer(async (req, res) => {
     }
     return handleFeeds(parsed.searchParams.get('url'), res);
   }
+  // A proxied page ESCAPED its rewrites: a relative navigation, redirect or
+  // asset request from inside /proxy lands here as a bare path. Serving the
+  // app would nest Voyager inside its own frame; the Referer still names the
+  // page it came from, so resolve the path against THAT page and bounce it
+  // back through the proxy — the site keeps working, the frame stays a frame.
+  {
+    const ref = String(req.headers.referer || '');
+    const rm = /[?&]url=([^&]+)/.exec(ref);
+    if (rm) {
+      try {
+        const refTarget = decodeURIComponent(rm[1]);
+        const resolved = new URL(parsed.pathname + (parsed.search || ''), refTarget).href;
+        const loc = '/proxy?' + (PROXY_KEY ? 'key=' + encodeURIComponent(PROXY_KEY) + '&' : '') + 'url=' + encodeURIComponent(resolved);
+        res.writeHead(302, { location: loc });
+        return res.end();
+      } catch (e) {}
+    }
+  }
   if (await serveStatic(pathname, res)) return;
   send(res, 404, { 'content-type': 'text/plain' }, 'not found');
 });
