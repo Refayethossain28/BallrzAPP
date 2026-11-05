@@ -712,6 +712,227 @@
     };
   }
 
+  /* ---------------- the AR camera: a window on the sky ---------------- */
+  // First-person view, Night-Sky style: the camera points at (azDeg, altDeg)
+  // with a horizontal field of view, and everything projects through a
+  // gnomonic (rectilinear) lens onto a screen plane. Screen x is +right,
+  // y is +up, both normalized so ±1 is the horizontal FOV edge. East
+  // appears on the RIGHT when facing north — a window, not an overhead map.
+  function dirVec(azDeg, altDeg) {
+    var az = azDeg * DEG, alt = altDeg * DEG;
+    return [Math.sin(az) * Math.cos(alt), Math.cos(az) * Math.cos(alt), Math.sin(alt)]; // E, N, Up
+  }
+  function cameraProject(altDeg, azDeg, cam) {
+    var F = dirVec(cam.azDeg, cam.altDeg);
+    var Rt = dirVec(cam.azDeg + 90, 0);
+    var U = [Rt[1] * F[2] - Rt[2] * F[1], Rt[2] * F[0] - Rt[0] * F[2], Rt[0] * F[1] - Rt[1] * F[0]]; // R × F → up
+    var p = dirVec(azDeg, altDeg);
+    var depth = p[0] * F[0] + p[1] * F[1] + p[2] * F[2];
+    if (depth <= 0.05) return { visible: false };
+    var half = Math.tan((cam.fovDeg || 60) / 2 * DEG);
+    var x = (p[0] * Rt[0] + p[1] * Rt[1] + p[2] * Rt[2]) / depth / half;
+    var y = (p[0] * U[0] + p[1] * U[1] + p[2] * U[2]) / depth / half;
+    return { visible: true, x: x, y: y };
+  }
+
+  // Everything the horizon view draws, projected through the camera.
+  // `cam`: { azDeg, altDeg, fovDeg, aspect (h/w), magLimit, dsoMagLimit }.
+  // Objects are culled a little outside the frame so lines draw cleanly.
+  function cameraView(lat, lon, ms, cam) {
+    cam = cam || {};
+    var fov = cam.fovDeg || 60;
+    var aspect = cam.aspect || 1;
+    var magLimit = cam.magLimit == null ? 5.8 : cam.magLimit;
+    var dsoMagLimit = cam.dsoMagLimit == null ? 9 : cam.dsoMagLimit;
+    var pad = 1.35;
+    var c = catalog();
+
+    // precession rotation, once per call (same as skyChart)
+    var T = centuries(ms);
+    var zeta = (2306.2181 * T + 0.30188 * T * T + 0.017998 * T * T * T) / 3600 * DEG;
+    var z = (2306.2181 * T + 1.09468 * T * T + 0.018203 * T * T * T) / 3600 * DEG;
+    var theta = (2004.3109 * T - 0.42665 * T * T - 0.041833 * T * T * T) / 3600 * DEG;
+    var ct = Math.cos(theta), st = Math.sin(theta);
+    var lst = lstDeg(lon, ms);
+    var phi = (Number(lat) || 0) * DEG, sphi = Math.sin(phi), cphi = Math.cos(phi);
+    function placeAA(raJ2000, decJ2000) {
+      var ra = raJ2000 * DEG, dec = decJ2000 * DEG;
+      var cosd = Math.cos(dec), sind = Math.sin(dec);
+      var A = cosd * Math.sin(ra + zeta);
+      var B = ct * cosd * Math.cos(ra + zeta) - st * sind;
+      var C = st * cosd * Math.cos(ra + zeta) + ct * sind;
+      var raD = z + Math.atan2(A, B);
+      var H = lst * DEG - raD;
+      var sinAlt = sphi * C + cphi * Math.sqrt(1 - C * C) * Math.cos(H);
+      var alt = Math.asin(Math.max(-1, Math.min(1, sinAlt))) / DEG;
+      if (alt > -1) alt += refractionDeg(alt);
+      var decD = Math.asin(Math.max(-1, Math.min(1, C)));
+      var az = Math.atan2(Math.sin(H), Math.cos(H) * sphi - Math.tan(decD) * cphi) / DEG + 180;
+      return { altDeg: alt, azDeg: wrap360(az) };
+    }
+    function shoot(altDeg, azDeg) {
+      var pr = cameraProject(altDeg, azDeg, cam);
+      if (!pr.visible || Math.abs(pr.x) > pad || Math.abs(pr.y) > pad * aspect + 0.4) return null;
+      return pr;
+    }
+
+    var stars = [];
+    if (c) {
+      for (var i = 0; i < c.STAR_COUNT; i++) {
+        var o = i * c.STAR_STRIDE;
+        var mag = c.STARS[o + 2];
+        if (mag > magLimit) break;
+        var aa = placeAA(c.STARS[o], c.STARS[o + 1]);
+        var pr = shoot(aa.altDeg, aa.azDeg);
+        if (!pr) continue;
+        stars.push({ i: i, mag: mag, ci: c.STARS[o + 3],
+          name: c.STAR_NAMES[i] || '', con: c.STARS[o + 4] >= 0 ? c.CONS[c.STARS[o + 4]] : '',
+          altDeg: aa.altDeg, azDeg: aa.azDeg, x: pr.x, y: pr.y });
+      }
+    }
+    var lines = [], labels = [];
+    if (c && cam.lines !== false) {
+      for (var f = 0; f < c.FIGURES.length; f++) {
+        var fig = c.FIGURES[f];
+        var sx = 0, sy = 0, sn = 0, on = false;
+        for (var pl = 0; pl < fig.lines.length; pl++) {
+          var poly = fig.lines[pl], prev = null;
+          for (var v = 0; v < poly.length; v++) {
+            var pp = placeAA(poly[v][0], poly[v][1]);
+            var cur = shoot(pp.altDeg, pp.azDeg);
+            if (cur) { sx += cur.x; sy += cur.y; sn++; on = true; }
+            if (prev && cur) lines.push({ con: fig.id, x1: prev.x, y1: prev.y, x2: cur.x, y2: cur.y });
+            prev = cur;
+          }
+        }
+        if (on && sn >= 2 && cam.conLabels !== false) {
+          labels.push({ name: fig.name, x: sx / sn, y: sy / sn });
+        }
+      }
+    }
+    var dsos = [];
+    if (c && cam.dsos !== false) {
+      for (var dI = 0; dI < c.DSOS.length; dI++) {
+        var dso = c.DSOS[dI];
+        if (dso.mag > dsoMagLimit) continue;
+        var dp = placeAA(dso.ra, dso.dec);
+        var dpr = shoot(dp.altDeg, dp.azDeg);
+        if (!dpr) continue;
+        dsos.push({ id: dso.id, name: dso.name, type: dso.type, mag: dso.mag,
+          altDeg: dp.altDeg, azDeg: dp.azDeg, x: dpr.x, y: dpr.y });
+      }
+    }
+    var planets = [];
+    for (var q = 0; q < PLANETS.length; q++) {
+      var g = planetGeo(PLANETS[q].key, ms);
+      var paa = altAz(g.raDeg, g.decDeg, lat, lon, ms);
+      var ppr = shoot(paa.altDeg + refractionDeg(paa.altDeg), paa.azDeg);
+      if (!ppr) continue;
+      planets.push({ key: PLANETS[q].key, name: PLANETS[q].name, color: PLANETS[q].color,
+        mag: g.magnitude, altDeg: paa.altDeg, azDeg: paa.azDeg, x: ppr.x, y: ppr.y });
+    }
+    var maa = moonAltAz(lat, lon, ms);
+    var mpr = shoot(maa.altDeg, maa.azDeg);
+    var phase = moonPhase(ms);
+    var saa = sunAltAz(lat, lon, ms);
+    var spr = shoot(saa.altDeg, saa.azDeg);
+
+    // the horizon as a projected polyline + compass ticks sitting on it
+    var horizon = [], ticks = [];
+    for (var hAz = 0; hAz <= 360; hAz += 2) {
+      var hp = cameraProject(0, hAz, cam);
+      horizon.push(hp.visible ? { x: hp.x, y: hp.y } : null);
+    }
+    for (var tAz = 0; tAz < 360; tAz += 45) {
+      var tp = shoot(0.8, tAz);
+      if (tp) ticks.push({ label: compass(tAz), x: tp.x, y: tp.y });
+    }
+    // the Milky Way: the galactic equator and two flanking bands
+    var milky = [];
+    if (cam.milkyWay !== false) {
+      var BANDS = [[0, 1], [7, 0.55], [-7, 0.55], [13, 0.3], [-13, 0.3]];
+      for (var bI = 0; bI < BANDS.length; bI++) {
+        var seg = [], band = [];
+        for (var gl = 0; gl <= 360; gl += 4) {
+          var eq = galacticToEq(gl, BANDS[bI][0]);
+          var gaa = placeAA(eq.raDeg, eq.decDeg);
+          var gpr = shoot(gaa.altDeg, gaa.azDeg);
+          if (gpr) seg.push(gpr);
+          else if (seg.length > 1) { band.push(seg); seg = []; }
+          else seg = [];
+        }
+        if (seg.length > 1) band.push(seg);
+        for (var sI = 0; sI < band.length; sI++) milky.push({ weight: BANDS[bI][1], pts: band[sI] });
+      }
+    }
+    return {
+      stars: stars, lines: lines, labels: labels, dsos: dsos, planets: planets,
+      moon: mpr ? { x: mpr.x, y: mpr.y, altDeg: maa.altDeg, azDeg: maa.azDeg,
+        emoji: phase.emoji, name: phase.name, illumination: phase.illumination } : null,
+      sun: spr ? { x: spr.x, y: spr.y, altDeg: saa.altDeg, azDeg: saa.azDeg } : null,
+      horizon: horizon, ticks: ticks, milkyWay: milky,
+      darkness: saa.altDeg >= 0 ? 0 : Math.min(1, -saa.altDeg / 18)
+    };
+  }
+
+  // Galactic → equatorial (J2000). NGP at RA 192.859508°, Dec +27.128336°,
+  // with the node at l = 122.932°. The Milky Way band is this frame's equator.
+  var NGP_RA = 192.859508 * DEG, NGP_DEC = 27.128336 * DEG, L_NCP = 122.932;
+  function galacticToEq(lDeg, bDeg) {
+    var b = bDeg * DEG, dl = (L_NCP - lDeg) * DEG;
+    var sinDec = Math.sin(NGP_DEC) * Math.sin(b) + Math.cos(NGP_DEC) * Math.cos(b) * Math.cos(dl);
+    var dec = Math.asin(Math.max(-1, Math.min(1, sinDec)));
+    var y = Math.cos(b) * Math.sin(dl);
+    var x = Math.cos(NGP_DEC) * Math.sin(b) - Math.sin(NGP_DEC) * Math.cos(b) * Math.cos(dl);
+    return { raDeg: wrap360((NGP_RA + Math.atan2(y, x)) / DEG), decDeg: dec / DEG };
+  }
+
+  /* ---------------- the live sky tour ---------------- */
+  // Night-Sky-style guided tour of what is actually up right now: the moon
+  // and planets above the horizon, then the best deep-sky stops, each with
+  // where to point and one spoken-style line. Deterministic for a given sky.
+  function tourStops(lat, lon, ms, opts) {
+    opts = opts || {};
+    var stops = [];
+    var phase = moonPhase(ms);
+    var maa = moonAltAz(lat, lon, ms);
+    if (maa.altDeg > 3) {
+      stops.push({ kind: 'moon', name: phase.emoji + ' The Moon', azDeg: maa.azDeg, altDeg: maa.altDeg,
+        line: phase.name + ', ' + Math.round(phase.illumination * 100) + '% lit — '
+          + Math.round(phase.distKm).toLocaleString() + ' km away tonight.' });
+    }
+    for (var i = 0; i < PLANETS.length; i++) {
+      var g = planetGeo(PLANETS[i].key, ms);
+      var aa = altAz(g.raDeg, g.decDeg, lat, lon, ms);
+      if (aa.altDeg < 5) continue;
+      stops.push({ kind: 'planet', key: PLANETS[i].key, name: PLANETS[i].name,
+        azDeg: aa.azDeg, altDeg: aa.altDeg, mag: g.magnitude,
+        line: 'Shining at magnitude ' + g.magnitude + ', ' + E_fmtAU(g.distAU) + ' from you, '
+          + Math.round(aa.altDeg) + '° up in the ' + compass(aa.azDeg) + '.' });
+    }
+    var c = catalog();
+    if (c) {
+      var nelm = limitingMagnitude(opts.bortle || 4);
+      var dsoStops = [];
+      for (var d = 0; d < c.DSOS.length; d++) {
+        var dso = c.DSOS[d];
+        if (dso.mag > Math.min(nelm + 2, 8)) continue;
+        var p = precessJ2000(dso.ra, dso.dec, ms);
+        var daa = altAz(p.raDeg, p.decDeg, lat, lon, ms);
+        if (daa.altDeg < 25) continue;
+        dsoStops.push({ kind: 'dso', id: dso.id, name: dso.id + (dso.name ? ' — ' + dso.name : ''),
+          azDeg: daa.azDeg, altDeg: daa.altDeg, mag: dso.mag, score: daa.altDeg - dso.mag * 4,
+          line: ((c.DSO_TYPES[dso.type]) || 'Deep-sky object') + ' at magnitude ' + dso.mag + ', '
+            + Math.round(daa.altDeg) + '° up in the ' + compass(daa.azDeg) + '.' });
+      }
+      dsoStops.sort(function (a, b) { return b.score - a.score; });
+      stops = stops.concat(dsoStops.slice(0, opts.dsoCount || 5));
+    }
+    return stops;
+  }
+  // tiny private alias so tourStops can format AU without hoisting issues
+  function E_fmtAU(au) { return fmtAU(au); }
+
   /* ---------------- observation planning ---------------- */
   var BORTLE = [
     null,
@@ -1095,6 +1316,7 @@
     starCount: starCount, star: star, namedStars: namedStars, starByName: starByName, dsoById: dsoById,
     searchObjects: searchObjects,
     project: project, skyChart: skyChart,
+    cameraProject: cameraProject, cameraView: cameraView, galacticToEq: galacticToEq, tourStops: tourStops,
     altitudeCurve: altitudeCurve, tonightTargets: tonightTargets, limitingMagnitude: limitingMagnitude,
     tonight: tonight, compass: compass,
     polarisClock: polarisClock, fovCalc: fovCalc, eyepieceCalc: eyepieceCalc,

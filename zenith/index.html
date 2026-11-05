@@ -31,7 +31,16 @@
   html,body{margin:0; padding:0; background:var(--bg); color:var(--ink);
     font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
     font-size:16px; line-height:1.45; overscroll-behavior-y:contain}
-  body{min-height:100vh}
+  body{min-height:100vh; background:
+    radial-gradient(1000px 500px at 18% -80px, rgba(127,100,255,0.13), transparent 60%),
+    radial-gradient(900px 480px at 85% -60px, rgba(111,216,200,0.08), transparent 55%),
+    radial-gradient(1.2px 1.2px at 22% 34%, rgba(255,255,255,0.5), transparent 100%),
+    radial-gradient(1px 1px at 68% 18%, rgba(255,255,255,0.4), transparent 100%),
+    radial-gradient(1.4px 1.4px at 84% 61%, rgba(255,255,255,0.35), transparent 100%),
+    radial-gradient(1px 1px at 41% 77%, rgba(255,255,255,0.3), transparent 100%),
+    radial-gradient(1px 1px at 9% 58%, rgba(255,255,255,0.35), transparent 100%),
+    var(--bg)}
+  :root[data-theme="red"] body{background:var(--bg)}
   button{font:inherit; color:inherit; background:none; border:none; cursor:pointer; padding:0}
   input,select{font:inherit; color:var(--ink); background:var(--bg2);
     border:1px solid var(--line2); border-radius:10px; padding:8px 10px; outline:none}
@@ -77,8 +86,11 @@
   @keyframes fadein{from{opacity:0} to{opacity:1}}
   .section-title{font-family:var(--serif); font-size:16px; font-weight:700;
     margin:18px 4px 9px}
-  .card{background:var(--card); border:1px solid var(--line); border-radius:var(--r);
-    padding:13px; margin-bottom:11px}
+  .card{background:color-mix(in srgb, var(--card) 62%, transparent);
+    backdrop-filter:blur(18px) saturate(1.3); -webkit-backdrop-filter:blur(18px) saturate(1.3);
+    border:1px solid color-mix(in srgb, var(--line2) 70%, transparent);
+    box-shadow:0 8px 28px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.05);
+    border-radius:18px; padding:13px; margin-bottom:11px}
   .muted{color:var(--ink2); font-size:13.5px}
   .tiny{color:var(--ink3); font-size:12px}
 
@@ -186,16 +198,40 @@
   <main>
     <!-- ================= SKY ================= -->
     <section class="view on" id="view-sky">
-      <div class="domewrap"><canvas id="dome"></canvas></div>
+      <div class="layerrow" style="margin:2px 0 8px">
+        <button class="lbtn on" id="modePoint">🧭 Point at sky</button>
+        <button class="lbtn" id="modeDome">🗺️ Overhead</button>
+        <span style="flex:1"></span>
+        <button class="lbtn" id="gyroBtn">📱 Follow phone</button>
+        <button class="lbtn" id="tourBtn">▶ Live tour</button>
+      </div>
+      <div class="domewrap">
+        <canvas id="dome"></canvas>
+        <div id="tourCard" style="display:none; position:absolute; left:10px; right:10px; bottom:10px;
+          background:rgba(7,11,26,0.72); backdrop-filter:blur(16px); border:1px solid var(--line2);
+          border-radius:14px; padding:11px 12px">
+          <div style="display:flex; align-items:center; gap:8px">
+            <div style="flex:1; min-width:0">
+              <div style="font-weight:700; font-size:14.5px" id="tourName">—</div>
+              <div class="tiny" id="tourLine">—</div>
+            </div>
+            <button class="lbtn" id="tourPrev">‹</button>
+            <button class="lbtn" id="tourNext">›</button>
+            <button class="lbtn" id="tourEnd">✕</button>
+          </div>
+        </div>
+      </div>
       <div class="layerrow">
         <button class="lbtn on" id="lyrLines">Figures</button>
         <button class="lbtn on" id="lyrDsos">Deep sky</button>
         <button class="lbtn" id="lyrGrid">RA/Dec grid</button>
         <button class="lbtn" id="lyrLabels">Star names</button>
       </div>
+      <div class="maglab" id="fovRow">🔎 <input type="range" id="fovRange" min="25" max="90" value="65">
+        <span id="fovVal">65° view</span></div>
       <div class="maglab">✦ <input type="range" id="magRange" min="20" max="65" value="55">
         <span id="magVal">mag 5.5</span></div>
-      <div class="card" id="skyinfo"><div class="muted">Tap any star, planet, nebula, galaxy or the moon to identify it — 8,900 stars, all 88 constellations and the full Messier catalog are plotted live for your location.</div></div>
+      <div class="card" id="skyinfo"><div class="muted">Drag to look around, pinch the slider to zoom, or tap 📱 to steer with your phone. Tap anything — star, planet, nebula or the moon — to identify it.</div></div>
     </section>
 
     <!-- ================= TONIGHT ================= -->
@@ -224,6 +260,11 @@
 
     <!-- ================= TOOLS ================= -->
     <section class="view" id="view-tools">
+      <div class="section-title" style="margin-top:4px">Grand Orrery</div>
+      <div class="card">
+        <canvas id="orrery" style="height:230px"></canvas>
+        <div class="tiny" style="margin-top:6px">The solar system from 30° above the ecliptic — live positions, orbits to log scale. Scrub time to watch it turn.</div>
+      </div>
       <div class="section-title" style="margin-top:4px">Polar alignment</div>
       <div class="card">
         <div style="display:flex; gap:14px; align-items:center">
@@ -305,8 +346,12 @@ var state = {
   place: null, offsetMs: 0, magLimit: 5.5, view: 'sky',
   red: false, bortle: 4,
   layers: { lines: true, dsos: true, grid: false, labels: false },
-  selected: null,       // chart tap target
-  detail: null          // objects-tab detail {kind,...}
+  skyMode: 'point',                   // 'point' = AR-style window, 'dome' = overhead chart
+  cam: { az: 180, alt: 32, fov: 65 }, // where the window looks
+  gyro: false, gyroHandler: null,
+  tour: { on: false, stops: [], idx: 0 },
+  selected: null,
+  detail: null
 };
 function loadState() {
   var saved = null, prefs = null;
@@ -393,8 +438,193 @@ function starColor(bv) {
 }
 var DSO_ICON = { s: '🌀', e: '🌀', i: '🌀', sd: '🌀', gx: '🌀', oc: '✨', gc: '🔮', pn: '💍', snr: '💥', sfr: '🌫️', en: '🌫️', rn: '🌫️', nb: '🌫️', pos: '✨' };
 
-/* ---------------- the sky dome ---------------- */
+/* ---------------- the sky: two ways of looking ---------------- */
 var domeHits = [];
+function drawSky() {
+  if (state.skyMode === 'point') drawHorizon();
+  else drawDome();
+}
+
+/* -------- the point-at-sky window (Night-Sky style) -------- */
+function drawHorizon() {
+  var cv = $('dome');
+  var s = setupCanvas(cv, 0.84);
+  if (!s) return;
+  var ctx = s.ctx, w = s.w, h = s.h;
+  var t = now();
+  var cam = { azDeg: state.cam.az, altDeg: state.cam.alt, fovDeg: state.cam.fov,
+    aspect: h / w, magLimit: state.magLimit + 0.3,
+    lines: state.layers.lines, dsos: state.layers.dsos,
+    conLabels: state.layers.lines };
+  var view = E.cameraView(state.place.lat, state.place.lon, t, cam);
+  var P = pal();
+  domeHits = [];
+  var half = w / 2;
+  function PX(x) { return w / 2 + x * half; }
+  function PY(y) { return h / 2 - y * half; }
+
+  // sky gradient by darkness
+  var dk = view.darkness;
+  var g = ctx.createLinearGradient(0, 0, 0, h);
+  if (state.red) { g.addColorStop(0, '#0b0000'); g.addColorStop(1, '#160303'); }
+  else if (dk > 0.85) { g.addColorStop(0, '#020409'); g.addColorStop(1, '#0a1124'); }
+  else if (dk > 0.4) { g.addColorStop(0, '#060b1c'); g.addColorStop(1, '#152043'); }
+  else if (dk > 0.05) { g.addColorStop(0, '#13244e'); g.addColorStop(1, '#4a5f96'); }
+  else { g.addColorStop(0, '#3f6db3'); g.addColorStop(1, '#8fb2dd'); }
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+
+  // the Milky Way — layered soft ribbons along the galactic plane
+  if (!state.red && dk > 0.3) {
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for (var mI = 0; mI < view.milkyWay.length; mI++) {
+      var band = view.milkyWay[mI];
+      ctx.strokeStyle = 'rgba(190,205,255,' + (0.045 * band.weight * dk) + ')';
+      ctx.lineWidth = w * 0.11 * band.weight;
+      ctx.beginPath();
+      for (var mp = 0; mp < band.pts.length; mp++) {
+        var q = band.pts[mp];
+        if (mp === 0) ctx.moveTo(PX(q.x), PY(q.y)); else ctx.lineTo(PX(q.x), PY(q.y));
+      }
+      ctx.stroke();
+    }
+  }
+
+  // constellation figures + names
+  ctx.strokeStyle = P.line; ctx.lineWidth = 1;
+  for (var l = 0; l < view.lines.length; l++) {
+    var ln = view.lines[l];
+    ctx.beginPath(); ctx.moveTo(PX(ln.x1), PY(ln.y1)); ctx.lineTo(PX(ln.x2), PY(ln.y2)); ctx.stroke();
+  }
+  ctx.font = '600 10.5px -apple-system, sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (var lb = 0; lb < view.labels.length; lb++) {
+    var lab = view.labels[lb];
+    ctx.fillStyle = state.red ? 'rgba(255,110,90,0.4)' : 'rgba(154,180,230,0.42)';
+    ctx.fillText(lab.name.toUpperCase(), PX(lab.x), PY(lab.y));
+  }
+
+  // DSOs
+  for (var dI = 0; dI < view.dsos.length; dI++) {
+    var dso = view.dsos[dI];
+    var dx = PX(dso.x), dy = PY(dso.y);
+    ctx.strokeStyle = state.red ? 'rgba(255,110,90,0.7)' : 'rgba(111,216,200,0.75)';
+    ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    ctx.moveTo(dx, dy - 4); ctx.lineTo(dx + 4, dy); ctx.lineTo(dx, dy + 4); ctx.lineTo(dx - 4, dy);
+    ctx.closePath(); ctx.stroke();
+    if (dso.mag < 6.5) {
+      ctx.fillStyle = state.red ? 'rgba(255,110,90,0.55)' : 'rgba(111,216,200,0.6)';
+      ctx.font = '600 9.5px -apple-system, sans-serif';
+      ctx.fillText(dso.id, dx, dy - 9);
+    }
+    domeHits.push({ kind: 'dso', obj: dso, px: dx, py: dy });
+  }
+
+  // stars, with a soft bloom on the bright ones
+  var zoom = Math.sqrt(65 / state.cam.fov);
+  for (var i = 0; i < view.stars.length; i++) {
+    var st = view.stars[i];
+    var px = PX(st.x), py = PY(st.y);
+    var r = Math.max(0.5, (4.4 - st.mag * 0.68) * zoom);
+    if (st.mag < 1.6 && !state.red) {
+      var glow = ctx.createRadialGradient(px, py, 0, px, py, r * 4);
+      glow.addColorStop(0, 'rgba(255,255,255,0.35)');
+      glow.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath(); ctx.arc(px, py, r * 4, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2);
+    ctx.fillStyle = P.starFn(st.ci); ctx.fill();
+    if (st.mag < 2.6 || st.name) domeHits.push({ kind: 'star', obj: st, px: px, py: py });
+    if (st.name && (state.layers.labels ? st.mag < 3 : st.mag < 0.8)) {
+      ctx.fillStyle = P.label; ctx.font = '600 10px -apple-system, sans-serif';
+      ctx.fillText(st.name, px, py - r - 7);
+    }
+  }
+
+  // planets — glowing, always labelled
+  for (var q = 0; q < view.planets.length; q++) {
+    var pl = view.planets[q];
+    var qx = PX(pl.x), qy = PY(pl.y);
+    if (!state.red) {
+      var pglow = ctx.createRadialGradient(qx, qy, 0, qx, qy, 16);
+      pglow.addColorStop(0, 'rgba(255,230,180,0.45)');
+      pglow.addColorStop(1, 'rgba(255,230,180,0)');
+      ctx.fillStyle = pglow;
+      ctx.beginPath(); ctx.arc(qx, qy, 16, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.beginPath(); ctx.arc(qx, qy, 5 * zoom, 0, Math.PI * 2);
+    ctx.fillStyle = P.planet(pl.color); ctx.fill();
+    ctx.fillStyle = P.text; ctx.font = '700 11px -apple-system, sans-serif';
+    ctx.fillText(pl.name, qx, qy - 13);
+    domeHits.push({ kind: 'planet', obj: pl, px: qx, py: qy });
+  }
+  // moon & sun
+  if (view.moon) {
+    var mx = PX(view.moon.x), my = PY(view.moon.y);
+    ctx.font = (26 * zoom) + 'px -apple-system, sans-serif';
+    ctx.fillText(view.moon.emoji, mx, my);
+    domeHits.push({ kind: 'moon', obj: view.moon, px: mx, py: my });
+  }
+  if (view.sun) {
+    var sx = PX(view.sun.x), sy = PY(view.sun.y);
+    var sglow = ctx.createRadialGradient(sx, sy, 0, sx, sy, 34);
+    sglow.addColorStop(0, 'rgba(255,220,130,0.9)');
+    sglow.addColorStop(1, 'rgba(255,220,130,0)');
+    ctx.fillStyle = sglow;
+    ctx.beginPath(); ctx.arc(sx, sy, 34, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(sx, sy, 11, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffd97a'; ctx.fill();
+    domeHits.push({ kind: 'sun', obj: view.sun, px: sx, py: sy });
+  }
+
+  // the ground: everything below the projected horizon line
+  var hPts = [];
+  for (var hz = 0; hz < view.horizon.length; hz++) {
+    if (view.horizon[hz]) hPts.push(view.horizon[hz]);
+  }
+  if (hPts.length > 1) {
+    hPts.sort(function (a, b) { return a.x - b.x; });
+    ctx.beginPath();
+    ctx.moveTo(PX(hPts[0].x) - 400, h + 400);
+    ctx.lineTo(PX(hPts[0].x) - 400, PY(hPts[0].y));
+    for (var hp = 0; hp < hPts.length; hp++) ctx.lineTo(PX(hPts[hp].x), PY(hPts[hp].y));
+    ctx.lineTo(PX(hPts[hPts.length - 1].x) + 400, PY(hPts[hPts.length - 1].y));
+    ctx.lineTo(PX(hPts[hPts.length - 1].x) + 400, h + 400);
+    ctx.closePath();
+    var gg = ctx.createLinearGradient(0, h * 0.4, 0, h);
+    if (state.red) { gg.addColorStop(0, 'rgba(26,4,4,0.92)'); gg.addColorStop(1, '#0a0000'); }
+    else { gg.addColorStop(0, 'rgba(10,16,32,0.93)'); gg.addColorStop(1, '#05070e'); }
+    ctx.fillStyle = gg; ctx.fill();
+    ctx.strokeStyle = state.red ? 'rgba(255,110,90,0.5)' : 'rgba(127,179,255,0.45)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (var hs = 0; hs < hPts.length; hs++) {
+      if (hs === 0) ctx.moveTo(PX(hPts[hs].x), PY(hPts[hs].y));
+      else ctx.lineTo(PX(hPts[hs].x), PY(hPts[hs].y));
+    }
+    ctx.stroke();
+  } else if (state.cam.alt < 0) {
+    ctx.fillStyle = state.red ? 'rgba(26,4,4,0.9)' : 'rgba(10,16,32,0.9)';
+    ctx.fillRect(0, 0, w, h);
+  }
+  // compass letters on the horizon
+  ctx.font = '700 12px -apple-system, sans-serif';
+  for (var tk = 0; tk < view.ticks.length; tk++) {
+    var tick = view.ticks[tk];
+    ctx.fillStyle = P.accent;
+    ctx.fillText(tick.label, PX(tick.x), PY(tick.y) + 14);
+  }
+  // heads-up: where we're looking
+  ctx.fillStyle = P.label; ctx.font = '600 11px -apple-system, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(E.compass(state.cam.az) + ' · ' + Math.round(state.cam.az) + '° az · '
+    + Math.round(state.cam.alt) + '° alt' + (state.gyro ? ' · 📱' : ''), 12, 16);
+  ctx.textAlign = 'center';
+}
+
+/* -------- the overhead dome (kept from 2.0) -------- */
 function drawDome() {
   var cv = $('dome');
   var s = setupCanvas(cv, 1.0);
@@ -505,6 +735,7 @@ function drawDome() {
 }
 
 function domeTap(evt) {
+  if (dragState.moved) { dragState.moved = false; return; }
   var cv = $('dome');
   var rect = cv.getBoundingClientRect();
   var x = (evt.clientX || 0) - rect.left, y = (evt.clientY || 0) - rect.top;
@@ -818,6 +1049,68 @@ function drawAltCurve(target) {
 }
 
 /* ---------------- tools ---------------- */
+// The Grand Orrery: the solar system seen from 30° above the ecliptic —
+// orbits foreshortened into ellipses, planets depth-sorted so the far side
+// passes behind the sun, log-scaled radii so Mercury and Neptune share a frame.
+var ORRERY_TILT = 0.42; // sin-ish foreshortening of the y axis
+function drawOrrery() {
+  var cv = $('orrery');
+  if (!cv) return;
+  var s = setupCanvas(cv, 0.62);
+  if (!s) return;
+  var ctx = s.ctx, w = s.w, h = s.h;
+  var P = pal();
+  ctx.clearRect(0, 0, w, h);
+  var cx = w / 2, cy = h / 2 + 6;
+  var maxR = Math.min(w / 2, h / (2 * ORRERY_TILT)) - 18;
+  var rOf = function (au) { return maxR * (Math.log(au / 0.28) / Math.log(30.1 / 0.28)); };
+  var t = now();
+  var bodies = [{ key: 'earth', name: 'Earth', color: '#7fb3ff' }].concat(E.PLANETS);
+  // orbits first
+  ctx.strokeStyle = P.grid; ctx.lineWidth = 1;
+  for (var i = 0; i < bodies.length; i++) {
+    var rr = rOf(E.heliocentric(bodies[i].key, t).r);
+    ctx.beginPath();
+    if (ctx.ellipse) ctx.ellipse(cx, cy, rr, rr * ORRERY_TILT, 0, 0, Math.PI * 2);
+    else ctx.arc(cx, cy, rr, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  // depth-sort: far-side planets (sin>0 → behind) draw before the sun
+  var placed = [];
+  for (var b = 0; b < bodies.length; b++) {
+    var hc = E.heliocentric(bodies[b].key, t);
+    var a = hc.lonDeg * Math.PI / 180;
+    var rr2 = rOf(hc.r);
+    placed.push({ body: bodies[b], x: cx + rr2 * Math.cos(a), y: cy - rr2 * Math.sin(a) * ORRERY_TILT,
+      behind: Math.sin(a) > 0, size: (bodies[b].key === 'jupiter' || bodies[b].key === 'saturn' ? 5.5 : 4)
+        * (Math.sin(a) > 0 ? 0.8 : 1.1) });
+  }
+  function drawPlanet(p) {
+    if (!state.red) {
+      var glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size * 3);
+      glow.addColorStop(0, 'rgba(255,255,255,0.18)');
+      glow.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.size * 3, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fillStyle = state.red ? '#ff8866' : p.body.color; ctx.fill();
+    ctx.fillStyle = P.label; ctx.font = '600 9.5px -apple-system, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(p.body.name, p.x, p.y - p.size - 7);
+  }
+  for (var q1 = 0; q1 < placed.length; q1++) if (placed[q1].behind) drawPlanet(placed[q1]);
+  // the sun
+  var sunGlow = ctx.createRadialGradient(cx, cy, 0, cx, cy, 26);
+  sunGlow.addColorStop(0, state.red ? 'rgba(255,136,102,0.8)' : 'rgba(255,217,122,0.85)');
+  sunGlow.addColorStop(1, 'rgba(255,217,122,0)');
+  ctx.fillStyle = sunGlow;
+  ctx.beginPath(); ctx.arc(cx, cy, 26, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx, cy, 7, 0, Math.PI * 2);
+  ctx.fillStyle = state.red ? '#ff8866' : '#ffd97a'; ctx.fill();
+  for (var q2 = 0; q2 < placed.length; q2++) if (!placed[q2].behind) drawPlanet(placed[q2]);
+}
+
 var SENSORS = [
   { name: 'Full frame (36×24)', w: 36, h: 24, px: 5.9 },
   { name: 'APS-C (23.5×15.7)', w: 23.5, h: 15.7, px: 3.76 },
@@ -829,6 +1122,7 @@ var SENSORS = [
   { name: 'Custom', w: 0, h: 0, px: 0 }
 ];
 function renderTools() {
+  drawOrrery();
   drawReticle();
   drawJMoons();
   var sel = $('fovSensor');
@@ -999,7 +1293,7 @@ function applyTheme() {
 }
 function renderAll() {
   renderClock();
-  if (state.view === 'sky') { drawDome(); renderSkyInfo(); }
+  if (state.view === 'sky') { drawSky(); renderSkyInfo(); }
   if (state.view === 'tonight') renderTonight();
   if (state.view === 'objects') { if (state.detail) renderDetail(); }
   if (state.view === 'tools') renderTools();
@@ -1043,6 +1337,111 @@ function geolocate() {
   }, function () { closeSheet(); });
 }
 
+/* ---------------- pointing: modes, drag, gyro, tour ---------------- */
+function setSkyMode(mode) {
+  state.skyMode = mode;
+  $('modePoint').className = mode === 'point' ? 'lbtn on' : 'lbtn';
+  $('modeDome').className = mode === 'dome' ? 'lbtn on' : 'lbtn';
+  $('fovRow').style.display = mode === 'point' ? 'flex' : 'none';
+  $('gyroBtn').style.display = mode === 'point' ? 'inline-flex' : 'none';
+  if (mode !== 'point') tourEndNow();
+  drawSky();
+}
+var dragState = { on: false, x: 0, y: 0, moved: false };
+function wirePan() {
+  var cv = $('dome');
+  cv.addEventListener('pointerdown', function (e) {
+    if (state.skyMode !== 'point') return;
+    dragState.on = true; dragState.moved = false;
+    dragState.x = e.clientX || 0; dragState.y = e.clientY || 0;
+    if (cv.setPointerCapture && e.pointerId !== undefined) {
+      try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+    }
+  });
+  cv.addEventListener('pointermove', function (e) {
+    if (!dragState.on || state.skyMode !== 'point') return;
+    var nx = e.clientX || 0, ny = e.clientY || 0;
+    var dx = nx - dragState.x, dy = ny - dragState.y;
+    if (Math.abs(dx) + Math.abs(dy) > 5) dragState.moved = true;
+    dragState.x = nx; dragState.y = ny;
+    var rect = cv.getBoundingClientRect();
+    var scale = state.cam.fov / Math.max(1, rect.width || 360);
+    state.cam.az = E.wrap360(state.cam.az - dx * scale);
+    state.cam.alt = Math.max(-25, Math.min(88, state.cam.alt + dy * scale));
+    if (dragState.moved) { state.gyro = false; drawSky(); }
+  });
+  var up = function () { dragState.on = false; };
+  cv.addEventListener('pointerup', up);
+  cv.addEventListener('pointercancel', up);
+}
+function onGyroReading(e) {
+  if (!state.gyro || state.skyMode !== 'point') return;
+  var heading = (e && e.webkitCompassHeading != null) ? Number(e.webkitCompassHeading)
+    : (e && e.alpha != null ? 360 - Number(e.alpha) : null);
+  var beta = e && e.beta != null ? Number(e.beta) : null;
+  if (heading === null || beta === null || !isFinite(heading) || !isFinite(beta)) return;
+  state.cam.az = E.wrap360(heading);
+  state.cam.alt = Math.max(-25, Math.min(88, beta - 90));
+  drawSky();
+}
+function toggleGyro() {
+  if (state.gyro) {
+    state.gyro = false;
+    try { window.removeEventListener('deviceorientation', onGyroReading); } catch (e) {}
+    $('gyroBtn').className = 'lbtn';
+    return;
+  }
+  var arm = function () {
+    state.gyro = true;
+    $('gyroBtn').className = 'lbtn on';
+    try { window.addEventListener('deviceorientation', onGyroReading); } catch (e) {}
+  };
+  try {
+    if (typeof DeviceOrientationEvent !== 'undefined' &&
+        DeviceOrientationEvent.requestPermission) {
+      DeviceOrientationEvent.requestPermission().then(function (res) {
+        if (res === 'granted') arm();
+      }).catch(function () {});
+    } else arm();
+  } catch (e) { arm(); }
+}
+function tourStart() {
+  var stops = E.tourStops(state.place.lat, state.place.lon, now(), { bortle: state.bortle });
+  if (!stops.length) {
+    state.selected = null;
+    $('skyinfo').innerHTML = '<div class="muted">Nothing is well placed right now — scrub time forward to tonight and start the tour again.</div>';
+    return;
+  }
+  state.tour = { on: true, stops: stops, idx: 0 };
+  state.gyro = false;
+  setSkyMode('point');
+  tourShow();
+}
+function tourShow() {
+  var tr = state.tour;
+  if (!tr.on || !tr.stops.length) return;
+  var stop = tr.stops[tr.idx];
+  state.cam.az = stop.azDeg;
+  state.cam.alt = Math.max(5, Math.min(80, stop.altDeg));
+  state.cam.fov = 50;
+  $('fovRange').value = '50'; $('fovVal').textContent = '50° view';
+  $('tourCard').style.display = 'block';
+  $('tourName').textContent = (tr.idx + 1) + '/' + tr.stops.length + ' · ' + stop.name;
+  $('tourLine').textContent = stop.line;
+  drawSky();
+}
+function tourStep(dir) {
+  var tr = state.tour;
+  if (!tr.on) return;
+  tr.idx = (tr.idx + dir + tr.stops.length) % tr.stops.length;
+  tourShow();
+}
+function tourEndNow() {
+  state.tour.on = false;
+  var card = $('tourCard');
+  if (card) card.style.display = 'none';
+}
+
 /* ---------------- wiring ---------------- */
 function wire() {
   var tabs = document.querySelectorAll('.tabbtn');
@@ -1078,15 +1477,28 @@ function wire() {
   $('magRange').addEventListener('input', function () {
     state.magLimit = Number($('magRange').value) / 10;
     $('magVal').textContent = 'mag ' + state.magLimit.toFixed(1);
-    drawDome();
+    drawSky();
   });
+  $('fovRange').addEventListener('input', function () {
+    state.cam.fov = Number($('fovRange').value) || 65;
+    $('fovVal').textContent = Math.round(state.cam.fov) + '° view';
+    drawSky();
+  });
+  $('modePoint').addEventListener('click', function () { setSkyMode('point'); });
+  $('modeDome').addEventListener('click', function () { setSkyMode('dome'); });
+  $('gyroBtn').addEventListener('click', toggleGyro);
+  $('tourBtn').addEventListener('click', tourStart);
+  $('tourNext').addEventListener('click', function () { tourStep(1); });
+  $('tourPrev').addEventListener('click', function () { tourStep(-1); });
+  $('tourEnd').addEventListener('click', tourEndNow);
+  wirePan();
   var layerMap = { lyrLines: 'lines', lyrDsos: 'dsos', lyrGrid: 'grid', lyrLabels: 'labels' };
   for (var key in layerMap) {
     (function (btnId, layer) {
       $(btnId).addEventListener('click', function () {
         state.layers[layer] = !state.layers[layer];
         $(btnId).className = state.layers[layer] ? 'lbtn on' : 'lbtn';
-        drawDome();
+        drawSky();
       });
     })(key, layerMap[key]);
   }
@@ -1110,8 +1522,10 @@ function wire() {
 /* ---------------- boot ---------------- */
 loadState();
 if (/(^|[?&])red=1/.test(String((location && location.search) || ''))) state.red = true;
+if (/(^|[?&])dome=1/.test(String((location && location.search) || ''))) state.skyMode = 'dome';
 applyTheme();
 wire();
+setSkyMode(state.skyMode);
 // deep links: #tonight, #tools… and #objects/M42 opens that object directly
 var hash = String((location && location.hash) || '').replace('#', '');
 var hashQuery = '';
@@ -1130,6 +1544,7 @@ if (hashQuery) {
 }
 if (hash && document.getElementById('view-' + hash)) switchView(hash);
 else renderAll();
+if (/(^|[?&])tour=1/.test(String((location && location.search) || ''))) tourStart();
 setInterval(function () { if (state.offsetMs === 0) renderAll(); }, 30000);
 
 if (navigator && 'serviceWorker' in navigator) {

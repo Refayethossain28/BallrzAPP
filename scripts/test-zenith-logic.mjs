@@ -409,6 +409,49 @@ test('tonight briefing still carries sun times, phase, verdicts (v1 API)', () =>
   assert.ok(E.tonight(78, 0, Date.UTC(2026, 5, 21)).polarNote.includes('never sets'));
 });
 
+/* ================= the AR camera & Milky Way ================= */
+test('cameraProject: centre at origin, east on the right, behind culled', () => {
+  const cam = { azDeg: 0, altDeg: 30, fovDeg: 60 };
+  const c0 = E.cameraProject(30, 0, cam);
+  near(c0.x, 0, 1e-9); near(c0.y, 0, 1e-9);
+  const east = E.cameraProject(30, 25, cam);
+  assert.ok(east.visible && east.x > 0, 'east of centre lands right of centre (a window, not a map)');
+  const up = E.cameraProject(55, 0, cam);
+  assert.ok(up.visible && up.y > 0, 'above centre is up');
+  assert.equal(E.cameraProject(-30, 180, cam).visible, false, 'behind the camera');
+});
+test('galacticToEq: galactic centre and north galactic pole land exactly', () => {
+  const gc = E.galacticToEq(0, 0);
+  near(gc.raDeg, 266.405, 0.05, 'Sgr A* RA'); near(gc.decDeg, -28.936, 0.05, 'Sgr A* dec');
+  const ngp = E.galacticToEq(0, 90);
+  near(ngp.raDeg, 192.859, 0.05, 'NGP RA'); near(ngp.decDeg, 27.128, 0.05, 'NGP dec');
+});
+test('cameraView: a November London window holds stars, figures, labels and the Milky Way', () => {
+  const v = E.cameraView(LONDON.lat, LONDON.lon, NOW, { azDeg: 300, altDeg: 45, fovDeg: 80, aspect: 1.2 });
+  assert.ok(v.stars.length > 100, `stars ${v.stars.length}`);
+  assert.ok(v.lines.length > 20, 'figure segments');
+  assert.ok(v.labels.length > 2, 'constellation name labels');
+  assert.ok(v.milkyWay.length > 0 && v.milkyWay.every((b) => b.pts.length > 1), 'Milky Way ribbons toward Cygnus');
+  for (const s of v.stars) assert.ok(Math.abs(s.x) <= 1.35, `star ${s.i} inside padded frame`);
+  assert.ok(v.darkness > 0.8, 'astronomically dark at 22:00');
+  deepEq(v.stars.length, E.cameraView(LONDON.lat, LONDON.lon, NOW, { azDeg: 300, altDeg: 45, fovDeg: 80, aspect: 1.2 }).stars.length, 'deterministic');
+});
+test('cameraView: zooming in narrows the field', () => {
+  const wide = E.cameraView(LONDON.lat, LONDON.lon, NOW, { azDeg: 180, altDeg: 40, fovDeg: 85, aspect: 1 });
+  const tight = E.cameraView(LONDON.lat, LONDON.lon, NOW, { azDeg: 180, altDeg: 40, fovDeg: 30, aspect: 1 });
+  assert.ok(tight.stars.length < wide.stars.length, `${tight.stars.length} < ${wide.stars.length}`);
+});
+test('tourStops: a guided tour of what is actually up, each stop pointable', () => {
+  const stops = E.tourStops(LONDON.lat, LONDON.lon, NOW, { bortle: 4 });
+  assert.ok(stops.length >= 4, `stops ${stops.length}`);
+  for (const s of stops) {
+    assert.ok(s.altDeg > 3, `${s.name} above horizon`);
+    assert.ok(s.azDeg >= 0 && s.azDeg < 360);
+    assert.ok(s.line.length > 15, `${s.name} has a story line`);
+  }
+  deepEq(stops.map((s) => s.name), E.tourStops(LONDON.lat, LONDON.lon, NOW, { bortle: 4 }).map((s) => s.name), 'deterministic');
+});
+
 /* ================= run ================= */
 for (const [name, fn] of tests) {
   try { fn(); passed++; console.log(`  ✓ ${name}`); }
