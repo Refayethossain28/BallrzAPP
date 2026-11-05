@@ -1,0 +1,648 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Retouch</title>
+<meta name="description" content="Retouch is a one-sentence photo studio: drop in a photo, pick a tool or say what you want, and download the result.">
+<meta name="theme-color" content="#1f2226">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #1f2226; --panel: #282c31; --panel-2: #30353b; --line: #3b4148; --line-soft: #2f343a;
+    --ink: #ecebe6; --ink-2: #a9adb3; --ink-3: #777c83;
+    --accent: #4f8ef7; --accent-ink: #0d1a33; --accent-soft: rgba(79,142,247,.16);
+    --amber: #e3b341; --danger: #e0604f; --ok: #5ec48f;
+    --radius: 10px; --radius-lg: 16px;
+    --font: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+    --shadow: 0 10px 30px rgba(0,0,0,.35);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 15px; line-height: 1.45;
+    -webkit-font-smoothing: antialiased; overscroll-behavior: none;
+  }
+  button, input, textarea, select { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  [hidden] { display: none !important; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+  /* ---------- top bar ---------- */
+  .bar { display: flex; align-items: center; gap: 14px; padding: 12px 16px; border-bottom: 1px solid var(--line-soft); position: sticky; top: 0; background: var(--bg); z-index: 5; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; letter-spacing: -0.01em; background: none; border: 0; padding: 0; color: var(--ink); }
+  .brand svg { width: 26px; height: 26px; }
+  .bar .spacer { flex: 1; }
+  .pill { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; background: var(--panel); font-size: 13px; color: var(--ink-2); }
+  .pill b { color: var(--amber); font-weight: 700; font-variant-numeric: tabular-nums; }
+  .pill.low b { color: var(--danger); }
+  .btn { border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: var(--radius); padding: 9px 14px; font-weight: 600; font-size: 14px; }
+  .btn:hover { background: var(--panel-2); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .btn.primary:disabled { opacity: .55; cursor: not-allowed; filter: none; }
+  .btn.ghost { background: none; border-color: transparent; color: var(--ink-2); }
+  .btn.ghost:hover { color: var(--ink); background: var(--panel); }
+  .btn.sm { padding: 6px 10px; font-size: 13px; }
+
+  /* ---------- landing ---------- */
+  .landing { max-width: 1040px; margin: 0 auto; padding: 56px 16px 80px; }
+  .hero h1 { font-size: clamp(38px, 7vw, 72px); line-height: .98; letter-spacing: -0.035em; font-weight: 700; margin: 0 0 18px; max-width: 14ch; font-variation-settings: "opsz" 96; }
+  .hero p { font-size: 18px; color: var(--ink-2); max-width: 52ch; margin: 0 0 32px; }
+  .drop { display: block; border: 1.5px dashed var(--line); border-radius: var(--radius-lg); padding: 38px 24px; text-align: center; background: var(--panel); transition: border-color .15s, background .15s; cursor: pointer; }
+  .drop.over { border-color: var(--accent); background: var(--accent-soft); }
+  .drop strong { display: block; font-size: 18px; margin-bottom: 6px; }
+  .drop span { color: var(--ink-2); font-size: 14px; }
+  .drop .btn { margin-top: 16px; }
+  .samples { margin-top: 36px; }
+  .samples h2 { font-size: 15px; font-weight: 600; color: var(--ink-2); margin: 0 0 12px; }
+  .sample-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .sample { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--panel); padding: 0; text-align: left; }
+  .sample canvas { display: block; width: 100%; height: 150px; object-fit: cover; }
+  .sample div { padding: 10px 12px; font-weight: 600; font-size: 14px; }
+  .sample div small { display: block; font-weight: 400; color: var(--ink-2); }
+  .tools-intro { margin-top: 48px; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px 28px; }
+  .tools-intro div { padding: 14px 0; border-top: 1px solid var(--line-soft); }
+  .tools-intro b { display: block; margin-bottom: 4px; }
+  .tools-intro span { color: var(--ink-2); font-size: 14px; }
+  .fine { margin-top: 40px; color: var(--ink-3); font-size: 13px; max-width: 70ch; }
+
+  /* ---------- studio ---------- */
+  .studio { display: grid; grid-template-columns: 196px 1fr 300px; height: calc(100vh - 57px); height: calc(100dvh - 57px); }
+  .rail { border-right: 1px solid var(--line-soft); padding: 12px; display: flex; flex-direction: column; gap: 4px; overflow: auto; }
+  .rail h3, .panel h3 { font-size: 12px; font-weight: 600; color: var(--ink-3); margin: 6px 0 8px; }
+  .tool { display: grid; grid-template-columns: 26px 1fr auto; align-items: center; gap: 8px; width: 100%; text-align: left; background: none; border: 1px solid transparent; border-radius: var(--radius); padding: 9px 10px; color: var(--ink-2); font-weight: 600; }
+  .tool:hover { background: var(--panel); color: var(--ink); }
+  .tool.on { background: var(--accent-soft); border-color: rgba(79,142,247,.35); color: var(--ink); }
+  .tool i { font-style: normal; font-size: 16px; text-align: center; color: var(--accent); }
+  .tool em { font-style: normal; font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .stage { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .canvas-wrap { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; padding: 18px; min-height: 0; background:
+    radial-gradient(ellipse at 50% 40%, #272b30 0%, var(--bg) 70%); }
+  .frame { position: relative; max-width: 100%; max-height: 100%; box-shadow: var(--shadow); border-radius: 6px; overflow: hidden; background: #111; }
+  .frame canvas { display: block; max-width: 100%; max-height: calc(100vh - 57px - 36px - 132px); max-height: calc(100dvh - 57px - 36px - 132px); }
+  .frame .over { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; }
+  .frame .over canvas { position: absolute; left: 0; top: 0; width: var(--fw); height: var(--fh); max-width: none; max-height: none; }
+  .frame .mask { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+  .divider { position: absolute; top: 0; bottom: 0; width: 2px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.35); pointer-events: none; }
+  .divider::after { content: "◂ ▸"; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #fff; color: #111; font-size: 11px; font-weight: 700; padding: 5px 7px; border-radius: 999px; letter-spacing: .05em; white-space: nowrap; }
+  .tag { position: absolute; top: 10px; padding: 3px 8px; font-size: 11px; font-weight: 700; border-radius: 999px; background: rgba(0,0,0,.55); color: #fff; pointer-events: none; }
+  .tag.l { left: 10px; } .tag.r { right: 10px; }
+  .compare { position: absolute; left: 0; right: 0; bottom: 0; height: 36px; display: flex; align-items: center; justify-content: center; }
+  .compare input { width: min(360px, 70%); accent-color: var(--accent); }
+  .working { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: rgba(31,34,38,.72); backdrop-filter: blur(3px); z-index: 2; }
+  .working .track { width: 220px; height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
+  .working .track i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s linear; }
+  .working span { color: var(--ink-2); font-size: 14px; }
+  .strip { height: 132px; border-top: 1px solid var(--line-soft); display: flex; align-items: stretch; gap: 10px; padding: 10px 14px; overflow-x: auto; }
+  .strip .empty { align-self: center; color: var(--ink-3); font-size: 13px; }
+  .shot { flex: 0 0 auto; width: 120px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--panel); padding: 0; text-align: left; position: relative; }
+  .shot.on { border-color: var(--accent); }
+  .shot img { display: block; width: 100%; height: 66px; object-fit: cover; background: #111; }
+  .shot div { padding: 5px 8px; font-size: 11px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .shot div b { display: block; color: var(--ink); font-weight: 600; }
+  .panel { border-left: 1px solid var(--line-soft); padding: 14px; display: flex; flex-direction: column; gap: 12px; overflow: auto; }
+  .panel .blurb { color: var(--ink-2); font-size: 14px; margin: -4px 0 4px; }
+  .presets { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .preset { border: 1px solid var(--line); background: var(--panel); border-radius: var(--radius); padding: 10px 12px; text-align: left; font-weight: 600; }
+  .preset.on { border-color: var(--accent); background: var(--accent-soft); }
+  .preset small { display: block; font-weight: 400; color: var(--ink-3); font-size: 12px; }
+  .brush { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-2); }
+  .brush input { flex: 1; accent-color: var(--accent); }
+  textarea { width: 100%; min-height: 86px; resize: vertical; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; color: var(--ink); }
+  textarea::placeholder { color: var(--ink-3); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { border: 1px solid var(--line); background: none; color: var(--ink-2); border-radius: 999px; padding: 4px 10px; font-size: 12px; }
+  .chip:hover { color: var(--ink); border-color: var(--ink-3); }
+  .note { font-size: 13px; color: var(--ink-2); border-left: 2px solid var(--line); padding: 2px 10px; }
+  .note.err { color: #f0a69c; border-color: var(--danger); }
+  .note.ok { color: var(--ok); border-color: var(--ok); }
+  .go { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+  .go .cost { color: var(--ink-3); font-size: 13px; white-space: nowrap; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; padding-top: 8px; border-top: 1px solid var(--line-soft); }
+
+  /* ---------- dialogs ---------- */
+  dialog { border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: var(--radius-lg); padding: 24px; max-width: 440px; width: calc(100% - 32px); box-shadow: var(--shadow); }
+  dialog::backdrop { background: rgba(0,0,0,.55); }
+  dialog h2 { margin: 0 0 6px; font-size: 22px; letter-spacing: -0.02em; }
+  dialog p { color: var(--ink-2); margin: 0 0 14px; }
+  .plan { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 8px; }
+  .plan.on { border-color: var(--accent); }
+  .plan b { display: block; } .plan small { color: var(--ink-2); }
+  .plan .price { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); background: #111; color: #fff; padding: 10px 16px; border-radius: 999px; font-size: 14px; box-shadow: var(--shadow); z-index: 20; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+
+  @media (max-width: 900px) {
+    .studio { grid-template-columns: 1fr; height: auto; }
+    .rail { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line-soft); padding: 10px 12px; gap: 6px; }
+    .rail h3 { display: none; }
+    .tool { grid-template-columns: auto auto; padding: 8px 12px; white-space: nowrap; width: auto; }
+    .tool em { display: none; }
+    .canvas-wrap { min-height: 52vh; }
+    .frame canvas { max-height: 56vh; }
+    .panel { border-left: 0; border-top: 1px solid var(--line-soft); }
+    .sample-row { grid-template-columns: 1fr; }
+    .bar .hide-sm { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <button class="brand" id="brandBtn" type="button" aria-label="Retouch home">
+    <svg viewBox="0 0 64 64" aria-hidden="true"><rect x="6" y="10" width="52" height="44" rx="9" fill="#2f6fe4"/><rect x="6" y="10" width="52" height="44" rx="9" fill="none" stroke="#9cc0ff" stroke-width="2" opacity=".6"/><path d="M14 46 L28 30 L37 40 L43 34 L50 46 Z" fill="#dfe8ff"/><circle cx="43" cy="22" r="5" fill="#ffd56a"/></svg>
+    Retouch
+  </button>
+  <span class="spacer"></span>
+  <button class="pill" id="creditsPill" type="button" title="Your credits"><b id="creditsLeft">10</b><span id="creditsText">credits</span></button>
+  <button class="btn ghost hide-sm" id="historyBtn" type="button">History</button>
+  <button class="btn primary sm" id="upgradeBtn" type="button">Upgrade</button>
+</header>
+
+<!-- ============ landing ============ -->
+<main class="landing" id="landing">
+  <section class="hero">
+    <h1>Retouch any photo in one sentence.</h1>
+    <p>Drop a photo in. Ask for a studio headshot, a clean background, an object gone, or just say “warmer and sharper”. It happens in your browser, and nothing you upload leaves your device.</p>
+  </section>
+  <label class="drop" id="drop" for="fileInput">
+    <strong>Drop a photo here</strong>
+    <span>JPG, PNG or WebP · works at up to 1024px on the long edge</span>
+    <input class="sr" type="file" id="fileInput" accept="image/*">
+    <span class="btn primary" id="chooseBtn" role="button" tabindex="0">Choose a photo</span>
+  </label>
+  <section class="samples">
+    <h2>No photo handy? Try one of these.</h2>
+    <div class="sample-row" id="sampleRow"></div>
+  </section>
+  <section class="tools-intro" id="toolsIntro"></section>
+  <p class="fine">Retouch edits photos. It won’t undress or sexualise anyone, and it won’t forge documents. The free plan gives you 10 credits a day; Pro gives you 400 a month.</p>
+</main>
+
+<!-- ============ studio ============ -->
+<main class="studio" id="studio" hidden>
+  <nav class="rail" id="rail" aria-label="Tools"><h3>Tools</h3></nav>
+
+  <section class="stage">
+    <div class="canvas-wrap" id="canvasWrap">
+      <div class="frame" id="frame">
+        <canvas id="afterCanvas" aria-label="Edited photo"></canvas>
+        <div class="over" id="beforeWrap" hidden><canvas id="beforeCanvas" aria-label="Original photo"></canvas></div>
+        <canvas class="mask" id="maskCanvas" hidden aria-label="Paint over what to remove"></canvas>
+        <div class="divider" id="divider" hidden></div>
+        <span class="tag l" id="tagBefore" hidden>Before</span>
+        <span class="tag r" id="tagAfter" hidden>After</span>
+        <div class="working" id="working" hidden>
+          <div class="track"><i id="workingBar"></i></div>
+          <span id="workingText">Working…</span>
+        </div>
+      </div>
+      <div class="compare" id="compare" hidden>
+        <input type="range" id="compareRange" min="0" max="100" value="50" aria-label="Before and after slider">
+      </div>
+    </div>
+    <div class="strip" id="strip"><span class="empty">Your edits will line up here.</span></div>
+  </section>
+
+  <aside class="panel" id="panel">
+    <h3 id="panelTitle">Headshot</h3>
+    <p class="blurb" id="panelBlurb"></p>
+    <div class="presets" id="presets"></div>
+    <div class="brush" id="brushRow" hidden>
+      <span>Brush</span><input type="range" id="brushSize" min="6" max="80" value="28" aria-label="Brush size">
+      <button class="btn sm" id="clearMask" type="button">Clear</button>
+    </div>
+    <textarea id="promptBox" placeholder="Optional: add a note like “a bit warmer” or “blur the background”"></textarea>
+    <div class="chips" id="chips"></div>
+    <div class="note" id="note" hidden></div>
+    <div class="go">
+      <button class="btn primary" id="goBtn" type="button">Generate</button>
+      <span class="cost" id="goCost"></span>
+    </div>
+    <div class="actions">
+      <button class="btn sm" id="downloadBtn" type="button" disabled>Download</button>
+      <button class="btn sm" id="keepBtn" type="button" disabled>Keep editing this</button>
+      <button class="btn ghost sm" id="newBtn" type="button">New photo</button>
+    </div>
+  </aside>
+</main>
+
+<dialog id="upgradeDialog">
+  <h2>Plans</h2>
+  <p>Credits pay for each studio job. Pick the plan that fits how much you shoot.</p>
+  <div id="planList"></div>
+  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+    <button class="btn" id="closeUpgrade" type="button">Close</button>
+  </div>
+</dialog>
+
+<dialog id="historyDialog">
+  <h2>History</h2>
+  <p>The last twelve edits, kept on this device.</p>
+  <div id="historyList"></div>
+  <div style="display:flex;gap:8px;justify-content:space-between;margin-top:14px">
+    <button class="btn ghost sm" id="clearHistory" type="button">Clear</button>
+    <button class="btn" id="closeHistory" type="button">Close</button>
+  </div>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="engine.js"></script>
+<script>
+(function () {
+  'use strict';
+  var E = window.RetouchEngine;
+  var $ = function (id) { return document.getElementById(id); };
+  var LS_KEY = 'retouch:v1';
+  var MAX_EDGE = 1024, THUMB_EDGE = 320;
+
+  /* ---------------- state ---------------- */
+  var S = { ledger: E.newLedger('free'), history: [], tool: 'headshot', preset: {}, note: {} };
+  try {
+    var raw = localStorage.getItem(LS_KEY);
+    if (raw) { var saved = JSON.parse(raw); if (saved && saved.ledger) S.ledger = saved.ledger; if (saved && saved.history) S.history = saved.history; }
+  } catch (e) {}
+  function persist() {
+    try { localStorage.setItem(LS_KEY, JSON.stringify({ ledger: S.ledger, history: S.history })); } catch (e) {}
+  }
+  E.TOOLS.forEach(function (t) { S.preset[t.id] = t.presets[0] || null; });
+
+  // the photo on the bench: source pixels at working size, the latest result, the last job
+  var bench = { src: null, w: 0, h: 0, result: null, rw: 0, rh: 0, job: null, mask: null, maskCount: 0 };
+
+  /* ---------------- helpers ---------------- */
+  var toastTimer = 0;
+  function toast(msg) {
+    var t = $('toast'); t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastTimer); toastTimer = setTimeout(function () { t.classList.remove('show'); }, 2600);
+  }
+  function note(msg, kind) {
+    var n = $('note');
+    if (!msg) { n.hidden = true; n.textContent = ''; n.className = 'note'; return; }
+    n.hidden = false; n.textContent = msg; n.className = 'note' + (kind ? ' ' + kind : '');
+  }
+  function makeCanvas(w, h) { var c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+  function putPixels(canvas, px, w, h) {
+    canvas.width = w; canvas.height = h;
+    var ctx = canvas.getContext('2d');
+    var img = ctx.createImageData(w, h);
+    img.data.set(px);
+    ctx.putImageData(img, 0, 0);
+  }
+
+  /* ---------------- credits ---------------- */
+  function renderCredits() {
+    var sum = E.creditsSummary(S.ledger, Date.now());
+    $('creditsLeft').textContent = sum.left;
+    $('creditsText').textContent = (sum.left === 1 ? 'credit' : 'credits') + ' · ' + sum.planLabel + ' · ' + sum.resetText;
+    $('creditsPill').classList.toggle('low', sum.low);
+    $('upgradeBtn').textContent = sum.plan === 'pro' ? 'Pro' : 'Upgrade';
+  }
+  function renderPlans() {
+    var list = $('planList'); list.innerHTML = '';
+    Object.keys(E.PLANS).forEach(function (id) {
+      var p = E.PLANS[id], on = S.ledger.plan === id;
+      var row = document.createElement('div'); row.className = 'plan' + (on ? ' on' : '');
+      row.innerHTML = '<div><b>' + E.escapeHTML(p.label) + '</b><small>' + p.allowance + ' credits a ' + p.period + '</small></div>' +
+        '<div style="display:flex;align-items:center;gap:10px"><span class="price">' + (p.price ? '£' + p.price + '/mo' : 'Free') + '</span>' +
+        (on ? '<span class="chip">Current</span>' : '<button class="btn sm primary" type="button" data-plan="' + id + '">Choose</button>') + '</div>';
+      list.appendChild(row);
+    });
+    Array.prototype.forEach.call(list.querySelectorAll('[data-plan]'), function (b) {
+      b.addEventListener('click', function () {
+        S.ledger = E.switchPlan(S.ledger, b.getAttribute('data-plan')); persist(); renderCredits(); renderPlans();
+        toast('You’re on ' + E.PLANS[S.ledger.plan].label + '.');
+      });
+    });
+  }
+
+  /* ---------------- landing ---------------- */
+  function drawScene(canvas, scene) {
+    canvas.width = scene.w; canvas.height = scene.h;
+    var ctx = canvas.getContext('2d');
+    scene.shapes.forEach(function (sh) {
+      if (sh.type === 'gradient') {
+        var g = ctx.createLinearGradient(0, sh.y, 0, sh.y + sh.h); g.addColorStop(0, sh.from); g.addColorStop(1, sh.to);
+        ctx.fillStyle = g; ctx.fillRect(sh.x, sh.y, sh.w, sh.h);
+      } else if (sh.type === 'rect') { ctx.fillStyle = sh.color; ctx.fillRect(sh.x, sh.y, sh.w, sh.h); }
+      else if (sh.type === 'ellipse') { ctx.fillStyle = sh.color; ctx.beginPath(); ctx.ellipse(sh.cx, sh.cy, sh.rx, sh.ry, 0, 0, Math.PI * 2); ctx.fill(); }
+    });
+  }
+  function renderLanding() {
+    var row = $('sampleRow'); row.innerHTML = '';
+    E.sampleSceneIds().forEach(function (id) {
+      var scene = E.sampleScene(id);
+      var b = document.createElement('button'); b.className = 'sample'; b.type = 'button';
+      var c = document.createElement('canvas'); drawScene(c, scene);
+      var cap = document.createElement('div'); cap.innerHTML = E.escapeHTML(scene.label) + '<small>' + scene.w + ' × ' + scene.h + '</small>';
+      b.appendChild(c); b.appendChild(cap);
+      b.addEventListener('click', function () { loadCanvas(c, 'sample-' + id); });
+      row.appendChild(b);
+    });
+    var intro = $('toolsIntro'); intro.innerHTML = '';
+    E.TOOLS.forEach(function (t) {
+      var d = document.createElement('div');
+      d.innerHTML = '<b>' + E.escapeHTML(t.icon + ' ' + t.label) + ' <em style="font-style:normal;color:var(--ink-3);font-weight:400">' + t.cost + (t.cost === 1 ? ' credit' : ' credits') + '</em></b><span>' + E.escapeHTML(t.blurb) + '</span>';
+      intro.appendChild(d);
+    });
+  }
+
+  function loadFile(file) {
+    if (!file || !/^image\//.test(file.type)) { toast('That isn’t an image file.'); return; }
+    var url = URL.createObjectURL(file);
+    var img = new Image();
+    img.onload = function () { URL.revokeObjectURL(url); var c = makeCanvas(img.naturalWidth, img.naturalHeight); c.getContext('2d').drawImage(img, 0, 0); loadCanvas(c, file.name); };
+    img.onerror = function () { URL.revokeObjectURL(url); toast('Couldn’t read that image.'); };
+    img.src = url;
+  }
+  // Put a photo on the bench at working size and open the studio.
+  function loadCanvas(canvas, name) {
+    var fit = E.fitWithin(canvas.width, canvas.height, MAX_EDGE);
+    var work = makeCanvas(fit.w, fit.h);
+    var ctx = work.getContext('2d'); ctx.imageSmoothingQuality = 'high'; ctx.drawImage(canvas, 0, 0, fit.w, fit.h);
+    var data = ctx.getImageData(0, 0, fit.w, fit.h);
+    bench.src = data.data; bench.w = fit.w; bench.h = fit.h; bench.result = null; bench.job = null; bench.name = name || 'photo';
+    bench.mask = null; bench.maskCount = 0;
+    putPixels($('beforeCanvas'), bench.src, bench.w, bench.h);
+    putPixels($('afterCanvas'), bench.src, bench.w, bench.h);
+    $('landing').hidden = true; $('studio').hidden = false;
+    showCompare(false); note('');
+    $('downloadBtn').disabled = true; $('keepBtn').disabled = true;
+    renderTool(); layoutFrame();
+    window.scrollTo(0, 0);
+  }
+
+  /* ---------------- studio: tools panel ---------------- */
+  function renderRail() {
+    var rail = $('rail');
+    Array.prototype.forEach.call(rail.querySelectorAll('.tool'), function (b) { b.remove(); });
+    E.TOOLS.forEach(function (t) {
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'tool' + (S.tool === t.id ? ' on' : '');
+      b.innerHTML = '<i>' + E.escapeHTML(t.icon) + '</i><span>' + E.escapeHTML(t.label) + '</span><em>' + t.cost + '</em>';
+      b.addEventListener('click', function () { S.note[S.tool] = $('promptBox').value; S.tool = t.id; renderRail(); renderTool(); });
+      rail.appendChild(b);
+    });
+  }
+  var CHIP_IDEAS = {
+    headshot: ['a bit warmer', 'sharper', 'more contrast'],
+    background: ['blur the background', 'white background', 'studio backdrop'],
+    remove: [],
+    enhance: ['brighter', 'less noise', 'vivid'],
+    upscale: ['sharper', 'enhance'],
+    style: ['grain', 'vignette', 'warmer'],
+    prompt: ['warmer and sharper', 'black and white with grain', 'blur the background and brighten', 'cinematic, a bit darker', 'upscale and enhance'],
+  };
+  function renderTool() {
+    var t = E.toolById(S.tool);
+    $('panelTitle').textContent = t.label;
+    $('panelBlurb').textContent = t.blurb;
+    var pr = $('presets'); pr.innerHTML = ''; pr.hidden = !t.presets.length;
+    t.presets.forEach(function (id) {
+      var p = E.presetById(id);
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'preset' + (S.preset[t.id] === id ? ' on' : '');
+      b.innerHTML = E.escapeHTML(p.label) + '<small>' + p.steps.length + (p.steps.length === 1 ? ' step' : ' steps') + '</small>';
+      b.addEventListener('click', function () { S.preset[t.id] = id; renderTool(); });
+      pr.appendChild(b);
+    });
+    var isRemove = t.id === 'remove';
+    $('brushRow').hidden = !isRemove;
+    $('maskCanvas').hidden = !isRemove;
+    if (isRemove) setupMask();
+    $('promptBox').placeholder = t.id === 'prompt' ? 'Say what you want: “warmer and sharper, blur the background”' :
+      isRemove ? 'Paint over the thing to remove, then Generate' : 'Optional: add a note like “a bit warmer” or “blur the background”';
+    $('promptBox').disabled = isRemove;
+    $('promptBox').value = S.note[t.id] || '';
+    var chips = $('chips'); chips.innerHTML = '';
+    (CHIP_IDEAS[t.id] || []).forEach(function (txt) {
+      var c = document.createElement('button'); c.type = 'button'; c.className = 'chip'; c.textContent = txt;
+      c.addEventListener('click', function () { var box = $('promptBox'); box.value = box.value.trim() ? box.value.trim() + ', ' + txt : txt; box.focus(); });
+      chips.appendChild(c);
+    });
+    $('goCost').textContent = t.cost + (t.cost === 1 ? ' credit' : ' credits');
+    note('');
+  }
+
+  /* ---------------- mask painting (Remove) ---------------- */
+  var painting = false, brushCtx = null;
+  function setupMask() {
+    var mc = $('maskCanvas');
+    if (mc.width !== bench.w || mc.height !== bench.h) { mc.width = bench.w; mc.height = bench.h; bench.mask = null; bench.maskCount = 0; }
+    brushCtx = mc.getContext('2d');
+  }
+  function maskPoint(ev) {
+    var mc = $('maskCanvas'), r = mc.getBoundingClientRect();
+    return { x: (ev.clientX - r.left) * mc.width / r.width, y: (ev.clientY - r.top) * mc.height / r.height };
+  }
+  var lastPt = null;
+  function paint(ev) {
+    var p = maskPoint(ev), size = Number($('brushSize').value) * bench.w / 640;
+    brushCtx.strokeStyle = 'rgba(79,142,247,.75)'; brushCtx.fillStyle = brushCtx.strokeStyle;
+    brushCtx.lineWidth = size; brushCtx.lineCap = 'round'; brushCtx.lineJoin = 'round';
+    if (lastPt) { brushCtx.beginPath(); brushCtx.moveTo(lastPt.x, lastPt.y); brushCtx.lineTo(p.x, p.y); brushCtx.stroke(); }
+    else { brushCtx.beginPath(); brushCtx.arc(p.x, p.y, size / 2, 0, Math.PI * 2); brushCtx.fill(); }
+    lastPt = p;
+  }
+  function readMask() {
+    var mc = $('maskCanvas'), d = mc.getContext('2d').getImageData(0, 0, mc.width, mc.height).data;
+    var m = new Float32Array(mc.width * mc.height), count = 0;
+    for (var i = 0; i < m.length; i++) { m[i] = d[i * 4 + 3] > 40 ? 1 : 0; count += m[i]; }
+    bench.mask = m; bench.maskCount = count;
+    return { mask: m, count: count };
+  }
+  function clearMask() { if (brushCtx) brushCtx.clearRect(0, 0, $('maskCanvas').width, $('maskCanvas').height); bench.mask = null; bench.maskCount = 0; }
+
+  /* ---------------- compare slider ---------------- */
+  // The result sits underneath at full size; the original is clipped on
+  // top of its left part, so left = before, right = after.
+  function layoutFrame() {
+    var r = $('afterCanvas').getBoundingClientRect(), frame = $('frame');
+    frame.style.setProperty('--fw', r.width + 'px'); frame.style.setProperty('--fh', r.height + 'px');
+    setCompare(Number($('compareRange').value));
+  }
+  function setCompare(pct) {
+    var w = $('afterCanvas').getBoundingClientRect().width;
+    $('beforeWrap').style.width = (w * pct / 100) + 'px';
+    $('divider').style.left = (w * pct / 100 - 1) + 'px';
+  }
+  function showCompare(on) {
+    $('compare').hidden = !on; $('divider').hidden = !on; $('tagBefore').hidden = !on; $('tagAfter').hidden = !on;
+    $('beforeWrap').hidden = !on;
+    if (on) { $('compareRange').value = 50; setCompare(50); }
+  }
+
+  /* ---------------- running a job ---------------- */
+  var worker = null, workerFailed = false;
+  function getWorker() {
+    if (worker || workerFailed) return worker;
+    try {
+      var engineURL = new URL('engine.js', location.href).href;
+      var src = 'importScripts(' + JSON.stringify(engineURL) + ');' +
+        'self.onmessage=function(e){var d=e.data;try{var r=self.RetouchEngine.runPipeline(d.px,d.w,d.h,d.steps,{mask:d.mask,seed:d.seed});' +
+        'self.postMessage({id:d.id,ok:true,px:r.px,w:r.w,h:r.h,applied:r.applied},[r.px.buffer]);}catch(err){self.postMessage({id:d.id,ok:false,error:String(err&&err.message||err)});}};';
+      worker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+      worker.onerror = function () { workerFailed = true; worker = null; };
+    } catch (e) { workerFailed = true; worker = null; }
+    return worker;
+  }
+  function runSteps(job, mask) {
+    return new Promise(function (resolve, reject) {
+      var w = getWorker();
+      var px = new Uint8ClampedArray(bench.src);
+      if (w) {
+        var onMsg = function (e) {
+          if (!e.data || e.data.id !== job.id) return;
+          w.removeEventListener('message', onMsg);
+          if (e.data.ok) resolve(e.data); else reject(new Error(e.data.error || 'Render failed'));
+        };
+        w.addEventListener('message', onMsg);
+        w.addEventListener('error', function () { reject(new Error('Render failed')); }, { once: true });
+        w.postMessage({ id: job.id, px: px, w: bench.w, h: bench.h, steps: job.steps, mask: mask || null, seed: job.id }, [px.buffer]);
+      } else {
+        setTimeout(function () {
+          try { var r = E.runPipeline(px, bench.w, bench.h, job.steps, { mask: mask || null, seed: job.id }); resolve(r); }
+          catch (err) { reject(err); }
+        }, 30);
+      }
+    });
+  }
+
+  var busy = false;
+  function generate() {
+    if (busy || !bench.src) return;
+    var now = Date.now(), toolId = S.tool;
+    var opts = { preset: S.preset[toolId], prompt: $('promptBox').value, seed: bench.name };
+    if (toolId === 'remove') opts.mask = readMask();
+    var job = E.buildJob(toolId, opts, now);
+    if (!job.ok) { note(job.reason, 'err'); return; }
+    if (!E.canAfford(S.ledger, job.cost, now)) {
+      note('You’re out of credits for now. They ' + E.creditsSummary(S.ledger, now).resetText.replace(/^resets/, 'reset') + ', or move to Pro.', 'err');
+      return;
+    }
+    busy = true; $('goBtn').disabled = true; note('');
+    var work = $('working'), bar = $('workingBar'), txt = $('workingText');
+    work.hidden = false; bar.style.width = '4%'; txt.textContent = 'Working on ' + job.label.toLowerCase() + '…';
+    var start = Date.now(), est = job.seconds * 1000;
+    var tick = setInterval(function () { bar.style.width = Math.min(92, 4 + 88 * (Date.now() - start) / est) + '%'; }, 120);
+    runSteps(job, opts.mask ? opts.mask.mask : null).then(function (r) {
+      clearInterval(tick); bar.style.width = '100%';
+      bench.result = r.px; bench.rw = r.w; bench.rh = r.h; bench.job = job;
+      S.ledger = E.spend(S.ledger, job.cost, Date.now()) || S.ledger;
+      putPixels($('afterCanvas'), r.px, r.w, r.h);
+      // record it: a small thumbnail is all localStorage gets
+      var fit = E.fitWithin(r.w, r.h, THUMB_EDGE), th = makeCanvas(fit.w, fit.h), full = makeCanvas(r.w, r.h);
+      putPixels(full, r.px, r.w, r.h); th.getContext('2d').drawImage(full, 0, 0, fit.w, fit.h);
+      var entry = E.historyEntry(job, Date.now(), { w: r.w, h: r.h, thumb: th.toDataURL('image/jpeg', 0.7) });
+      S.history = E.pushHistory(S.history, entry, 12);
+      persist(); renderCredits(); renderStrip();
+      if (toolId === 'remove') clearMask();
+      setTimeout(function () { work.hidden = true; showCompare(true); layoutFrame(); }, 180);
+      $('downloadBtn').disabled = false; $('keepBtn').disabled = false;
+      note('Done: ' + job.label + '. ' + job.cost + (job.cost === 1 ? ' credit' : ' credits') + ' used.', 'ok');
+    }).catch(function (err) {
+      clearInterval(tick); work.hidden = true;
+      note('That didn’t render: ' + (err && err.message ? err.message : err), 'err');
+    }).then(function () { busy = false; $('goBtn').disabled = false; });
+  }
+
+  function download() {
+    if (!bench.result) return;
+    var c = makeCanvas(bench.rw, bench.rh); putPixels(c, bench.result, bench.rw, bench.rh);
+    var a = document.createElement('a');
+    a.download = E.downloadName(bench.job, Date.now());
+    c.toBlob(function (blob) {
+      var url = URL.createObjectURL(blob); a.href = url; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+    }, 'image/jpeg', 0.92);
+  }
+  // Make the result the new source, so edits stack.
+  function keepEditing() {
+    if (!bench.result) return;
+    var c = makeCanvas(bench.rw, bench.rh); putPixels(c, bench.result, bench.rw, bench.rh);
+    loadCanvas(c, bench.name + '+' + (bench.job ? bench.job.tool : 'edit'));
+    toast('Editing the result now.');
+  }
+
+  /* ---------------- history ---------------- */
+  function renderStrip() {
+    var strip = $('strip'); strip.innerHTML = '';
+    if (!S.history.length) { strip.innerHTML = '<span class="empty">Your edits will line up here.</span>'; return; }
+    S.history.forEach(function (h) {
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'shot' + (bench.job && bench.job.id === h.id ? ' on' : '');
+      b.innerHTML = '<img alt="" src="' + h.thumb + '"><div><b>' + E.escapeHTML(h.label) + '</b>' + E.escapeHTML(E.relTime(h.ts, Date.now())) + ' · ' + h.cost + 'c</div>';
+      b.title = 'Open this edit at thumbnail size';
+      b.addEventListener('click', function () { openThumb(h); });
+      strip.appendChild(b);
+    });
+  }
+  function openThumb(h) {
+    var img = new Image();
+    img.onload = function () { var c = makeCanvas(img.naturalWidth, img.naturalHeight); c.getContext('2d').drawImage(img, 0, 0); loadCanvas(c, 'history'); toast('Opened from history (thumbnail size).'); };
+    img.src = h.thumb;
+  }
+  function renderHistoryDialog() {
+    var list = $('historyList'); list.innerHTML = '';
+    if (!S.history.length) { list.innerHTML = '<p>Nothing yet.</p>'; return; }
+    S.history.forEach(function (h) {
+      var row = document.createElement('div'); row.className = 'plan';
+      row.innerHTML = '<div style="display:flex;gap:10px;align-items:center"><img alt="" src="' + h.thumb + '" style="width:56px;height:40px;object-fit:cover;border-radius:6px"><div><b>' + E.escapeHTML(h.label) + '</b><small>' + E.escapeHTML(E.relTime(h.ts, Date.now())) + ' · ' + h.w + '×' + h.h + ' · ' + h.cost + (h.cost === 1 ? ' credit' : ' credits') + '</small></div></div>' +
+        '<button class="btn sm" type="button">Open</button>';
+      row.querySelector('button').addEventListener('click', function () { $('historyDialog').close(); openThumb(h); });
+      list.appendChild(row);
+    });
+  }
+
+  /* ---------------- wiring ---------------- */
+  $('fileInput').addEventListener('change', function (e) { if (e.target.files && e.target.files[0]) loadFile(e.target.files[0]); e.target.value = ''; });
+  $('chooseBtn').addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('fileInput').click(); } });
+  var drop = $('drop');
+  ['dragenter', 'dragover'].forEach(function (ev) { drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.add('over'); }); });
+  ['dragleave', 'drop'].forEach(function (ev) { drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.remove('over'); }); });
+  drop.addEventListener('drop', function (e) { var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if (f) loadFile(f); });
+  document.addEventListener('paste', function (e) {
+    var items = e.clipboardData && e.clipboardData.items; if (!items) return;
+    for (var i = 0; i < items.length; i++) if (items[i].type.indexOf('image/') === 0) { loadFile(items[i].getAsFile()); break; }
+  });
+
+  $('goBtn').addEventListener('click', generate);
+  $('promptBox').addEventListener('keydown', function (e) { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); generate(); } });
+  $('downloadBtn').addEventListener('click', download);
+  $('keepBtn').addEventListener('click', keepEditing);
+  $('newBtn').addEventListener('click', function () { $('studio').hidden = true; $('landing').hidden = false; window.scrollTo(0, 0); });
+  $('brandBtn').addEventListener('click', function () { if (!$('studio').hidden) return; window.scrollTo(0, 0); });
+  $('compareRange').addEventListener('input', function (e) { setCompare(Number(e.target.value)); });
+  $('clearMask').addEventListener('click', clearMask);
+
+  var mc = $('maskCanvas');
+  mc.addEventListener('pointerdown', function (e) { painting = true; lastPt = null; mc.setPointerCapture(e.pointerId); paint(e); });
+  mc.addEventListener('pointermove', function (e) { if (painting) paint(e); });
+  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(function (ev) { mc.addEventListener(ev, function () { painting = false; lastPt = null; }); });
+
+  $('upgradeBtn').addEventListener('click', function () { renderPlans(); $('upgradeDialog').showModal(); });
+  $('creditsPill').addEventListener('click', function () { renderPlans(); $('upgradeDialog').showModal(); });
+  $('closeUpgrade').addEventListener('click', function () { $('upgradeDialog').close(); });
+  $('historyBtn').addEventListener('click', function () { renderHistoryDialog(); $('historyDialog').showModal(); });
+  $('closeHistory').addEventListener('click', function () { $('historyDialog').close(); });
+  $('clearHistory').addEventListener('click', function () { S.history = []; persist(); renderStrip(); renderHistoryDialog(); });
+
+  window.addEventListener('resize', function () { if (!$('studio').hidden) layoutFrame(); });
+
+  /* ---------------- init ---------------- */
+  renderCredits(); renderLanding(); renderRail(); renderTool(); renderStrip();
+  if (navigator.serviceWorker && /^https?:/.test(location.protocol)) {
+    navigator.serviceWorker.register('sw.js').catch(function () {});
+  }
+})();
+</script>
+</body>
+</html>
