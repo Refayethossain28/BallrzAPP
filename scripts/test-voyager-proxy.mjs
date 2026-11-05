@@ -275,6 +275,17 @@ test('the default-action backstop: inserted links and GET forms are made safe at
   assert.ok(out.includes('f.setAttribute("action",BPATH)'), 'GET forms submit to the bare proxy path');
 });
 
+test('meta-refresh redirects are rewritten through the proxy — no frame escapes', () => {
+  const out = P.rewriteHtml('<html><head><meta http-equiv="refresh" content="1;url=/next"></head><body></body></html>',
+    'https://site.test/page', '/proxy');
+  assert.ok(out.includes(encodeURIComponent('https://site.test/next')), 'relative target resolved and proxied');
+  const out2 = P.rewriteHtml('<meta content="0; URL=\'https://other.site/x\'" http-equiv="REFRESH">',
+    'https://site.test/', '/proxy');
+  assert.ok(out2.includes(encodeURIComponent('https://other.site/x')), 'attribute order and case do not matter');
+  const plain = P.rewriteHtml('<meta name="viewport" content="width=device-width">', 'https://site.test/', '/proxy');
+  assert.ok(plain.includes('width=device-width'), 'ordinary meta tags untouched');
+});
+
 test('originAllowed gates a deployed proxy to its app origins', () => {
   const allow = ['https://refayethossain28.github.io'];
   assert.equal(P.originAllowed('https://refayethossain28.github.io', allow), true);
@@ -351,6 +362,16 @@ async function integration() {
     // a GET form folded onto the bare /proxy path: its fields ride back into the target's query
     const formHit = await (await fetch(`http://127.0.0.1:${proxyPort}/proxy?url=${encodeURIComponent(`http://127.0.0.1:${originPort}/search`)}&q=cats&lang=en`)).text();
     assert.ok(formHit.includes('GOT /search?q=cats&lang=en'), 'form fields merged into the target query');
+
+    // an ESCAPED relative request (bare path + proxied Referer) bounces back
+    // through the proxy instead of being served the app into the frame
+    const esc = await fetch(`http://127.0.0.1:${proxyPort}/styles/escaped.css?v=1`, {
+      redirect: 'manual',
+      headers: { referer: `http://127.0.0.1:${proxyPort}/proxy?url=${encodeURIComponent(target)}` },
+    });
+    assert.equal(esc.status, 302, 'escaped path is redirected');
+    assert.ok(esc.headers.get('location').includes(encodeURIComponent(`http://127.0.0.1:${originPort}/styles/escaped.css?v=1`)),
+      'resolved against the page it escaped from');
 
     // reader endpoint returns clean extracted JSON (the web-memory source)
     const reader = await (await fetch(`http://127.0.0.1:${proxyPort}/reader?url=${encodeURIComponent(`http://127.0.0.1:${originPort}/`)}`)).json();

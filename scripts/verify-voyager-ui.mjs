@@ -76,7 +76,7 @@ function chromeExecutable() {
 
 /* ── the mock world: static app + toggleable proxy ── */
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png' };
-const state = { proxyAwake: true, servePing: true };
+const state = { proxyAwake: true, servePing: true, escapedOnce: false };
 const hung = [];
 
 // Module scope: the wake-up splice (test code) serves held requests with this
@@ -121,6 +121,18 @@ const server = http.createServer((req, res) => {
       // the REAL rewrite pipeline, so the shim's default-action backstop is live
       res.writeHead(200, { 'content-type': 'text/html' });
       return res.end(Proxy.rewriteHtml(HOSTILE_RAW, target, '/proxy'));
+    }
+    if (target.includes('escape.test')) {
+      if (!state.escapedOnce) {
+        state.escapedOnce = true;
+        res.writeHead(200, { 'content-type': 'text/html' });
+        // loads fine, then bolts for the proxy root — the real-world bounce-home bug
+        return res.end(`<!doctype html><meta charset=utf8><title>Escape</title>
+          <body><h1>Escape page with plenty of visible prose for the detector.</h1>
+          <script>parent.postMessage({voyager:'loaded', url:${JSON.stringify(target)}, title:'Escape', trackers:0}, '*');
+          setTimeout(function () { location.href = '/'; }, 300);</script>`);
+      }
+      return servePage(res, target);
     }
     if (target.includes('slowspa.test')) {
       // fires 'load' with an EMPTY shell and hydrates 2.5s later — the SPA way
@@ -349,6 +361,22 @@ const errors = [];
   }, null, { timeout: 8000 });
   check('a GET form whose submit the page swallows reaches its target WITH the query', await page.evaluate(() =>
     document.getElementById('frame').contentDocument.getElementById('echo').textContent.includes('/find?q=cats')));
+
+  /* ════ scenario 3d2: a page that ESCAPES its frame into a Voyager copy (a
+     relative redirect onto the proxy's root) is brought BACK — the user keeps
+     their page; nothing bounces home, nothing gets mis-marked ════ */
+  await page.evaluate(() => { navTo('http://escape.test/'); });
+  await page.waitForFunction(() => document.getElementById('toast').textContent.includes('brought it back'), null, { timeout: 10000 });
+  check('a page that escapes its frame is brought BACK, not bounced home', true);
+  await page.waitForFunction(() => {
+    try { return (document.getElementById('frame').contentDocument.body.textContent || '').includes('Mock page'); }
+    catch (e) { return false; }
+  }, null, { timeout: 8000 });
+  check('…the page itself returns', true);
+  check('…the tab never left it', await page.evaluate(() =>
+    Voyager.tabUrl(Voyager.activeTab(S)) === 'http://escape.test/'));
+  check('…and the site is NOT mis-marked as a Voyager copy', await page.evaluate(() =>
+    (S.selfUrls || []).every((u) => !u.includes('escape.test'))));
 
   /* ════ scenario 3e: a slow-hydrating SPA never gets the false "loaded empty" bar ════ */
   await page.evaluate(() => { navTo('http://slowspa.test/'); });
