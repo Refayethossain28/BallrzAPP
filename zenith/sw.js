@@ -3,9 +3,9 @@
  * what you want on a dark hillside with no signal. Navigations are
  * network-first (freshest build online, cached shell offline); static assets
  * are cache-first. Bump CACHE to force a clean reinstall. */
-const CACHE = 'zenith-v2';
-const ASSETS = ['./', './index.html', './catalog.js', './engine.js', './manifest.json',
-                './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png'];
+const CACHE = 'zenith-v3';
+const ASSETS = ['./', './index.html', './catalog.js?v=3', './engine.js?v=3',
+                './manifest.json', './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(

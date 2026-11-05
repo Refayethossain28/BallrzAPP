@@ -335,8 +335,8 @@
   </div>
 </div>
 
-<script src="catalog.js"></script>
-<script src="engine.js"></script>
+<script src="catalog.js?v=3"></script>
+<script src="engine.js?v=3"></script>
 <script>
 'use strict';
 var E = ZenithEngine;
@@ -1547,8 +1547,34 @@ else renderAll();
 if (/(^|[?&])tour=1/.test(String((location && location.search) || ''))) tourStart();
 setInterval(function () { if (state.offsetMs === 0) renderAll(); }, 30000);
 
-if (navigator && 'serviceWorker' in navigator) {
-  try { navigator.serviceWorker.register('sw.js'); } catch (e) {}
+var NO_SW = /(^|[?&])nosw=1/.test(String((location && location.search) || ''));
+if (!NO_SW && navigator && 'serviceWorker' in navigator) {
+  try {
+    navigator.serviceWorker.register('sw.js').then(function (reg) {
+      // Never leave someone on a stale shell: if a new worker is already
+      // waiting, activate it; when the controller changes, reload once so
+      // the page and its engine always come from the same version.
+      if (reg && reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+      if (reg && reg.addEventListener) {
+        reg.addEventListener('updatefound', function () {
+          var w = reg.installing;
+          if (w && w.addEventListener) {
+            w.addEventListener('statechange', function () {
+              if (w.state === 'installed' && navigator.serviceWorker.controller) {
+                w.postMessage({ type: 'SKIP_WAITING' });
+              }
+            });
+          }
+        });
+      }
+    }).catch(function () {});
+    var reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (reloaded) return;
+      reloaded = true;
+      try { location.reload(); } catch (e) {}
+    });
+  } catch (e) {}
 }
 </script>
 </body>

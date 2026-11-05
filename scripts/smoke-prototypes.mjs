@@ -142,8 +142,9 @@ function smokeFile(path) {
   // local dependency is left to surface as the inline ReferenceError it causes.
   const baseDir = dirname(path);
   for (const src of localScriptSrcs(html)) {
+    const file = src.split(/[?#]/)[0]; // cache-busting queries aren't part of the filename
     try {
-      vm.runInContext(readFileSync(join(baseDir, src), 'utf8'), context, { filename: join(baseDir, src), timeout: 5000 });
+      vm.runInContext(readFileSync(join(baseDir, file), 'utf8'), context, { filename: join(baseDir, file), timeout: 5000 });
     } catch { /* best-effort: ignore */ }
   }
   for (let i = 0; i < blocks.length; i++) {
