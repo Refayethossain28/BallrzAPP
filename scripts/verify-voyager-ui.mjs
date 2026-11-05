@@ -249,6 +249,10 @@ const errors = [];
   check('nested Voyager bows out and the outer browser comes home', true);
   check('the escape explains itself', await page.evaluate(() =>
     document.getElementById('toast').textContent.includes('already here')));
+  check('the dead-end address is remembered as Voyager itself', await page.evaluate(() =>
+    (S.selfUrls || []).some((u) => u.includes('nested.test'))));
+  check('…and never shows as a Top Sites tile', await page.evaluate(() =>
+    Voyager.topSites(S, 8).every((t) => !String(t.url).includes('nested.test'))));
 
   /* ════ scenario 3s: 👻 amnesia — a site that plants recognition data meets
      fresh decoys on every visit, and never touches the app's real storage ════ */
@@ -361,13 +365,15 @@ const errors = [];
   await page.waitForTimeout(600);
   await page.evaluate(() => {
     var reading = S.activeId;
-    commit(Voyager.newTab(S, { url: 'http://nested.test/', ts: Date.now() }));
+    commit(Voyager.newTab(S, { url: 'http://nested.test/split-copy', ts: Date.now() }));
     var partner = S.activeId;
     commit(Voyager.activateTab(S, reading));
     commit(Voyager.setSplit(S, partner));
   });
   await page.waitForFunction(() => !Voyager.splitTab(S), null, { timeout: 8000 });
   check('nested Voyager in the SPLIT pane dissolves the split', true);
+  check('…and the split pane\'s dead-end address is remembered too', await page.evaluate(() =>
+    (S.selfUrls || []).some((u) => u.includes('nested.test/split-copy'))));
   check('…without hijacking the main tab', await page.evaluate(() =>
     Voyager.tabUrl(Voyager.activeTab(S)) === 'http://site.test/mainread'));
   check('…and says why', await page.evaluate(() =>

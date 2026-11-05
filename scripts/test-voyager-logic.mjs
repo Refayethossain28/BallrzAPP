@@ -1098,6 +1098,23 @@ test('cookieEvictions: junk-safe — empty jar, values with =, dupes, localhost'
   assert.equal(dup.length, 2);                                  // 1 name × 2 paths × 1 scope
 });
 
+test('self-pointing URLs: once proven to be Voyager, they vanish from Top Sites and survive the session', () => {
+  let s = V.createBrowser();
+  s = V.navigate(s, s.activeId, 'https://mirror.example/voyager/', { ts: 1000 });
+  s = V.navigate(s, s.activeId, 'https://site.test/article', { ts: 2000 });
+  assert.ok(V.topSites(s, 8, 3000).some((t) => t.url.includes('mirror.example')));   // it ranks at first
+  s = V.markSelfUrl(s, 'https://mirror.example/voyager/?utm=x#frag');                // the guard fired
+  assert.ok(V.topSites(s, 8, 3000).every((t) => !t.url.includes('mirror.example'))); // dead-end tile gone
+  assert.ok(V.topSites(s, 8, 3000).some((t) => t.url.includes('site.test')));        // others unharmed
+  assert.ok(V.isSelfUrl(s, 'https://mirror.example/voyager/index.html'));            // variants match
+  assert.equal(V.markSelfUrl(s, 'https://mirror.example/voyager/'), s);              // dedupe: no-op
+  assert.equal(s.selfUrls.length, 1);
+  assert.equal(V.markSelfUrl(s, 'voyager://start'), s);                              // internal pages ignored
+  const back = V.restore(V.serialize(s));
+  assert.equal(back.selfUrls.length, 1);                                             // survives the session
+  assert.ok(V.topSites(back, 8, 3000).every((t) => !t.url.includes('mirror.example')));
+});
+
 /* ---- run ---- */
 for (const [name, fn] of tests) {
   try { fn(); passed++; console.log(`  ✓ ${name}`); }

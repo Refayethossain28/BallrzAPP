@@ -2211,10 +2211,13 @@ window.addEventListener('message', function (e) {
     if (selfSplit) {
       // the SPLIT pane hit Voyager's own address — dissolve the split and
       // leave the main tab (which may be mid-read elsewhere) alone
+      var stab0 = Voyager.splitTab(S);
+      if (stab0) commit(Voyager.markSelfUrl(S, Voyager.tabUrl(stab0)));   // proven: that address IS Voyager
       commit(Voyager.setSplit(S, null));
       toast('🧭 That link opens Voyager itself — closed the split');
       return;
     }
+    commit(Voyager.markSelfUrl(S, currentUrl()));   // proven: never show it as a Top Sites tile again
     hideVeil();
     stopProgress(true);
     navTo('voyager://start');
