@@ -441,13 +441,24 @@ test('cameraView: zooming in narrows the field', () => {
   const tight = E.cameraView(LONDON.lat, LONDON.lon, NOW, { azDeg: 180, altDeg: 40, fovDeg: 30, aspect: 1 });
   assert.ok(tight.stars.length < wide.stars.length, `${tight.stars.length} < ${wide.stars.length}`);
 });
-test('tourStops: a guided tour of what is actually up, each stop pointable', () => {
+test('tourStops: a guided journey — pointable stops, story + facts, swept ordering', () => {
   const stops = E.tourStops(LONDON.lat, LONDON.lon, NOW, { bortle: 4 });
   assert.ok(stops.length >= 4, `stops ${stops.length}`);
   for (const s of stops) {
     assert.ok(s.altDeg > 3, `${s.name} above horizon`);
     assert.ok(s.azDeg >= 0 && s.azDeg < 360);
-    assert.ok(s.line.length > 15, `${s.name} has a story line`);
+    assert.ok(s.line.length > 15, `${s.name} has a facts line`);
+    assert.ok(s.blurb.length > 15, `${s.name} has a story blurb`);
+  }
+  // nearest-neighbour ordering: the swept path is never longer than the
+  // naive score order it replaced would be in the worst case — check the
+  // concrete property instead: each leg goes to the then-nearest stop.
+  for (let i = 1; i < stops.length - 1; i++) {
+    const legHere = E.separationDeg(stops[i - 1].azDeg, stops[i - 1].altDeg, stops[i].azDeg, stops[i].altDeg);
+    for (let j = i + 1; j < stops.length; j++) {
+      const legSkip = E.separationDeg(stops[i - 1].azDeg, stops[i - 1].altDeg, stops[j].azDeg, stops[j].altDeg);
+      assert.ok(legHere <= legSkip + 1e-9, `leg ${i} is the nearest unvisited (vs ${j})`);
+    }
   }
   deepEq(stops.map((s) => s.name), E.tourStops(LONDON.lat, LONDON.lon, NOW, { bortle: 4 }).map((s) => s.name), 'deterministic');
 });
