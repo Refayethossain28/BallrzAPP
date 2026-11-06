@@ -212,15 +212,18 @@
         <div id="tourCard" style="display:none; position:absolute; left:10px; right:10px; bottom:10px;
           background:rgba(7,11,26,0.72); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); border:1px solid var(--line2);
           border-radius:14px; padding:11px 12px">
-          <div style="display:flex; align-items:center; gap:8px">
+          <div style="display:flex; align-items:flex-start; gap:8px">
             <div style="flex:1; min-width:0">
               <div style="font-weight:700; font-size:14.5px" id="tourName">—</div>
-              <div class="tiny" id="tourLine">—</div>
+              <div class="tiny" id="tourBlurb" style="margin-top:2px; color:var(--ink2)">—</div>
+              <div class="tiny" id="tourLine" style="margin-top:2px">—</div>
             </div>
             <button class="lbtn" id="tourPrev">‹</button>
+            <button class="lbtn on" id="tourPlay">⏸</button>
             <button class="lbtn" id="tourNext">›</button>
             <button class="lbtn" id="tourEnd">✕</button>
           </div>
+          <div id="tourDots" style="display:flex; gap:5px; justify-content:center; margin-top:8px"></div>
         </div>
       </div>
       <div class="layerrow">
@@ -337,8 +340,8 @@
   </div>
 </div>
 
-<script src="catalog.js?v=3"></script>
-<script src="engine.js?v=3"></script>
+<script src="catalog.js?v=4"></script>
+<script src="engine.js?v=4"></script>
 <script>
 'use strict';
 var E = ZenithEngine;
@@ -631,6 +634,23 @@ function drawHorizon() {
     var tick = view.ticks[tk];
     ctx.fillStyle = P.accent;
     ctx.fillText(tick.label, PX(tick.x), PY(tick.y) + 14);
+  }
+  // the journey spotlight: a slow pulsing ring on the current tour stop
+  if (state.tour.on && !state.tour.flying && state.tour.stops.length) {
+    var tStop = state.tour.stops[state.tour.idx];
+    var tp = E.cameraProject(Math.max(5, Math.min(80, tStop.altDeg)), tStop.azDeg,
+      { azDeg: state.cam.az, altDeg: state.cam.alt, fovDeg: state.cam.fov });
+    if (tp.visible) {
+      var tx = PX(tp.x), ty = PY(tp.y);
+      var pulse = 0.5 + 0.5 * Math.sin(Date.now() / 450);
+      ctx.strokeStyle = state.red ? 'rgba(255,136,102,' + (0.85 - pulse * 0.4) + ')'
+        : 'rgba(242,199,110,' + (0.85 - pulse * 0.4) + ')';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.arc(tx, ty, 16 + pulse * 9, 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = 0.45;
+      ctx.beginPath(); ctx.arc(tx, ty, 26 + pulse * 12, 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
   }
   // heads-up: where we're looking
   ctx.fillStyle = P.label; ctx.font = '600 11px -apple-system, sans-serif';
@@ -1421,6 +1441,13 @@ function toggleGyro() {
     } else arm();
   } catch (e) { arm(); }
 }
+/* ---------------- the live tour: a virtual journey ---------------- */
+// Each leg is a cinematic flight: the camera eases out to a wide view,
+// sweeps the short way across the sky, and settles in on the target,
+// which then gets a slow pulsing spotlight. Autoplay dwells ~8s per stop.
+var TOUR_DWELL_MS = 8000;
+function easeInOut(t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+
 function tourStart() {
   var stops = E.tourStops(state.place.lat, state.place.lon, now(), { bortle: state.bortle });
   if (!stops.length) {
@@ -1428,32 +1455,100 @@ function tourStart() {
     $('skyinfo').innerHTML = '<div class="muted">Nothing is well placed right now — scrub time forward to tonight and start the tour again.</div>';
     return;
   }
-  state.tour = { on: true, stops: stops, idx: 0 };
+  state.tour = { on: true, stops: stops, idx: 0, playing: true, flying: false,
+    flight: null, dwellStart: 0, rafId: 0 };
   state.gyro = false;
   setSkyMode('point');
-  tourShow();
+  $('tourCard').style.display = 'block';
+  $('tourPlay').textContent = '⏸';
+  tourFlyTo(0);
+  tourArm();
 }
-function tourShow() {
+function tourFlyTo(idx) {
   var tr = state.tour;
   if (!tr.on || !tr.stops.length) return;
+  tr.idx = (idx + tr.stops.length) % tr.stops.length;
   var stop = tr.stops[tr.idx];
-  state.cam.az = stop.azDeg;
-  state.cam.alt = Math.max(5, Math.min(80, stop.altDeg));
-  state.cam.fov = 50;
-  $('fovRange').value = '50'; $('fovVal').textContent = '50° view';
-  $('tourCard').style.display = 'block';
+  var toAlt = Math.max(5, Math.min(80, stop.altDeg));
+  var sep = E.separationDeg(state.cam.az, state.cam.alt, stop.azDeg, toAlt);
+  tr.flying = true;
+  tr.flight = {
+    t0: Date.now(), dur: Math.min(3200, 900 + sep * 25),
+    fromAz: state.cam.az, dAz: E.wrap180(stop.azDeg - state.cam.az),
+    fromAlt: state.cam.alt, toAlt: toAlt,
+    fromFov: state.cam.fov, toFov: 48,
+    bump: Math.min(22, Math.max(0, 85 - Math.max(state.cam.fov, 48))),
+    sep: Math.round(sep)
+  };
+  // the caption travels with you
   $('tourName').textContent = (tr.idx + 1) + '/' + tr.stops.length + ' · ' + stop.name;
-  $('tourLine').textContent = stop.line;
-  drawSky();
+  $('tourBlurb').textContent = '✈ Crossing ' + tr.flight.sep + '° of sky…';
+  $('tourLine').textContent = '';
+  tourDots();
 }
-function tourStep(dir) {
+function tourArrive() {
+  var tr = state.tour;
+  var stop = tr.stops[tr.idx];
+  tr.flying = false;
+  tr.flight = null;
+  tr.dwellStart = Date.now();
+  $('tourBlurb').textContent = stop.blurb || '';
+  $('tourLine').textContent = stop.line || '';
+}
+function tourDots() {
+  var tr = state.tour, html = '';
+  for (var i = 0; i < tr.stops.length; i++) {
+    html += '<span style="width:6px; height:6px; border-radius:50%; background:'
+      + (i === tr.idx ? 'var(--gold)' : 'var(--line2)') + '"></span>';
+  }
+  $('tourDots').innerHTML = html;
+}
+// one gentle animation loop while the tour runs: flights, the target
+// spotlight pulse, and autoplay dwell all ride on it
+function tourArm() {
   var tr = state.tour;
   if (!tr.on) return;
-  tr.idx = (tr.idx + dir + tr.stops.length) % tr.stops.length;
-  tourShow();
+  var step = function () {
+    if (!state.tour.on) return;
+    var t = state.tour, nowMs = Date.now();
+    if (t.flying && t.flight) {
+      var f = t.flight;
+      var e = easeInOut(Math.min(1, (nowMs - f.t0) / f.dur));
+      state.cam.az = E.wrap360(f.fromAz + f.dAz * e);
+      state.cam.alt = f.fromAlt + (f.toAlt - f.fromAlt) * e;
+      state.cam.fov = f.fromFov + (f.toFov - f.fromFov) * e + Math.sin(Math.PI * e) * f.bump;
+      $('fovRange').value = String(Math.round(state.cam.fov));
+      $('fovVal').textContent = Math.round(state.cam.fov) + '° view';
+      drawSky();
+      if (e >= 1) tourArrive();
+    } else {
+      if (!t.lastPulse || nowMs - t.lastPulse > 70) {   // ~14fps is plenty for a pulse
+        t.lastPulse = nowMs;
+        drawSky();
+      }
+      if (t.playing && nowMs - t.dwellStart > TOUR_DWELL_MS) { tourFlyTo(t.idx + 1); }
+    }
+    state.tour.rafId = requestAnimationFrame(step);
+  };
+  tr.rafId = requestAnimationFrame(step);
+}
+function tourStep(dir) {
+  if (!state.tour.on) return;
+  state.tour.dwellStart = Date.now();
+  tourFlyTo(state.tour.idx + dir);
+}
+function tourTogglePlay() {
+  var tr = state.tour;
+  if (!tr.on) return;
+  tr.playing = !tr.playing;
+  tr.dwellStart = Date.now();
+  $('tourPlay').textContent = tr.playing ? '⏸' : '▶';
+  $('tourPlay').className = tr.playing ? 'lbtn on' : 'lbtn';
 }
 function tourEndNow() {
+  if (state.tour.rafId) { try { cancelAnimationFrame(state.tour.rafId); } catch (e) {} }
   state.tour.on = false;
+  state.tour.rafId = 0;
   var card = $('tourCard');
   if (card) card.style.display = 'none';
 }
@@ -1506,6 +1601,7 @@ function wire() {
   $('tourBtn').addEventListener('click', tourStart);
   $('tourNext').addEventListener('click', function () { tourStep(1); });
   $('tourPrev').addEventListener('click', function () { tourStep(-1); });
+  $('tourPlay').addEventListener('click', tourTogglePlay);
   $('tourEnd').addEventListener('click', tourEndNow);
   wirePan();
   var layerMap = { lyrLines: 'lines', lyrDsos: 'dsos', lyrGrid: 'grid', lyrLabels: 'labels' };

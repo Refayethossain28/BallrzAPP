@@ -887,10 +887,36 @@
     return { raDeg: wrap360((NGP_RA + Math.atan2(y, x)) / DEG), decDeg: dec / DEG };
   }
 
-  /* ---------------- the live sky tour ---------------- */
-  // Night-Sky-style guided tour of what is actually up right now: the moon
-  // and planets above the horizon, then the best deep-sky stops, each with
-  // where to point and one spoken-style line. Deterministic for a given sky.
+  /* ---------------- the live sky tour: a virtual journey ---------------- */
+  // Night-Sky-style guided flight through what is actually up right now.
+  // Each stop carries where to point, one line of facts and one line of
+  // story; stops are ordered nearest-neighbour across the sky so the
+  // journey sweeps rather than zig-zags. Deterministic for a given sky.
+  var PLANET_LORE = {
+    mercury: 'The sun’s closest companion — a cratered world that races around it in 88 days.',
+    venus:   'Wrapped in crushing clouds of acid, yet the brightest lantern in our sky.',
+    mars:    'The rust-red desert world — the next place humans will walk.',
+    jupiter: 'A giant of storm and lightning that could swallow 1,300 Earths.',
+    saturn:  'The jewel of the solar system — rings of ice ten metres thin and 280,000 km wide.',
+    uranus:  'A pale ice giant rolling around the sun on its side.',
+    neptune: 'The farthest world — supersonic winds of frozen methane, found by mathematics before telescopes.'
+  };
+  var DSO_LORE = {
+    s: 'An island of a hundred billion suns, seen across millions of light-years.',
+    e: 'A vast elliptical city of ancient stars.',
+    i: 'A ragged irregular galaxy, shaped by collisions.',
+    sd: 'A dwarf galaxy — a satellite of a grander one.',
+    gx: 'A whole other galaxy, impossibly far and still visible.',
+    oc: 'A young family of stars, born together from one cloud and still travelling together.',
+    gc: 'A globular cluster — hundreds of thousands of ancient suns packed into a glittering ball.',
+    pn: 'The glowing shroud of a dying star — our own sun’s fate, five billion years early.',
+    snr: 'The wreckage of an exploded star, still expanding centuries later.',
+    sfr: 'A stellar nursery — a cloud of gas collapsing into brand-new suns.',
+    en: 'A cloud of hydrogen set glowing by the stars inside it.',
+    rn: 'Starlight scattered off a veil of interstellar dust.',
+    nb: 'A luminous cloud between the stars.',
+    pos: 'A sparkling gathering of stars.'
+  };
   function tourStops(lat, lon, ms, opts) {
     opts = opts || {};
     var stops = [];
@@ -898,6 +924,7 @@
     var maa = moonAltAz(lat, lon, ms);
     if (maa.altDeg > 3) {
       stops.push({ kind: 'moon', name: phase.emoji + ' The Moon', azDeg: maa.azDeg, altDeg: maa.altDeg,
+        blurb: 'Our own companion world — close enough that its light left it one and a quarter seconds ago.',
         line: phase.name + ', ' + Math.round(phase.illumination * 100) + '% lit — '
           + Math.round(phase.distKm).toLocaleString() + ' km away tonight.' });
     }
@@ -907,7 +934,8 @@
       if (aa.altDeg < 5) continue;
       stops.push({ kind: 'planet', key: PLANETS[i].key, name: PLANETS[i].name,
         azDeg: aa.azDeg, altDeg: aa.altDeg, mag: g.magnitude,
-        line: 'Shining at magnitude ' + g.magnitude + ', ' + E_fmtAU(g.distAU) + ' from you, '
+        blurb: PLANET_LORE[PLANETS[i].key] || '',
+        line: 'Magnitude ' + g.magnitude + ', ' + E_fmtAU(g.distAU) + ' from you, '
           + Math.round(aa.altDeg) + '° up in the ' + compass(aa.azDeg) + '.' });
     }
     var c = catalog();
@@ -922,11 +950,29 @@
         if (daa.altDeg < 25) continue;
         dsoStops.push({ kind: 'dso', id: dso.id, name: dso.id + (dso.name ? ' — ' + dso.name : ''),
           azDeg: daa.azDeg, altDeg: daa.altDeg, mag: dso.mag, score: daa.altDeg - dso.mag * 4,
+          blurb: DSO_LORE[dso.type] || 'A deep-sky wonder.',
           line: ((c.DSO_TYPES[dso.type]) || 'Deep-sky object') + ' at magnitude ' + dso.mag + ', '
             + Math.round(daa.altDeg) + '° up in the ' + compass(daa.azDeg) + '.' });
       }
       dsoStops.sort(function (a, b) { return b.score - a.score; });
       stops = stops.concat(dsoStops.slice(0, opts.dsoCount || 5));
+    }
+    // Order the journey: keep the first stop (the moon, or the brightest
+    // planet), then always fly to the nearest unvisited stop — the camera
+    // sweeps around the sky instead of criss-crossing it.
+    if (stops.length > 2) {
+      var ordered = [stops[0]];
+      var rest = stops.slice(1);
+      while (rest.length) {
+        var cur = ordered[ordered.length - 1];
+        var bestI = 0, bestD = Infinity;
+        for (var r = 0; r < rest.length; r++) {
+          var dd = separationDeg(cur.azDeg, cur.altDeg, rest[r].azDeg, rest[r].altDeg);
+          if (dd < bestD) { bestD = dd; bestI = r; }
+        }
+        ordered.push(rest.splice(bestI, 1)[0]);
+      }
+      stops = ordered;
     }
     return stops;
   }
