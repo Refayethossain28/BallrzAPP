@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1b2440">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Furqan">
+<title>Furqan — ask the Qur’an, answered only in its own words</title>
+<meta name="description" content="Ask a question and get the Qur’an’s own words: Furqan finds and quotes the verified Uthmani text with Pickthall’s translation, cited by surah and ayah. Nothing is generated — it only ever quotes. Works offline.">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>
+  /* Amiri Quran (SIL Open Font License, fonts/OFL.txt): a typeface made for
+     the Uthmani text, bundled so the pause marks, small letters and open
+     tanwin render on every device instead of as gaps. */
+  @font-face{ font-family:'Amiri Quran'; src:url('fonts/AmiriQuran-Regular.ttf') format('truetype'); font-weight:400; font-style:normal; font-display:swap }
+  :root{
+    --paper:#f7f3ea; --paper2:#efe9db; --card:#fffdf7; --line:#e4dccb; --line2:#d3c9b2;
+    --ink:#1f1b14; --ink2:#5f584a; --ink3:#8e8572; --navy:#1b2440; --gold:#b8862b; --gold2:#d9a441;
+    --accent:#1b5e5a; --red:#9c3b26; --live:#5b4bd6;
+    --ar:'Amiri Quran','KFGQPC Uthmanic Script HAFS','Amiri','Scheherazade New','Noto Naskh Arabic','Traditional Arabic','Geeza Pro',serif;
+    --serif:'Iowan Old Style','Palatino Linotype',Palatino,Georgia,'Times New Roman',serif;
+    --r:14px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --paper:#12151e; --paper2:#1a1e2b; --card:#1d2230; --line:#2b3145; --line2:#3a4259;
+      --ink:#ece7da; --ink2:#b4ad9c; --ink3:#7f7a6c; --navy:#0e1322; --accent:#6fc3bd; --red:#e08b76; --gold:#e0b25a; --gold2:#f0c75e; }
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html,body{margin:0; padding:0; background:var(--paper); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:16px; line-height:1.5}
+  button{font:inherit; color:inherit; background:none; border:none; cursor:pointer; padding:0}
+  input{font:inherit; color:var(--ink); background:var(--card); border:1px solid var(--line2); border-radius:12px; padding:12px 14px; outline:none; width:100%}
+  input:focus{border-color:var(--gold)}
+  a{color:var(--accent)}
+  .wrap{max-width:820px; margin:0 auto; padding:0 16px calc(32px + env(safe-area-inset-bottom))}
+  header{display:flex; align-items:center; gap:14px; padding:18px 0 8px}
+  header img{width:48px; height:48px; border-radius:13px; flex:none}
+  header h1{font-size:22px; margin:0; line-height:1.1; font-family:var(--serif)}
+  header .tag{color:var(--ink2); font-size:13px; margin-top:3px}
+  .honest{background:var(--card); border:1px solid var(--line); border-left:4px solid var(--gold); border-radius:var(--r); padding:12px 14px; font-size:14px; color:var(--ink2); margin:10px 0 14px}
+  .honest b{color:var(--ink)}
+  nav.tabs{display:flex; gap:6px; margin:6px 0 14px; overflow-x:auto}
+  nav.tabs button{padding:8px 14px; border-radius:999px; border:1px solid var(--line2); color:var(--ink2); font-size:14px; white-space:nowrap}
+  nav.tabs button.on{background:var(--navy); color:#fff; border-color:var(--navy)}
+  .panel{display:none} .panel.on{display:block}
+  .askrow{display:flex; gap:8px}
+  .askrow button.go{background:var(--navy); color:#fff; border-radius:12px; padding:0 18px; font-weight:700; flex:none}
+  .askrow button.go:disabled{opacity:.5}
+  .chips{display:flex; flex-wrap:wrap; gap:8px; margin:10px 0}
+  .chip{background:var(--card); border:1px solid var(--line2); color:var(--ink2); border-radius:999px; padding:6px 12px; font-size:13px}
+  .chip:hover{border-color:var(--gold); color:var(--ink)}
+  .chip.topic{border-style:dashed}
+  .status{font-size:13px; color:var(--ink3); margin:8px 0}
+  .status b{color:var(--accent)}
+  .note{border-radius:12px; padding:11px 14px; font-size:14px; margin:10px 0; border:1px solid var(--line)}
+  .note.ruling{background:rgba(184,134,43,.08); border-color:var(--gold)}
+  .note.scope{background:var(--paper2)}
+  .note.none{background:var(--paper2)}
+  .note.support{background:rgba(156,59,38,.08); border-color:var(--red); color:var(--ink)}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:var(--r); padding:14px 16px; margin:12px 0}
+  .card .head{display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:8px}
+  .card .ref{font-family:var(--serif); font-weight:700; font-size:17px}
+  .card .ref small{font-weight:400; color:var(--ink3); font-size:13px; margin-left:6px}
+  .badge{font-size:11.5px; color:var(--ink2); background:var(--paper2); border:1px solid var(--line); border-radius:999px; padding:3px 9px}
+  .badge.topic{color:var(--gold); border-color:var(--gold)}
+  .badge.principle{color:var(--accent); border-color:var(--accent)}
+  .ayah{padding:10px 0; border-top:1px dashed var(--line)}
+  .ayah:first-of-type{border-top:0}
+  .ar{direction:rtl; text-align:right; font-family:var(--ar); font-size:27px; line-height:2; color:var(--ink); margin:0 0 6px}
+  .ar .num{font-family:var(--ar); color:var(--gold); font-size:20px; margin-right:6px}
+  .en{font-family:var(--serif); font-size:17px; line-height:1.6; color:var(--ink)}
+  .en .n{color:var(--ink3); font-size:13px; margin-right:6px; font-family:-apple-system,system-ui,sans-serif}
+  .actions{display:flex; gap:10px; margin-top:8px; flex-wrap:wrap}
+  .actions button{font-size:13px; color:var(--accent); border:1px solid var(--line2); border-radius:999px; padding:5px 11px; background:var(--paper)}
+  .live{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:14px 0}
+  .switch{display:inline-flex; align-items:center; gap:8px; font-size:13px; color:var(--ink2); cursor:pointer; user-select:none}
+  .switch input{position:absolute; opacity:0; pointer-events:none}
+  .track{width:40px; height:22px; border-radius:999px; background:var(--line2); position:relative; transition:background .15s; flex:none}
+  .track::after{content:""; position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%; background:#fff; transition:transform .15s}
+  .switch input:checked + .track{background:var(--live)}
+  .switch input:checked + .track::after{transform:translateX(18px)}
+  .switch.disabled{opacity:.45; cursor:not-allowed}
+  .linkbtn{color:var(--live); font-size:13px; text-decoration:underline}
+  .explain{background:var(--card); border:1px solid var(--live); border-radius:var(--r); padding:14px 16px; margin:12px 0}
+  .explain h3{margin:0 0 8px; font-size:14px; color:var(--live); font-weight:700}
+  .explain .body{white-space:pre-wrap; font-size:15px; line-height:1.6}
+  .explain .warn{background:rgba(156,59,38,.1); border:1px solid var(--red); border-radius:10px; padding:10px 12px; font-size:13.5px; margin-top:10px}
+  .explain .ok{color:var(--accent); font-size:13px; margin-top:8px}
+  mark.bad{background:rgba(156,59,38,.18); color:inherit; text-decoration:line-through; border-radius:3px}
+  mark.good{background:rgba(27,94,90,.12); color:inherit; border-radius:3px}
+  .cursor{color:var(--live); animation:blink 1s steps(2) infinite} @keyframes blink{50%{opacity:0}}
+  .surahs{display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:8px}
+  .surahs button{text-align:left; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:10px 12px}
+  .surahs button:hover{border-color:var(--gold)}
+  .surahs .n{display:inline-block; min-width:28px; color:var(--gold); font-weight:700}
+  .surahs .arn{float:right; font-family:var(--ar); font-size:19px; color:var(--ink2)}
+  .surahs .meta{font-size:12px; color:var(--ink3)}
+  .topics{display:flex; flex-wrap:wrap; gap:8px}
+  .reader .ar{font-size:29px}
+  .back{font-size:14px; color:var(--accent); margin:6px 0 10px; display:inline-block}
+  .more{display:block; width:100%; text-align:center; padding:12px; border:1px dashed var(--line2); border-radius:12px; color:var(--ink2); margin:10px 0}
+  footer{color:var(--ink3); font-size:12.5px; margin-top:26px; line-height:1.6}
+  footer a{color:var(--accent)}
+  .about p{font-size:15px}
+  .about code{font-size:12px; word-break:break-all}
+  #install{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <img src="icon.svg" alt="">
+    <div>
+      <h1>Furqan <span style="font-weight:400;color:var(--ink3);font-size:15px">— ask the Qur’an</span></h1>
+      <div class="tag">Answered only in its own words: verified text, cited by surah and ayah.</div>
+    </div>
+  </header>
+
+  <div class="honest">
+    <b>Nothing on this page is generated.</b> Furqan finds and quotes the Qur’an — the Uthmani text of the King Fahd Complex with
+    Pickthall’s translation, checksummed on load. It is a concordance with a good memory, not a scholar: it shows you what the Qur’an
+    says on a subject; it does not issue rulings, and it will tell you when a question is not answered in the Qur’an at all.
+  </div>
+
+  <nav class="tabs">
+    <button class="on" data-tab="ask">Ask</button>
+    <button data-tab="browse">Browse</button>
+    <button data-tab="topics">Topics</button>
+    <button data-tab="about">About</button>
+  </nav>
+
+  <section class="panel on" id="ask">
+    <form class="askrow" id="askform">
+      <input id="q" type="search" autocomplete="off" placeholder="What does the Qur’an say about patience?  ·  2:255  ·  Al-Kahf 10  ·  الصبر" aria-label="Your question">
+      <button class="go" id="go" type="submit" disabled>Ask</button>
+    </form>
+    <div class="chips" id="examples"></div>
+    <div class="live">
+      <label class="switch disabled" id="liveWrap" title="Connect a proxy to enable this.">
+        <input type="checkbox" id="live" disabled>
+        <span class="track"></span>
+        <span>⚡ Explain with <b>Fable 5</b> — from the quoted verses only, every quote checked</span>
+      </label>
+      <button id="proxyBtn" class="linkbtn" type="button" style="display:none"></button>
+    </div>
+    <div class="status" id="status">Loading the Qur’an…</div>
+    <div id="results"></div>
+  </section>
+
+  <section class="panel" id="browse">
+    <div id="browseList" class="surahs"></div>
+    <div id="reader" class="reader" style="display:none"></div>
+  </section>
+
+  <section class="panel" id="topics">
+    <p class="status">Each topic opens with the classic passages on the subject, then the closest text matches.</p>
+    <div class="topics" id="topicList"></div>
+  </section>
+
+  <section class="panel about" id="about">
+    <p><b>What it is.</b> A search engine over the whole Qur’an that works offline, with a curated map from the questions people ask to the
+      passages scholars and readers turn to first. Every result is a real ayah at a real address; the page can only display strings that are
+      in the verified text file it loaded.</p>
+    <p><b>What it is not.</b> It is not a mufti and not a tafsir. Translations are interpretations of the Arabic; context, abrogation, the
+      Sunnah and a thousand years of scholarship sit between a verse and a ruling. For anything that matters to your life, ask a qualified scholar.</p>
+    <p><b>Why no “AI model trained on the Qur’an”.</b> A language model trained on scripture does not learn to answer questions; it learns to
+      produce text in the same style — including verses that do not exist. That is the one failure a Qur’an app must never have, so Furqan
+      never generates scripture. The optional <b>Explain with Fable 5</b> step hands a frontier model the quoted verses and asks it to explain
+      from those alone; its reply is then checked word by word, and anything it quotes that is not in the text is marked.</p>
+    <p><b>Sources.</b> Arabic: Uthmani script, Hafs reading, from the King Fahd Glorious Qur’an Printing Complex, Madinah. Translation:
+      Marmaduke Pickthall, <i>The Meaning of the Glorious Koran</i> (1930, public domain). Both via the
+      <a href="https://github.com/fawazahmed0/quran-api" rel="noopener">fawazahmed0/quran-api</a> mirror. Chapter names from the same table.
+      Arabic typeface: Amiri Quran (SIL Open Font License), bundled so the Uthmani marks render on every device.
+      For the Saheeh International translation and recitation audio, see the Qur’an studio in <a href="../lingua/">Lingua</a>; to learn the
+      Arabic itself, <a href="../bayan/">Bayan</a>.</p>
+    <p id="integrity"><b>Text integrity.</b> Checking…</p>
+    <p><b>Source code.</b> <a href="https://github.com/refayethossain28/BallrzAPP/tree/main/furqan" rel="noopener">furqan/</a> — the engine,
+      the corpus builder and the tests.</p>
+  </section>
+
+  <footer>
+    <button id="install" class="chip">Install app</button>
+    Furqan quotes; it does not rule. Verses are shown with their address so you can read them in context. Built with the same offline,
+    on-device principles as the other BallrzAPP prototypes.
+  </footer>
+</div>
+
+<script src="engine.js"></script>
+<script>
+(function () {
+  'use strict';
+  var E = window.FurqanEngine;
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = E.escapeHTML;
+  var ctx = null, quran = null, lastAnswer = null, running = false;
+
+  /* ---------- tabs ---------- */
+  var tabs = document.querySelectorAll('nav.tabs button');
+  function showTab(name) {
+    tabs.forEach(function (b) { b.classList.toggle('on', b.dataset.tab === name); });
+    document.querySelectorAll('.panel').forEach(function (p) { p.classList.toggle('on', p.id === name); });
+  }
+  tabs.forEach(function (b) { b.addEventListener('click', function () { showTab(b.dataset.tab); }); });
+
+  /* ---------- load the text ---------- */
+  var statusEl = $('status');
+  fetch('quran.json', { cache: 'no-cache' }).then(function (r) {
+    if (!r.ok) throw new Error('could not load quran.json (' + r.status + ')');
+    return r.json();
+  }).then(function (q) {
+    var check = E.checkIntegrity(q);
+    if (!check.ok) throw new Error('the text file failed its integrity check: ' + check.problems.join(', '));
+    quran = q;
+    ctx = E.buildContext(q);
+    $('integrity').innerHTML = '<b>Text integrity.</b> Loaded ' + check.verses.toLocaleString() + ' ayat in 114 surahs; the file’s SHA-256 is <code>' +
+      esc(q.meta.sha256) + '</code> (built ' + esc(q.meta.built) + '). Rebuild and compare with <code>node scripts/build-furqan-corpus.mjs</code>.';
+    statusEl.innerHTML = '<b>Ready.</b> ' + check.verses.toLocaleString() + ' ayat verified and indexed on this device.';
+    $('go').disabled = false;
+    renderExamples(); renderBrowse(); renderTopics(); renderDaily();
+    var params = new URLSearchParams(location.search);
+    if (params.get('q')) { $('q').value = params.get('q'); ask(params.get('q')); }
+    else if (location.hash.length > 1) { var h = decodeURIComponent(location.hash.slice(1)); $('q').value = h; ask(h); }
+  }).catch(function (e) {
+    statusEl.textContent = 'Error: ' + (e && e.message || e);
+  });
+
+  /* ---------- examples / topics / browse ---------- */
+  var EXAMPLES = ['What does the Qur’an say about patience?', 'How should I treat my parents?', 'forgiveness', 'Who was Maryam?',
+    '2:255', 'Al-Kahf 10', 'What happens after death?', 'الصبر', 'Is interest forbidden?'];
+  function renderExamples() {
+    var box = $('examples'); box.innerHTML = '';
+    EXAMPLES.forEach(function (x) {
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'chip'; b.textContent = x;
+      b.addEventListener('click', function () { $('q').value = x; ask(x); });
+      box.appendChild(b);
+    });
+  }
+  function renderTopics() {
+    var box = $('topicList'); box.innerHTML = '';
+    E.topicList().forEach(function (t) {
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'chip topic'; b.textContent = t.title;
+      b.addEventListener('click', function () { showTab('ask'); $('q').value = t.title; ask(t.title); });
+      box.appendChild(b);
+    });
+  }
+  function renderBrowse() {
+    var box = $('browseList'); box.innerHTML = '';
+    E.surahList(ctx).forEach(function (su) {
+      var b = document.createElement('button'); b.type = 'button';
+      b.innerHTML = '<span class="n">' + su.n + '</span><b>' + esc(su.name) + '</b> <span class="arn">' + esc(su.ar) + '</span>' +
+        '<div class="meta">' + esc(su.en) + ' · ' + su.ayat + ' ayat · ' + esc(su.rev) + '</div>';
+      b.addEventListener('click', function () { openSurah(su.n); });
+      box.appendChild(b);
+    });
+  }
+  function openSurah(n) {
+    var su = E.surahOf(ctx, n), reader = $('reader');
+    $('browseList').style.display = 'none'; reader.style.display = '';
+    var shown = 0, step = 40;
+    reader.innerHTML = '<a class="back" href="#" id="backBtn">← All surahs</a>' +
+      '<div class="card"><div class="head"><div class="ref">' + esc(su.name) + ' <small>' + esc(su.en) + ' · ' + su.ayat.length + ' ayat · ' + esc(su.rev) + '</small></div>' +
+      '<span class="ar" style="font-size:24px;margin:0">' + esc(su.ar) + '</span></div><div id="readerAyat"></div></div>';
+    $('backBtn').addEventListener('click', function (e) { e.preventDefault(); reader.style.display = 'none'; $('browseList').style.display = ''; });
+    var host = $('readerAyat');
+    function more() {
+      var frag = document.createDocumentFragment();
+      for (var i = shown; i < Math.min(su.ayat.length, shown + step); i++) frag.appendChild(ayahEl(n, i + 1, su.ayat[i][0], su.ayat[i][1]));
+      shown = Math.min(su.ayat.length, shown + step);
+      var old = $('moreBtn'); if (old) old.remove();
+      host.appendChild(frag);
+      if (shown < su.ayat.length) {
+        var b = document.createElement('button'); b.type = 'button'; b.className = 'more'; b.id = 'moreBtn';
+        b.textContent = 'Show ayat ' + (shown + 1) + '–' + Math.min(su.ayat.length, shown + step) + ' of ' + su.ayat.length;
+        b.addEventListener('click', more); host.appendChild(b);
+      }
+    }
+    more();
+    window.scrollTo(0, 0);
+  }
+
+  /* ---------- rendering passages ---------- */
+  function ayahEl(s, a, ar, en) {
+    var d = document.createElement('div'); d.className = 'ayah';
+    d.innerHTML = '<p class="ar">' + esc(ar) + ' <span class="num">﴿' + esc(E.toArabicDigits(a)) + '﴾</span></p>' +
+      '<p class="en"><span class="n">' + s + ':' + a + '</span>' + esc(en) + '</p>';
+    return d;
+  }
+  var WHY = { topic: 'classic passage', topic2: 'related topic', principle: 'general principle', search: 'text match', reference: 'reference', daily: 'verse of the day' };
+  function passageCard(p, topicTitle) {
+    var card = document.createElement('div'); card.className = 'card';
+    var badges = '<span class="badge ' + (p.why === 'topic' || p.why === 'topic2' ? 'topic' : p.why === 'principle' ? 'principle' : '') + '">' + esc(WHY[p.why] || p.why) + (topicTitle ? ': ' + esc(topicTitle) : '') + '</span>';
+    card.innerHTML = '<div class="head"><div class="ref">' + esc(p.label) + ' <small>' + esc(p.en) + '</small></div><div>' + badges + '</div></div>';
+    p.verses.forEach(function (v) { card.appendChild(ayahEl(p.s, v.a, v.ar, v.en)); });
+    var act = document.createElement('div'); act.className = 'actions';
+    var copy = document.createElement('button'); copy.type = 'button'; copy.textContent = 'Copy';
+    copy.addEventListener('click', function () {
+      var text = p.verses.map(function (v) { return v.ar + '\n' + v.en + ' — ' + p.name + ' ' + p.s + ':' + v.a; }).join('\n\n') + '\n(Pickthall translation)';
+      if (navigator.clipboard) navigator.clipboard.writeText(text).then(function () { copy.textContent = 'Copied'; setTimeout(function () { copy.textContent = 'Copy'; }, 1500); });
+    });
+    var open = document.createElement('button'); open.type = 'button'; open.textContent = 'Read in context';
+    open.addEventListener('click', function () { showTab('browse'); openSurah(p.s); });
+    var share = document.createElement('button'); share.type = 'button'; share.textContent = 'Link';
+    share.addEventListener('click', function () {
+      var url = location.origin + location.pathname + '?q=' + encodeURIComponent(p.s + ':' + p.a + (p.b !== p.a ? '-' + p.b : ''));
+      if (navigator.clipboard) navigator.clipboard.writeText(url).then(function () { share.textContent = 'Link copied'; setTimeout(function () { share.textContent = 'Link'; }, 1500); });
+    });
+    act.appendChild(copy); act.appendChild(open); act.appendChild(share);
+    card.appendChild(act);
+    return card;
+  }
+  function renderDaily() {
+    var p = E.verseOfDay(ctx, Date.now());
+    var box = $('results'); box.innerHTML = '';
+    var h = document.createElement('div'); h.className = 'status'; h.textContent = 'Verse of the day';
+    box.appendChild(h); box.appendChild(passageCard(p));
+  }
+
+  /* ---------- asking ---------- */
+  $('askform').addEventListener('submit', function (e) { e.preventDefault(); ask($('q').value); });
+  function ask(question) {
+    if (!ctx || running) return;
+    question = String(question || '').trim();
+    if (!question) { renderDaily(); return; }
+    showTab('ask');
+    var a = E.answer(ctx, question, { limit: 8 });
+    lastAnswer = a;
+    try { history.replaceState(null, '', '?q=' + encodeURIComponent(question)); } catch (err) {}
+    var box = $('results'); box.innerHTML = '';
+    a.notes.filter(function (n) { return n.kind === 'support'; }).forEach(function (n) { box.appendChild(noteEl(n)); });
+    if (a.kind === 'reference' && a.surah) {
+      var h = document.createElement('div'); h.className = 'status';
+      h.innerHTML = '<b>' + esc(a.surah.name) + '</b> — ' + esc(a.surah.en) + ' · ' + a.surah.ayat + ' ayat · revealed in ' + esc(a.surah.rev);
+      box.appendChild(h);
+    } else if (a.topics.length) {
+      var t = document.createElement('div'); t.className = 'status';
+      t.innerHTML = 'Subject: <b>' + esc(a.topics[0].title) + '</b>' + (a.topics[1] ? ' · also ' + esc(a.topics[1].title) : '') +
+        ' · ' + a.passages.length + ' passage' + (a.passages.length === 1 ? '' : 's');
+      box.appendChild(t);
+    } else if (a.passages.length) {
+      var s = document.createElement('div'); s.className = 'status';
+      s.textContent = a.passages.length + ' passage' + (a.passages.length === 1 ? '' : 's') + ' match the words of your question.';
+      box.appendChild(s);
+    }
+    a.notes.filter(function (n) { return n.kind !== 'support'; }).forEach(function (n) { box.appendChild(noteEl(n)); });
+    var titles = {}; a.topics.forEach(function (t) { titles[t.id] = t.title; });
+    a.passages.forEach(function (p) { box.appendChild(passageCard(p, p.topic ? titles[p.topic] : null)); });
+    if (a.passages.length && liveBox.checked && !liveBox.disabled) explain(question, a);
+    else if (a.passages.length && !liveBox.disabled) {
+      var hint = document.createElement('div'); hint.className = 'status';
+      hint.textContent = 'Turn on ⚡ Explain to have Fable 5 summarise these passages — from them only, every quote checked.';
+      box.insertBefore(hint, box.children[1] || null);
+    }
+    statusEl.innerHTML = a.passages.length ? '<b>' + a.passages.length + '</b> passage' + (a.passages.length === 1 ? '' : 's') + ' from the verified text.' : 'No passage found.';
+  }
+  function noteEl(n) {
+    var d = document.createElement('div'); d.className = 'note ' + n.kind; d.textContent = n.text; return d;
+  }
+
+  /* ---------- Live AI (the project's Fable 5 proxy), grounded and verified ---------- */
+  var liveBox = $('live'), liveWrap = $('liveWrap'), proxyBtn = $('proxyBtn');
+  var liveModel = 'Fable 5', liveAbort = null;
+  var DEFAULT_PROXY = 'https://us-central1-apexvip-1b4a9.cloudfunctions.net/llmLive';
+  var proxyBase = ''; try { proxyBase = localStorage.getItem('llmProxyBase') || ''; } catch (err) {}
+  var apiBase = '';
+  var join = function (base, p) { return base ? base.replace(/\/+$/, '') + '/' + p : p; };
+  function healthy(base) {
+    return fetch(join(base, 'health'), { cache: 'no-store' }).then(function (r) { return r.json(); })
+      .then(function (j) { return j && j.ok && j.live ? j : null; }).catch(function () { return null; });
+  }
+  function probeLive() {
+    liveBox.disabled = true; liveWrap.classList.add('disabled');
+    // An explicit URL wins; otherwise the project's hosted function (the same one ApexAI uses).
+    var candidates = proxyBase ? [proxyBase] : [DEFAULT_PROXY];
+    (function next(i) {
+      if (i >= candidates.length) {
+        liveBox.checked = false;
+        proxyBtn.textContent = proxyBase ? 'fix proxy' : 'connect a Fable 5 proxy'; proxyBtn.style.display = '';
+        return;
+      }
+      healthy(candidates[i]).then(function (j) {
+        if (!j) return next(i + 1);
+        apiBase = candidates[i]; if (j.model) liveModel = j.model;
+        liveBox.disabled = false; liveWrap.classList.remove('disabled');
+        liveWrap.title = 'Ask ' + liveModel + ' to explain the quoted verses (from them only).';
+        proxyBtn.textContent = proxyBase ? 'change proxy' : ''; proxyBtn.style.display = proxyBase ? '' : 'none';
+      });
+    })(0);
+  }
+  probeLive();
+  proxyBtn.addEventListener('click', function () {
+    var url = prompt('Paste a Live AI proxy URL — the ApexAI proxy (ANTHROPIC_API_KEY=… ALLOW_ORIGINS=' + location.origin + ' node llm-from-scratch/server.mjs → http://localhost:8789), or its hosted URL.\nLeave blank to clear.', proxyBase);
+    if (url === null) return;
+    proxyBase = url.trim().replace(/\/+$/, '');
+    try { if (proxyBase) localStorage.setItem('llmProxyBase', proxyBase); else localStorage.removeItem('llmProxyBase'); } catch (err) {}
+    probeLive();
+  });
+  liveBox.addEventListener('change', function () {
+    if (liveBox.checked && lastAnswer && lastAnswer.passages.length && !document.querySelector('.explain')) explain(lastAnswer.question, lastAnswer);
+  });
+
+  function explain(question, a) {
+    if (running) return;
+    running = true;
+    var box = $('results');
+    var panel = document.createElement('div'); panel.className = 'explain';
+    panel.innerHTML = '<h3>⚡ ' + esc(liveModel) + ' — explaining from the quoted verses only</h3><div class="body"></div>';
+    var body = panel.querySelector('.body');
+    var cursor = document.createElement('span'); cursor.className = 'cursor'; cursor.textContent = '▍'; body.appendChild(cursor);
+    box.insertBefore(panel, box.querySelector('.card'));
+    var promptText = E.buildLivePrompt(ctx, question, a.passages);
+    liveAbort = new AbortController();
+    var text = '';
+    fetch(join(apiBase, 'ai'), {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: promptText, temperature: 0.3, maxTokens: 450 }), signal: liveAbort.signal,
+    }).then(function (res) {
+      if (!res.ok || !res.body) throw new Error('request failed (' + res.status + ')');
+      var reader = res.body.getReader(), dec = new TextDecoder();
+      function pump() {
+        return reader.read().then(function (r) {
+          if (r.done) return;
+          text += dec.decode(r.value, { stream: true });
+          body.textContent = text; body.appendChild(cursor);
+          return pump();
+        });
+      }
+      return pump();
+    }).then(function () {
+      cursor.remove();
+      renderVerified(body, panel, text, a);
+    }).catch(function (e) {
+      cursor.remove();
+      body.textContent = 'Could not get an explanation: ' + (e && e.message || e) + '. The verses above stand on their own.';
+    }).then(function () { running = false; liveAbort = null; });
+  }
+  // Show the model's reply with every quote and citation checked against the
+  // real text: verified quotes are tinted, unverifiable ones struck through.
+  function renderVerified(body, panel, text, a) {
+    var v = E.verifyReply(ctx, text, a.passages);
+    var html = esc(text);
+    v.quotes.forEach(function (q) {
+      var needle = esc(q.text);
+      html = html.split(needle).join('<mark class="' + (q.verified ? 'good' : 'bad') + '">' + needle + '</mark>');
+    });
+    v.citations.filter(function (c) { return !c.valid; }).forEach(function (c) {
+      var needle = c.s + ':' + c.a;
+      html = html.split(needle).join('<mark class="bad">' + needle + '</mark>');
+    });
+    body.innerHTML = html;
+    var foot = document.createElement('div');
+    if (v.ok) {
+      foot.className = 'ok';
+      foot.textContent = '✓ Every quote (' + v.quotes.length + ') and citation (' + v.citations.length + ') in this explanation was found in the Qur’an text.';
+    } else {
+      foot.className = 'warn';
+      foot.textContent = '⚠ ' + v.problems + ' quote' + (v.problems === 1 ? '' : 's') + ' or reference' + (v.problems === 1 ? '' : 's') +
+        ' in this explanation could not be found in the Qur’an text and ' + (v.problems === 1 ? 'is' : 'are') + ' struck through. Trust the verses above, not the summary.';
+    }
+    panel.appendChild(foot);
+  }
+
+  /* ---------- install + service worker ---------- */
+  var deferredPrompt = null, installBtn = $('install');
+  window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); deferredPrompt = e; installBtn.style.display = ''; });
+  installBtn.addEventListener('click', function () {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt(); deferredPrompt.userChoice.then(function () { deferredPrompt = null; installBtn.style.display = 'none'; });
+  });
+  if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
+    window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
+  }
+})();
+</script>
+
+<script>
+/* Tap-to-update — shows a prompt when a newer version of the app is ready, then
+ * swaps it in on tap. Shared across BallrzAPP PWAs; observes the existing service
+ * worker registration, so it doesn't re-register or change caching. */
+(function () {
+  try {
+  if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
+  var ready = navigator.serviceWorker.ready;
+  if (!ready || typeof ready.then !== 'function') return;
+  var tapped = false;
+  navigator.serviceWorker.addEventListener('controllerchange', function () {
+    if (tapped) { tapped = false; location.reload(); }
+  });
+  function banner(reg) {
+    if (document.getElementById('pwa-update-bar')) return;
+    var b = document.createElement('button');
+    b.id = 'pwa-update-bar'; b.type = 'button';
+    b.textContent = '🔄 New version — tap to update';
+    b.setAttribute('aria-label', 'A new version is available. Tap to update.');
+    b.style.cssText = 'position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom));'
+      + 'transform:translateX(-50%);z-index:2147483000;font:600 14px/1.2 -apple-system,'
+      + 'BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#0a0d16;'
+      + 'background:linear-gradient(92deg,#4dd8ff,#8f7cf7);border:0;border-radius:999px;'
+      + 'padding:11px 18px;box-shadow:0 8px 30px rgba(0,0,0,.35);cursor:pointer;'
+      + 'max-width:calc(100vw - 32px);animation:pwaUp .25s ease-out;';
+    b.addEventListener('click', function () {
+      tapped = true; b.textContent = 'Updating…';
+      if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+      else location.reload();
+    });
+    var s = document.createElement('style');
+    s.textContent = '@keyframes pwaUp{from{opacity:0;transform:translate(-50%,10px)}to{opacity:1;transform:translateX(-50%)}}'
+      + '@media (prefers-reduced-motion:reduce){#pwa-update-bar{animation:none}}';
+    document.head.appendChild(s);
+    (document.body || document.documentElement).appendChild(b);
+  }
+  ready.then(function (reg) {
+    try {
+      if (reg.waiting && navigator.serviceWorker.controller) banner(reg);
+      reg.addEventListener('updatefound', function () {
+        var w = reg.installing;
+        if (!w) return;
+        w.addEventListener('statechange', function () {
+          if (w.state === 'installed' && navigator.serviceWorker.controller) banner(reg);
+        });
+      });
+      setInterval(function () { reg.update().catch(function () {}); }, 3600000);
+    } catch (e) {}
+  }).catch(function () {});
+  } catch (e) {}
+})();
+</script>
+</body>
+</html>
