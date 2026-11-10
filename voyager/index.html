@@ -546,6 +546,11 @@
     <button class="btn primary" data-act="viewchanges">See what changed</button>
     <button class="navbtn" data-act="dismisschanges" style="width:28px;height:28px;font-size:13px" aria-label="Dismiss">✕</button>
   </div>
+  <div class="changebar" id="blankbar" style="border-color:rgba(91,123,255,.55);max-width:min(96%,620px)">
+    <span class="msg" id="blankMsg"></span>
+    <button class="btn primary" data-act="external">Full tab ↗</button>
+    <button class="navbtn" data-act="dismissblank" style="width:28px;height:28px;font-size:13px" aria-label="Dismiss">✕</button>
+  </div>
   <div class="veil" id="veil">
     <div class="spin" id="veilSpin"></div>
     <h3 id="veilTitle">Loading…</h3>
@@ -591,6 +596,15 @@
 <script src="qr.js"></script>
 <script>
 'use strict';
+/* A browser must never recurse: if this copy of Voyager finds itself INSIDE
+ * a frame (a same-origin link opened in the viewport, or a service worker
+ * fallback serving the shell into the frame), it bows out — blank itself,
+ * tell the parent, and stop before booting a browser-in-a-browser. */
+if (window.top && window.top !== window.self) {
+  try { parent.postMessage({ voyager: 'self-frame', href: location.href }, '*'); } catch (e) {}
+  document.documentElement.style.visibility = 'hidden';
+  throw new Error('voyager-in-voyager: bowing out of the frame');
+}
 /* Voyager UI — a skin over voyager/engine.js. All decisions (what a typed
  * string means, what closing a tab focuses, what lands in history) live in
  * the engine; this file only paints state and forwards events. */
@@ -604,6 +618,11 @@ try { S = Voyager.restore(localStorage.getItem(STORE_KEY) || ''); }
 catch (e) { S = Voyager.createBrowser(); }
 
 var loadTimer = 0;           // embed-refusal watchdog
+var wakeTimer = 0;           // sleeping-proxy wake loop
+var wakeAttempts = 0;
+var wakeGen = 0;             // bumped by stopWakeLoop so in-flight pings stand down
+var selfFrameEscapes = {};   // per-url count of pages escaping their frame into a Voyager copy
+var proxyHealth = 'unknown'; // 'ok' | 'waking' | 'down' | 'none' | 'unknown'
 var pageTrackers = {};       // url → tracker count for pages loaded this session
 var progressTimer = 0;
 var suggestIndex = -1;
@@ -630,7 +649,7 @@ function proxyBaseNow() {
   }
   return base;
 }
-function frameOpts() { return { torGateway: S.settings.torGateway, proxyBase: proxyBaseNow() }; }
+function frameOpts() { return { torGateway: S.settings.torGateway, proxyBase: proxyBaseNow(), selfOrigin: location.protocol === 'file:' ? '' : location.origin }; }
 /** Origin of the active proxy (for validating postMessage from proxied pages). */
 function proxyOrigin() {
   var b = proxyBaseNow();
@@ -806,8 +825,75 @@ function loadFrame(url) {
   showVeil('loading', url);
   frame.setAttribute('src', src);
   clearTimeout(loadTimer);
-  loadTimer = setTimeout(function () { showVeil('blocked', url); }, 9000);
+  loadTimer = setTimeout(function () { frameStalled(url); }, 9000);
 }
+
+/* ---- the sleeping-proxy problem, solved honestly ----
+ * Free proxy hosting (Render & friends) spins down after ~15 quiet minutes
+ * and takes up to a minute to wake. A 9-second watchdog used to misread that
+ * as "this site won't be framed" — the whole browser looked broken once a
+ * day. Now a stalled load PINGS the proxy: asleep → say so, keep pinging,
+ * and reload automatically the moment it wakes. */
+
+function proxyPingUrl() {
+  var base = proxyBaseNow();
+  if (!base) return '';
+  return base.replace(/[?#].*$/, '').replace(/\/proxy\/?$/, '') + '/__voyager/ping';
+}
+
+/** One ping with a timeout. Resolves true (alive), false (dead/slow). */
+function pingProxy(timeoutMs) {
+  var ping = proxyPingUrl();
+  if (!ping) return Promise.resolve(false);
+  var ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  var t = setTimeout(function () { if (ctl) ctl.abort(); }, timeoutMs || 6000);
+  return fetch(ping, { cache: 'no-store', signal: ctl ? ctl.signal : undefined })
+    .then(function (r) { clearTimeout(t); return !!(r && r.ok); })
+    .catch(function () { clearTimeout(t); return false; });
+}
+
+/** The watchdog fired. Decide: sleeping proxy (wake it), dead proxy, or a page that truly refuses. */
+function frameStalled(url) {
+  // Mirror resolveFrameSrc: .onion gateways, same-origin siblings and video
+  // embeds load WITHOUT the proxy — a stall there is theirs, not the proxy's.
+  var base = proxyBaseNow();
+  var viaProxy = !!base && String(Voyager.resolveFrameSrc(url, frameOpts())).indexOf(String(base)) === 0;
+  if (!viaProxy) { showVeil('blocked', url); return; }
+  showVeil('waking', url);
+  wakeAttempts = 0;
+  wakeStep(url);
+}
+
+function wakeStep(url) {
+  if (url !== currentUrl()) { stopWakeLoop(); return; }   // user moved on
+  var gen = wakeGen;
+  wakeAttempts++;
+  pingProxy(6000).then(function (alive) {
+    // A load that finished meanwhile called stopWakeLoop (new generation) —
+    // this ping is stale and must NOT reload the page the user is reading.
+    if (gen !== wakeGen || url !== currentUrl()) return;
+    if (alive) {
+      proxyHealth = 'ok';
+      if (wakeAttempts === 1) {
+        // The proxy answered on the FIRST try — it was never asleep. The page
+        // is slow or genuinely refuses; give it one short grace, then be honest.
+        wakeTimer = setTimeout(function () {
+          if (gen === wakeGen && url === currentUrl() && $('veil').className.indexOf('on') !== -1) showVeil('blocked', url);
+        }, 7000);
+        return;
+      }
+      toast('🛰️ Proxy awake — loading');
+      currentFrameSrc = '';
+      loadFrame(url);
+      return;
+    }
+    proxyHealth = wakeAttempts >= 14 ? 'down' : 'waking';
+    if (wakeAttempts >= 14) { showVeil('blocked', url); return; }   // ~80s — stop pretending
+    wakeTimer = setTimeout(function () { wakeStep(url); }, 5000);
+  });
+}
+
+function stopWakeLoop() { clearTimeout(wakeTimer); wakeTimer = 0; wakeGen++; }
 
 function applyZoom(tab) {
   var z = (tab && tab.zoom || 100) / 100;
@@ -826,6 +912,13 @@ function showVeil(mode, url) {
     $('veilTitle').textContent = 'Loading ' + (Voyager.hostOf(url) || 'page') + '…';
     $('veilText').textContent = '';
     $('veilActions').innerHTML = '';
+  } else if (mode === 'waking') {
+    $('veilSpin').style.display = '';
+    $('veilTitle').textContent = '🛰️ Waking the full browser…';
+    $('veilText').innerHTML = 'Free proxy hosting goes to sleep after ~15 quiet minutes and takes <b>up to a minute</b> to wake. Voyager is pinging it and will load the page the moment it answers — no need to do anything.';
+    var saved = Voyager.inMemory(S, url)
+      ? '<button class="btn primary" data-readmem="' + esc(url) + '">📖 Read your saved copy meanwhile</button>' : '';
+    $('veilActions').innerHTML = saved + '<button class="btn" data-act="external">Open in full tab ↗</button>';
   } else if (mode === 'onion') {
     $('veilSpin').style.display = 'none';
     $('veilTitle').textContent = '🧅 A Tor hidden service';
@@ -840,6 +933,8 @@ function showVeil(mode, url) {
     var proxyOn = !!proxyBaseNow();
     if (Voyager.isOnion(url)) {
       $('veilText').innerHTML = 'The gateway reached the hidden service but it refuses to render inside another page (X-Frame-Options), or the gateway is down. Try opening it in a full tab, or use the Tor Browser.';
+    } else if (proxyOn && proxyHealth === 'down') {
+      $('veilText').innerHTML = 'Your full-browser proxy <b>isn’t answering at all</b> (pinged for over a minute). Either the free service is still crawling awake, or it has been suspended or deleted by its host. Check the URL in <b>Settings</b> — or redeploy in two minutes with <b>voyager/DEPLOY.md</b>.';
     } else if (proxyOn) {
       $('veilText').innerHTML = 'Even through the proxy this page won’t render inside a frame — usually a heavy app, DRM video, or a login. Open it in a full tab instead.';
     } else {
@@ -853,12 +948,14 @@ function showVeil(mode, url) {
     $('veilActions').innerHTML =
       savedCopy +
       '<button class="btn' + (savedCopy ? '' : ' primary') + '" data-act="external">Open in full tab ↗</button>' +
+      (proxyOn && proxyHealth === 'down' ? '<button class="btn" data-act="retryproxy">🛰️ Try the proxy again</button>' : '') +
       '<button class="btn" data-act="dismissveil">Wait anyway</button>';
     stopProgress(false);
   }
 }
 function hideVeil() {
   clearTimeout(loadTimer);
+  stopWakeLoop();
   $('veil').className = 'veil';
 }
 
@@ -1132,6 +1229,48 @@ function showChangeBanner() {
   $('changebar').className = 'changebar on';
 }
 function hideChangeBanner() { $('changebar').className = 'changebar'; }
+
+/* ---- the blank-app detector ----
+ * Some sites (YouTube's homepage, most app-like SPAs) "load" through the
+ * proxy but their JavaScript shell refuses to boot in a rewritten page — the
+ * user sees a silent white screen. Through the proxy the document is ours to
+ * inspect, so after a load settles we check whether anything actually painted
+ * and, if not, say so honestly with the ways out. */
+var blankWarnedUrl = '';
+var blankGen = 0;            // bumped on navigation/dismiss so pending samples stand down
+function hideBlankBar() { $('blankbar').className = 'changebar'; blankGen++; }
+function checkBlankApp(url) {
+  if (!proxyBaseNow() || !/^https?:/i.test(String(url))) return;
+  var gen = ++blankGen;
+  // Sample THREE times: SPAs often fire 'load' with an empty shell and paint
+  // later. Only the second blank sighting warns (no false alarm on a slow
+  // hydration), and the third keeps watching so a late paint clears the bar.
+  var delays = [1500, 4000, 9000];
+  function sample(i) {
+    setTimeout(function () {
+      if (gen !== blankGen || url !== currentUrl()) return;
+      var d = liveDoc();
+      if (!d || !d.body) return;
+      var text = '';
+      try { text = String(d.body.innerText || '').replace(/\s+/g, ' ').trim(); } catch (e) { return; }
+      var media = d.querySelector('video, iframe, canvas');
+      if (text.length >= 40 || media) {
+        if ($('blankbar').className.indexOf('on') !== -1) hideBlankBar();
+        return;                                               // it painted — done
+      }
+      if (i >= 1 && url !== blankWarnedUrl) {                 // nag once per page
+        blankWarnedUrl = url;
+        var host = Voyager.siteOf(url);
+        var isTube = /(^|\.)youtube\.com$/.test(host) || host === 'youtu.be';
+        $('blankMsg').innerHTML = '🫥 <b>This app loaded empty</b> — its JavaScript shell won’t boot through the proxy.' +
+          (isTube ? ' YouTube <b>videos</b> do play: open any watch or youtu.be link.' : '');
+        $('blankbar').className = 'changebar on';
+      }
+      if (i + 1 < delays.length) sample(i + 1);
+    }, delays[i]);
+  }
+  sample(0);
+}
 function changesPage() {
   var d = diffState;
   if (!d) return '<div class="reader"><div class="rempty"><h1>What changed</h1><p class="muted">When a page you’ve read comes back different, Voyager shows the edits here. Nothing to show right now.</p></div></div>';
@@ -1256,6 +1395,21 @@ function startPage() {
     '<p>' + (ghost ? 'Nothing you do here is remembered.' : 'Search or type an address. The web is that way ↑') + '</p>' +
     '<div class="startsearch" data-act="focusurl">🔍&nbsp; Search ' + esc(engineName()) + ' or type a URL</div>' +
     '</div>';
+  // Proxy truth, up front: a sleeping/dead/missing proxy is why "nothing
+  // opens" — say it on the start page instead of letting pages fail silently.
+  if (!ghost) {
+    var remoteProxy = (S.settings.proxy || '').trim().toLowerCase();
+    var hasProxy = !!proxyBaseNow();
+    if (hasProxy && proxyHealth === 'waking') {
+      h += '<div class="panel" style="border-color:rgba(245,192,74,.5)"><b style="font-size:14px">🛰️ Waking the full browser…</b><p class="tiny" style="margin:4px 0 0">Free hosting sleeps after ~15 quiet minutes. Voyager is pinging it — pages will load the moment it answers.</p></div>';
+    } else if (hasProxy && proxyHealth === 'down') {
+      h += '<div class="panel" style="border-color:rgba(255,107,122,.5)"><b style="font-size:14px">🛰️ Full browser unreachable</b><p class="tiny" style="margin:4px 0 0">Your proxy isn’t answering — big sites won’t open until it does. It may still be waking, or the free service may have been suspended by its host.</p>' +
+        '<button class="btn block" data-act="retryproxy" style="margin-top:10px">Ping it again</button></div>';
+    } else if (!hasProxy && remoteProxy !== 'off') {
+      h += '<div class="panel"><b style="font-size:14px">🛰️ Basic mode</b><p class="tiny" style="margin:4px 0 0">Without the full-browser proxy, big sites (YouTube, Google, most logins) refuse to open — only sites that allow framing work. Set the proxy once and everything opens.</p>' +
+        '<button class="btn block" data-act="settings" style="margin-top:10px">Connect the full browser</button></div>';
+    }
+  }
   // Web memory — the differentiator, front and centre once there's anything to search.
   if (S.memory.length && !ghost) {
     h += '<div class="startsearch" data-act="memory" style="margin-top:12px;color:var(--purple)">🧠&nbsp; Search the ' + S.memory.length + ' page' + (S.memory.length === 1 ? '' : 's') + ' you’ve read</div>';
@@ -1384,6 +1538,9 @@ function settingsPage() {
     '<h2 class="sect">🛡️ Privacy</h2><div class="panel">' +
     '<div class="toggle"><div><b style="font-size:14.5px">Block ads &amp; trackers</b><p class="tiny" style="margin:2px 0 0">Drops known ad/tracker requests at the proxy, so pages load lighter and quieter. Needs the full-browser proxy on.</p></div>' +
     '<button class="switch" id="trackerSwitch" aria-pressed="' + (S.settings.blockTrackers !== false) + '" aria-label="Block trackers"><i></i></button></div>' +
+    '<div style="margin-top:14px"><b style="font-size:14.5px">👻 Ghost toward websites</b><p class="tiny" style="margin:2px 0 0">Always on through the proxy: sites see your <b>server’s</b> address, never this device’s; real cookies are stripped; and scripts get decoy cookies &amp; storage that vanish when you leave — so a site can’t tell a return visit from a first one. Honest limits: direct loads without the proxy don’t have this, logins need recognition so they won’t stick, and deep fingerprinting is beyond any proxy’s reach.</p></div>' +
+    '<div style="margin-top:14px"><b style="font-size:14.5px">🧹 Clear site data</b><p class="tiny" style="margin:2px 0 0">Wipes everything a website could use to recognise this browser: every cookie, this tab’s session storage, and the live pages themselves (they reload fresh, dropping anything held in memory). Your own tabs, history, bookmarks and settings stay — this clears <i>their</i> trace of you, not yours of them. Honest limit: a site loaded <b>directly</b> (without the proxy) keeps its data inside your device’s web engine, which only your device’s own settings can clear.</p>' +
+    '<button class="btn danger block" data-act="forgetsites">🧹 Make websites forget me</button></div>' +
     '</div>' +
     '<h2 class="sect">🛰️ Full browser (proxy)</h2><div class="panel">' +
     '<div class="field"><label>Proxy server URL</label>' +
@@ -1494,6 +1651,7 @@ function go(input) {
 function navTo(url) {
   hideSuggest();
   hideChangeBanner();
+  hideBlankBar();
   closeFind();
   $('urlInput').blur();
   commit(Voyager.navigate(S, S.activeId, url, { ts: Date.now() }));
@@ -1509,6 +1667,33 @@ function openExternal() {
   // whoever has the Tor Browser as their default.
   if (Voyager.isOnion(url) && S.settings.torGateway) url = Voyager.torGatewayUrl(url, S.settings.torGateway);
   window.open(url, '_blank', 'noopener');
+}
+
+/* 🧹 Make websites forget me: evict every cookie (across the scopes a site
+ * could have set them with), drop this tab's session storage, and reload the
+ * live frames so anything a page held in memory dies with it. Voyager's own
+ * data — tabs, history, bookmarks, memory, settings — is deliberately kept:
+ * this clears the sites' trace of the user, not the user's trace of the sites. */
+function doForgetSites() {
+  var evictions = Voyager.cookieEvictions(document.cookie, location.hostname);
+  for (var i = 0; i < evictions.length; i++) {
+    try { document.cookie = evictions[i]; } catch (e) {}
+  }
+  try { sessionStorage.clear(); } catch (e) {}
+  // Reload whatever the frames hold — a fresh document gets fresh (empty) decoys.
+  var u = currentUrl();
+  if (String(u).indexOf('voyager://') !== 0) {
+    currentFrameSrc = '';
+    loadFrame(u);
+  }
+  var f2 = $('frame2');
+  if (f2) {
+    var s2 = f2.getAttribute('src');
+    // removeAttribute, never src="" — an empty src resolves to Voyager's own
+    // URL and the self-frame guard would read that as recursion.
+    if (s2) { f2.removeAttribute('src'); f2.setAttribute('src', s2); }
+  }
+  toast('🧹 Done — websites now meet you as a stranger');
 }
 
 function doWipe() {
@@ -1783,6 +1968,7 @@ function runAct(act) {
   }
   else if (act === 'viewchanges') { hideChangeBanner(); navTo('voyager://changes'); }
   else if (act === 'dismisschanges') hideChangeBanner();
+  else if (act === 'dismissblank') hideBlankBar();
   else if (act === 'savehighlight') {
     if (!pendingSelection) return;
     var hUrl = /^https?:/i.test(pendingSelectionUrl) ? pendingSelectionUrl : (readerState && readerState.url);
@@ -1798,6 +1984,21 @@ function runAct(act) {
   else if (act === 'handoff') openHandoff();
   else if (act === 'handoffclose') $('handoff').className = 'handoff';
   else if (act === 'pip') popVideoOut();
+  else if (act === 'retryproxy') {
+    toast('🛰️ Pinging the proxy…');
+    pingProxy(8000).then(function (alive) {
+      proxyHealth = alive ? 'ok' : 'down';
+      if (alive) {
+        toast('🛰️ Full browser ready');
+        var u = currentUrl();
+        if (String(u).indexOf('voyager://') !== 0) { currentFrameSrc = ''; loadFrame(u); }
+        else if (String(u) === 'voyager://start') renderInternal('start');
+      } else {
+        toast('Still nothing — check the URL in Settings');
+        if (String(currentUrl()) === 'voyager://start') renderInternal('start');
+      }
+    });
+  }
   else if (act === 'follow') {
     var fUrl = currentUrl();
     if (String(fUrl).indexOf('voyager://') === 0) { toast('Open a website first'); return; }
@@ -1863,6 +2064,7 @@ function runAct(act) {
     } catch (e) { toast('Export failed'); }
   }
   else if (act === 'importall') { var fi = $('importFile'); if (fi) fi.click(); }
+  else if (act === 'forgetsites') doForgetSites();
   else if (act === 'clearmemory') {
     if (!confirm('Forget every page Voyager has remembered on this device?')) return;
     commit(Voyager.clearMemory(S));
@@ -1988,6 +2190,7 @@ $('frame').addEventListener('load', function () {
   maybeCapture(currentUrl());
   hookLivePage();                                    // annotations on the live page
   inkLivePage();
+  checkBlankApp(currentUrl());
 });
 $('frame').addEventListener('error', function () {
   showVeil('blocked', currentUrl());
@@ -2002,6 +2205,57 @@ window.addEventListener('message', function (e) {
   if (e.origin !== location.origin && e.origin !== proxyOrigin()) return;
   var d = e.data;
   if (!d || !d.voyager) return;
+  // A nested copy of Voyager bowed out of the frame — don't recurse, come home.
+  if (d.voyager === 'self-frame') {
+    // The nested copy reports where it woke up. Equal to the src we set for
+    // the tab's url means the TAB points at a Voyager copy — a tapped tile or
+    // typed address: mark it and come home. Anything else means the PAGE
+    // escaped its frame into one (a relative redirect landing on the proxy's
+    // root, say): the user wanted that page, so bring the PAGE back instead
+    // of bouncing them home. Old copies without href are read as deliberate.
+    var nestedHref = String(d.href || '');
+    var selfSplit = false;
+    try { selfSplit = !!(e.source && $('frame2').contentWindow === e.source); } catch (err2) {}
+    if (selfSplit) {
+      var stab0 = Voyager.splitTab(S);
+      var surl = stab0 ? Voyager.tabUrl(stab0) : '';
+      var sDeliberate = !nestedHref || nestedHref === String(Voyager.resolveFrameSrc(surl, frameOpts()));
+      if (!sDeliberate && stab0) {
+        selfFrameEscapes[surl] = (selfFrameEscapes[surl] || 0) + 1;
+        if (selfFrameEscapes[surl] <= 2) {
+          var f2e = $('frame2');
+          f2e.removeAttribute('src');
+          f2e.setAttribute('src', String(Voyager.resolveFrameSrc(surl, frameOpts())));
+          toast('↩️ The split page tried to leave its frame — brought it back');
+          return;
+        }
+      }
+      if (sDeliberate && stab0) commit(Voyager.markSelfUrl(S, surl));   // proven: that address IS Voyager
+      commit(Voyager.setSplit(S, null));
+      toast('🧭 That link opens Voyager itself — closed the split');
+      return;
+    }
+    var selfCur = currentUrl();
+    var deliberate = !nestedHref || nestedHref === String(Voyager.resolveFrameSrc(selfCur, frameOpts()));
+    if (!deliberate && /^https?:/i.test(selfCur)) {
+      selfFrameEscapes[selfCur] = (selfFrameEscapes[selfCur] || 0) + 1;
+      if (selfFrameEscapes[selfCur] <= 2) {
+        currentFrameSrc = '';
+        loadFrame(selfCur);
+        toast('↩️ The page tried to leave its frame — brought it back');
+        return;
+      }
+      stopProgress(true);                           // it escapes every time — be honest, don't loop
+      showVeil('blocked', selfCur);
+      return;
+    }
+    commit(Voyager.markSelfUrl(S, selfCur));        // proven: never show it as a Top Sites tile again
+    hideVeil();
+    stopProgress(true);
+    navTo('voyager://start');
+    toast('🧭 That link opens Voyager itself — you’re already here');
+    return;
+  }
   var url = d.url;
   if (d.voyager === 'open' && url && /^https?:/i.test(url)) {
     commit(Voyager.newTab(S, { url: url, ts: Date.now() }));
@@ -2033,6 +2287,7 @@ window.addEventListener('message', function (e) {
       if (d.title) commit(Voyager.setTitle(S, S.activeId, d.title));
       hideVeil();
       stopProgress(false);
+      proxyHealth = 'ok';               // only proxied pages carry the shim — a real proof of life
       // The receipt: the shim counted the page's tracker requests server-side.
       var trk = Math.floor(Number(d.trackers) || 0);
       if (trk > 0) {
@@ -2043,6 +2298,7 @@ window.addEventListener('message', function (e) {
       maybeCapture(url);
       hookLivePage();
       inkLivePage();
+      checkBlankApp(url);
     }
   }
 });
@@ -2449,6 +2705,33 @@ showUrl(currentUrl(), Voyager.activeTab(S));
       })
       .catch(function () {});
   } catch (e) {}
+})();
+
+/* Warm-up: if a REMOTE proxy is configured, ping it the moment the app opens —
+ * the ping itself wakes a sleeping free-tier service, so it's usually alive by
+ * the time the first address is typed. Keep nudging until it answers (~60s). */
+(function warmProxy() {
+  var p = (S.settings.proxy || '').trim();
+  if (!p || p.toLowerCase() === 'off') return;
+  var tries = 0;
+  function nudge() {
+    if (proxyHealth === 'ok') return;                // something else already proved it alive
+    tries++;
+    pingProxy(8000).then(function (alive) {
+      if (!alive && proxyHealth === 'ok') return;    // a stale failure never outranks fresh proof
+      var wasWaking = proxyHealth === 'waking' || proxyHealth === 'down';
+      proxyHealth = alive ? 'ok' : (tries >= 7 ? 'down' : 'waking');
+      if (alive) {
+        if (wasWaking) toast('🛰️ Full browser ready');
+        refreshFeeds(true);
+        if (String(currentUrl()) === 'voyager://start') renderInternal('start');
+        return;
+      }
+      if (String(currentUrl()) === 'voyager://start') renderInternal('start');
+      if (tries < 7) setTimeout(nudge, 10000);
+    });
+  }
+  nudge();
 })();
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {

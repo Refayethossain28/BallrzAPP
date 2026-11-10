@@ -4,7 +4,7 @@
  * under a newer page) and the remaining static assets are cache-first for
  * speed. Live search APIs (/api/, wikipedia, algolia, …) are never cached —
  * live means live. Bump CACHE to force a clean reinstall. */
-const CACHE = 'seeker-v4';
+const CACHE = 'seeker-v6'; // v6: never cache proxy endpoints (/websearch & friends)
 const ASSETS = ['./', './index.html', './engine.js', './manifest.json',
                 './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png'];
 
@@ -27,6 +27,10 @@ self.addEventListener('fetch', (e) => {
   const req = e.request;
   const url = new URL(req.url);
   if (url.pathname.includes('/api/') || url.origin !== self.location.origin) return; // live data stays live
+  // Proxy endpoints are live search/fetch APIs too — if Seeker is ever hosted on
+  // the same origin as the proxy, these must never land in the cache-first branch.
+  if (url.pathname === '/websearch' || url.pathname === '/proxy' || url.pathname === '/reader' ||
+      url.pathname === '/feeds' || url.pathname.startsWith('/__voyager')) return;
 
   const isPage = req.mode === 'navigate' ||
                  (req.destination === '' && /\/(index\.html)?(\?.*)?$/.test(url.pathname));

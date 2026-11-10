@@ -112,6 +112,29 @@
     var trackers = Math.floor(Number(opts && opts.trackers) || 0);
     var body = [
       '(function(){',
+      // ── 👻 amnesia: every visit looks like the first ──
+      // All proxied pages share the proxy's origin, so a site's JS could stash
+      // recognition data in localStorage / document.cookie and find it on the
+      // next visit — or worse, another SITE could read it. Replace both with
+      // ephemeral in-memory decoys before any page script runs: writes work,
+      // nothing survives the page, nothing crosses sites.
+      'try{var mkStore=function(){var m={};var s={getItem:function(k){return Object.prototype.hasOwnProperty.call(m,k)?m[k]:null;},',
+      'setItem:function(k,v){m[String(k)]=String(v);},removeItem:function(k){delete m[String(k)];},clear:function(){m={};},',
+      'key:function(i){return Object.keys(m)[i]||null;}};',
+      'try{Object.defineProperty(s,"length",{get:function(){return Object.keys(m).length;}});}catch(e){}return s;};',
+      'try{Object.defineProperty(window,"localStorage",{value:mkStore(),configurable:true});}catch(e){}',
+      'try{Object.defineProperty(window,"sessionStorage",{value:mkStore(),configurable:true});}catch(e){}',
+      // The decoy jar honors DELETION too: a write with Max-Age<=0 or a past
+      // expires is how sites log out and dismiss consent banners — storing it
+      // as a phantom value would make the cookie unkillable.
+      'var JAR="";try{Object.defineProperty(document,"cookie",{configurable:true,',
+      'get:function(){return JAR;},set:function(v){var all=String(v).split(";");var p=all[0];if(!p)return;',
+      'var k=p.split("=")[0].replace(/^\\s+/,"");if(!k)return;var dead=false;',
+      'for(var i=1;i<all.length;i++){var m;',
+      'if((m=/^\\s*max-age\\s*=\\s*(-?\\d+)/i.exec(all[i]))){if(+m[1]<=0)dead=true;}',
+      'else if((m=/^\\s*expires\\s*=\\s*(.+)/i.exec(all[i]))){var ts=Date.parse(m[1]);if(!isNaN(ts)&&ts<=Date.now())dead=true;}}',
+      'var rest=JAR?JAR.split("; ").filter(function(c){return c.split("=")[0]!==k;}):[];',
+      'if(!dead)rest.push(p);JAR=rest.join("; ");}});}catch(e){}}catch(e){}',
       'var B=' + JSON.stringify(proxyPath) + ',PAGE=' + JSON.stringify(pageUrl) + ',TRK=' + trackers + ';',
       'var SEP=B.indexOf("?")===-1?"?":"&";',   // key-locked proxies pass B="/proxy?key=…"
       'function abs(u){try{return new URL(u,PAGE).href;}catch(e){return null;}}',
@@ -124,19 +147,58 @@
       // fetch / XHR keep flowing through the proxy
       'var of=window.fetch;if(of)window.fetch=function(i,init){try{if(typeof i==="string")i=P(i);else if(i&&i.url)i=new Request(P(i.url),i);}catch(e){}return of.call(this,i,init);};',
       'var xo=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){try{u=P(u);}catch(e){}return xo.apply(this,[m,u].concat([].slice.call(arguments,2)));};',
-      // link clicks: proxy the target, and tell the chrome where we went
+      // link clicks: proxy the target, and tell the chrome where we went.
+      // BUBBLE phase, after the page's own handlers — a click the app already
+      // handled (defaultPrevented) is its business, not ours.
       'document.addEventListener("click",function(e){if(e.defaultPrevented||e.button)return;',
       'var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(!a)return;',
       'var h=a.getAttribute("href");if(!h||/^(#|javascript:|mailto:|tel:)/i.test(h))return;',
       // links are already server-rewritten to /proxy?url=…; real() decodes back to the true target
       'var t=real(h);if(!t||!/^https?:/i.test(t))return;e.preventDefault();',
       'if(a.target==="_blank"){parent.postMessage({voyager:"open",url:t},"*");return;}',
-      'parent.postMessage({voyager:"navigate",url:t},"*");location.href=P(t);},true);',
-      // GET forms (site search boxes): build the query, then navigate proxied
-      'document.addEventListener("submit",function(e){var f=e.target;if(!f||f.tagName!=="FORM")return;',
+      'parent.postMessage({voyager:"navigate",url:t},"*");location.href=P(t);},false);',
+      // GET forms (site search boxes): build the query, then navigate proxied.
+      // BUBBLE phase and defaultPrevented-aware: an app that runs its search
+      // in-page (Seeker does) keeps its submit — we only rewrite the browser's
+      // own default navigation.
+      'document.addEventListener("submit",function(e){var f=e.target;if(e.defaultPrevented||!f||f.tagName!=="FORM")return;',
       'if((f.getAttribute("method")||"get").toLowerCase()!=="get")return;e.preventDefault();',
-      'var act=real(f.getAttribute("action")||PAGE);var qs="";try{qs=new URLSearchParams(new FormData(f)).toString();}catch(x){}',
-      'var tgt=act+(act.indexOf("?")>=0?"&":"?")+qs;parent.postMessage({voyager:"navigate",url:tgt},"*");location.href=P(tgt);},true);',
+      // fixForm may have folded the real target into a hidden field — prefer it,
+      // and leave the proxy's own fields out of the query we build.
+      'var uin=f.querySelector("input[data-vgr][name=url]");var act=uin?uin.value:real(f.getAttribute("action")||PAGE);',
+      'var sp=[];for(var fi=0;fi<f.elements.length;fi++){var el=f.elements[fi];',
+      'if(!el.name||el.disabled||el.getAttribute("data-vgr"))continue;var ty=(el.type||"").toLowerCase();',
+      'if(ty==="submit"||ty==="button"||ty==="file"||((ty==="checkbox"||ty==="radio")&&!el.checked))continue;',
+      'sp.push(encodeURIComponent(el.name)+"="+encodeURIComponent(el.value));}var qs=sp.join("&");',
+      'var tgt=qs?act+(act.indexOf("?")>=0?"&":"?")+qs:act;parent.postMessage({voyager:"navigate",url:tgt},"*");location.href=P(tgt);},false);',
+      // ── the default-action backstop ──
+      // The listeners above run in BUBBLE phase so pages keep their own events
+      // (that is the contract that lets in-frame apps work). The cost: a page
+      // that stopPropagation()s without preventDefault() bypasses them and the
+      // browser's DEFAULT action fires. So the attributes themselves must be
+      // safe: rewrite href/action on everything the page inserts or changes —
+      // the same contract the server already applies to static markup — and
+      // fold GET-form targets into hidden fields on the bare proxy path, since
+      // a default GET submit REPLACES the action's query string wholesale.
+      'var BQ=B.split("?"),BPATH=BQ[0],BEXTRA=BQ[1]?BQ[1].split("&"):[];',
+      'function fixA(a){var h=a.getAttribute("href");if(h==null)return;var p2=P(h);if(p2!==h)a.setAttribute("href",p2);}',
+      'function fixForm(f){try{if((f.getAttribute("method")||"get").toLowerCase()!=="get")return;',
+      'var cur=f.getAttribute("action");if(cur===BPATH&&f.querySelector("input[data-vgr][name=url]"))return;',
+      'var act=real(cur||PAGE);if(!/^https?:/i.test(act))return;f.setAttribute("action",BPATH);',
+      'var need=BEXTRA.concat(["url="+encodeURIComponent(act)]);',
+      'for(var ni=0;ni<need.length;ni++){var kv=need[ni].split("="),n=decodeURIComponent(kv[0]),val=decodeURIComponent(kv.slice(1).join("="));',
+      'var inp=f.querySelector("input[data-vgr][name=\\""+n+"\\"]");',
+      'if(!inp){inp=document.createElement("input");inp.type="hidden";inp.name=n;inp.setAttribute("data-vgr","1");f.appendChild(inp);}',
+      'inp.value=val;}}catch(e){}}',
+      'function sweep(n){try{if(n.tagName==="A")fixA(n);else if(n.tagName==="FORM")fixForm(n);',
+      'if(n.querySelectorAll){var as=n.querySelectorAll("a[href]");for(var si=0;si<as.length;si++)fixA(as[si]);',
+      'var fs=n.querySelectorAll("form");for(var sj=0;sj<fs.length;sj++)fixForm(fs[sj]);}}catch(e){}}',
+      'function watch(){sweep(document.documentElement);',
+      'try{new MutationObserver(function(ms){for(var mi=0;mi<ms.length;mi++){var m=ms[mi];',
+      'if(m.type==="attributes"){sweep(m.target);continue;}',
+      'for(var mj=0;mj<m.addedNodes.length;mj++){var mn=m.addedNodes[mj];if(mn&&mn.nodeType===1)sweep(mn);}}})',
+      '.observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:["href","action"]});}catch(e){}}',
+      'if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",watch);else watch();',
       // report where we landed (redirects included) so the chrome can catch up
       'function announce(){try{parent.postMessage({voyager:"loaded",url:PAGE,title:document.title,trackers:TRK},"*");}catch(e){}}',
       'if(document.readyState==="complete")announce();window.addEventListener("load",announce);',
@@ -177,10 +239,45 @@
         return attr + '=' + q + r + q;
       });
 
+    // Meta-refresh redirects name their target inside the content attribute —
+    // unrewritten, a relative one escapes the frame onto the proxy's own
+    // origin. Send them back through the proxy like any other link.
+    html = html.replace(/<meta\b[^>]*>/gi, function (tag) {
+      if (!/http-equiv\s*=\s*["']?refresh["']?/i.test(tag)) return tag;
+      return tag.replace(/(url\s*=\s*)(['"]?)([^'">;]+)/i, function (mm, pre, q2, u) {
+        var r2 = rewriteUrl(u, base, proxyPath);
+        return pre + q2 + (r2 == null ? u : r2);
+      });
+    });
+
     var shim = clientShim(base, proxyPath, opts);
     if (/<head[^>]*>/i.test(html)) return html.replace(/<head[^>]*>/i, function (m) { return m + shim; });
     if (/<html[^>]*>/i.test(html)) return html.replace(/<html[^>]*>/i, function (m) { return m + shim; });
     return shim + html;
+  }
+
+  /**
+   * A GET form folded onto the bare proxy path submits its fields ALONGSIDE
+   * the url param — fold them back into the target's own query. The LAST url
+   * param is the proxy's (the shim appends its hidden field last, so a site's
+   * own field named "url" rides through as data); key/block stay the proxy's.
+   * Takes ordered [name, value] pairs; returns null when no url is present.
+   */
+  function mergeFormQuery(pairs) {
+    pairs = pairs || [];
+    var urlIdx = -1;
+    for (var i = 0; i < pairs.length; i++) if (pairs[i][0] === 'url') urlIdx = i;
+    if (urlIdx === -1) return null;
+    var target = String(pairs[urlIdx][1] || '');
+    var extras = [];
+    for (var j = 0; j < pairs.length; j++) {
+      if (j === urlIdx) continue;
+      var k = pairs[j][0];
+      if (k === 'key' || k === 'block') continue;
+      extras.push(encodeURIComponent(k) + '=' + encodeURIComponent(pairs[j][1]));
+    }
+    var merged = extras.length ? target + (target.indexOf('?') >= 0 ? '&' : '?') + extras.join('&') : target;
+    return { target: target, merged: merged };
   }
 
   /* ── response headers: keep content-type, drop everything that fights framing ── */
@@ -365,6 +462,53 @@
     return { title: rssTitle, items: items };
   }
 
+  /* ── whole-web search: parse DuckDuckGo's no-JS result pages (for Seeker) ──
+   * The server fetches html.duckduckgo.com/html/ (or lite.duckduckgo.com) and
+   * this pure function turns the markup into {title,url,snippet} rows. Links
+   * arrive as //duckduckgo.com/l/?uddg=<encoded> redirects — unwrap them.
+   * Defensive on purpose: markup drifts, so match loosely and skip junk. */
+
+  function unwrapDdg(href) {
+    var h = String(href == null ? '' : href);
+    if (h.indexOf('//') === 0) h = 'https:' + h;
+    var m = /[?&]uddg=([^&]+)/.exec(h);
+    if (m) { try { h = decodeURIComponent(m[1]); } catch (e) {} }
+    if (!/^https?:\/\//i.test(h)) return null;
+    if (/duckduckgo\.com/i.test(h.split(/[/?#]/)[2] || '')) return null;   // ads/self links
+    return h;
+  }
+
+  function parseWebResults(html) {
+    var s = String(html == null ? '' : html);
+    var out = [], seen = {}, m;
+    // format 1: html.duckduckgo.com — <a class="result__a" href="…">Title</a> … <a class="result__snippet">…</a>
+    var re = /<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+    while ((m = re.exec(s)) && out.length < 10) {
+      var url = unwrapDdg(decodeEntities(m[1]));
+      if (!url || seen[url]) continue;
+      var title = decodeEntities(m[2].replace(/<[^>]+>/g, '')).trim();
+      if (!title) continue;
+      var after = s.slice(re.lastIndex, re.lastIndex + 2000);
+      var sn = /class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/(?:a|td|div|span)>/i.exec(after);
+      seen[url] = 1;
+      out.push({ title: title, url: url, snippet: sn ? decodeEntities(sn[1].replace(/<[^>]+>/g, '')).trim().slice(0, 240) : '' });
+    }
+    if (out.length) return out;
+    // format 2: lite.duckduckgo.com — <a rel="nofollow" href="…">Title</a> with snippets in result-snippet cells
+    var lre = /<a[^>]*rel="nofollow"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+    while ((m = lre.exec(s)) && out.length < 10) {
+      var lu = unwrapDdg(decodeEntities(m[1]));
+      if (!lu || seen[lu]) continue;
+      var lt = decodeEntities(m[2].replace(/<[^>]+>/g, '')).trim();
+      if (!lt) continue;
+      var lafter = s.slice(lre.lastIndex, lre.lastIndex + 1200);
+      var lsn = /class="[^"]*result-snippet[^"]*"[^>]*>([\s\S]*?)<\/td>/i.exec(lafter);
+      seen[lu] = 1;
+      out.push({ title: lt, url: lu, snippet: lsn ? decodeEntities(lsn[1].replace(/<[^>]+>/g, '')).trim().slice(0, 240) : '' });
+    }
+    return out;
+  }
+
   /* ── ad / tracker blocking: a curated host blocklist ── */
   var TRACKERS = [
     'doubleclick.net', 'googlesyndication.com', 'googletagmanager.com', 'googletagservices.com',
@@ -450,6 +594,7 @@
     rewriteSrcset: rewriteSrcset,
     effectiveBase: effectiveBase,
     clientShim: clientShim,
+    mergeFormQuery: mergeFormQuery,
     rewriteHtml: rewriteHtml,
     isDroppedHeader: isDroppedHeader,
     isBlockedHost: isBlockedHost,
@@ -458,6 +603,8 @@
     countTrackers: countTrackers,
     discoverFeeds: discoverFeeds,
     parseFeed: parseFeed,
+    parseWebResults: parseWebResults,
+    unwrapDdg: unwrapDdg,
     TRACKERS: TRACKERS,
     stripTags: stripTags,
     extractReadable: extractReadable,

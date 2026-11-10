@@ -189,6 +189,103 @@ test('parseFeed reads RSS 2.0 and Atom: titles, links, dates, CDATA, entities', 
   assert.ok(a.items[0].ts > 0);
 });
 
+test('the shim defers to the page: bubble-phase listeners, defaultPrevented honored', () => {
+  const out = P.rewriteHtml('<html><head></head><body></body></html>', 'https://example.com/', '/proxy');
+  // both interceptors run AFTER the page's own handlers (bubble phase)…
+  assert.equal((out.match(/\},false\);/g) || []).length >= 2, true);
+  assert.equal(out.includes('},true);'), false);
+  // …and a submit the app already handled in-page is left alone
+  assert.ok(/addEventListener\("submit",function\(e\)\{var f=e\.target;if\(e\.defaultPrevented/.test(out));
+  assert.ok(/addEventListener\("click",function\(e\)\{if\(e\.defaultPrevented/.test(out));
+});
+
+test('parseWebResults reads both DDG no-JS formats, unwraps redirects, skips junk', () => {
+  const htmlFmt = '<div class="result">' +
+    '<a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fpage&amp;rut=abc">Example <b>Page</b></a>' +
+    '<a class="result__snippet" href="#">The snippet &amp; more text here.</a></div>' +
+    '<div class="result"><a class="result__a" href="https://duckduckgo.com/promo">Ad for DDG itself</a></div>' +
+    '<div class="result"><a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fpage">Dupe of first</a></div>' +
+    '<div class="result"><a class="result__a" href="https://other.site/x">Other Site</a></div>';
+  const r = P.parseWebResults(htmlFmt);
+  assert.equal(r.length, 2);                                          // self-link and dupe dropped
+  assert.equal(r[0].url, 'https://example.com/page');                 // uddg unwrapped
+  assert.equal(r[0].title, 'Example Page');                           // tags stripped, entities decoded
+  assert.equal(r[0].snippet, 'The snippet & more text here.');
+  assert.equal(r[1].url, 'https://other.site/x');
+
+  const liteFmt = '<table><tr><td><a rel="nofollow" href="https://lite.example/result">Lite Result</a></td></tr>' +
+    '<tr><td class="result-snippet">A lite snippet.</td></tr></table>';
+  const l = P.parseWebResults(liteFmt);
+  assert.equal(l[0].url, 'https://lite.example/result');
+  assert.equal(l[0].snippet, 'A lite snippet.');
+  assert.equal(P.parseWebResults('<p>no results markup at all</p>').length, 0);
+});
+
+test('👻 amnesia: the shim replaces storage and cookies with per-visit decoys, before page code', () => {
+  const out = P.rewriteHtml('<html><head></head><body></body></html>', 'https://example.com/', '/proxy');
+  assert.ok(out.includes('Object.defineProperty(window,"localStorage"'));
+  assert.ok(out.includes('Object.defineProperty(window,"sessionStorage"'));
+  assert.ok(out.includes('Object.defineProperty(document,"cookie"'));
+  // the decoys must be installed BEFORE the fetch/XHR rewrites (i.e. before any page script could run)
+  assert.ok(out.indexOf('Object.defineProperty(window,"localStorage"') < out.indexOf('window.fetch'));
+});
+
+test('👻 the decoy cookie jar honors deletion — logouts and consent banners work', () => {
+  const shim = P.clientShim('https://example.com/', '/proxy', {});
+  const body = shim.slice('<script>'.length, shim.lastIndexOf('<'));
+  function XHR() {}
+  XHR.prototype.open = function () {};
+  const doc = { addEventListener() {}, readyState: 'loading', title: '' };
+  const sb = {
+    document: doc, parent: { postMessage() {} }, location: {},
+    addEventListener() {}, XMLHttpRequest: XHR, MutationObserver: function () { this.observe = () => {}; },
+  };
+  sb.window = sb; sb.self = sb; sb.globalThis = sb;
+  vm.createContext(sb);
+  vm.runInContext(body, sb);
+  doc.cookie = 'sid=abc; path=/';
+  doc.cookie = 'theme=dark';
+  assert.equal(doc.cookie, 'sid=abc; theme=dark');
+  doc.cookie = 'sid=xyz';                                               // overwrite replaces
+  assert.equal(doc.cookie, 'theme=dark; sid=xyz');
+  doc.cookie = 'sid=; expires=Thu, 01 Jan 1970 00:00:00 GMT';           // the logout idiom
+  assert.equal(doc.cookie, 'theme=dark');
+  doc.cookie = 'theme=; Max-Age=0';                                     // the consent-banner idiom
+  assert.equal(doc.cookie, '');
+  doc.cookie = 'keep=1; expires=Fri, 01 Jan 2100 00:00:00 GMT';         // a future expiry STAYS
+  assert.equal(doc.cookie, 'keep=1');
+});
+
+test('mergeFormQuery folds GET-form fields into the target; last url wins; key/block stay the proxy\'s', () => {
+  assert.equal(P.mergeFormQuery([['q', 'x']]), null);                   // no url → the old 400 path
+  const m = P.mergeFormQuery([['key', 'sek'], ['q', 'space cats'], ['url', 'https://s.t/search']]);
+  assert.equal(m.merged, 'https://s.t/search?q=space%20cats');          // key dropped, field folded
+  assert.equal(P.mergeFormQuery([['url', 'https://a.b/']]).merged, 'https://a.b/');   // plain nav untouched
+  assert.equal(P.mergeFormQuery([['url', 'https://a.b/?x=1'], ['y', '2']]).merged, 'https://a.b/?x=1&y=2');
+  const two = P.mergeFormQuery([['url', 'https://data.example/'], ['url', 'https://real.t/s'], ['block', '0']]);
+  assert.equal(two.target, 'https://real.t/s');                         // the shim's field rides LAST
+  assert.ok(two.merged.includes('url=https%3A%2F%2Fdata.example%2F')); // a site's own url field is data
+});
+
+test('the default-action backstop: inserted links and GET forms are made safe at the attribute level', () => {
+  const out = P.rewriteHtml('<html><head></head><body></body></html>', 'https://example.com/', '/proxy?key=k');
+  assert.ok(out.includes('MutationObserver'), 'dynamic markup is watched');
+  assert.ok(out.includes('attributeFilter:["href","action"]'), 'href/action changes are re-proxied');
+  assert.ok(out.includes('data-vgr'), 'folded hidden fields are marked as the proxy\'s own');
+  assert.ok(out.includes('f.setAttribute("action",BPATH)'), 'GET forms submit to the bare proxy path');
+});
+
+test('meta-refresh redirects are rewritten through the proxy — no frame escapes', () => {
+  const out = P.rewriteHtml('<html><head><meta http-equiv="refresh" content="1;url=/next"></head><body></body></html>',
+    'https://site.test/page', '/proxy');
+  assert.ok(out.includes(encodeURIComponent('https://site.test/next')), 'relative target resolved and proxied');
+  const out2 = P.rewriteHtml('<meta content="0; URL=\'https://other.site/x\'" http-equiv="REFRESH">',
+    'https://site.test/', '/proxy');
+  assert.ok(out2.includes(encodeURIComponent('https://other.site/x')), 'attribute order and case do not matter');
+  const plain = P.rewriteHtml('<meta name="viewport" content="width=device-width">', 'https://site.test/', '/proxy');
+  assert.ok(plain.includes('width=device-width'), 'ordinary meta tags untouched');
+});
+
 test('originAllowed gates a deployed proxy to its app origins', () => {
   const allow = ['https://refayethossain28.github.io'];
   assert.equal(P.originAllowed('https://refayethossain28.github.io', allow), true);
@@ -212,6 +309,9 @@ async function integration() {
     if (req.url === '/') {
       res.writeHead(200, { 'content-type': 'text/html', 'x-frame-options': 'DENY', 'content-security-policy': "frame-ancestors 'none'" });
       res.end('<html><head><title>Secret HQ</title></head><body><h1>hi</h1><a href="/page2">next</a><img src="pic.png"></body></html>');
+    } else if (req.url.startsWith('/search')) {
+      res.writeHead(200, { 'content-type': 'text/html' });
+      res.end('<title>Echo</title>GOT ' + req.url);
     } else {
       res.writeHead(200, { 'content-type': 'text/html' });
       res.end('<title>Page 2</title>ok');
@@ -258,6 +358,20 @@ async function integration() {
     // …unless the page opted out with block=0
     const allowed = await fetch(`http://127.0.0.1:${proxyPort}/proxy?block=0&url=${encodeURIComponent(`http://127.0.0.1:${originPort}/`)}`);
     assert.equal(allowed.status, 200, 'block=0 lets requests through');
+
+    // a GET form folded onto the bare /proxy path: its fields ride back into the target's query
+    const formHit = await (await fetch(`http://127.0.0.1:${proxyPort}/proxy?url=${encodeURIComponent(`http://127.0.0.1:${originPort}/search`)}&q=cats&lang=en`)).text();
+    assert.ok(formHit.includes('GOT /search?q=cats&lang=en'), 'form fields merged into the target query');
+
+    // an ESCAPED relative request (bare path + proxied Referer) bounces back
+    // through the proxy instead of being served the app into the frame
+    const esc = await fetch(`http://127.0.0.1:${proxyPort}/styles/escaped.css?v=1`, {
+      redirect: 'manual',
+      headers: { referer: `http://127.0.0.1:${proxyPort}/proxy?url=${encodeURIComponent(target)}` },
+    });
+    assert.equal(esc.status, 302, 'escaped path is redirected');
+    assert.ok(esc.headers.get('location').includes(encodeURIComponent(`http://127.0.0.1:${originPort}/styles/escaped.css?v=1`)),
+      'resolved against the page it escaped from');
 
     // reader endpoint returns clean extracted JSON (the web-memory source)
     const reader = await (await fetch(`http://127.0.0.1:${proxyPort}/reader?url=${encodeURIComponent(`http://127.0.0.1:${originPort}/`)}`)).json();

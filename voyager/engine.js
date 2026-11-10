@@ -316,6 +316,10 @@
     var embed = videoEmbedUrl(s);
     if (embed) return embed;
     if (isOnion(s)) return torGatewayUrl(s, opts.torGateway);
+    // Our own origin never needs the proxy: sibling apps (Seeker, the hub…)
+    // frame fine natively, and proxying them wrecks their own URL handling
+    // (a page reading location.search would find /proxy?url=… instead).
+    if (opts.selfOrigin && (s === opts.selfOrigin || s.indexOf(String(opts.selfOrigin).replace(/\/+$/, '') + '/') === 0)) return s;
     if (opts.proxyBase && /^https?:\/\//i.test(s)) return proxyUrl(s, opts.proxyBase);
     return s;
   }
@@ -335,6 +339,7 @@
       reading: [],      // read-later queue: {url, title, ts, read}
       memory: [],       // remembered pages: {url, title, text, words, ts}
       shortcuts: [],    // custom start-page tiles: {url, title}
+      selfUrls: [],     // addresses PROVEN to be Voyager itself (the guard fired)
       sites: {},        // per-site overrides, keyed by host: {zoom?, blockTrackers?, remember?}
       highlights: [],   // marker-pen passages: {url, text, ts}
       follows: [],      // followed feeds: {feedUrl, siteUrl, title, items, updatedTs}
@@ -1114,6 +1119,39 @@
   }
 
   /**
+   * 🧹 Forget-me-everywhere: given document.cookie's string and the current
+   * hostname, return every assignment needed to expire each cookie. A cookie
+   * read gives names and values but hides the path/domain it was set with, so
+   * eviction must cover every scope a site's script could have used: the root
+   * path and the default path, bare and against each registrable domain level.
+   * Pure — the skin applies the strings to document.cookie.
+   */
+  function cookieEvictions(cookieStr, hostname) {
+    var EPOCH = '; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+    var host = String(hostname || '').replace(/^\.+/, '');
+    var scopes = [''];
+    if (host) {
+      var labels = host.split('.');
+      if (labels.length === 1) scopes.push('; domain=' + host);
+      for (var d = 0; d <= labels.length - 2; d++) scopes.push('; domain=' + labels.slice(d).join('.'));
+    }
+    var out = [];
+    var seen = {};
+    var parts = String(cookieStr || '').split(';');
+    for (var i = 0; i < parts.length; i++) {
+      var eq = parts[i].indexOf('=');
+      var name = (eq === -1 ? parts[i] : parts[i].slice(0, eq)).trim();
+      if (!name || Object.prototype.hasOwnProperty.call(seen, name)) continue;
+      seen[name] = true;
+      for (var s = 0; s < scopes.length; s++) {
+        out.push(name + '=' + EPOCH + '; path=/' + scopes[s]);
+        out.push(name + '=' + EPOCH + scopes[s]);
+      }
+    }
+    return out;
+  }
+
+  /**
    * The tracker receipt: tally how many tracker requests a site's pages have
    * carried (the proxy counts them per page; this remembers). Lives in the
    * same per-site map, shown on voyager://site.
@@ -1310,11 +1348,38 @@
   }
 
   /** The start page's grid: your most-frecent sites, one per host. */
+  /**
+   * 🧭 Self-pointing addresses: Voyager can't know every host that serves a
+   * copy of itself, but the self-frame guard PROVES one the moment a framed
+   * copy bows out. Remember those here (normalized, capped) so dead-end tiles
+   * never show in Top Sites — tapping one could only bounce you home.
+   */
+  function normSelfUrl(u) {
+    return String(u == null ? '' : u).replace(/[?#].*$/, '').replace(/\/index\.html$/i, '').replace(/\/+$/, '');
+  }
+  function isSelfUrl(state, url) {
+    var list = state.selfUrls || [];
+    if (!list.length) return false;
+    var n = normSelfUrl(url);
+    for (var i = 0; i < list.length; i++) if (list[i] === n) return true;
+    return false;
+  }
+  function markSelfUrl(state, url) {
+    var n = normSelfUrl(url);
+    if (!/^https?:\/\//i.test(n)) return state;
+    var list = state.selfUrls || [];
+    for (var i = 0; i < list.length; i++) if (list[i] === n) return state;
+    var next = shallow(state);
+    next.selfUrls = list.concat([n]).slice(-20);   // capped: the oldest are forgotten
+    return next;
+  }
+
   function topSites(state, n, nowTs) {
     var ranked = rankedSites(state, nowTs);
     var seen = {};
     var out = [];
     for (var i = 0; i < ranked.length && out.length < (n || 8); i++) {
+      if (isSelfUrl(state, ranked[i].url)) continue;   // a proven Voyager copy is a dead-end tile
       var host = hostOf(ranked[i].url) || ranked[i].url;
       if (seen[host]) continue;
       seen[host] = true;
@@ -1569,6 +1634,7 @@
       reading: state.reading,
       memory: state.memory,
       shortcuts: state.shortcuts,
+      selfUrls: state.selfUrls || [],
       sites: state.sites || {},
       highlights: state.highlights || [],
       follows: state.follows || [],
@@ -1620,6 +1686,7 @@
       reading: Array.isArray(data.reading) ? data.reading : [],
       memory: Array.isArray(data.memory) ? data.memory : [],
       shortcuts: Array.isArray(data.shortcuts) ? data.shortcuts : [],
+      selfUrls: Array.isArray(data.selfUrls) ? data.selfUrls.filter(function (u) { return typeof u === 'string'; }).slice(0, 20) : [],
       sites: (data.sites && typeof data.sites === 'object' && !Array.isArray(data.sites)) ? data.sites : {},
       highlights: Array.isArray(data.highlights) ? data.highlights : [],
       follows: Array.isArray(data.follows) ? data.follows : [],
@@ -1755,9 +1822,12 @@
     siteSetting: siteSetting,
     setSiteSetting: setSiteSetting,
     clearSiteSettings: clearSiteSettings,
+    cookieEvictions: cookieEvictions,
     swipeAction: swipeAction,
     frecency: frecency,
     topSites: topSites,
+    markSelfUrl: markSelfUrl,
+    isSelfUrl: isSelfUrl,
     suggest: suggest,
     commandSearch: commandSearch,
     COMMANDS: COMMANDS,

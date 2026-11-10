@@ -234,6 +234,29 @@ async function handleFeeds(target, res) {
   }
 }
 
+/* Whole-web search for Seeker: fetch DuckDuckGo's no-JS results server-side
+ * (the proxy makes the query — the user's device never talks to DDG) and
+ * return clean JSON. Tries the html endpoint, falls back to lite. */
+async function handleWebSearch(q, res) {
+  const cors = { 'content-type': 'application/json', 'access-control-allow-origin': '*' };
+  q = String(q == null ? '' : q).trim();
+  if (!q) return send(res, 400, cors, JSON.stringify({ error: 'missing q' }));
+  const endpoints = [
+    'https://html.duckduckgo.com/html/?q=' + encodeURIComponent(q),
+    'https://lite.duckduckgo.com/lite/?q=' + encodeURIComponent(q),
+  ];
+  for (const ep of endpoints) {
+    try {
+      const r = await fetch(ep, { headers: Object.assign({}, BROWSER_HEADERS), redirect: 'follow' });
+      if (!r.ok) continue;
+      const html = await r.text();
+      const results = Proxy.parseWebResults(html);
+      if (results.length) return send(res, 200, cors, JSON.stringify({ q, results }));
+    } catch (e) {}
+  }
+  send(res, 502, cors, JSON.stringify({ error: 'web search upstream unavailable', results: [] }));
+}
+
 function readBody(req) {
   return new Promise((resolve) => {
     const chunks = [];
@@ -262,10 +285,12 @@ const server = http.createServer(async (req, res) => {
       return send(res, 403, { 'content-type': 'text/html; charset=utf-8' },
         errorPage('Locked', 'This proxy needs its key. In Voyager → Settings, add “?key=YOURKEY” to the proxy URL (matching PROXY_KEY on the server).'));
     }
-    const target = parsed.searchParams.get('url');
-    if (!target) return send(res, 400, { 'content-type': 'text/plain' }, 'missing url');
+    // A GET form folded onto the bare /proxy path submits its fields alongside
+    // url= — fold them back into the target's own query (url/key/block stay ours).
+    const folded = Proxy.mergeFormQuery([...parsed.searchParams]);
+    if (!folded) return send(res, 400, { 'content-type': 'text/plain' }, 'missing url');
     const blockOn = TRACKER_BLOCK && parsed.searchParams.get('block') !== '0';
-    return handleProxy(target, req, res, blockOn);
+    return handleProxy(folded.merged, req, res, blockOn);
   }
   if (pathname === '/reader') {
     // Reader extraction: fetch a page and return clean {title,text,html,words}.
@@ -275,12 +300,37 @@ const server = http.createServer(async (req, res) => {
     }
     return handleReader(parsed.searchParams.get('url'), res);
   }
+  if (pathname === '/websearch') {
+    // Whole-web results for Seeker. CORS-open and key-gated like /proxy.
+    if (PROXY_KEY && parsed.searchParams.get('key') !== PROXY_KEY) {
+      return send(res, 403, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }, JSON.stringify({ error: 'locked' }));
+    }
+    return handleWebSearch(parsed.searchParams.get('q'), res);
+  }
   if (pathname === '/feeds') {
     // Feed discovery + parse (for Follow). CORS-open and key-gated like /proxy.
     if (PROXY_KEY && parsed.searchParams.get('key') !== PROXY_KEY) {
       return send(res, 403, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }, JSON.stringify({ error: 'locked' }));
     }
     return handleFeeds(parsed.searchParams.get('url'), res);
+  }
+  // A proxied page ESCAPED its rewrites: a relative navigation, redirect or
+  // asset request from inside /proxy lands here as a bare path. Serving the
+  // app would nest Voyager inside its own frame; the Referer still names the
+  // page it came from, so resolve the path against THAT page and bounce it
+  // back through the proxy — the site keeps working, the frame stays a frame.
+  {
+    const ref = String(req.headers.referer || '');
+    const rm = /[?&]url=([^&]+)/.exec(ref);
+    if (rm) {
+      try {
+        const refTarget = decodeURIComponent(rm[1]);
+        const resolved = new URL(parsed.pathname + (parsed.search || ''), refTarget).href;
+        const loc = '/proxy?' + (PROXY_KEY ? 'key=' + encodeURIComponent(PROXY_KEY) + '&' : '') + 'url=' + encodeURIComponent(resolved);
+        res.writeHead(302, { location: loc });
+        return res.end();
+      } catch (e) {}
+    }
   }
   if (await serveStatic(pathname, res)) return;
   send(res, 404, { 'content-type': 'text/plain' }, 'not found');

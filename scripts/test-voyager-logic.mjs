@@ -582,6 +582,16 @@ test('resolveFrameSrc picks video-embed / proxy / gateway / direct correctly', (
   // a proxy set → other clearnet pages route through it
   assert.equal(V.resolveFrameSrc('https://google.com', { proxyBase: B }),
     'http://localhost:8790/proxy?url=' + encodeURIComponent('https://google.com'));
+  // OUR OWN origin never goes through the proxy — sibling apps frame natively
+  // and keep their own location.search semantics (Seeker's ?q= must survive)
+  assert.equal(V.resolveFrameSrc('https://apexvip.uk/seeker/?q=cats', { proxyBase: B, selfOrigin: 'https://apexvip.uk' }),
+    'https://apexvip.uk/seeker/?q=cats');
+  assert.equal(V.resolveFrameSrc('https://apexvip.uk', { proxyBase: B, selfOrigin: 'https://apexvip.uk' }), 'https://apexvip.uk');
+  // …but a LOOKALIKE host is not us, and other origins still proxy
+  assert.equal(V.resolveFrameSrc('https://apexvip.uk.evil.test/x', { proxyBase: B, selfOrigin: 'https://apexvip.uk' }),
+    'http://localhost:8790/proxy?url=' + encodeURIComponent('https://apexvip.uk.evil.test/x'));
+  assert.equal(V.resolveFrameSrc('https://google.com', { proxyBase: B, selfOrigin: 'https://apexvip.uk' }),
+    'http://localhost:8790/proxy?url=' + encodeURIComponent('https://google.com'));
   // no proxy → direct load (plain framing browser)
   assert.equal(V.resolveFrameSrc('https://example.com', {}), 'https://example.com');
   // onion always goes through the Tor gateway, never the (Tor-less) proxy
@@ -1063,6 +1073,46 @@ test('swipeAction: decisive horizontal swipes map to back/forward, everything el
   assert.equal(V.swipeAction(100, 80), null);                  // too diagonal
   assert.equal(V.swipeAction(80, 0, { minDist: 100 }), null);  // custom threshold
   assert.equal(V.swipeAction(0, 200), null);                   // vertical scroll is sacred
+});
+
+test('cookieEvictions: every cookie expired across every scope a site could have set', () => {
+  const out = V.cookieEvictions('sid=abc123; _ga=GA1.2.9; theme=dark', 'www.apexvip.uk');
+  // 3 names × 2 paths × 3 scopes (bare, www.apexvip.uk, apexvip.uk) = 18 assignments
+  assert.equal(out.length, 18);
+  for (const line of out) {
+    assert.ok(line.includes('expires=Thu, 01 Jan 1970'));       // all expired
+    assert.ok(/^(sid|_ga|theme)=; /.test(line));                // value blanked
+  }
+  assert.ok(out.some((l) => l === 'sid=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'));
+  assert.ok(out.some((l) => l.endsWith('path=/; domain=apexvip.uk')));   // parent domain covered
+  assert.ok(!out.some((l) => l.includes('domain=uk')));                  // never the bare TLD
+});
+
+test('cookieEvictions: junk-safe — empty jar, values with =, dupes, localhost', () => {
+  assert.equal(V.cookieEvictions('', 'apexvip.uk').length, 0);
+  assert.equal(V.cookieEvictions(null, null).length, 0);
+  const eq = V.cookieEvictions('tok=a=b=c', 'localhost');       // = inside the value
+  assert.ok(eq.every((l) => l.startsWith('tok=; ')));
+  assert.ok(eq.some((l) => l.includes('domain=localhost')));
+  const dup = V.cookieEvictions('a=1; a=2', '');                // same name twice → once
+  assert.equal(dup.length, 2);                                  // 1 name × 2 paths × 1 scope
+});
+
+test('self-pointing URLs: once proven to be Voyager, they vanish from Top Sites and survive the session', () => {
+  let s = V.createBrowser();
+  s = V.navigate(s, s.activeId, 'https://mirror.example/voyager/', { ts: 1000 });
+  s = V.navigate(s, s.activeId, 'https://site.test/article', { ts: 2000 });
+  assert.ok(V.topSites(s, 8, 3000).some((t) => t.url.includes('mirror.example')));   // it ranks at first
+  s = V.markSelfUrl(s, 'https://mirror.example/voyager/?utm=x#frag');                // the guard fired
+  assert.ok(V.topSites(s, 8, 3000).every((t) => !t.url.includes('mirror.example'))); // dead-end tile gone
+  assert.ok(V.topSites(s, 8, 3000).some((t) => t.url.includes('site.test')));        // others unharmed
+  assert.ok(V.isSelfUrl(s, 'https://mirror.example/voyager/index.html'));            // variants match
+  assert.equal(V.markSelfUrl(s, 'https://mirror.example/voyager/'), s);              // dedupe: no-op
+  assert.equal(s.selfUrls.length, 1);
+  assert.equal(V.markSelfUrl(s, 'voyager://start'), s);                              // internal pages ignored
+  const back = V.restore(V.serialize(s));
+  assert.equal(back.selfUrls.length, 1);                                             // survives the session
+  assert.ok(V.topSites(back, 8, 3000).every((t) => !t.url.includes('mirror.example')));
 });
 
 /* ---- run ---- */

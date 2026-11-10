@@ -394,7 +394,38 @@
   /* ================================================================
    *  Live internet sources — keyless, CORS-open, all optional.
    * ================================================================ */
+  /* Whole-web results ride through the user's own Voyager proxy (its setting
+   * is shared via same-origin localStorage, or set seeker.webproxy directly).
+   * The query leaves from THEIR server — this device never talks to the
+   * upstream search engine. No proxy configured → the source stays quiet. */
+  function webSearchEndpoint() {
+    var raw = '';
+    try { raw = localStorage.getItem('seeker.webproxy') || ''; } catch (e) {}
+    if (!raw) {
+      try {
+        var v = JSON.parse(localStorage.getItem('voyager.session.v1') || '{}');
+        raw = (v && v.settings && v.settings.proxy) || '';
+      } catch (e) {}
+    }
+    raw = String(raw).trim();
+    if (!raw || raw.toLowerCase() === 'off') return '';
+    if (!/^https?:\/\//i.test(raw)) raw = 'https://' + raw;
+    var key = /[?&]key=([^&]+)/.exec(raw);
+    var root = raw.replace(/[?#].*$/, '').replace(/\/proxy\/?$/, '').replace(/\/+$/, '');
+    return root + '/websearch' + (key ? '?key=' + key[1] + '&q=' : '?q=');
+  }
+
   var SOURCES = [
+    { id: 'web', label: '🌐 Web', weight: 1.3, fav: '🌐',
+      fetch: function (q) {
+        var ep = webSearchEndpoint();
+        if (!ep) return Promise.resolve([]);
+        return getJSON(ep + encodeURIComponent(q)).then(function (d) {
+          return (d && d.results || []).map(function (r) {
+            return { title: r.title, url: r.url, snippet: r.snippet || r.url, fav: '🌐' };
+          });
+        });
+      } },
     { id: 'wiki', label: 'Wikipedia', weight: 1.15, fav: 'W',
       fetch: function (q) {
         return getJSON(wikiBase() + '/w/api.php?action=query&list=search&srsearch=' +
@@ -482,7 +513,8 @@
   var crawled = lsGet(LS.crawled, []);
   crawled.forEach(function (d) { S.addDoc(index, d); });
 
-  var enabled = lsGet(LS.sources, { wiki: true, hn: true, so: true, books: true });
+  var enabled = lsGet(LS.sources, { web: true, wiki: true, hn: true, so: true, books: true });
+  if (enabled.web === undefined) enabled.web = true;   // the Web source arrived after some saved prefs
   var recents = lsGet(LS.recent, []);
   var currentQuery = '', liveSeq = 0, selIdx = -1, suggSel = -1, lastResults = [];
   var vertical = 'all'; // 'all' | 'images' | 'news'
