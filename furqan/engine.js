@@ -60,10 +60,18 @@
   // the small letters into full ones; the index keeps BOTH forms of every word.
   function normalizeArabic(s, expand) {
     s = String(s || '');
-    if (expand) s = s.replace(/ٰ/g, 'ا').replace(/[ۦۧ]/g, 'ي').replace(/ۥ/g, 'و');
+    // the vocative is one written word in the mushaf (يَٰٓأَيُّهَا) and two in standard spelling (يا أيها)
+    s = s.replace(/ي[ً-ْٰٓ]*(?:أ|ا[ً-ْ]*ٔ)/g, 'يا أ');
+    if (expand) {
+      // the alif of صلاة / زكاة / حياة / ربا is written waw + dagger alef, that of
+      // توراة yeh + dagger alef: restore the alif BEFORE the generic rule
+      s = s.replace(/وٰا?/g, 'ا').replace(/ىٰ/g, 'ا')
+           .replace(/ٰ/g, 'ا').replace(/[ۦۧ]/g, 'ي').replace(/ۥ/g, 'و');
+    }
     return s
       .replace(AR_MARKS, '')
       .replace(/[ٱآأإ]/g, 'ا')   // ٱ آ أ إ -> ا
+      .replace(/ءا/g, 'ا')                  // ءا (قرءان) -> ا
       .replace(/ة/g, 'ه')                        // ة -> ه
       .replace(/ى/g, 'ي')                        // ى -> ي
       .replace(/ؤ/g, 'و')                        // ؤ -> و
@@ -102,7 +110,7 @@
    * "believers" and "they who believeth" land on the same term. */
   var ARCHAIC = {
     ye: 'you', thee: 'you', thou: 'you', thy: 'your', thine: 'your', hath: 'has', doth: 'does',
-    dost: 'do', hast: 'have', shalt: 'shall', wilt: 'will', art: 'are', wert: 'were', unto: 'to',
+    dost: 'do', hast: 'have', shalt: 'shall', wilt: 'will', wert: 'were', unto: 'to',
     wherefore: 'why', whence: 'where', whither: 'where', hither: 'here', thither: 'there',
     whoso: 'whoever', whosoever: 'whoever', whomso: 'whomever', naught: 'nothing', aught: 'anything',
     ere: 'before', oft: 'often', nigh: 'near', lo: '', verily: '', nay: 'no', yea: 'yes',
@@ -120,7 +128,14 @@
    'mention mentioned mentions talk talks about regarding does say islam islamic muslim muslims ' +
    'allah god lord swt know mean meaning explain explanation o oh has have had having shall should ' +
    'would could may might must let lets like want wants need needs get got make made please ' +
-   'thing things one ones way ways').split(' ').forEach(function (w) { STOP[w] = 1; });
+   'thing things one ones way ways al ar ul el ash').split(' ').forEach(function (w) { STOP[w] = 1; });
+  // Topic matching keeps a few words the search index treats as noise, because
+  // "Who is God?" is a real question with a real topic. They weigh less.
+  var TOPIC_STOP = {};
+  for (var sw in STOP) TOPIC_STOP[sw] = 1;
+  var GENERIC = { allah: 0.4, god: 0.6, lord: 0.4, one: 0.3 };
+  for (var gw in GENERIC) delete TOPIC_STOP[gw];
+  function topicTokens(s) { return englishTokens(s, true).filter(function (w) { return !TOPIC_STOP[w]; }); }
   function stem(w) {
     if (w.length <= 3) return w;
     if (/ies$/.test(w)) return w.slice(0, -3) + 'y';
@@ -137,7 +152,8 @@
   function englishTokens(s, keepStop) {
     var out = [];
     String(s || '').toLowerCase()
-      .replace(/[‘’ʼ]/g, "'").replace(/'s\b/g, '').replace(/[^a-z0-9\s]/g, ' ')
+      .replace(/[‘’ʼ]/g, "'").replace(/\b(thou|who|nor|or)\s+art\b/g, '$1 are').replace(/\bart\s+thou\b/g, 'are thou')   // the verb, not the noun of 21:80
+      .replace(/'s\b/g, '').replace(/[^a-z0-9\s]/g, ' ')
       .split(/\s+/).forEach(function (w) {
         if (!w) return;
         if (Object.prototype.hasOwnProperty.call(ARCHAIC, w)) w = ARCHAIC[w];
@@ -277,8 +293,15 @@
     if (!text) return null;
     var m, s, a, b;
     for (var i = 0; i < NAMED.length; i++) if (NAMED[i].re.test(text)) return clampRef(ctx, NAMED[i].s, NAMED[i].a, NAMED[i].b);
+    text = text.replace(/^[\s(\[]+|[\s)\]]+$/g, '');          // "(2:255)" and friends
     if ((m = text.match(/^\s*(\d{1,3})\s*[:.∶]\s*(\d{1,3})(?:\s*[-–—]\s*(\d{1,3}))?\s*$/)) || (m = text.match(/^\s*(\d{1,3})\s+(\d{1,3})(?:\s*[-–]\s*(\d{1,3}))?\s*$/))) {
       return clampRef(ctx, +m[1], +m[2], m[3] ? +m[3] : null);
+    }
+    if ((m = text.match(/^\s*(\d{1,3})\s*$/)) && +m[1] >= 1 && +m[1] <= 114) return clampRef(ctx, +m[1], null, null);
+    // "Al-Baqarah 2:255", "Surah Al-Baqarah 2:255-257": the name must agree with the number
+    if ((m = text.match(/^\s*(?:surat|surah|sourat|sura|chapter)?\s*([a-z][a-z'’\s-]{1,40}?)[\s,]+(\d{1,3})\s*:\s*(\d{1,3})(?:\s*[-–]\s*(\d{1,3}))?\s*$/i))) {
+      var byName = ctx.aliases[aliasKey(m[1])];
+      if (byName && byName === +m[2]) return clampRef(ctx, +m[2], +m[3], m[4] ? +m[4] : null);
     }
     if ((m = text.match(/\b(?:surah|sura|surat|chapter|ch\.?)\s*(\d{1,3})\b(?:(?:\s*(?:[:,]|verse|verses|ayah|ayat|aya|v\.?))+\s*(\d{1,3})(?:\s*(?:[-–]|to|and)\s*(\d{1,3}))?)?/i))) {
       return clampRef(ctx, +m[1], m[2] ? +m[2] : null, m[3] ? +m[3] : null);
@@ -290,6 +313,20 @@
       if (s) return clampRef(ctx, s, m[2] ? +m[2] : null, m[3] ? +m[3] : null);
     }
     return null;
+  }
+  // "what is al-fatiha about", "tell me about surah yusuf": a surah named inside
+  // a question (only explicit forms — "surah X" or an "al-" name — so that
+  // ordinary words like "light" or "women" do not hijack a question).
+  function surahMentioned(ctx, text) {
+    var t = String(text || '').toLowerCase(), m;
+    if ((m = t.match(/\b(?:surah|sura|surat|chapter)\s+([a-z][a-z'\u2019-]+(?:\s+[a-z][a-z'\u2019-]+)?)/))) {
+      var two = ctx.aliases[aliasKey(m[1])], one = ctx.aliases[aliasKey(m[1].split(/\s+/)[0])];
+      if (two) return two;
+      if (one) return one;
+    }
+    var re = /\b(?:al|an|ar|as|at|ad|az|ash|ath)-([a-z][a-z'\u2019]+)\b/g;
+    while ((m = re.exec(t))) { var n = ctx.aliases[aliasKey(m[1])]; if (n) return n; }
+    return 0;
   }
   function clampRef(ctx, s, a, b) {
     var su = surahOf(ctx, s);
@@ -311,6 +348,7 @@
    * needs, was dropped, demoted or given a `note` shown with the answer). */
   var TOPICS = [
     { id: 'tawhid', title: 'The oneness of God', match: 'god one oneness tawhid tawheed monotheism who is allah unity allah', terms: 'one god deity partner beget', seeds: ['112:1-4', '2:255', '59:22-24', '2:163', '47:19', '21:22', '6:103', '42:11', '3:18', '57:3'] },
+    { id: 'islam', title: 'Islam — the religion of submission', match: 'submission submit pillars', phrases: ['what is islam', 'about islam', 'pillars of islam', 'religion of islam', 'meaning of islam', 'islam teach', 'islam say'], terms: 'religion surrender submit', seeds: ['3:19', '5:3', '3:85', '2:208', '49:14-15', '22:78', '2:136', '3:67', '2:177', '2:285'] },
     { id: 'shirk', title: 'Ascribing partners to God (shirk)', match: 'shirk partner partners idol idols idolatry associating polytheism', terms: 'partner partners idols associate ascribe', seeds: ['4:48', '31:13', '4:116', '5:72', '39:65', '22:31'] },
     { id: 'prayer', title: 'Prayer (salah)', match: 'pray prayer prayers salah salat salaat namaz worship prostrate bow times of prayer', terms: 'worship prayer establish bow prostrate', seeds: ['2:43', '4:103', '29:45', '17:78', '20:14', '2:45', '2:238', '11:114', '23:1-2', '107:4-5', '70:34', '62:9'] },
     { id: 'fasting', title: 'Fasting and Ramadan', match: 'fast fasting fasts sawm siyam ramadan ramadhan iftar suhoor', terms: 'fast fasting ramadan', seeds: ['2:183-185', '2:187', '97:1-5', '33:35'] },
@@ -367,7 +405,7 @@
     { id: 'food', title: 'Food: lawful and unlawful', match: 'food eat eating pork pig swine meat slaughter carrion blood diet dietary', terms: 'eat food swine carrion lawful forbidden', seeds: ['2:172-173', '5:3', '5:4-5', '6:145', '16:114-115', '5:96', '7:31', '5:1', '5:87-88', '2:168', '6:118-121'] },
     { id: 'modesty', title: 'Modesty, dress and the hijab', match: 'hijab modesty modest dress clothing veil cover covering gaze lower gaze niqab awrah', terms: 'modesty veils cloaks lower gaze adornment', seeds: ['24:30-31', '33:59', '7:26', '24:60', '24:58-59', '33:32-33'], note: '33:32-33 address the Prophet’s wives specifically; scholars differ on how far such verses extend to others.' },
     { id: 'adultery', title: 'Chastity and adultery (zina)', match: 'adultery fornication zina chastity chaste unlawful sex sexual relationship relationships dating boyfriend girlfriend', terms: 'adultery chaste lewd', seeds: ['17:32', '24:2-3', '25:68-70', '23:5-7', '24:30-31', '12:23-24', '33:35', '24:4-5', '24:33', '4:15-16'], note: 'Scholars understand 24:2 to have superseded the earlier procedure in 4:15-16; the legal detail belongs to them.' },
-    { id: 'homosexuality', title: 'The people of Lot', match: 'lot lut homosexuality homosexual gay lgbt sodom', terms: 'lot lust', seeds: ['7:80-84', '26:160-175', '27:54-58', '11:77-83', '29:28-35', '15:61-77', '54:33-39', '21:74-75'], note: 'These are the narratives of the people of Lot; questions of law and of pastoral care belong to qualified scholars.' },
+    { id: 'homosexuality', title: 'The people of Lot', match: 'lut sodom homosexuality homosexual gay lgbt', phrases: ['people of lot', 'folk of lot', 'prophet lot', 'story of lot'], terms: 'lot lust', seeds: ['7:80-84', '26:160-175', '27:54-58', '11:77-83', '29:28-35', '15:61-77', '54:33-39', '21:74-75'], note: 'These are the narratives of the people of Lot; questions of law and of pastoral care belong to qualified scholars.' },
     { id: 'killing', title: 'The sanctity of life and killing', match: 'kill killing murder murdered life sanctity innocent terrorism terrorist violence', terms: 'slay slain kill soul', seeds: ['5:32', '17:33', '6:151', '5:27-31', '4:93', '25:68', '17:31', '81:8-9', '2:178-179', '4:92'] },
     { id: 'suicide', title: 'Harming oneself', match: 'suicide kill myself kill yourself self harm selfharm end my life', terms: 'kill yourselves', seeds: ['2:195', '39:53', '2:286', '93:3-5', '94:5-6', '13:28', '2:153', '12:87', '4:29'] },
     { id: 'war', title: 'Fighting, war and peace', match: 'war fight fighting jihad battle enemy enemies peace treaty aggression self defence defense violence', terms: 'fight fighting war peace aggress', seeds: ['2:190-194', '8:61', '60:8-9', '22:39-40', '2:256', '9:6', '4:90', '4:94', '8:60-61', '49:9-10', '5:8', '4:75', '2:216', '47:4', '9:4-7', '9:29'], note: 'The fighting verses were revealed amid particular wars and treaties. The general rules come first here — fight only those who fight you, do not transgress, incline to peace, keep treaties, no compulsion in religion — and scholars read the specific verses with that context.' },
@@ -382,7 +420,7 @@
     { id: 'fear', title: 'Fear and reassurance', match: 'fear afraid scared frightened worry worried anxiety anxious calm reassurance', terms: 'fear grieve afraid', seeds: ['2:38', '3:139', '9:40', '3:173-175', '20:46', '26:61-62', '46:13', '10:62-64', '41:30', '13:28'] },
     { id: 'hope', title: 'Hope in God', match: 'hope hopeful hopeless give up despair giving up', terms: 'despair hope mercy', seeds: ['39:53', '12:87', '93:3-5', '15:56', '94:5-6', '65:3', '7:56', '2:218', '17:57', '30:36'] },
     { id: 'sincerity', title: 'Sincerity and intention', match: 'sincere sincerity intention intentions niyyah ikhlas showing off riya', terms: 'sincere sincerity show off', seeds: ['98:5', '39:2-3', '18:110', '39:11', '7:29', '107:4-7', '76:8-9', '2:264', '4:142', '6:162-163'] },
-    { id: 'taqwa', title: 'God-consciousness (taqwa)', match: 'taqwa piety pious righteous righteousness fear god conscious consciousness', terms: 'righteous dutiful ward off evil keep duty', seeds: ['2:177', '49:13', '65:2-3', '3:102', '2:197', '2:183', '7:26', '3:133-136', '22:37', '3:76', '8:29', '2:2-5'] },
+    { id: 'taqwa', title: 'God-consciousness (taqwa)', match: 'taqwa piety pious righteous righteousness godfearing conscious consciousness', terms: 'righteous dutiful ward off evil keep duty', seeds: ['2:177', '49:13', '65:2-3', '3:102', '2:197', '2:183', '7:26', '3:133-136', '22:37', '3:76', '8:29', '2:2-5'] },
     { id: 'friday', title: 'Friday prayer and the mosque', match: 'friday jummah jumuah jumua mosque masjid congregation', terms: 'friday congregation mosque places of worship', seeds: ['62:9-11', '9:18', '72:18', '24:36-37', '9:108', '17:1', '2:125', '2:114', '7:31'] },
     { id: 'quranrecite', title: 'Reciting and reflecting on the Qur’an', match: 'recite recitation memorise memorize hifz reflect tafsir understanding', terms: 'recite recitation reflect ponder', seeds: ['73:4', '47:24', '38:29', '4:82', '7:204', '16:98', '17:106', '75:16-18', '54:17', '2:121', '35:29'] },
     { id: 'hereafter', title: 'This life and the hereafter', match: 'hereafter afterlife akhirah akhira next life eternal eternity', terms: 'hereafter world life eternal', seeds: ['87:16-17', '28:77', '29:64', '57:20', '18:45-46', '42:20', '17:18-19', '3:185', '6:32', '40:39', '93:4'] },
@@ -408,34 +446,45 @@
   ];
   var TOPIC_INDEX = TOPICS.map(function (t) {
     var m = Object.create(null);
-    englishTokens(t.match, true).forEach(function (w) { if (!STOP[w]) m[w] = 1; });
-    // keep a few multi-word triggers as phrases on the raw text
-    return { topic: t, stems: m, phrases: (t.match.match(/\b[a-z]+ (of|to|the|my|in) [a-z ]+\b/g) || []) };
+    topicTokens(t.match).forEach(function (w) { m[w] = 1; });
+    // short phrases ("night of power", "kindness to parents") checked on the raw text
+    var phrases = (t.phrases || []).concat(t.match.match(/\b[a-z]+ (?:of|to|in|my)(?: the)? [a-z]+\b/g) || []);
+    return { topic: t, stems: m, phrases: phrases };
   });
+  // A trigger word shared by many topics ("day", "life") says less than one
+  // owned by a single topic ("zakat"): weight by inverse topic frequency.
+  var STEM_DF = Object.create(null);
+  TOPIC_INDEX.forEach(function (ti) { for (var w in ti.stems) STEM_DF[w] = (STEM_DF[w] || 0) + 1; });
   function matchTopics(question) {
-    var toks = englishTokens(question), raw = String(question || '').toLowerCase();
+    var toks = topicTokens(question), raw = ' ' + String(question || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ') + ' ';
     var scored = [];
     TOPIC_INDEX.forEach(function (ti) {
-      var hits = 0, matched = [];
-      toks.forEach(function (w) { if (ti.stems[w]) { hits++; matched.push(w); } });
-      ti.phrases.forEach(function (p) { if (raw.indexOf(p) >= 0) { hits += 2; matched.push(p); } });
-      if (hits) scored.push({ id: ti.topic.id, title: ti.topic.title, hits: hits, matched: matched, topic: ti.topic });
+      var score = 0, hits = 0, matched = [];
+      toks.forEach(function (w) {
+        if (!ti.stems[w]) return;
+        hits++; matched.push(w);
+        score += (GENERIC[w] || 1) / STEM_DF[w];
+      });
+      ti.phrases.forEach(function (p) { if (raw.indexOf(' ' + p + ' ') >= 0) { hits++; score += 2; matched.push(p); } });
+      if (hits) scored.push({ id: ti.topic.id, title: ti.topic.title, hits: hits, score: score, matched: matched, topic: ti.topic });
     });
-    scored.sort(function (x, y) { return y.hits - x.hits || x.id.localeCompare(y.id); });
+    scored.sort(function (x, y) { return y.score - x.score || x.id.localeCompare(y.id); });
     return scored.slice(0, 3);
   }
 
   /* ---------------- scope notes ---------------- */
   var RULING_RE = /\b(haram|halal|haraam|halaal|permissible|permitted|forbidden|allowed|allow|lawful|unlawful|is it (ok|okay|wrong|a sin|sinful)|sin to|can i|may i|am i allowed|ruling|fatwa|fatwah|hukm|makruh|obligatory|fard|wajib|sunnah|bidah)\b/i;
-  var DISTRESS_RE = /\b(suicide|suicidal|kill (myself|me)|end (my|it all)|want to die|self[\s-]?harm|hurt myself|no reason to live)\b/i;
+  var DISTRESS_RE = /\b(suicide|suicidal|kill (myself|me)|end (my (own )?life|it all)|want to die|self[\s-]?harm|hurt myself|no reason to live)\b/i;
+  // "How can I be patient?" asks for guidance, not a verdict: strip those forms before the ruling test.
+  var GUIDANCE_RE = /\b(how|what|where|when|why|who)\s+(can|could|may|should)\s+i\b/gi;
   // Questions the Qur'an does not answer directly. `seeds` are the general
   // principles scholars reason from (shown instead of weak text matches).
   var NOT_IN_QURAN = [
     { re: /\b(music|songs?|singing|instruments?)\b/i, note: 'Music is not addressed directly in the Qur’an; the discussion lives in the Sunnah and the schools of law.', seeds: [] },
-    { re: /\b(beard|beards|moustache)\b/i, note: 'The beard is not mentioned in the Qur’an; the discussion is in the hadith literature.', seeds: [] },
+    { re: /\b(beard|beards|moustache)\b/i, note: 'The Qur’an mentions a beard once (20:94, Aaron speaking to Moses); rulings about the beard and moustache come from the hadith literature.', seeds: ['20:94'] },
     { re: /\b(eid|eids)\b/i, note: 'The two Eids are not named in the Qur’an; they are established by the Sunnah. The verses on completing Ramadan, gratitude and remembrance are shown.', seeds: ['2:185', '14:7', '2:152'] },
     { re: /\b(how many (daily )?prayers|five (daily )?prayers|5 prayers)\b/i, note: 'The Qur’an commands prayer at set times (shown here); the count of five and their form come from the Sunnah.', seeds: ['4:103', '17:78', '11:114', '20:130', '30:17-18'] },
-    { re: /\b(smok(e|ing)|cigarettes?|vap(e|ing))\b/i, note: 'Smoking is not mentioned in the Qur’an; scholars reason from its general principles about harm and waste, shown here.', seeds: ['2:195', '4:29', '7:31', '17:26-27'] },
+    { re: /\b(smoking|smokers?|cigarettes?|cigars?|tobacco|nicotine|shisha|hookah|vap(e|ing))\b|\bto smoke\b|\b(i|we|you|they|muslims?|people) smoke\b/i, note: 'Smoking is not mentioned in the Qur’an; scholars reason from its general principles about harm and waste, shown here.', seeds: ['2:195', '4:29', '7:31', '17:26-27'] },
     { re: /\b(hadith|hadiths|ahadith|bukhari|muslim collection|sunan)\b/i, note: 'Furqan only quotes the Qur’an. Hadith are a separate body of texts with their own sciences of verification.', seeds: [] },
   ];
   // Words that say "ruling" rather than "subject": they drive the note, not the search.
@@ -448,7 +497,7 @@
     if (DISTRESS_RE.test(q)) {
       notes.push({ kind: 'support', text: 'If you are thinking about harming yourself, please reach out now to someone who can help: a trusted person, your doctor, or your local emergency or crisis line. The verses here are for comfort; they are not a substitute for care.' });
     }
-    if (RULING_RE.test(q)) {
+    if (RULING_RE.test(q.replace(GUIDANCE_RE, ''))) {
       notes.push({ kind: 'ruling', text: 'This looks like a question about a religious ruling. Furqan shows the verses the Qur’an has on the subject; it does not issue rulings. Rulings are derived by qualified scholars from the Qur’an together with the Sunnah and the scholarly tradition, and often depend on your circumstances — please ask one.' });
     }
     NOT_IN_QURAN.forEach(function (n) { if (n.re.test(q)) notes.push({ kind: 'scope', text: n.note }); });
@@ -503,9 +552,32 @@
     var limit = opts.limit || 8;
     var q = String(question || '').trim();
     var res = { kind: 'none', question: q, topics: [], passages: [], notes: [], terms: [] };
-    if (!q) { res.notes = scopeNotes(q, false); return res; }
+    var byTopic = opts.topic ? topicById(opts.topic) : null;
+    if (!q && !byTopic) { res.notes = scopeNotes(q, false); return res; }
+
+    if (byTopic) {
+      res.kind = 'topic'; res.question = byTopic.title; res.topics = [{ id: byTopic.id, title: byTopic.title, matched: [] }];
+      var seedPassages = [];
+      byTopic.seeds.forEach(function (ref) {
+        var sd = parseSeed(ref);
+        if (sd && seedPassages.length < limit && !seedPassages.some(function (p) { return overlaps(p, sd.s, sd.a, sd.b); })) {
+          var sp = passage(ctx, sd.s, sd.a, sd.b, 'topic'); if (sp) { sp.topic = byTopic.id; seedPassages.push(sp); }
+        }
+      });
+      var tTerms = englishTokens(byTopic.terms), tScores = bm25(ctx.en, tTerms), tRanked = [];
+      for (var tk in tScores) tRanked.push({ i: +tk, score: tScores[tk] });
+      tRanked.sort(function (x, y) { return y.score - x.score || x.i - y.i; });
+      mergeHits(ctx, tRanked.slice(0, 40), limit).forEach(function (p) {
+        if (seedPassages.length < limit && !seedPassages.some(function (x) { return overlaps(x, p.s, p.a, p.b); })) seedPassages.push(p);
+      });
+      res.passages = seedPassages; res.terms = tTerms;
+      res.notes = byTopic.note ? [{ kind: 'scope', text: byTopic.note }] : [];
+      return res;
+    }
 
     var ref = parseReference(ctx, q);
+    var named = !ref && surahMentioned(ctx, q);
+    if (named) { ref = clampRef(ctx, named, null, null); res.named = true; }
     if (ref && ref.invalid) {
       res.kind = 'reference'; res.reference = ref;
       res.notes = [{ kind: 'scope', text: refLabel(ctx, ref.s, 1, ref.max).replace(/ 1-\d+$/, '') + ' has ' + ref.max + ' ayat.' }];
@@ -518,6 +590,7 @@
       var cap = ref.whole ? Math.min(su.ayat.length, opts.wholeLimit || 300) : Math.min(ref.b, ref.a + 60);
       res.passages = [passage(ctx, ref.s, ref.a, cap, 'reference')];
       if (ref.whole && cap < su.ayat.length) res.notes.push({ kind: 'scope', text: 'Showing the first ' + cap + ' of ' + su.ayat.length + ' ayat — open the surah in Browse for all of it.' });
+      if (res.named) res.notes.unshift({ kind: 'scope', text: 'You named ' + su.name + ', so here is the surah itself. To search inside it, ask in words without the name.' });
       return res;
     }
 
@@ -595,6 +668,7 @@
    * not backed by the passages is a model's opinion, and the page says so. */
   function buildLivePrompt(ctx, question, passages, opts) {
     opts = opts || {};
+    var maxChars = opts.maxChars || 7500;   // the hosted proxy truncates at 8,000; the question must survive
     var lines = [];
     lines.push('You are helping a reader understand what the Qur’an says. Below are passages from the Qur’an in the Pickthall translation, selected by a search engine for the question. Rules:');
     lines.push('1. Answer ONLY from these passages. Do not add verses, hadith, rulings, or claims about what the Qur’an says beyond them.');
@@ -604,46 +678,127 @@
     lines.push('5. Be respectful, concise (under ' + (opts.maxWords || 220) + ' words), plain text, no headings. Note that translations are interpretations of the Arabic.');
     lines.push('');
     lines.push('PASSAGES:');
+    var qline = 'QUESTION: ' + String(question || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+    var used = lines.join('\n').length + qline.length + 2, omitted = 0;
     passages.forEach(function (p) {
-      p.verses.forEach(function (v) { lines.push('(' + p.name + ' ' + p.s + ':' + v.a + ') ' + v.en); });
+      var block = p.verses.map(function (v) { return '(' + p.name + ' ' + p.s + ':' + v.a + ') ' + v.en; }).join('\n');
+      if (used + block.length + 1 > maxChars) { omitted++; return; }
+      lines.push(block); used += block.length + 1;
     });
+    if (omitted) lines.push('(' + omitted + ' further passage' + (omitted === 1 ? '' : 's') + ' omitted for length; they are shown to the reader.)');
     lines.push('');
-    lines.push('QUESTION: ' + String(question || '').replace(/\s+/g, ' ').trim().slice(0, 500));
+    lines.push(qline);
     return lines.join('\n');
   }
   function normQuote(s) { return englishTokens(s, true).join(' '); }
-  // verifyReply(ctx, reply, passages) -> { citations: [{s,a,valid,inPassages}], quotes: [{text, verified}], ok }
+  function containsWords(hay, needle) { return (' ' + hay + ' ').indexOf(' ' + needle + ' ') >= 0; }
+  function arabicTokenSets(ctx) {
+    if (!ctx._arSets) ctx._arSets = ctx.docs.map(function (d) { var set = Object.create(null); arabicTokens(d.ar).forEach(function (t) { set[t] = 1; }); return set; });
+    return ctx._arSets;
+  }
+  // An Arabic quotation is checked by word overlap, because a model quotes in
+  // standard orthography and the text is Uthmani: 3/4 of the quote's words
+  // (prefixes peeled) must occur in one verse.
+  function arabicQuoteFound(ctx, text, candidates) {
+    var toks = [], seen = Object.create(null);
+    normalizeArabic(text, true).split(' ').forEach(function (w) { if (w && !seen[w]) { seen[w] = 1; toks.push(w); } });
+    if (toks.length < 3) return { found: true, short: true };
+    var sets = arabicTokenSets(ctx), best = 0, where = -1;
+    function score(i) {
+      var set = sets[i], n = 0;
+      toks.forEach(function (w) {
+        if (set[w]) { n++; return; }
+        var x = stripLayer(w, AR_CONJ) || w, y = stripLayer(x, AR_PREP) || x, z = stripLayer(y, AR_ART) || y;
+        if (set[x] || set[y] || set[z]) n++;
+      });
+      return n / toks.length;
+    }
+    for (var c = 0; c < candidates.length; c++) { var sc = score(candidates[c]); if (sc > best) { best = sc; where = candidates[c]; } }
+    if (best < 0.75) for (var i = 0; i < sets.length; i++) { var s2 = score(i); if (s2 > best) { best = s2; where = i; if (best >= 0.75) break; } }
+    return { found: best >= 0.75, where: where };
+  }
+  // verifyReply(ctx, reply, passages) ->
+  //   { citations: [{ref, s, a, b, valid, inPassages, text}], quotes: [{text, verified, misattributed}], ok, problems }
+  // Every quoted span of 20+ characters must occur, word for word, in the real
+  // text (first in the quoted passages, then anywhere in the Qur'an); a quote
+  // followed by a citation must occur in THAT verse; every citation must be a
+  // real address. Short spans are not verse claims and are left alone.
   function verifyReply(ctx, reply, passages) {
     var text = String(reply || '');
-    var shown = Object.create(null), allowed = [];
-    (passages || []).forEach(function (p) { p.verses.forEach(function (v) { shown[p.s + ':' + v.a] = 1; allowed.push(normQuote(v.en)); }); });
-    var citations = [], seen = Object.create(null), m, re = /\(?\b([A-Z][A-Za-z'’-]+(?:\s+[A-Za-z'’-]+){0,3}\s+)?(\d{1,3}):(\d{1,3})(?:-(\d{1,3}))?\)?/g;
-    while ((m = re.exec(text))) {
-      var s = +m[2], a = +m[3], b = m[4] ? +m[4] : a;
-      if (s < 1 || s > 114) continue;
-      for (var x = a; x <= Math.min(b, a + 20); x++) {
-        var key = s + ':' + x;
-        if (seen[key]) continue;
-        seen[key] = 1;
-        var valid = verseIndex(ctx, s, x) >= 0;
-        citations.push({ s: s, a: x, valid: valid, inPassages: !!shown[key] });
-      }
+    var shown = Object.create(null), shownIdx = [], passageText = [];
+    (passages || []).forEach(function (p) {
+      passageText.push(p.verses.map(function (v) { return normQuote(v.en); }).join(' '));
+      p.verses.forEach(function (v) { shown[p.s + ':' + v.a] = 1; var ix = verseIndex(ctx, p.s, v.a); if (ix >= 0) shownIdx.push(ix); });
+    });
+    var citations = [], seen = Object.create(null), m;
+    function addCitation(s, a, b, matchedText, index) {
+      if (b == null || b < a) b = a;
+      var ref = s + ':' + a + (b !== a ? '-' + b : '');
+      if (seen[ref]) return; seen[ref] = 1;
+      var valid = s >= 1 && s <= 114 && a >= 1 && verseIndex(ctx, s, a) >= 0 && verseIndex(ctx, s, b) >= 0;
+      var inP = false;
+      if (valid) for (var x = a; x <= b; x++) if (shown[s + ':' + x]) inP = true;
+      citations.push({ ref: ref, s: s, a: a, b: b, valid: valid, inPassages: inP, text: matchedText, index: index });
     }
-    var quotes = [], qre = /[“"]([^”"]{20,})[”"]/g;
+    var nre = /(^|[^\d:])(\d{1,3}):(\d{1,3})(?:\s*[-–]\s*(\d{1,3}))?(?!\d)/g;
+    while ((m = nre.exec(text))) addCitation(+m[2], +m[3], m[4] ? +m[4] : null, m[2] + ':' + m[3] + (m[4] ? '-' + m[4] : ''), m.index + m[1].length);
+    // "Surah 2 verse 255", "Surah Al-Baqarah, verse 255", "chapter 18 (The Cave) verses 1 to 3"
+    var wre = /\b(?:surah|sura|surat|chapter)\s+(?:([a-z'’-]+(?:\s+[a-z'’-]+){0,3}?)|(\d{1,3}))[\s,]*(?:\([^)]{0,30}\))?[\s,]*(?:verse|verses|ayah|ayat|aya|v\.?)\s*(\d{1,3})(?:\s*(?:-|–|—|to|and)\s*(\d{1,3}))?/gi;
+    while ((m = wre.exec(text))) {
+      var sNum = m[2] ? +m[2] : (ctx.aliases[aliasKey(m[1])] || 0);
+      if (!sNum) continue;   // an unknown name is not struck: we cannot tell what was meant
+      addCitation(sNum, +m[3], m[4] ? +m[4] : null, m[0], m.index);
+    }
+    var quotes = [];
+    var qre = /(^|[^A-Za-z؀-ۿ])(?:[“"]([^”"\n]{20,}?)[”"]|«\s*([^»\n]{20,}?)\s*»|[‘']((?:[^‘’'\n]|[’'](?=[A-Za-z])){20,}?)[’'](?![A-Za-z]))/g;
     while ((m = qre.exec(text))) {
-      var q = normQuote(m[1]);
-      var words = q.split(' ').length;
-      var verified = false;
-      if (words >= 4) {
-        for (var i = 0; i < allowed.length && !verified; i++) if (allowed[i].indexOf(q) >= 0) verified = true;
-        if (!verified) {   // anywhere in the Qur'an (the model may quote a verse it was not given)
-          for (var j = 0; j < ctx.docs.length && !verified; j++) if (normQuote(ctx.docs[j].en).indexOf(q) >= 0) verified = true;
+      var body = m[2] || m[3] || m[4];
+      var raw = body.replace(/^\(?[A-Za-z'’ -]*\d{1,3}:\d{1,3}(?:-\d{1,3})?\)?\s*/, '');   // "(2:153) Seek help…"
+      var end = m.index + m[0].length;
+      var entry = { text: body, verified: false, misattributed: false };
+      if (hasArabic(raw)) {
+        var ar = arabicQuoteFound(ctx, raw, shownIdx);
+        if (ar.short) continue;
+        entry.verified = ar.found; entry.where = ar.where;
+      } else {
+        var frags = raw.split(/…|\.\.\./).map(normQuote).filter(function (f) { return f.split(' ').length >= 4; });
+        if (!frags.length) continue;                 // too short to be a verse claim
+        var allIn = frags.every(function (f) { return passageText.some(function (pt) { return containsWords(pt, f); }); });
+        var whereDoc = -1;
+        if (!allIn) {
+          for (var d = 0; d < ctx.docs.length; d++) {
+            var hay = normQuote(ctx.docs[d].en);
+            if (frags.every(function (f) { return containsWords(hay, f); })) { whereDoc = d; break; }
+          }
         }
-      } else verified = true;   // too short to be a verse claim
-      quotes.push({ text: m[1], verified: verified });
+        entry.verified = allIn || whereDoc >= 0;
+        // a citation right after the quote must be the verse the words come from
+        if (entry.verified) {
+          var after = text.slice(end, end + 40), cm = after.match(/(\d{1,3}):(\d{1,3})(?:\s*[-–]\s*(\d{1,3}))?/);
+          if (cm) {
+            var cs = +cm[1], ca = +cm[2], cb = cm[3] ? +cm[3] : ca, cited = [];
+            for (var y = ca; y <= Math.min(cb, ca + 30); y++) { var vi = verseIndex(ctx, cs, y); if (vi >= 0) cited.push(normQuote(ctx.docs[vi].en)); }
+            if (cited.length) {
+              var citedText = cited.join(' ');
+              if (!frags.every(function (f) { return containsWords(citedText, f); })) { entry.verified = false; entry.misattributed = true; }
+            }
+          }
+        }
+      }
+      quotes.push(entry);
     }
     var bad = citations.filter(function (c) { return !c.valid; }).length + quotes.filter(function (qq) { return !qq.verified; }).length;
     return { citations: citations, quotes: quotes, ok: bad === 0, problems: bad };
+  }
+
+  // The byte stream the builder hashed (scripts/build-furqan-corpus.mjs): the
+  // page recomputes its SHA-256 and refuses a file that does not match.
+  function integrityStream(quran) {
+    var parts = [];
+    quran.surahs.forEach(function (su) {
+      su.ayat.forEach(function (pair, i) { parts.push(su.n + ':' + (i + 1) + '\u0001' + pair[0] + '\u0001' + pair[1] + '\n'); });
+    });
+    return parts.join('');
   }
 
   /* ---------------- misc helpers for the page ---------------- */
@@ -676,7 +831,7 @@
     aliasKey: aliasKey, parseReference: parseReference, TOPICS: TOPICS, matchTopics: matchTopics, topicList: topicList, topicById: topicById,
     scopeNotes: scopeNotes, passage: passage, answer: answer, verseOfDay: verseOfDay, DAILY: DAILY,
     buildLivePrompt: buildLivePrompt, verifyReply: verifyReply, surahList: surahList, toArabicDigits: toArabicDigits,
-    checkIntegrity: checkIntegrity, parseSeed: parseSeed,
+    checkIntegrity: checkIntegrity, integrityStream: integrityStream, parseSeed: parseSeed, topicTokens: topicTokens,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = E;
   root.FurqanEngine = E;

@@ -47,6 +47,13 @@ test('quran.json has the canonical shape: 114 surahs, 6,236 ayat, no empty verse
   assert.equal(QURAN.surahs[0].ayat[0][1], 'In the name of Allah, the Beneficent, the Merciful');
   assert.match(QURAN.meta.translation, /Pickthall/); assert.match(QURAN.meta.text, /Uthmani/);
 });
+test('the integrity stream reproduces the builder\u2019s SHA-256, and the page pins that value', async () => {
+  const { createHash } = await import('node:crypto');
+  const digest = createHash('sha256').update(E.integrityStream(QURAN)).digest('hex');
+  assert.equal(digest, QURAN.meta.sha256);
+  const html = readFileSync(join(ROOT, 'furqan', 'index.html'), 'utf8');
+  assert.ok(html.includes("EXPECTED_SHA256 = '" + QURAN.meta.sha256 + "'"), 'index.html pins the current checksum');
+});
 test('checkIntegrity rejects a truncated or tampered file', () => {
   const bad = { surahs: QURAN.surahs.slice(0, 113) };
   assert.equal(E.checkIntegrity(bad).ok, false);
@@ -92,6 +99,8 @@ test('parseReference understands numbers, names, aliases, ranges and famous pass
     'last two verses of baqarah': [2, 285, 286], 'ayat an-nur': [24, 35, 35], 'bismillah': [1, 1, 1],
     'surah al ikhlas': [112, 1, 4], 'an-nas': [114, 1, 6], 'Ar-Rahman 13': [55, 13, 13], 'rahman 13': [55, 13, 13],
     'Al-Fatiha': [1, 1, 7], 'fatihah': [1, 1, 7], 'surat al-mulk': [67, 1, 30], 'juz amma': null,
+    'Al-Baqarah 2:255': [2, 255, 255], 'Surah Al-Baqarah 2:255-257': [2, 255, 257], 'Al-Kahf 2:255': null, '(18:10)': [18, 10, 10],
+    '2': [2, 1, 286], '114': [114, 1, 6], '115': null, '0': null,
     'What does the Quran say about patience?': null, 'patience': null, 'love': null, '': null,
   };
   for (const [q, want] of Object.entries(cases)) {
@@ -145,6 +154,55 @@ test('matchTopics finds the subject of a question and ranks the best one first',
   assert.equal(first('hijab'), 'modesty');
   assert.equal(first('what does the Quran say about jesus'), 'jesus');
   deepEq(E.matchTopics('xyzzy plugh'), []);
+});
+
+test('Arabic in standard spelling finds the Uthmani text: salah, zakah, the Qur\u2019an, the Torah', () => {
+  for (const [q, ref] of [['الصلاة', '2:3'], ['الزكاة', '2:43'], ['القرآن', '36:2'], ['التوراة', '3:3'], ['الربا', '2:275']]) {
+    const a = E.answer(ctx, q, { limit: 12 });
+    assert.ok(a.passages.length > 0, q + ' found nothing');
+    assert.ok(hasRef(a, ref), `${q}: ${labels(a).join(' ')}`);
+  }
+  const ib = E.answer(ctx, 'إبراهيم', { limit: 8 });   // dagger alef + small yeh in the mushaf
+  assert.ok(ib.passages.length === 8 && ib.passages.every((p) => p.verses.some((v) => E.normalizeArabic(v.ar, true).indexOf('ابراهيم') >= 0)), labels(ib).join(' '));
+  assert.equal(E.normalizeArabic('ٱلصَّلَوٰةَ', true), 'الصلاه');
+  assert.equal(E.normalizeArabic('ٱلۡقُرۡءَانَ'), 'القران');
+  assert.equal(E.normalizeArabic('يَٰٓأَيُّهَا', true), 'يا ايها'); assert.equal(E.normalizeArabic('يَٰٓأَيُّهَا'), 'يا ايها');
+});
+test('topic matching is not fooled by "a lot", "al-", or generic words, and finds God / Islam', () => {
+  const first = (q) => (E.matchTopics(q)[0] || {}).id;
+  assert.equal(first('I pray a lot'), 'prayer');
+  assert.equal(first('I worry a lot'), 'fear');
+  assert.equal(first('Who is God?'), 'tawhid');
+  assert.equal(first('Is there only one God?'), 'tawhid');
+  assert.equal(first('What is Islam?'), 'islam');
+  assert.equal(first('is music allowed in islam'), undefined);
+  assert.equal(first('tell me about the night of power'), 'nightofpower');
+  assert.equal(first('what is the meaning of life'), 'purpose');
+  assert.equal(first('the people of lot'), 'homosexuality');
+  deepEq(E.matchTopics('what is al-fatiha about').map((x) => x.id).filter((x) => x === 'nightofpower'), []);
+  assert.equal(E.answer(ctx, 'what is al-fatiha about').reference.s, 1);
+  assert.equal(E.answer(ctx, 'tell me about surah yusuf').reference.s, 12);
+  const art = E.answer(ctx, 'what does the quran say about art');
+  assert.ok(hasRef(art, '21:80'), 'the noun "art" survives: ' + labels(art).join(' '));
+});
+test('answer by topic id (the Topics tab) returns that topic, seeds first, with its note', () => {
+  const a = E.answer(ctx, '', { topic: 'tawhid', limit: 4 });
+  assert.equal(a.kind, 'topic'); assert.equal(a.topics[0].id, 'tawhid'); deepEq(labels(a).slice(0, 2), ['112:1-4', '2:255']);
+  const w = E.answer(ctx, 'Fighting, war and peace', { topic: 'war', limit: 3 });
+  assert.equal(labels(w)[0], '2:190-194'); assert.ok(w.notes.some((n) => /treaties/.test(n.text)));
+  assert.notEqual(E.answer(ctx, 'x', { topic: 'no-such-topic' }).kind, 'topic');
+  for (const t of E.topicList()) { const r = E.answer(ctx, t.title, { topic: t.id, limit: 3 }); assert.equal(r.topics[0].id, t.id, t.id); assert.ok(r.passages.length >= 3, t.id); }
+});
+test('guidance questions are not rulings; distress regex does not fire on "end my fast"', () => {
+  assert.ok(!E.answer(ctx, 'How can I be patient?').notes.some((n) => n.kind === 'ruling'));
+  assert.ok(!E.answer(ctx, 'How can I get closer to Allah?').notes.some((n) => n.kind === 'ruling'));
+  assert.ok(E.answer(ctx, 'I missed fajr, can I make it up later?').notes.some((n) => n.kind === 'ruling'));
+  assert.ok(!E.answer(ctx, 'when do I end my fast').notes.some((n) => n.kind === 'support'));
+  assert.ok(E.answer(ctx, 'I want to end my life').notes.some((n) => n.kind === 'support'));
+  const smoke = E.answer(ctx, 'the smoke of the sky');
+  assert.ok(!smoke.notes.some((n) => /Smoking/.test(n.text)) && hasRef(smoke, '44:10'), labels(smoke).join(' '));
+  assert.ok(hasRef(E.answer(ctx, 'is it haram to smoke'), '2:195'));
+  assert.ok(hasRef(E.answer(ctx, 'what about the beard'), '20:94'));
 });
 
 /* ---------- answers ---------- */
@@ -227,6 +285,9 @@ test('buildLivePrompt carries the rules, every passage verbatim with its address
   assert.match(p, /QUESTION: What does the Quran say about patience\?$/);
   const long = E.buildLivePrompt(ctx, 'x'.repeat(2000), []);
   assert.ok(long.split('\n').pop().length <= 'QUESTION: '.length + 500, 'question is truncated');
+  // the hosted proxy cuts prompts at 8,000 characters: the prompt is budgeted and the question survives
+  const big = E.buildLivePrompt(ctx, 'What is this surah about?', E.answer(ctx, 'surah al-baqarah', { wholeLimit: 286 }).passages);
+  assert.ok(big.length <= 7500, 'budgeted: ' + big.length); assert.match(big, /QUESTION: What is this surah about\?$/); assert.match(big, /omitted for length/);
 });
 test('verifyReply accepts real quotes and citations and rejects fabricated ones', () => {
   const a = E.answer(ctx, 'patience', { limit: 3 });
@@ -243,6 +304,25 @@ test('verifyReply accepts real quotes and citations and rejects fabricated ones'
   // punctuation and case differences inside a real quote are fine; short quotes are not verse claims
   assert.equal(E.verifyReply(ctx, 'He said: "seek help in steadfastness, and prayer".', a.passages).ok, true);
   assert.equal(E.verifyReply(ctx, 'They "say so" often.', []).ok, true);
+  // single and curly-single quotes and guillemets count; apostrophes inside prose do not open quotes
+  assert.equal(E.verifyReply(ctx, 'The Qur\u2019an says \u2018patience is the key to every door in paradise\u2019 (Al-Baqara 2:153).', a.passages).ok, false);
+  assert.equal(E.verifyReply(ctx, "It says 'Seek help in steadfastness and prayer' (2:153) and Allah's mercy is wide, and the believers' patience is rewarded.", a.passages).ok, true);
+  assert.equal(E.verifyReply(ctx, '\u00ab patience is the key to every door in paradise \u00bb', a.passages).ok, false);
+  // a real verse quoted under the wrong address is flagged as misattributed
+  const mis = E.verifyReply(ctx, 'The Qur\u2019an says \u201cEvery soul will taste of death\u201d (Al-Baqara 2:153).', a.passages);
+  assert.equal(mis.ok, false); assert.equal(mis.quotes[0].misattributed, true);
+  // word-form citations and ranges; unknown names are skipped, not struck
+  const w = E.verifyReply(ctx, 'See Surah 2 verse 999, Surah Al-Baqarah, verse 255, Surah Nowhere verse 3 and 2:255-999.', []);
+  deepEq(w.citations.map((c) => c.ref + (c.valid ? '' : '!')), ['2:255-999!', '2:999!', '2:255']);
+  const hud = E.verifyReply(ctx, 'See (Hud 11:12) and the next verse; also 1:12.', []);   // 1:12 does not exist (Al-Fatiha has 7)
+  deepEq(hud.citations.map((c) => c.ref + (c.valid ? '' : '!')), ['11:12', '1:12!']);
+  // ellipses inside a quote, a leading address inside the quotes, and word boundaries
+  assert.equal(E.verifyReply(ctx, '\u201cO ye who believe! Seek help \u2026 Allah is with the steadfast\u201d (2:153)', a.passages).ok, true);
+  assert.equal(E.verifyReply(ctx, '\u201c(2:153) O ye who believe! Seek help in steadfastness and prayer\u201d', a.passages).ok, true);
+  assert.equal(E.verifyReply(ctx, '\u201cek help in steadfastness and prayer and in all things\u201d', a.passages).ok, false);
+  // Arabic quotations: standard spelling against the Uthmani text, by word overlap
+  assert.equal(E.verifyReply(ctx, '\u201cيا أيها الذين آمنوا استعينوا بالصبر والصلاة\u201d (2:153)', a.passages).ok, true);
+  assert.equal(E.verifyReply(ctx, '\u201cوإن الله يحب الصابرين في كل مكان وزمان\u201d (2:153)', a.passages).ok, false);
 });
 
 /* ---------- misc ---------- */
@@ -256,7 +336,7 @@ test('escapeHTML, refLabel, surahList, toArabicDigits', () => {
 
 /* ---------- run ---------- */
 for (const [name, fn] of tests) {
-  try { fn(); passed++; console.log(`ok - ${name}`); }
+  try { await fn(); passed++; console.log(`ok - ${name}`); }
   catch (e) { console.error(`FAIL - ${name}\n  ${e && e.stack || e}`); process.exitCode = 1; }
 }
 console.log(`\n${passed}/${tests.length} furqan tests passed`);

@@ -17,7 +17,8 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      // only Furqan's own old caches: CacheStorage is shared by every app on this origin
+      .then((keys) => Promise.all(keys.filter((k) => k.indexOf('furqan-') === 0 && k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });

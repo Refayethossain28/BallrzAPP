@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Furqan">
 <title>Furqan — ask the Qur’an, answered only in its own words</title>
-<meta name="description" content="Ask a question and get the Qur’an’s own words: Furqan finds and quotes the verified Uthmani text with Pickthall’s translation, cited by surah and ayah. Nothing is generated — it only ever quotes. Works offline.">
+<meta name="description" content="Ask a question and get the Qur’an’s own words: Furqan finds and quotes the verified Uthmani text with Pickthall’s translation, cited by surah and ayah. It never generates scripture — every verse is quoted from the verified text. Works offline.">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -70,6 +70,7 @@
   .badge.principle{color:var(--accent); border-color:var(--accent)}
   .ayah{padding:10px 0; border-top:1px dashed var(--line)}
   .ayah:first-of-type{border-top:0}
+  .ayah.focus{background:rgba(184,134,43,.10); border-radius:10px; padding-left:8px; padding-right:8px}
   .ar{direction:rtl; text-align:right; font-family:var(--ar); font-size:27px; line-height:2; color:var(--ink); margin:0 0 6px}
   .ar .num{font-family:var(--ar); color:var(--gold); font-size:20px; margin-right:6px}
   .en{font-family:var(--serif); font-size:17px; line-height:1.6; color:var(--ink)}
@@ -121,9 +122,11 @@
   </header>
 
   <div class="honest">
-    <b>Nothing on this page is generated.</b> Furqan finds and quotes the Qur’an — the Uthmani text of the King Fahd Complex with
-    Pickthall’s translation, checksummed on load. It is a concordance with a good memory, not a scholar: it shows you what the Qur’an
-    says on a subject; it does not issue rulings, and it will tell you when a question is not answered in the Qur’an at all.
+    <b>No scripture on this page is generated.</b> Furqan finds and quotes the Qur’an — the Uthmani text of the King Fahd Complex with
+    Pickthall’s translation, whose checksum is recomputed on load. It is a concordance with a good memory, not a scholar: it shows you
+    what the Qur’an says on a subject; it does not issue rulings, and it will tell you when a question is not answered in the Qur’an at
+    all. The one place a model writes is the optional ⚡ explanation, which is labelled as such; every quotation and citation in it is
+    checked against the text, and its own interpretation is just that.
   </div>
 
   <nav class="tabs">
@@ -163,8 +166,9 @@
 
   <section class="panel about" id="about">
     <p><b>What it is.</b> A search engine over the whole Qur’an that works offline, with a curated map from the questions people ask to the
-      passages scholars and readers turn to first. Every result is a real ayah at a real address; the page can only display strings that are
-      in the verified text file it loaded.</p>
+      passages scholars and readers turn to first. Every verse shown is a string from the verified text file, at a real address. The optional
+      explanation is the one piece of generated text on the page; its quotations and citations are checked against the text, the prose
+      between them is a model’s reading and is labelled so.</p>
     <p><b>What it is not.</b> It is not a mufti and not a tafsir. Translations are interpretations of the Arabic; context, abrogation, the
       Sunnah and a thousand years of scholarship sit between a verse and a ruling. For anything that matters to your life, ask a qualified scholar.</p>
     <p><b>Why no “AI model trained on the Qur’an”.</b> A language model trained on scripture does not learn to answer questions; it learns to
@@ -197,6 +201,17 @@
   var $ = function (id) { return document.getElementById(id); };
   var esc = E.escapeHTML;
   var ctx = null, quran = null, lastAnswer = null, running = false;
+  // The SHA-256 of the text this page was built with (scripts/build-furqan-corpus.mjs
+  // prints it; the test suite checks it equals quran.json's meta). The page
+  // recomputes the digest of the loaded file and refuses to run on a mismatch,
+  // so a tampered or truncated quran.json cannot be shown as the Qur'an.
+  var EXPECTED_SHA256 = 'a988522f9f99771c67344c4fde6d2babf355fda0e5631fc0869a8a91877da2f3';
+  function sha256Hex(str) {
+    if (!(window.crypto && crypto.subtle && window.TextEncoder)) return Promise.resolve(null);   // file:// has no subtle crypto
+    return crypto.subtle.digest('SHA-256', new TextEncoder().encode(str)).then(function (buf) {
+      return Array.prototype.map.call(new Uint8Array(buf), function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+    }).catch(function () { return null; });
+  }
 
   /* ---------- tabs ---------- */
   var tabs = document.querySelectorAll('nav.tabs button');
@@ -214,16 +229,31 @@
   }).then(function (q) {
     var check = E.checkIntegrity(q);
     if (!check.ok) throw new Error('the text file failed its integrity check: ' + check.problems.join(', '));
+    return sha256Hex(E.integrityStream(q)).then(function (digest) {
+      if (digest && (digest !== EXPECTED_SHA256 || digest !== q.meta.sha256)) {
+        throw new Error('the text file’s checksum does not match the one this page was built with (' + digest.slice(0, 12) + '… vs ' + EXPECTED_SHA256.slice(0, 12) + '…). Refusing to show it as the Qur’an.');
+      }
+      return { q: q, check: check, digest: digest };
+    });
+  }).then(function (r) {
+    var q = r.q, check = r.check;
     quran = q;
     ctx = E.buildContext(q);
-    $('integrity').innerHTML = '<b>Text integrity.</b> Loaded ' + check.verses.toLocaleString() + ' ayat in 114 surahs; the file’s SHA-256 is <code>' +
-      esc(q.meta.sha256) + '</code> (built ' + esc(q.meta.built) + '). Rebuild and compare with <code>node scripts/build-furqan-corpus.mjs</code>.';
-    statusEl.innerHTML = '<b>Ready.</b> ' + check.verses.toLocaleString() + ' ayat verified and indexed on this device.';
+    $('integrity').innerHTML = '<b>Text integrity.</b> Loaded ' + check.verses.toLocaleString() + ' ayat in 114 surahs. ' +
+      (r.digest ? 'The SHA-256 of the text was recomputed on this device and matches the one this page was built with: <code>' + esc(r.digest) + '</code>'
+                : 'The file has the right shape (6,236 ayat); its SHA-256 (<code>' + esc(q.meta.sha256) + '</code>) could not be recomputed here because this page is not served over HTTPS') +
+      ' (built ' + esc(q.meta.built) + '). Rebuild and compare with <code>node scripts/build-furqan-corpus.mjs</code>.';
+    statusEl.innerHTML = '<b>Ready.</b> ' + check.verses.toLocaleString() + ' ayat ' + (r.digest ? 'checksum-verified' : 'loaded') + ' and indexed on this device.';
     $('go').disabled = false;
     renderExamples(); renderBrowse(); renderTopics(); renderDaily();
     var params = new URLSearchParams(location.search);
-    if (params.get('q')) { $('q').value = params.get('q'); ask(params.get('q')); }
-    else if (location.hash.length > 1) { var h = decodeURIComponent(location.hash.slice(1)); $('q').value = h; ask(h); }
+    if (params.get('topic') && E.topicById(params.get('topic'))) askTopic(params.get('topic'));
+    else if (params.get('q')) { $('q').value = params.get('q'); ask(params.get('q')); }
+    else if (location.hash.length > 1) {
+      var h = location.hash.slice(1);
+      try { h = decodeURIComponent(h); } catch (err) {}
+      $('q').value = h; ask(h);
+    }
   }).catch(function (e) {
     statusEl.textContent = 'Error: ' + (e && e.message || e);
   });
@@ -243,7 +273,7 @@
     var box = $('topicList'); box.innerHTML = '';
     E.topicList().forEach(function (t) {
       var b = document.createElement('button'); b.type = 'button'; b.className = 'chip topic'; b.textContent = t.title;
-      b.addEventListener('click', function () { showTab('ask'); $('q').value = t.title; ask(t.title); });
+      b.addEventListener('click', function () { askTopic(t.id); });
       box.appendChild(b);
     });
   }
@@ -257,7 +287,7 @@
       box.appendChild(b);
     });
   }
-  function openSurah(n) {
+  function openSurah(n, focusAyah) {
     var su = E.surahOf(ctx, n), reader = $('reader');
     $('browseList').style.display = 'none'; reader.style.display = '';
     var shown = 0, step = 40;
@@ -279,12 +309,17 @@
       }
     }
     more();
+    while (focusAyah && shown < focusAyah) more();
     window.scrollTo(0, 0);
+    if (focusAyah) {
+      var target = host.querySelector('[data-ayah="' + focusAyah + '"]');
+      if (target) { target.classList.add('focus'); target.scrollIntoView({ block: 'center' }); }
+    }
   }
 
   /* ---------- rendering passages ---------- */
   function ayahEl(s, a, ar, en) {
-    var d = document.createElement('div'); d.className = 'ayah';
+    var d = document.createElement('div'); d.className = 'ayah'; d.dataset.ayah = a;
     d.innerHTML = '<p class="ar">' + esc(ar) + ' <span class="num">﴿' + esc(E.toArabicDigits(a)) + '﴾</span></p>' +
       '<p class="en"><span class="n">' + s + ':' + a + '</span>' + esc(en) + '</p>';
     return d;
@@ -302,7 +337,7 @@
       if (navigator.clipboard) navigator.clipboard.writeText(text).then(function () { copy.textContent = 'Copied'; setTimeout(function () { copy.textContent = 'Copy'; }, 1500); });
     });
     var open = document.createElement('button'); open.type = 'button'; open.textContent = 'Read in context';
-    open.addEventListener('click', function () { showTab('browse'); openSurah(p.s); });
+    open.addEventListener('click', function () { showTab('browse'); openSurah(p.s, p.a); });
     var share = document.createElement('button'); share.type = 'button'; share.textContent = 'Link';
     share.addEventListener('click', function () {
       var url = location.origin + location.pathname + '?q=' + encodeURIComponent(p.s + ':' + p.a + (p.b !== p.a ? '-' + p.b : ''));
@@ -321,14 +356,21 @@
 
   /* ---------- asking ---------- */
   $('askform').addEventListener('submit', function (e) { e.preventDefault(); ask($('q').value); });
-  function ask(question) {
-    if (!ctx || running) return;
+  function askTopic(id) {
+    var t = E.topicById(id); if (!t) return;
+    showTab('ask'); $('q').value = t.title;
+    ask(t.title, { topic: id });
+  }
+  function ask(question, opts) {
+    if (!ctx) return;
+    cancelExplain();
+    opts = opts || {};
     question = String(question || '').trim();
-    if (!question) { renderDaily(); return; }
+    if (!question && !opts.topic) { renderDaily(); return; }
     showTab('ask');
-    var a = E.answer(ctx, question, { limit: 8 });
+    var a = E.answer(ctx, question, { limit: 8, topic: opts.topic });
     lastAnswer = a;
-    try { history.replaceState(null, '', '?q=' + encodeURIComponent(question)); } catch (err) {}
+    try { history.replaceState(null, '', opts.topic ? '?topic=' + encodeURIComponent(opts.topic) : '?q=' + encodeURIComponent(question)); } catch (err) {}
     var box = $('results'); box.innerHTML = '';
     a.notes.filter(function (n) { return n.kind === 'support'; }).forEach(function (n) { box.appendChild(noteEl(n)); });
     if (a.kind === 'reference' && a.surah) {
@@ -402,21 +444,26 @@
     if (liveBox.checked && lastAnswer && lastAnswer.passages.length && !document.querySelector('.explain')) explain(lastAnswer.question, lastAnswer);
   });
 
+  function cancelExplain() {
+    if (liveAbort) { try { liveAbort.abort(); } catch (err) {} }
+    liveAbort = null; running = false;
+  }
   function explain(question, a) {
     if (running) return;
     running = true;
     var box = $('results');
     var panel = document.createElement('div'); panel.className = 'explain';
-    panel.innerHTML = '<h3>⚡ ' + esc(liveModel) + ' — explaining from the quoted verses only</h3><div class="body"></div>';
+    panel.innerHTML = '<h3>⚡ ' + esc(liveModel) + ' — a generated explanation from the quoted verses; every quotation and citation checked</h3><div class="body"></div>';
     var body = panel.querySelector('.body');
     var cursor = document.createElement('span'); cursor.className = 'cursor'; cursor.textContent = '▍'; body.appendChild(cursor);
     box.insertBefore(panel, box.querySelector('.card'));
     var promptText = E.buildLivePrompt(ctx, question, a.passages);
-    liveAbort = new AbortController();
+    var ctl = new AbortController(); liveAbort = ctl;
+    var timer = setTimeout(function () { try { ctl.abort(); } catch (err) {} }, 60000);   // a stalled proxy must not lock the page
     var text = '';
     fetch(join(apiBase, 'ai'), {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ prompt: promptText, temperature: 0.3, maxTokens: 450 }), signal: liveAbort.signal,
+      body: JSON.stringify({ prompt: promptText, temperature: 0.3, maxTokens: 450 }), signal: ctl.signal,
     }).then(function (res) {
       if (!res.ok || !res.body) throw new Error('request failed (' + res.status + ')');
       var reader = res.body.getReader(), dec = new TextDecoder();
@@ -431,11 +478,12 @@
       return pump();
     }).then(function () {
       cursor.remove();
-      renderVerified(body, panel, text, a);
+      if (liveAbort === ctl) renderVerified(body, panel, text, a);
     }).catch(function (e) {
       cursor.remove();
-      body.textContent = 'Could not get an explanation: ' + (e && e.message || e) + '. The verses above stand on their own.';
-    }).then(function () { running = false; liveAbort = null; });
+      if (e && e.name === 'AbortError') body.textContent = text ? text + '\n\n(stopped)' : 'Stopped.';
+      else body.textContent = 'Could not get an explanation: ' + (e && e.message || e) + '. The verses above stand on their own.';
+    }).then(function () { clearTimeout(timer); if (liveAbort === ctl) { running = false; liveAbort = null; } });
   }
   // Show the model's reply with every quote and citation checked against the
   // real text: verified quotes are tinted, unverifiable ones struck through.
@@ -447,8 +495,8 @@
       html = html.split(needle).join('<mark class="' + (q.verified ? 'good' : 'bad') + '">' + needle + '</mark>');
     });
     v.citations.filter(function (c) { return !c.valid; }).forEach(function (c) {
-      var needle = c.s + ':' + c.a;
-      html = html.split(needle).join('<mark class="bad">' + needle + '</mark>');
+      var needle = esc(c.text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      html = html.replace(new RegExp('(^|[^\\d:])(' + needle + ')(?!\\d)', 'g'), '$1<mark class="bad">$2</mark>');
     });
     body.innerHTML = html;
     var foot = document.createElement('div');
@@ -457,8 +505,10 @@
       foot.textContent = '✓ Every quote (' + v.quotes.length + ') and citation (' + v.citations.length + ') in this explanation was found in the Qur’an text.';
     } else {
       foot.className = 'warn';
+      var mis = v.quotes.filter(function (q) { return q.misattributed; }).length;
       foot.textContent = '⚠ ' + v.problems + ' quote' + (v.problems === 1 ? '' : 's') + ' or reference' + (v.problems === 1 ? '' : 's') +
-        ' in this explanation could not be found in the Qur’an text and ' + (v.problems === 1 ? 'is' : 'are') + ' struck through. Trust the verses above, not the summary.';
+        ' in this explanation could not be found in the Qur’an text' + (mis ? ' (' + mis + ' quoted under the wrong address)' : '') +
+        ' and ' + (v.problems === 1 ? 'is' : 'are') + ' struck through. Trust the verses above, not the summary.';
     }
     panel.appendChild(foot);
   }
